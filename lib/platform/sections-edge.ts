@@ -5,7 +5,7 @@
  */
 import { isVisible, type UserFacts } from './visibility'
 
-interface EdgeSection { key: string; paths: string[]; enabled: boolean; visibility: unknown }
+export interface EdgeSection { key: string; paths: string[]; enabled: boolean; visibility: unknown }
 
 let cache: { at: number; rows: EdgeSection[] } | null = null
 const TTL_MS = 60_000
@@ -49,9 +49,26 @@ async function facts(userId: string): Promise<UserFacts | null> {
   }
 }
 
-/** Key of the section that blocks `pathname` for this client, or null. */
-export async function blockedSectionFor(pathname: string, userId: string): Promise<string | null> {
-  const all = await sections()
+/**
+ * Starts reading the section list (same 60 s cache) so middleware can overlap
+ * it with the Supabase Auth check and hand the promise to `blockedSectionFor`.
+ * Never rejects.
+ */
+export function loadEdgeSections(): Promise<EdgeSection[]> {
+  return sections()
+}
+
+/**
+ * Key of the section that blocks `pathname` for this client, or null.
+ * `preloaded` — the result of `loadEdgeSections()` started earlier in the same
+ * request (otherwise the list is read here).
+ */
+export async function blockedSectionFor(
+  pathname: string,
+  userId: string,
+  preloaded?: Promise<EdgeSection[]> | null,
+): Promise<string | null> {
+  const all = await (preloaded ?? sections())
   const match = all.find((s) => s.paths.some((p) => pathname === p || pathname.startsWith(`${p}/`)))
   if (!match) return null
   if (!match.enabled) return match.key

@@ -80,7 +80,10 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
 
   const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
   // «Цель 12 мес / 3 года» link into Точка Б — only while that section is on.
-  const pointBOn = (await visibleSectionKeysFor(userId)).has('point_b')
+  // Read alongside the card's own data (memoised per request — the cabinet
+  // layout has usually loaded the sections already).
+  const pointBOnP = visibleSectionKeysFor(userId).then((keys) => keys.has('point_b'))
+  pointBOnP.catch(() => {}) // a failure still surfaces at the await below
 
   let surveyRows: SurveyAnswerRow[] = []
   let company: CompanyRow | null = null
@@ -104,6 +107,7 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
   } catch (err) {
     console.error('[point-a/v2/CompanyDataCard] fetch error', err)
   }
+  const pointBOn = await pointBOnP
 
   // ── Survey progress ─────────────────────────────────────────────────────
   // Step ownership comes from the question key, not the stored `step` column

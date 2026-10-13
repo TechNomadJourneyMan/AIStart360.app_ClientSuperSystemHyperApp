@@ -2,13 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { createServerClient } from '@/lib/supabase-server'
+import { getRequestUser } from '@/lib/request-user'
 import { visiblePagesFor } from '@/lib/cms/server'
 
 export const metadata = { title: 'Материалы — AIStart360' }
 
 export default async function ContentListPage() {
-  const { data: { user } } = await createServerClient().auth.getUser()
+  const user = await getRequestUser()
   if (!user) redirect('/login?from=/client/content')
   const pages = await visiblePagesFor(user.id)
   const groups = new Map<string, typeof pages>()

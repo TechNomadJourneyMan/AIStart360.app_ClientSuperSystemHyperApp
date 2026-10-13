@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { getUserFacts } from '@/lib/platform/facts'
+import { getRequestUserFacts } from '@/lib/platform/facts'
 import { isVisible } from '@/lib/platform/visibility'
 
 export interface CmsPage {
@@ -25,7 +25,7 @@ export async function loadPageWithBlocks(by: { id?: string; slug?: string }): Pr
 /** Published page as a given user may see it (null when hidden or missing). */
 export async function publishedPageFor(slug: string, userId: string | null) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) return null
-  const [loaded, facts] = await Promise.all([loadPageWithBlocks({ slug }), getUserFacts(userId)])
+  const [loaded, facts] = await Promise.all([loadPageWithBlocks({ slug }), getRequestUserFacts(userId)])
   if (!loaded || loaded.page.status !== 'published') return null
   if (!isVisible(loaded.page.visibility, facts)) return null
   return { page: loaded.page, blocks: loaded.blocks.filter((b) => !b.hidden && (b.visibility == null || isVisible(b.visibility, facts))) }
@@ -35,7 +35,7 @@ export async function publishedPageFor(slug: string, userId: string | null) {
 export async function visiblePagesFor(userId: string | null): Promise<CmsPage[]> {
   const [{ data }, facts] = await Promise.all([
     createServiceClient().from('cms_pages').select(PAGE_COLUMNS).eq('status', 'published').order('sort_order', { ascending: true }).order('published_at', { ascending: false }),
-    getUserFacts(userId),
+    getRequestUserFacts(userId),
   ])
   return ((data ?? []) as CmsPage[]).filter((p) => isVisible(p.visibility, facts))
 }

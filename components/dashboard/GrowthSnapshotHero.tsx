@@ -21,6 +21,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
+import { getGriAssessmentEnvelope, getOnboardingStatus } from '@/hooks/useOnboardingStatus'
 import Link from 'next/link'
 import {
   parseAmount,
@@ -122,13 +124,17 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
 
   const monthLabel = useMemo(() => currentMonthLabel(), [])
 
+  const queryClient = useQueryClient()
+
   const load = useCallback(async () => {
     try {
-      const [tRes, gRes, oRes, griRes, mRes] = await Promise.all([
+      // Onboarding status and the GRI assessment are shared with the quick
+      // pills / status badges on the same page (one request each).
+      const [tRes, gRes, onboardingData, griJ, mRes] = await Promise.all([
         fetch('/api/v1/companies/targets', { credentials: 'include' }),
         fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
-        fetch('/api/v1/onboarding/status', { credentials: 'include' }),
-        fetch('/api/v1/gri/assessment', { credentials: 'include' }),
+        getOnboardingStatus(queryClient),
+        getGriAssessmentEnvelope(queryClient),
         fetch(`/api/v1/metrics?keys=${ANNUAL_REVENUE_KEYS.join(',')}`, {
           credentials: 'include',
         }),
@@ -136,8 +142,6 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
 
       const tJ = await tRes.json().catch(() => ({}))
       const gJ = await gRes.json().catch(() => ({}))
-      const oJ = await oRes.json().catch(() => ({}))
-      const griJ = await griRes.json().catch(() => ({}))
       const mJ = (mRes.ok ? await mRes.json().catch(() => null) : null) as MetricsEnvelope | null
 
       // Live revenue — first annual-revenue metric with a positive value,
@@ -153,7 +157,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
 
       if (tJ?.ok) setTargets(tJ.data)
       if (gJ?.ok) setPeriodGoals(gJ.data)
-      if (oJ?.ok) setOnboarding(oJ.data)
+      if (onboardingData) setOnboarding(onboardingData)
       if (griJ?.ok && griJ.data?.current) {
         setHasGri(true)
         const cur = griJ.data.current as {
@@ -170,7 +174,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
     } catch {
       // ignore
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     load()

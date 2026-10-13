@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { getUserFacts } from './facts'
+import { getRequestUserFacts } from './facts'
 import { isVisible } from './visibility'
+import { requestCache } from '@/lib/request-cache'
 
 export interface PlatformSection {
   key: string
@@ -25,9 +26,16 @@ export async function loadSections(): Promise<PlatformSection[]> {
   return (data ?? []) as PlatformSection[]
 }
 
+/**
+ * Same read, memoised for one server render: the cabinet layout, the page and
+ * server child components (e.g. CompanyDataCard) all ask for the sections.
+ * Route handlers (writes) keep calling `loadSections()` directly.
+ */
+const loadSectionsForRequest = requestCache(loadSections)
+
 /** Sections the user may open, in display order. Unknown table → everything (fail open for navigation only). */
 export async function visibleSectionsFor(userId: string | null | undefined): Promise<{ sections: PlatformSection[]; hiddenPaths: string[] }> {
-  const [all, facts] = await Promise.all([loadSections(), getUserFacts(userId)])
+  const [all, facts] = await Promise.all([loadSectionsForRequest(), getRequestUserFacts(userId ?? null)])
   const now = Date.now()
   const visible = all.filter((s) => s.enabled && isVisible(s.visibility, facts, now))
   const hiddenPaths = all.filter((s) => !visible.includes(s)).flatMap((s) => s.paths)

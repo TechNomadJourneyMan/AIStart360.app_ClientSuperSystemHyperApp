@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
 import { getNavForRole } from '@/lib/navigation'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 import type { UserRole } from '@/types'
@@ -73,21 +74,10 @@ export function MobileNav() {
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [upgradeSubmitted, setUpgradeSubmitted] = useState<Set<string>>(new Set())
   const { user } = useAuthStore()
-  const [docsHasFiles, setDocsHasFiles] = useState<boolean | null>(null)
-  const [docCount, setDocCount] = useState(0)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/v1/onboarding/status', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled || !j?.ok) return
-        setDocsHasFiles(Boolean(j.data?.documents?.has_files))
-        setDocCount(Number(j.data?.documents?.count ?? 0))
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [])
+  // Shared with the other onboarding-status readers on the page (one request).
+  const onboarding = useOnboardingStatus().data
+  const docsHasFiles: boolean | null = onboarding ? Boolean(onboarding.documents?.has_files) : null
+  const docCount = onboarding ? Number(onboarding.documents?.count ?? 0) : 0
 
   // FE-01/02: canonical lowercase role, default 'client' when missing.
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'

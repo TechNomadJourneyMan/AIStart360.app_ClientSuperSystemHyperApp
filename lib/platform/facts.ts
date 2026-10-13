@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import type { UserFacts } from './visibility'
+import { requestCache } from '@/lib/request-cache'
 
 /** Facts for visibility rules (SQL user_segment_facts, migration 074). */
 export async function getUserFacts(userId: string | null | undefined): Promise<UserFacts | null> {
@@ -19,3 +20,10 @@ export async function getUserFacts(userId: string | null | undefined): Promise<U
     is_staff: d.is_staff === true,
   }
 }
+
+/**
+ * `getUserFacts` memoised for one server render (layout + page + CMS blocks
+ * read the same facts). Pass `null` rather than `undefined` for "no user" so
+ * both spellings share one entry.
+ */
+export const getRequestUserFacts = requestCache(getUserFacts)

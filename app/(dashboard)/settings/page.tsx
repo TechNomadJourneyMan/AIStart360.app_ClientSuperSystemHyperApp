@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { getRequestUser } from '@/lib/request-user'
 import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
 import TelegramLinkPanel from '@/components/settings/TelegramLinkPanel'
 
@@ -8,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Verified user, shared with the cabinet layout (one Auth round trip per render).
+  const user = await getRequestUser()
 
   if (!user) {
     return (

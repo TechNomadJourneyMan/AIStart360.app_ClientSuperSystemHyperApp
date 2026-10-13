@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
 
 interface Props {
   collapsed: boolean
@@ -28,29 +29,13 @@ const TIP_KEY = 'upload_tip_shown'
  */
 export function UploadFilesNavItem({ collapsed }: Props) {
   const pathname = usePathname()
-  const [status, setStatus] = useState<Status | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  // Shared with the other onboarding-status readers on the page (one request).
+  const statusQuery = useOnboardingStatus()
+  const status: Status | null = statusQuery.data ?? null
+  const loaded = statusQuery.isFetched
   const [hovering, setHovering] = useState(false)
   const [autoTipVisible, setAutoTipVisible] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
-
-  // Fetch status on mount
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/v1/onboarding/status', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return
-        if (j?.ok) setStatus(j.data)
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   // Auto-show tooltip for 3s on first mount of the session if docs missing
   useEffect(() => {

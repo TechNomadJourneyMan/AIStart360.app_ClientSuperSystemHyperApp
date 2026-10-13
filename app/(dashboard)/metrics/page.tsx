@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
-import { createClient } from '@/lib/supabase/server'
+import { getRequestUser } from '@/lib/request-user'
 import MetricsPageClient from '@/components/metrics/MetricsPageClient'
 import { loadMetricsPageData } from '@/lib/metrics/page-data'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
@@ -26,8 +26,8 @@ export default async function MetricsPage() {
   // it enabled cross-user data reads / IDOR). Audit 2026-07-02.
   let supabaseUserId: string | null = null
   try {
-    const supabase = await createClient()
-    const { data: { user: sbUser } } = await supabase.auth.getUser()
+    // Verified user, shared with the cabinet layout (one Auth round trip per render).
+    const sbUser = await getRequestUser()
     supabaseUserId = sbUser?.id ?? null
   } catch {
     // Supabase auth not available

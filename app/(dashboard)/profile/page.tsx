@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
-import { createClient } from '@/lib/supabase/server'
+import { getRequestUser } from '@/lib/request-user'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
 
@@ -16,8 +16,8 @@ export default async function ProfilePage() {
   let diagCount = 0
   let surveySteps = 0
 
-  const sb = await createClient()
-  const { data: { user: sbUser } } = await sb.auth.getUser()
+  // Verified user, shared with the cabinet layout (one Auth round trip per render).
+  const sbUser = await getRequestUser()
 
   if (sbUser?.id) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!

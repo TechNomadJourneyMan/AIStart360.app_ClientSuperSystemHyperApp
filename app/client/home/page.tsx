@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase-server'
+import { getRequestUser } from '@/lib/request-user'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import UserHome, { type UserHomeData } from '@/components/user-dashboard/UserHome'
@@ -15,8 +16,8 @@ export const metadata = { title: 'Мой профиль — AIStart360' }
 // All reads go through the session client, so RLS scopes them to the caller.
 export default async function ClientHomePage({ searchParams }: { searchParams?: { unavailable?: string } }) {
   const sb = createServerClient()
-  const { data: auth } = await sb.auth.getUser()
-  const user = auth?.user
+  // Verified user, shared with the client layout (one Auth round trip per render).
+  const user = await getRequestUser()
   if (!user) redirect('/login?from=/client/home')
 
   const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages] = await Promise.all([

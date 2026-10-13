@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { NextFetchEvent, NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { updateSession, type SessionProfile } from '@/lib/supabase/middleware'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
 import { verifyToken } from '@/lib/security/signed-token'
-import { blockedSectionFor } from '@/lib/platform/sections-edge'
+import { blockedSectionFor, loadEdgeSections } from '@/lib/platform/sections-edge'
 import { edgeSettings } from '@/lib/settings/edge'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { roleLandingPath } from '@/lib/role-landing'
@@ -119,6 +119,16 @@ function normalizeRole(rawRole: string | null | undefined): ValidRole {
   return 'client'
 }
 
+function roleAndStatusFrom(
+  data: SessionProfile | null | undefined,
+  fallbackRole: string | null,
+): { role: ValidRole; status: string | null } {
+  return {
+    role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
+    status: typeof data?.status === 'string' ? data.status : null,
+  }
+}
+
 async function resolveRoleAndStatus(
   supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
   userId: string,
@@ -130,10 +140,12 @@ async function resolveRoleAndStatus(
     .eq('id', userId)
     .maybeSingle()
 
-  return {
-    role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
-    status: typeof data?.status === 'string' ? data.status : null,
-  }
+  return roleAndStatusFrom(data, fallbackRole)
+}
+
+/** A Supabase session cookie (`sb-<ref>-auth-token`, possibly chunked) is present. */
+function hasSupabaseSessionCookie(request: NextRequest): boolean {
+  return request.cookies.getAll().some((c) => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
 }
 
 /**
@@ -230,12 +242,27 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     return NextResponse.next()
   }
 
-  // Refresh Supabase session cookies and get current user
-  const { supabase, response, user } = await updateSession(request)
+  // Platform settings (maintenance, staff 2FA) and the GIGA-CRM section list
+  // are per-instance cached reads that do not depend on the user: for
+  // signed-in requests start them now so they overlap the Auth round trip
+  // instead of following it. Both never reject; each is read at most once here.
+  const signedIn = hasSupabaseSessionCookie(request)
+  let settingsP: ReturnType<typeof edgeSettings> | null = signedIn ? edgeSettings() : null
+  const settings = () => (settingsP ??= edgeSettings())
+  const sectionsP = signedIn ? loadEdgeSections() : null
+
+  // Refresh Supabase session cookies and get current user. `profile` is the
+  // user's own profiles row when it could be read alongside getUser() for the
+  // same verified user (lib/supabase/middleware.ts); otherwise it is read here.
+  const { supabase, response, user, profile } = await updateSession(request)
 
   // Role comes from profiles only: user_metadata is editable by the user
   // (auth.updateUser) and must never grant a role (F-001).
-  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, null) : null
+  const resolved = user
+    ? profile
+      ? roleAndStatusFrom(profile, null)
+      : await resolveRoleAndStatus(supabase, user.id, null)
+    : null
   const role = resolved?.role ?? null
 
   // ── Impersonation («кабинет от имени пользователя») ──
@@ -333,7 +360,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    if (!seEnrolled && (await edgeSettings()).staff_require_mfa) {
+    if (!seEnrolled && (await settings()).staff_require_mfa) {
       const url = new URL('/settings', request.url)
       url.searchParams.set('tab', 'security')
       url.searchParams.set('mfa', 'required')
@@ -369,7 +396,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
         return NextResponse.redirect(url)
       }
       // Platform setting: staff without 2FA must enrol before using the panel.
-      if (!enrolled && (await edgeSettings()).staff_require_mfa) {
+      if (!enrolled && (await settings()).staff_require_mfa) {
         const url = new URL('/settings', request.url)
         url.searchParams.set('tab', 'security')
         url.searchParams.set('mfa', 'required')
@@ -432,7 +459,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // ── Maintenance mode (platform settings): client cabinets are closed ──
   // Staff, experts and an admin driving a cabinet keep working.
   if (user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
-    if ((await edgeSettings()).maintenance.enabled) {
+    if ((await settings()).maintenance.enabled) {
       return redirectKeepingCookies(response, new URL('/maintenance', request.url))
     }
   }
@@ -440,7 +467,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // ── Platform sections managed in GIGA-CRM (enabled flag + audience) ──
   // Applies to client accounts (and to an admin driving a client's cabinet).
   if (user && role === 'client' && !pathname.startsWith('/client/home')) {
-    const blockedKey = await blockedSectionFor(pathname, user.id)
+    const blockedKey = await blockedSectionFor(pathname, user.id, sectionsP)
     if (blockedKey) {
       const url = new URL('/client/home', request.url)
       url.searchParams.set('unavailable', blockedKey)

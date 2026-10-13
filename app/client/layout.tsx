@@ -4,14 +4,16 @@ import { ChatHost } from '@/components/ai-chat/ChatHost'
 import ActivityTracker from '@/components/analytics/ActivityTracker'
 import AnnouncementBar from '@/components/platform/AnnouncementBar'
 import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
-import { createServerClient } from '@/lib/supabase-server'
+import { getRequestUser } from '@/lib/request-user'
 import { visibleSectionsFor } from '@/lib/platform/sections'
 
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
   // Sections switched off in GIGA-CRM are already filtered on the server, so
   // the cabinet never shows a block that the user cannot open.
-  const { data: auth } = await createServerClient().auth.getUser()
-  const { sections, hiddenPaths } = await visibleSectionsFor(auth?.user?.id ?? null)
+  // getRequestUser / visibleSectionsFor are memoised per request: the page
+  // below reuses these reads instead of repeating the Auth round trip.
+  const user = await getRequestUser()
+  const { sections, hiddenPaths } = await visibleSectionsFor(user?.id ?? null)
   const initial = { sections: sections.map((s) => ({ key: s.key, title: s.title, description: s.description, icon: s.icon, href: s.nav_href })), hiddenPaths }
 
   return (

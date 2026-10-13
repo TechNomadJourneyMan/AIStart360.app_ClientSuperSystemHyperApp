@@ -2,13 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { createServerClient } from '@/lib/supabase-server'
+import { getRequestUser } from '@/lib/request-user'
 import { publishedPageFor } from '@/lib/cms/server'
 import { BlockRenderer } from '@/components/content/BlockRenderer'
 import ContentTracker from '@/components/content/ContentTracker'
 
 export default async function ContentPage({ params }: { params: { slug: string } }) {
-  const { data: { user } } = await createServerClient().auth.getUser()
+  const user = await getRequestUser()
   if (!user) redirect(`/login?from=/client/content/${params.slug}`)
   const loaded = await publishedPageFor(params.slug, user.id)
   // Hidden and missing pages look the same: no hint that a page exists.

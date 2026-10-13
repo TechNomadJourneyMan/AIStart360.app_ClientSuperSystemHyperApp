@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react'
 import { OfflineIndicator } from '@/components/common/OfflineIndicator'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeProvider } from 'next-themes'
+import { GRI_ASSESSMENT_KEY, ONBOARDING_STATUS_KEY } from '@/hooks/useOnboardingStatus'
+import { ACCESS_ME_KEY } from '@/hooks/useEntitlements'
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { init } = useAuthStore()
@@ -18,7 +20,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-const NOT_PERSISTED = new Set(['goals', 'point-a-state'])
+// User data shared between components of one screen (hooks/useOnboardingStatus,
+// hooks/useEntitlements) lives in memory only, like goals and Point A.
+const NOT_PERSISTED = new Set<string>(['goals', 'point-a-state', ONBOARDING_STATUS_KEY[0], GRI_ASSESSMENT_KEY[0], ACCESS_ME_KEY[0]])
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(

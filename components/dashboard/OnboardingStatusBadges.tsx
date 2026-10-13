@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
 
 interface Status {
   survey: {
@@ -35,23 +35,10 @@ interface Props {
  *  • Documents missing  → pulsing amber badge "Прикрепить файлы"
  */
 export function OnboardingStatusBadges({ variant = 'inline', hideWhenComplete = false }: Props) {
-  const [status, setStatus] = useState<Status | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/v1/onboarding/status', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return
-        if (j.ok) setStatus(j.data)
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [])
+  // Shared with the other onboarding-status readers on the page (one request).
+  const query = useOnboardingStatus()
+  const status: Status | null = query.data ?? null
+  const loading = query.isPending
 
   if (loading) {
     return (

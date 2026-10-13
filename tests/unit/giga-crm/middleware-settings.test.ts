@@ -15,7 +15,7 @@ const s = vi.hoisted(() => ({
 
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
 vi.mock('@/lib/mfa/step-up-edge', () => ({ MFA_COOKIE_NAME: 'mfa', verifyStepUpEdge: async () => false }))
-vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null }))
+vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null, loadEdgeSections: async () => [] }))
 vi.mock('@/lib/impersonation/edge', () => ({
   isImpersonationActiveEdge: async () => false,
   endImpersonationEdge: async () => {},

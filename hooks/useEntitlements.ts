@@ -2,11 +2,14 @@
 
 /**
  * hooks/useEntitlements.ts — клиентский снимок прав доступа (Фаза 6).
- * Один GET /api/v1/access/me на маунт. Пока грузится или гейты выключены —
- * везде «разрешено» (сервер всё равно энфорсит платные роуты сам).
+ * GET /api/v1/access/me через общий ключ react-query: сайдбар и экран GRI,
+ * смонтированные вместе, делают один запрос (раньше — по запросу на каждый).
+ * Пока грузится или гейты выключены — везде «разрешено» (сервер всё равно
+ * энфорсит платные роуты сам).
  */
 
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { SHARED_STALE_MS } from '@/hooks/useOnboardingStatus'
 
 export interface AccessMe {
   gatesEnabled: boolean
@@ -28,35 +31,32 @@ const OPEN: AccessMe = {
   canRunFullGri: true,
 }
 
+export const ACCESS_ME_KEY = ['access-me'] as const
+
+/** Снимок прав или OPEN (гейты выключены / ответ не ok). Ошибка сети — исключение. */
+async function fetchAccessMe(): Promise<AccessMe> {
+  const r = await fetch('/api/v1/access/me', { credentials: 'include' })
+  const j = await r.json()
+  if (!j?.ok || !j.gatesEnabled) return OPEN // гейты выключены — «всё открыто»
+  return {
+    gatesEnabled: true,
+    tier: j.entitlements?.tier === 'pro' ? 'pro' : 'free',
+    pdf_export: Boolean(j.entitlements?.pdf_export),
+    ai_chat: Boolean(j.entitlements?.ai_chat),
+    benchmarks: Boolean(j.entitlements?.benchmarks),
+    griRunsUsed: Number(j.griRunsUsed ?? 0),
+    canRunFullGri: Boolean(j.canRunFullGri),
+  }
+}
+
 export function useEntitlements(): { access: AccessMe; loading: boolean } {
-  const [access, setAccess] = useState<AccessMe>(OPEN)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let alive = true
-    fetch('/api/v1/access/me', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((j) => {
-        if (!alive || !j?.ok) return
-        if (!j.gatesEnabled) return // гейты выключены — остаёмся «всё открыто»
-        setAccess({
-          gatesEnabled: true,
-          tier: j.entitlements?.tier === 'pro' ? 'pro' : 'free',
-          pdf_export: Boolean(j.entitlements?.pdf_export),
-          ai_chat: Boolean(j.entitlements?.ai_chat),
-          benchmarks: Boolean(j.entitlements?.benchmarks),
-          griRunsUsed: Number(j.griRunsUsed ?? 0),
-          canRunFullGri: Boolean(j.canRunFullGri),
-        })
-      })
-      .catch(() => {}) // сеть упала → открытое состояние; сервер защитит сам
-      .finally(() => {
-        if (alive) setLoading(false)
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  return { access, loading }
+  const q = useQuery({
+    queryKey: ACCESS_ME_KEY,
+    queryFn: fetchAccessMe,
+    staleTime: SHARED_STALE_MS,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+  // Сеть упала → открытое состояние; сервер защитит сам.
+  return { access: q.data ?? OPEN, loading: q.isPending }
 }
