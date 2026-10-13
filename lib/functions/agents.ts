@@ -17,7 +17,8 @@ export const agentsTaskRequested = inngest.createFunction(
   {
     id: 'agents-task-requested',
     retries: 0, // retries are the queue's job (backoff + dead-letter in Postgres)
-    concurrency: { limit: 10 },
+    // The Inngest plan allows at most 5 concurrent steps per function.
+    concurrency: { limit: 5 },
     triggers: [{ event: AGENT_TASK_REQUESTED_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
