@@ -19,7 +19,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
-  const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: 'read' })
+  const askedFor = new URL(req.url).searchParams.get('companyId')
+  const tenant = await resolveTenantWith(supabase, user.id, { companyId: askedFor, access: 'read' })
+  // No company of one's own (staff; a client before the questionnaire) is a
+  // state of the page, not an error: no retries, no polling.
+  if (!tenant.ok && tenant.error === 'no_company' && !askedFor) {
+    const { data: staff } = await supabase.rpc('is_platform_staff')
+    return NextResponse.json({ ok: true, data: null, noCompany: { staff: staff === true } })
+  }
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   try {
     const state = await loadPointAState(supabase, createServiceClient(), tenant.tenant.companyId)

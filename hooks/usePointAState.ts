@@ -22,15 +22,33 @@ async function json<T>(res: Response): Promise<T> {
   return body.data as T
 }
 
+/** The caller has no company (staff, or a client before the questionnaire). */
+export interface NoCompany { noCompany: { staff: boolean } }
+
+type StateResponse = PointAPageState | NoCompany
+
+function isNoCompany(d: StateResponse | undefined): d is NoCompany {
+  return !!d && 'noCompany' in d
+}
+
 export function usePointAState(opts: { enabled?: boolean } = {}) {
   const query = useQuery({
     enabled: opts.enabled ?? true,
     queryKey: POINT_A_STATE_KEY,
-    queryFn: async () => json<PointAPageState>(await fetch('/api/v1/point-a/state', { cache: 'no-store' })),
+    queryFn: async (): Promise<StateResponse> => {
+      const res = await fetch('/api/v1/point-a/state', { cache: 'no-store' })
+      const body = await res.json().catch(() => null)
+      if (res.ok && body?.ok && body.noCompany) return { noCompany: { staff: Boolean(body.noCompany.staff) } }
+      if (!res.ok || !body?.ok) throw new Error(body?.error ?? 'Ошибка запроса')
+      return body.data as PointAPageState
+    },
     staleTime: 10_000,
-    refetchInterval: (q) => (q.state.data && q.state.data.recalculation !== 'idle' ? 5_000 : 60_000),
+    // Poll only a company whose recalculation is under way (no company → never).
+    refetchInterval: (q) => (!q.state.data || isNoCompany(q.state.data) ? false : q.state.data.recalculation !== 'idle' ? 5_000 : 60_000),
   })
-  const companyId = query.data?.companyId ?? null
+  const raw = query.data
+  const state: PointAPageState | undefined = raw && !isNoCompany(raw) ? (raw as PointAPageState) : undefined
+  const companyId = state?.companyId ?? null
   const bindings = useMemo<RealtimeSyncBinding[]>(
     () => companyId
       ? [
@@ -41,7 +59,14 @@ export function usePointAState(opts: { enabled?: boolean } = {}) {
     [companyId],
   )
   useRealtimeSync(bindings)
-  return query
+  return {
+    data: state,
+    noCompany: isNoCompany(raw) ? raw.noCompany : null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    refetch: query.refetch,
+  }
 }
 
 export function useRecalculatePointA() {

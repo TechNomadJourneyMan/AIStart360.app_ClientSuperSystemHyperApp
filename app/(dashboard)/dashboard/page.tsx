@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
@@ -10,6 +11,7 @@ import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { DashboardKeyMetrics } from '@/components/dashboard/DashboardKeyMetrics'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { createServerClient } from '@/lib/supabase-server'
+import { getRequestUser } from '@/lib/request-user'
 import { AlertCard } from '@/components/dashboard/AlertCard'
 import { CrmActivity } from '@/components/dashboard/CrmActivity'
 import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
@@ -236,15 +238,80 @@ function stageLabel(s: string) {
 }
 
 
+// Client view data (service-role REST — RLS on profiles recurses). Never
+// rejects: a failed read leaves the defaults, as before.
+async function loadClientDashboardData(userId: string): Promise<{
+  diag: Record<string, unknown> | null
+  orgName: string | undefined
+  companyId: string | null
+  surveyStepsDone: number
+  docsCount: number
+}> {
+  // Fetch latest diagnostic via REST API to avoid RLS issues
+  let diag: Record<string, unknown> | null = null
+  let orgName: string | undefined = undefined
+  let companyId: string | null = null
+  // First-run wizard signals (ON-1): survey progress + document count.
+  let surveyStepsDone = 0
+  let docsCount = 0
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = requireServiceRoleKey()
+    const authHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+    const [diagRes, companyRes, surveyRes, docsRes] = await Promise.all([
+      fetch(
+        `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${userId}&order=calculated_at.desc&limit=1`,
+        { headers: authHeaders, cache: 'no-store' }
+      ),
+      fetch(
+        `${supabaseUrl}/rest/v1/companies?user_id=eq.${userId}&select=id,name&limit=1`,
+        { headers: authHeaders, cache: 'no-store' }
+      ),
+      fetch(
+        `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${userId}&select=step,question_key,answer`,
+        { headers: authHeaders, cache: 'no-store' }
+      ),
+      fetch(
+        `${supabaseUrl}/rest/v1/documents?user_id=eq.${userId}&select=id`,
+        { headers: authHeaders, cache: 'no-store' }
+      ),
+    ])
+    if (diagRes.ok) {
+      const diagRows = await diagRes.json() as Record<string, unknown>[]
+      diag = diagRows?.[0] ?? null
+    }
+    if (companyRes.ok) {
+      const companyRows = await companyRes.json() as Array<{ id: string; name: string }>
+      orgName = companyRows?.[0]?.name ?? undefined
+      companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
+    }
+    if (surveyRes.ok) {
+      const rows = await surveyRes.json() as Array<{ step: number; question_key: string; answer: unknown }>
+      surveyStepsDone = completedStepsFromRows(rows).length
+    }
+    if (docsRes.ok) {
+      const rows = await docsRes.json() as Array<{ id: string }>
+      docsCount = Array.isArray(rows) ? rows.length : 0
+    }
+  } catch {
+    // diagnostics not available yet
+  }
+  return { diag, orgName, companyId, surveyStepsDone, docsCount }
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
-  // Detect viewer role — clients get their personal Point A view
-  const supabase = createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Detect viewer role — clients get their personal Point A view.
+  // Same verified getUser() as the cabinet layout, memoised per request.
+  const user = await getRequestUser()
   // Middleware already requires a session here; without one, never fall
   // through to the platform-wide staff view.
   if (!user) redirect('/login')
   if (user) {
+    // Clients are the common case: their own data is read together with the
+    // role lookup instead of after it (one round trip less). Staff never see
+    // it — the promise is simply not awaited (it cannot reject).
+    const clientDataP = loadClientDashboardData(user.id)
     // Read role via service-role REST API to bypass RLS (profiles table has RLS recursion issue)
     let role: string | null = null
     try {
@@ -282,55 +349,7 @@ export default async function DashboardPage() {
     // Only admin/super_admin/expert/manager see the admin dashboard
     const isAdmin = role === 'admin' || role === 'super_admin' || role === 'expert' || role === 'manager'
     if (!isAdmin) {
-      // Fetch latest diagnostic via REST API to avoid RLS issues
-      let diag: Record<string, unknown> | null = null
-      let orgName: string | undefined = undefined
-      let companyId: string | null = null
-      // First-run wizard signals (ON-1): survey progress + document count.
-      let surveyStepsDone = 0
-      let docsCount = 0
-      try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-        const serviceKey = requireServiceRoleKey()
-        const authHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
-        const [diagRes, companyRes, surveyRes, docsRes] = await Promise.all([
-          fetch(
-            `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
-            { headers: authHeaders, cache: 'no-store' }
-          ),
-          fetch(
-            `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=id,name&limit=1`,
-            { headers: authHeaders, cache: 'no-store' }
-          ),
-          fetch(
-            `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=step,question_key,answer`,
-            { headers: authHeaders, cache: 'no-store' }
-          ),
-          fetch(
-            `${supabaseUrl}/rest/v1/documents?user_id=eq.${user.id}&select=id`,
-            { headers: authHeaders, cache: 'no-store' }
-          ),
-        ])
-        if (diagRes.ok) {
-          const diagRows = await diagRes.json() as Record<string, unknown>[]
-          diag = diagRows?.[0] ?? null
-        }
-        if (companyRes.ok) {
-          const companyRows = await companyRes.json() as Array<{ id: string; name: string }>
-          orgName = companyRows?.[0]?.name ?? undefined
-          companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
-        }
-        if (surveyRes.ok) {
-          const rows = await surveyRes.json() as Array<{ step: number; question_key: string; answer: unknown }>
-          surveyStepsDone = completedStepsFromRows(rows).length
-        }
-        if (docsRes.ok) {
-          const rows = await docsRes.json() as Array<{ id: string }>
-          docsCount = Array.isArray(rows) ? rows.length : 0
-        }
-      } catch {
-        // diagnostics not available yet
-      }
+      const { diag, orgName, companyId, surveyStepsDone, docsCount } = await clientDataP
 
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
 
@@ -463,7 +482,11 @@ export default async function DashboardPage() {
 
           {/* Company anketa — full-width row, all 7 blocks expanded inline */}
           <section id="company-data" aria-label="Данные компании">
-            <CompanyDataCard userId={user.id} />
+            {/* Streams in on its own: the rest of the page does not wait for
+                the card's survey/company reads. */}
+            <Suspense fallback={<div className="h-64 animate-pulse rounded-2xl bg-surface-container-low" aria-busy="true" aria-label="Загрузка данных компании" />}>
+              <CompanyDataCard userId={user.id} />
+            </Suspense>
           </section>
 
           {/* Insights mega-block — AI / Эксперт / Клиент Q&A feed */}

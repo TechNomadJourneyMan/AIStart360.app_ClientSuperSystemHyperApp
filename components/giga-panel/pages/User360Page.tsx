@@ -134,7 +134,7 @@ function User360Inner({ id }: { id: string }) {
               <GriTab userId={id} canEdit={u.can.editGri} canDelete={u.can.deleteGri} />
             </>
           )}
-          {tab === 'point-a' && expertTabs && <PointATab userId={id} />}
+          {tab === 'point-a' && expertTabs && <PointATab userId={id} canReview={canReview} />}
           {tab === 'point-b' && expertTabs && <PointBTab userId={id} canReview={canReview} />}
           {tab === 'pulse' && expertTabs && <PulseTab userId={id} />}
           {tab === 'cases' && expertTabs && <CasesTab userId={id} canReview={canReview} />}

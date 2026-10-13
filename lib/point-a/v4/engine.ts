@@ -135,7 +135,7 @@ export function applyReviews(blocks: readonly V4Block[], reviews: V4Input['revie
     if (!r || b.status !== 'insufficient_data' || r.inputsHash !== b.inputsHash) return b
     const mark = { decision: r.decision, by: r.by, at: r.at }
     if (r.decision === 'rejected' || r.score === null) return { ...b, hypothesis: undefined, expertReview: mark }
-    return { ...b, score: r.score, basis: 'inferred' as const, confidence: Math.min(Math.max(b.confidence, INFERRED_CONFIDENCE), INFERRED_CONFIDENCE), expertReview: mark }
+    return { ...b, score: r.score, basis: 'inferred' as const, confidence: INFERRED_CONFIDENCE, expertReview: mark }
   })
 }
 
@@ -200,7 +200,9 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   const scored = weighted.filter((b) => b.score !== null)
   const wScored = scored.reduce((s, b) => s + b.weight, 0)
   const wAll = weighted.reduce((s, b) => s + b.weight, 0)
-  const overall = wScored > 0 ? round(scored.reduce((s, b) => s + b.weight * (b.score as number), 0) / wScored) : null
+  // No overall from hypotheses alone: at least one block must rest on facts.
+  const factual = scored.some((b) => b.basis !== 'inferred')
+  const overall = wScored > 0 && factual ? round(scored.reduce((s, b) => s + b.weight * (b.score as number), 0) / wScored) : null
   const confidence = wAll > 0 ? round(weighted.reduce((s, b) => s + b.weight * b.confidence, 0) / wAll, 3) : 0
   const coverage = wAll > 0 ? round(weighted.reduce((s, b) => s + b.weight * b.coverage, 0) / wAll, 3) : 0
 

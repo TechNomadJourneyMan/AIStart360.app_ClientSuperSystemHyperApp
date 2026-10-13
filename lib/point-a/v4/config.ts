@@ -104,14 +104,29 @@ export const CODE_TEMPLATES: readonly BlockTemplate[] = [
   }),
 ]
 
+/** A short industry token ('it') matches as a whole word only, not inside «digital». */
+function industryMatch(industry: string, token: string): boolean {
+  if (!token) return false
+  if (token.length > 3) return industry.includes(token)
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^a-zа-яё0-9])${esc}([^a-zа-яё0-9]|$)`, 'i').test(industry)
+}
+
+/**
+ * The template for an industry: the one with the longest matching token (the
+ * most specific), ties by key — never by the order the rows were read in.
+ */
 export function pickTemplate(industry: string | null | undefined, templates: readonly BlockTemplate[] = CODE_TEMPLATES): BlockTemplate {
   const i = (industry ?? '').toLowerCase()
+  let best: { tpl: BlockTemplate; len: number } | null = null
   if (i) {
     for (const tpl of templates) {
-      if (tpl.key !== 'default' && tpl.industries.some((s) => i.includes(s))) return tpl
+      if (tpl.key === 'default') continue
+      const len = Math.max(0, ...tpl.industries.filter((t) => industryMatch(i, t.toLowerCase())).map((t) => t.length))
+      if (len > 0 && (!best || len > best.len || (len === best.len && tpl.key < best.tpl.key))) best = { tpl, len }
     }
   }
-  return templates.find((x) => x.key === 'default') ?? DEFAULT_TEMPLATE
+  return best?.tpl ?? templates.find((x) => x.key === 'default') ?? DEFAULT_TEMPLATE
 }
 
 export interface CompanyBlockConfig {

@@ -20,9 +20,10 @@
  * 'aistart360:open-gri'; GrowthSnapshotHero listens and opens its GRI modal.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePlatformSections } from '@/hooks/usePlatformSections'
+import { useGriAssessmentEnvelope, useOnboardingStatus } from '@/hooks/useOnboardingStatus'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,20 +44,6 @@ interface PillSpec {
   tooltip: string
   variant: PillVariant
   disabled?: boolean
-}
-
-interface ApiResult<T> {
-  ok: boolean
-  data?: T
-  error?: string
-}
-
-interface OnboardingStatus {
-  survey?: { percent?: number }
-}
-
-interface GriAssessmentResponse {
-  current?: { gri_index?: number } | null
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -84,44 +71,13 @@ function variantClasses(variant: PillVariant, isActive: boolean): string {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function PointAQuickPills({ visibleSections }: { visibleSections?: string[] } = {}) {
-  const [surveyPercent, setSurveyPercent] = useState<number>(0)
-  const [hasGri, setHasGri] = useState<boolean>(false)
+  // Shared reads (the growth hero and the status badges need the same data).
+  const statusPercent = useOnboardingStatus().data?.survey?.percent
+  const surveyPercent = typeof statusPercent === 'number' ? Math.max(0, Math.min(100, statusPercent)) : 0
+  const griEnvelope = useGriAssessmentEnvelope().data
+  const hasGri = Boolean(griEnvelope?.ok && griEnvelope.data?.current && typeof griEnvelope.data.current.gri_index === 'number')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
-  const mountedRef = useRef(true)
-
-  // ─── Data fetch ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    mountedRef.current = true
-    const fetchAll = async () => {
-      try {
-        const [statusRes, griRes] = await Promise.all([
-          fetch('/api/v1/onboarding/status', { credentials: 'include' }).catch(() => null),
-          fetch('/api/v1/gri/assessment', { credentials: 'include' }).catch(() => null),
-        ])
-
-        if (!mountedRef.current) return
-
-        if (statusRes && statusRes.ok) {
-          const j = (await statusRes.json()) as ApiResult<{ survey: OnboardingStatus['survey'] }>
-          if (j?.ok && typeof j.data?.survey?.percent === 'number') {
-            setSurveyPercent(Math.max(0, Math.min(100, j.data.survey.percent)))
-          }
-        }
-
-        if (griRes && griRes.ok) {
-          const j = (await griRes.json()) as ApiResult<GriAssessmentResponse>
-          setHasGri(Boolean(j?.ok && j.data?.current && typeof j.data.current.gri_index === 'number'))
-        }
-      } catch {
-        // Silent — pills render with defaults.
-      }
-    }
-    void fetchAll()
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
 
   // ─── Pill definitions ─────────────────────────────────────────────────────
   // Sections switched off in GIGA-CRM: their pills are not rendered at all.

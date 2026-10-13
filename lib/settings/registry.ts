@@ -30,8 +30,9 @@ const safeHref = z.string().max(300).refine((v) => v === '' || (v.startsWith('/'
 export const SETTINGS = {
   point_a_v4: {
     group: 'point_a', label: 'Новый расчёт Точки А (v4)',
-    help: 'Клиент видит Точку А v4: 7 настраиваемых блоков, достоверность, «данных не хватает» вместо нулей. Выключено — клиент видит прежний расчёт, а v4 считается в тени (сравнение в снимках Точки А).',
-    schema: z.boolean(), default: false, critical: true,
+    help: 'Точка А v4 — основная страница и расчёт: 7 настраиваемых блоков, главные метрики, достоверность, «данных не хватает» вместо нулей. Выключено — откат на прежнюю страницу и расчёт (v4 считается в тени).',
+    // On by default since 2026-10-12 (owner: «замени текущую страницу точки А»).
+    schema: z.boolean(), default: true, critical: true,
   },
   point_a_auto_recalc: {
     group: 'point_a', label: 'Автопересчёт Точки А',

@@ -143,3 +143,17 @@ describe('review fixes: answered or not', () => {
     expect(toCompatPointA(r, v1)).toEqual(v1)
   })
 })
+
+describe('pickTemplate — deterministic', () => {
+  const mk = (key: string, industries: string[]) => ({ key, title: key, industries, version: 1, blocks: [{ key: 'finance' as const, weight: 1, enabled: true }] })
+  const all = [mk('default', []), mk('services', ['it', 'услуг']), mk('metal', ['металл']), mk('production', ['завод'])]
+
+  it('a short token matches a whole word only', () => {
+    expect(pickTemplate('IT-компания', all).key).toBe('services')
+    expect(pickTemplate('Digital-агентство', all).key).toBe('default')
+  })
+  it('the most specific match wins, whatever the order of rows', () => {
+    expect(pickTemplate('Завод металлоконструкций', all).key).toBe('metal')
+    expect(pickTemplate('Завод металлоконструкций', [...all].reverse()).key).toBe('metal')
+  })
+})

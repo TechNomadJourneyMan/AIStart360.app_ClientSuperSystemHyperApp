@@ -38,6 +38,13 @@ export const PERMISSIONS = {
   'gri.edit': 'Изменение GRI',
   'gri.delete': 'Удаление результатов GRI',
   'clients.review': 'Экспертный разбор клиента: комментарии, Точка Б, шаблоны',
+  /**
+   * The block library of Point A and the industry templates (pa_templates):
+   * create / edit / delete a template — it changes the score of every company
+   * that uses it. Expert work on ONE client (weights, comments, «проверено»)
+   * is clients.review. Only admin and super_admin hold it.
+   */
+  'pointa.templates': 'Точка А: библиотека блоков и отраслевые шаблоны',
   'activity.view': 'Активность пользователей',
   'cjm.view': 'Путь клиента (CJM)',
   'analytics.view': 'Аналитика платформы',

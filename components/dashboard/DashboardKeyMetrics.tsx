@@ -45,7 +45,7 @@ function PlatformCards({ cards }: { cards: PlatformCard[] }) {
 }
 
 export function DashboardKeyMetrics({ platform }: { platform: PlatformCard[] }) {
-  const { data, isLoading, isError } = usePointAState()
+  const { data, isLoading, isError, noCompany } = usePointAState()
 
   if (isLoading) {
     return (
@@ -55,7 +55,7 @@ export function DashboardKeyMetrics({ platform }: { platform: PlatformCard[] }) 
     )
   }
   const metrics = (data?.keyMetrics ?? []).slice(0, 4)
-  if (isError || !data || metrics.every((m) => m.value === null)) return <PlatformCards cards={platform} />
+  if (isError || noCompany || !data || metrics.every((m) => m.value === null)) return <PlatformCards cards={platform} />
 
   const goalOf = (id: string) => data.goals.find((g) => g.goal.metricId === id)
   return (

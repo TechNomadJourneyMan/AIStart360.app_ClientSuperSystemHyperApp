@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Bell, Bot, Building2, ClipboardList, Coins, CopyCheck, Eye, FileBarChart, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
-  Lightbulb, ListChecks, LogOut, Mail, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, Sparkles, Stamp,
+  Lightbulb, ListChecks, LogOut, Mail, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, Stamp,
   Terminal, Users2, X, Zap, Siren, Sun, UserCheck, type LucideIcon,
 } from 'lucide-react'
 import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
@@ -24,7 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
   key: KeyRound, eye: Eye, scroll: ScrollText, mail: Mail, copy: CopyCheck,
   bell: Bell, bot: Bot, listchecks: ListChecks, stamp: Stamp, coins: Coins, zap: Zap,
   reports: FileBarChart, review: ScanSearch, plug: PlugZap, terminal: Terminal,
-  sun: Sun, checklist: ListChecks, siren: Siren, experts: UserCheck,
+  sun: Sun, checklist: ListChecks, siren: Siren, experts: UserCheck, tune: SlidersHorizontal,
 }
 
 const BADGE_REFRESH_MS = 60_000

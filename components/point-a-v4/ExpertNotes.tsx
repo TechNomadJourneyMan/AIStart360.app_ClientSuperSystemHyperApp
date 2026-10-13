@@ -7,7 +7,8 @@
  */
 import type { PointAComment } from '@/lib/point-a/v4/state'
 import type { PointAPageState } from '@/hooks/usePointAState'
-import { BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
+import { BLOCK_KEYS, BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
+import { getMetricById } from '@/lib/metrics/registry'
 import { CARD, Icon, SectionTitle } from './ui'
 
 const ROLE_RU: Record<string, string> = { super_expert: 'эксперт', expert: 'эксперт', admin: 'администратор', super_admin: 'администратор' }
@@ -26,12 +27,14 @@ export function ExpertComment({ c, metricLabel }: { c: PointAComment; metricLabe
 }
 
 export function ExpertNotes({ state }: { state: PointAPageState }) {
-  const overall = (state.comments ?? []).filter((c) => c.targetKind === 'overall')
+  // Overall notes, and notes on metrics no block shows (they would be lost).
+  const inBlocks = new Set(BLOCK_KEYS.flatMap((k) => BLOCK_LIBRARY[k].metrics))
+  const overall = (state.comments ?? []).filter((c) => c.targetKind === 'overall' || (c.targetKind === 'metric' && !!c.targetKey && !inBlocks.has(c.targetKey)))
   if (!overall.length) return null
   return (
     <section className={CARD} aria-labelledby="pa-expert">
       <SectionTitle icon="support_agent"><span id="pa-expert">Комментарий эксперта</span></SectionTitle>
-      <ul className="space-y-2">{overall.slice(0, 3).map((c) => <ExpertComment key={c.id} c={c} />)}</ul>
+      <ul className="space-y-2">{overall.slice(0, 3).map((c) => <ExpertComment key={c.id} c={c} metricLabel={c.targetKind === 'metric' && c.targetKey ? getMetricById(c.targetKey)?.label ?? c.targetKey : null} />)}</ul>
       {overall.length > 3 && <p className="mt-2 text-[11px] text-on-surface-variant"><Icon name="more_horiz" className="text-[14px] align-middle" /> ещё {overall.length - 3}</p>}
     </section>
   )

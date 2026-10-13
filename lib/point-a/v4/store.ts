@@ -31,7 +31,8 @@ function missing(e: { code?: string } | null): boolean {
   return !!e && (e.code === '42P01' || e.code === 'PGRST205')
 }
 
-function asTemplate(r: Record<string, unknown>): BlockTemplate | null {
+/** A row of public.pa_templates → BlockTemplate (null when it has no valid blocks). */
+export function asTemplate(r: Record<string, unknown>): BlockTemplate | null {
   const blocks = Array.isArray(r.blocks)
     ? (r.blocks as Array<Record<string, unknown>>)
         .filter((b) => isBlockKey(b.key))
@@ -49,7 +50,11 @@ function asTemplate(r: Record<string, unknown>): BlockTemplate | null {
 
 export async function loadBlockConfig(client: SupabaseClient, companyId: string, industry: string | null): Promise<LoadedBlockConfig> {
   let templates: readonly BlockTemplate[] = CODE_TEMPLATES
-  const tq = await client.from('pa_templates').select('key, title, industries, blocks, version')
+  // Both reads at once (one round trip instead of two).
+  const [tq, cq] = await Promise.all([
+    client.from('pa_templates').select('key, title, industries, blocks, version').order('key', { ascending: true }),
+    client.from('pa_company_config').select('template_key, expert_overrides, client_view, version').eq('company_id', companyId).maybeSingle(),
+  ])
   if (!tq.error) {
     const fromDb = ((tq.data ?? []) as Array<Record<string, unknown>>).map(asTemplate).filter((x): x is BlockTemplate => x !== null)
     if (fromDb.length) templates = fromDb
@@ -58,11 +63,6 @@ export async function loadBlockConfig(client: SupabaseClient, companyId: string,
   }
 
   let company: CompanyBlockConfig = {}
-  const cq = await client
-    .from('pa_company_config')
-    .select('template_key, expert_overrides, client_view, version')
-    .eq('company_id', companyId)
-    .maybeSingle()
   if (cq.error && !missing(cq.error)) throw new Error(`point-a: block config read failed (${cq.error.code ?? 'unknown'})`)
   if (cq.data) {
     const d = cq.data as Record<string, unknown>

@@ -43,15 +43,35 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
   const recalc = useRecalculatePointA()
   const [customize, setCustomize] = useState(false)
 
-  if (isLoading && !preview) return <main className="mx-auto max-w-6xl px-4 py-6"><Skeleton /></main>
+  if (isLoading && !preview) return <div className="mx-auto max-w-6xl px-4 py-6"><Skeleton /></div>
+  if (!preview && live.noCompany) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <section className={CARD}>
+          <h1 className="font-headline text-xl font-bold text-on-surface">Точка А</h1>
+          {live.noCompany.staff ? (
+            <>
+              <p className="mt-2 text-sm text-on-surface-variant">У вашего аккаунта нет своей компании. Точка А клиентов — в GIGA-CRM: User 360 → вкладка «Точка А».</p>
+              <Link href="/admin-giga-panel/users" className={cn(BTN_PRIMARY, 'mt-3')}><Icon name="groups" className="text-[16px]" />Открыть клиентов</Link>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-on-surface-variant">Заполните анкету — Точка А построится автоматически по вашим ответам, документам и метрикам.</p>
+              <Link href="/client/onboarding" className={cn(BTN_PRIMARY, 'mt-3')}><Icon name="edit_note" className="text-[16px]" />Заполнить анкету</Link>
+            </>
+          )}
+        </section>
+      </div>
+    )
+  }
   if (error || !state) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mx-auto max-w-6xl px-4 py-6">
         <div className={CARD} role="alert">
           <p className="text-sm text-on-surface">Не удалось загрузить Точку А.</p>
           <button type="button" className={cn(BTN_PRIMARY, 'mt-3')} onClick={() => void refetch()}>Повторить</button>
         </div>
-      </main>
+      </div>
     )
   }
 
@@ -62,7 +82,7 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
     })
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 space-y-4">
+    <div className="mx-auto max-w-6xl px-4 py-6 space-y-4">
       <PointAHeader state={state} onRecalc={preview ? () => toast.info('Предпросмотр: пересчёт отключён') : runRecalc} recalcPending={recalc.isPending} customize={customize} onCustomize={() => setCustomize((v) => !v)} />
 
       {!state.snapshot ? (
@@ -96,6 +116,6 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
           </div>
         </>
       )}
-    </main>
+    </div>
   )
 }

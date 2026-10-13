@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
 import { getSetting } from '@/lib/settings/store'
+import PointAV4Page from '@/components/point-a-v4/PointAV4Page'
 import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
@@ -25,8 +25,9 @@ import { requireServiceRoleKey } from '@/lib/supabase-service'
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
 export default async function PointAPage() {
-  // One Point A (spec 2026-10-12 §4): with point_a_v4 on, this page is the new /client/point-a.
-  if (await getSetting('point_a_v4').catch(() => false)) redirect('/client/point-a')
+  // One Point A (spec 2026-10-12 §4): with point_a_v4 on (default) this is the
+  // new page, inside the cabinet's own layout (staff keep their navigation).
+  if (await getSetting('point_a_v4').catch(() => true)) return <PointAV4Page />
   // Identity comes from the Supabase session only. The old forgeable
   // `aistart360_user_id` / `aistart360_role` cookies are NOT consulted — they
   // let a signed-in user load another user's data (IDOR). Audit 2026-07-02.

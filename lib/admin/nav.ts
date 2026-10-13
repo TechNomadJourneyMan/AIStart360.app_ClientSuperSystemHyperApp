@@ -33,6 +33,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Данные', items: [
     { href: `${GIGA_BASE}/surveys`, label: 'Анкеты', icon: 'clipboard', permission: 'survey.view' },
     { href: `${GIGA_BASE}/gri`, label: 'GRI', icon: 'radar', permission: 'gri.view' },
+    // Block library + industry templates of Point A (pa_templates): a change recalculates every company using it.
+    { href: `${GIGA_BASE}/point-a-templates`, label: 'Шаблоны Точки А', icon: 'tune', permission: 'pointa.templates' },
     { href: `${GIGA_BASE}/activity`, label: 'Активность', icon: 'activity', permission: 'activity.view' },
     { href: `${GIGA_BASE}/cjm`, label: 'Путь клиента (CJM)', icon: 'route', permission: 'cjm.view' },
   ] },

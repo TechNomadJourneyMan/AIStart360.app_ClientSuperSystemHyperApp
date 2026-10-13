@@ -142,7 +142,9 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
   const ownerId = (company.data as { user_id?: string } | null)?.user_id ?? null
   // GRI taken before the company existed carries only the owner's user_id.
   const griQuery = client.from('gri_assessments').select('gri_index, created_at').eq('is_current', true)
-  const [latest, snaps, disc, gri, docs, metricRows, queue] = await Promise.all([
+  const industry = (company.data as { industry?: string | null } | null)?.industry ?? null
+  // Everything independent in one wave (each await is a round trip to the DB).
+  const [latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg] = await Promise.all([
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
     client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
@@ -153,28 +155,22 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     client.from('documents').select('parse_status').eq('company_id', companyId),
     client.from('metrics').select('metric_key').eq('company_id', companyId).not('metric_value', 'is', null),
     service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
-  ])
-  const [commentRows, reviewed] = await Promise.all([
     client.from('point_a_comments').select('id, target_kind, target_key, body, author_name, author_role, created_at').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }).limit(100),
     client.from('point_a_snapshots').select('reviewed_at, reviewed_by_name').eq('company_id', companyId).not('reviewed_at', 'is', null).order('reviewed_at', { ascending: false }).limit(1),
+    ownerId ? client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId) : Promise.resolve({ data: [], error: null }),
+    loadGoalsWithEvaluation(client, companyId).catch((err) => {
+      console.error('[point-a/state] goals not loaded', err instanceof Error ? err.message : err)
+      return [] as GoalWithEvaluation[]
+    }),
+    loadBlockConfig(client, companyId, industry),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
   const rows = (snaps.error ? [] : snaps.data ?? []) as Array<Record<string, unknown>>
   const latestRow = ((latest.error ? [] : latest.data ?? []) as Array<Record<string, unknown>>)[0]
   const snapshot = latestRow ? snapshotView(latestRow) : null
-
-  const industry = (company.data as { industry?: string | null } | null)?.industry ?? null
-  const survey = ownerId
-    ? await client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId)
-    : { data: [], error: null }
   const progress = surveyProgressFromRows(((survey.data ?? []) as Array<{ question_key: string; step: number | null; answer: unknown }>))
 
-  const goals = await loadGoalsWithEvaluation(client, companyId).catch((err) => {
-    console.error('[point-a/state] goals not loaded', err instanceof Error ? err.message : err)
-    return []
-  })
-  const cfg = await loadBlockConfig(client, companyId, industry)
   const chosen = (cfg.company.clientView?.keyMetrics ?? []).filter((id) => getMetricById(id))
   const keyMetricIds = (chosen.length ? chosen : DEFAULT_KEY_METRICS).slice(0, MAX_KEY_METRICS)
   const keyMetrics = await loadMetricViews(client, companyId, keyMetricIds).catch((err) => {
