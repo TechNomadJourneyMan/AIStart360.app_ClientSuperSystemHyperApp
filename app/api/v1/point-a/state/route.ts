@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError } from '@/lib/api-error'
 import { loadPointAState } from '@/lib/point-a/v4/state'
-import { requestPointARecalc } from '@/lib/point-a/recalc-queue'
+import { drainInBackground, requestPointARecalc } from '@/lib/point-a/recalc-queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +32,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     const state = await loadPointAState(supabase, createServiceClient(), tenant.tenant.companyId)
     if (!state.snapshot && state.recalculation === 'idle' && state.sources.survey.completed > 0) {
       if (await requestPointARecalc(tenant.tenant.companyId, 'first_view', 0)) state.recalculation = 'queued'
+    } else if (state.recalculation === 'queued') {
+      // A recalculation waiting in the queue is run now, after this response
+      // (the page polls and shows the new Point A) — no background worker needed.
+      drainInBackground(tenant.tenant.companyId)
     }
     return NextResponse.json({ ok: true, data: { ...state, companyId: tenant.tenant.companyId, canManage: tenant.tenant.canManage, role: tenant.tenant.role } })
   } catch (err) {

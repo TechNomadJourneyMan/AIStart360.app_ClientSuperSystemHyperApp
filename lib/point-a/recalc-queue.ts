@@ -46,6 +46,25 @@ function missingTable(err: unknown): boolean {
 
 /** Longest a stream of events may postpone a recalculation (debounce ceiling). */
 const MAX_WAIT_SECONDS = 120
+/** Without Inngest, a request waits at most this long in the background before draining. */
+const INLINE_MAX_DELAY_S = 30
+
+/**
+ * Drain this company's due recalculation in the background of the current
+ * request (Vercel waitUntil) — the path that works without Inngest and
+ * without a minute cron. Never throws.
+ */
+export function drainInBackground(companyId: string, delayMs = 0): void {
+  // Only on Vercel (waitUntil keeps the work alive); never in tests or a
+  // local dev server pointed at the production database.
+  if (process.env.VERCEL !== '1') return
+  void import('@/lib/background').then(({ runInBackground }) =>
+    runInBackground('point-a-recalc', async () => {
+      if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
+      await drainPointARecalc({ companyId, budgetMs: 45_000 })
+    }),
+  ).catch(() => {})
+}
 
 function inngestConfigured(): boolean {
   return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
@@ -92,6 +111,11 @@ export async function requestPointARecalc(
       await inngest.send({ name: POINT_A_RECALC_EVENT, data: { companyId } }).catch((err: unknown) => {
         console.error('[point-a/queue] inngest send failed', err instanceof Error ? err.message : err)
       })
+    } else if (seconds <= INLINE_MAX_DELAY_S) {
+      // No Inngest (production had none configured): run the drain after the
+      // debounce in the background of this request. A newer event that slid
+      // the due time runs its own; the drain only claims due rows, once.
+      drainInBackground(companyId, seconds * 1000 + 1_000)
     }
     return true
   } catch (err) {

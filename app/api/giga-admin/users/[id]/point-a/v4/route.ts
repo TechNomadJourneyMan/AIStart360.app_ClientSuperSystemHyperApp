@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { guardPointAExpert } from '@/lib/admin/point-a-expert'
 import { loadPointAState } from '@/lib/point-a/v4/state'
+import { drainInBackground } from '@/lib/point-a/recalc-queue'
 import { CODE_TEMPLATES, isBlockKey } from '@/lib/point-a/v4/config'
 
 /**
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       sb.from('pa_templates').select('key, title, blocks').order('title', { ascending: true }),
       sb.from('pa_company_config').select('template_key, expert_overrides').eq('company_id', companyId).maybeSingle(),
     ])
+    // A queued recalculation runs now (after this response); the tab polls.
+    if (state.recalculation === 'queued') drainInBackground(companyId)
     const tplRows = (tpl.error ? [] : tpl.data ?? []) as Array<{ key: string; title: string; blocks: unknown }>
     // Raw weights of the template in use: the expert's override replaces them (lib/point-a/v4/config.ts effectiveBlocks).
     const current = tplRows.find((t) => t.key === state.config.template)?.blocks

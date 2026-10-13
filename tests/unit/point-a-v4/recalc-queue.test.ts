@@ -53,3 +53,13 @@ describe('drainPointARecalc', () => {
     expect(POINT_A_TRIGGER_EVENTS.has('DISCREPANCY_FOUND')).toBe(false)
   })
 })
+
+describe('drainInBackground', () => {
+  it('does nothing outside Vercel (tests, local dev on the production DB)', async () => {
+    const { drainInBackground } = await import('@/lib/point-a/recalc-queue')
+    const prev = process.env.VERCEL
+    delete process.env.VERCEL
+    expect(() => drainInBackground('co')).not.toThrow()
+    process.env.VERCEL = prev
+  })
+})
