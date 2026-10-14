@@ -54,6 +54,10 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/ai-review`, label: 'Проверка выводов ИИ', icon: 'review', permission: 'insights.moderate' },
     { href: `${GIGA_BASE}/moderation`, label: 'Модерация ИИ', icon: 'shieldcheck', permission: 'insights.moderate' },
   ] },
+  { label: 'Модерация', items: [
+    // Rejected texts (мат / оскорбления / спам) + the editable dictionary (lib/moderation, migration 120).
+    { href: `${GIGA_BASE}/content-filter`, label: 'Фильтр контента', icon: 'filter', permission: 'moderation.content' },
+  ] },
   { label: 'Платформа', items: [
     { href: `${GIGA_BASE}/content`, label: 'Контент и страницы', icon: 'file', permission: 'content.view' },
     { href: `${GIGA_BASE}/sections`, label: 'Разделы и видимость', icon: 'layout', permission: 'platform.sections' },
@@ -65,6 +69,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/audit`, label: 'Журнал аудита', icon: 'scroll', permission: 'audit.view' },
     // Own MCP tokens / OAuth sign-ins; the scopes offered follow the role (lib/mcp/scopes.ts).
     { href: `${GIGA_BASE}/mcp`, label: 'MCP-доступ', icon: 'terminal', permission: 'dashboard.view' },
+    // Super Admin only: view as role, test accounts, diagnostics.
+    { href: `${GIGA_BASE}/dev-tools`, label: 'Dev-tools', icon: 'wrench', permission: 'devtools.use' },
   ] },
 ]
 

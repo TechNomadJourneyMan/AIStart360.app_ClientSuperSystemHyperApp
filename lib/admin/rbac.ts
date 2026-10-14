@@ -63,6 +63,17 @@ export const PERMISSIONS = {
   'leads.manage': 'Лиды: изменение',
   'market.manage': 'Инсайты рынка',
   'insights.moderate': 'Модерация ИИ-инсайтов',
+  /**
+   * Content filter (lib/moderation): the journal of rejected texts (мат,
+   * оскорбления, спам) and the editable dictionary of blocked / allowed words.
+   */
+  'moderation.content': 'Фильтр контента: журнал нарушений и словарь',
+  /**
+   * Dev-tools of the platform developer: view the panel as another staff
+   * role, create / remove test accounts, test notifications and e-mails,
+   * diagnostics. Super Admin only — not even admin holds it.
+   */
+  'devtools.use': 'Dev-tools: просмотр панели как роль, тестовые аккаунты, диагностика',
   'agents.view': 'ИИ-агенты: просмотр задач, запусков, стоимости',
   'agents.run': 'ИИ-агенты: ручной запуск и перезапуск задач',
   'agents.manage': 'ИИ-агенты: включение, модели, расписания, бюджеты, права',
@@ -95,6 +106,7 @@ const CRM_MANAGER: Permission[] = [
   'activity.view', 'cjm.view', 'analytics.view',
   'impersonate.view', 'impersonate.edit',
   'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
+  'moderation.content',
   'agents.view',
 ]
 
@@ -102,7 +114,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   super_admin: new Set(ALL_PERMISSIONS),
   // Everything except managing staff roles, global system settings and the
   // irreversible purge of a user — those stay with Super Admin.
-  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage' && p !== 'users.delete')),
+  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage' && p !== 'users.delete' && p !== 'devtools.use')),
   /**
    * SuperExpert — работа С ЛЮДЬМИ, но не с системой.
    *
@@ -128,6 +140,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   crm_manager: new Set(CRM_MANAGER),
   content_manager: new Set<Permission>([
     'dashboard.view', 'content.view', 'content.edit', 'content.publish', 'platform.sections', 'insights.moderate',
+    'moderation.content',
   ]),
   // Aggregates and journeys, but no personal contacts, answers or documents.
   analyst: new Set<Permission>([
