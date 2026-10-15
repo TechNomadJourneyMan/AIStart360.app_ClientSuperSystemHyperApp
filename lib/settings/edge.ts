@@ -24,6 +24,8 @@ export async function edgeSettings(): Promise<EdgeSettings> {
     const res = await fetch(`${url}/rest/v1/system_settings?select=key,value&key=in.(maintenance,staff_require_mfa)`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cache: 'no-store',
+      // Middleware must answer even when the database is slow (504 otherwise).
+      signal: AbortSignal.timeout(3_000),
     })
     if (!res.ok) throw new Error(String(res.status))
     const rows = (await res.json()) as Array<{ key: string; value: unknown }>

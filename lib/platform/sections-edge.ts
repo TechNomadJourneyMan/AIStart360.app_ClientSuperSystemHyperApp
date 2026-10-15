@@ -24,6 +24,8 @@ async function sections(): Promise<EdgeSection[]> {
     const res = await fetch(`${r.url}/rest/v1/platform_sections?select=key,paths,enabled,visibility`, {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
       cache: 'no-store',
+      // Middleware must answer even when the database is slow (504 otherwise).
+      signal: AbortSignal.timeout(3_000),
     })
     const rows = res.ok ? ((await res.json()) as EdgeSection[]) : []
     cache = { at: Date.now(), rows }
@@ -42,6 +44,7 @@ async function facts(userId: string): Promise<UserFacts | null> {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_user: userId }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(3_000),
     })
     return res.ok ? ((await res.json()) as UserFacts) : null
   } catch {

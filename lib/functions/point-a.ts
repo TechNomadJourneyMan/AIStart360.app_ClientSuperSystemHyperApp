@@ -19,7 +19,7 @@ export const pointARecalc = inngest.createFunction(
   async ({ event }: { event: { data: { companyId?: string } } }) => {
     const companyId = event.data?.companyId
     if (!companyId) return { skipped: 'no companyId' }
-    return drainPointARecalc({ companyId, budgetMs: 240_000 })
+    return drainPointARecalc({ companyId, budgetMs: 60_000 })
   },
 )
 

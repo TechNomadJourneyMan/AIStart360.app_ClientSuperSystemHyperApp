@@ -138,6 +138,8 @@ async function resolveRoleAndStatus(
     .from('profiles')
     .select('role, status')
     .eq('id', userId)
+    // A slow database must not hold the request until the platform's 504.
+    .abortSignal(AbortSignal.timeout(4_000))
     .maybeSingle()
 
   return roleAndStatusFrom(data, fallbackRole)

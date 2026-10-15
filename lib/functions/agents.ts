@@ -17,8 +17,9 @@ export const agentsTaskRequested = inngest.createFunction(
   {
     id: 'agents-task-requested',
     retries: 0, // retries are the queue's job (backoff + dead-letter in Postgres)
-    // The Inngest plan allows at most 5 concurrent steps per function.
-    concurrency: { limit: 5 },
+    // Each run holds DB connections (Prisma pool of 5) — 2 at a time keeps the
+    // Supabase pooler free for the site (5 starved it, 2026-10-15).
+    concurrency: { limit: 2 },
     triggers: [{ event: AGENT_TASK_REQUESTED_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -46,12 +47,16 @@ export const agentsMaintenance = inngest.createFunction(
     const scheduled = await enqueueScheduledAgents(new Date())
     const redispatched = await redispatchPending()
     // WhatsApp outbox first (bounded, seconds): retries must not wait behind a long agent drain.
-    const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 30_000 }).catch(() => null)
+    // A run every minute must END within the minute: budgets ~45 s in total.
+    // Long budgets (270 s) made every run hit the 300 s timeout holding DB
+    // connections, and the overlapping runs starved the pooler → site 504
+    // (2026-10-15).
+    const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 10_000 }).catch(() => null)
     // Point A recalculations that are due (works without Inngest too).
     const pointA = await import('@/lib/point-a/recalc-queue')
-      .then((q) => q.drainPointARecalc({ budgetMs: 60_000 }))
+      .then((q) => q.drainPointARecalc({ budgetMs: 15_000 }))
       .catch((err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }))
-    const drained = await drainQueue({ budgetMs: 180_000 })
+    const drained = await drainQueue({ budgetMs: 20_000 })
     return {
       scheduled,
       redispatched,

@@ -28,13 +28,13 @@ function jwtSubject(token: string | undefined): string | null {
  * `null` on any failure (the caller then falls back to the sequential read).
  */
 async function readOwnProfile(userId: string, accessToken: string): Promise<SessionProfile | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, '')
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !anon) return null
   try {
     const res = await fetch(
       `${url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=role,status`,
-      { headers: { apikey: anon, Authorization: `Bearer ${accessToken}` }, cache: 'no-store' },
+      { headers: { apikey: anon, Authorization: `Bearer ${accessToken}` }, cache: 'no-store', signal: AbortSignal.timeout(3_000) },
     )
     if (!res.ok) return null
     const rows = (await res.json()) as Array<{ role?: unknown; status?: unknown }>

@@ -12,7 +12,8 @@ import {
 } from '@/lib/functions/omnichannel-maintenance'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// A stuck run must release its DB connections soon (runs are budgeted to ~45 s).
+export const maxDuration = 120
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
