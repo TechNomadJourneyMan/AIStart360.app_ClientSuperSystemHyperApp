@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 const ALLOWED_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin'])
 // Optional staff_roles row of the signed-in user (cookie `test_staff_role`).
 
+// postgrest builders accept .abortSignal() (middleware times its reads out)
+const withAbort = <T extends object>(o: T): T => Object.assign(o, { abortSignal: () => o })
 vi.mock('@/lib/supabase/middleware', () => ({
   updateSession: async (request: NextRequest) => {
     const roleCookie = request.cookies.get('aistart360_role')?.value
@@ -17,7 +19,7 @@ vi.mock('@/lib/supabase/middleware', () => ({
       supabase: {
         from: (table: string) => ({
           select: () => ({
-            eq: () => ({
+            eq: () => withAbort({
               maybeSingle: async () => ({
                 data: !hasValidRole ? null
                   : table === 'staff_roles' ? (staffRole ? { role: staffRole } : null)

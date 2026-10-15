@@ -13,6 +13,8 @@ const s = vi.hoisted(() => ({
   staffRow: null as null | { role: string },
 }))
 
+// postgrest builders accept .abortSignal() (middleware times its reads out)
+const withAbort = <T extends object>(o: T): T => Object.assign(o, { abortSignal: () => o })
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
 vi.mock('@/lib/mfa/step-up-edge', () => ({ MFA_COOKIE_NAME: 'mfa', verifyStepUpEdge: async () => false }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null, loadEdgeSections: async () => [] }))
@@ -25,7 +27,7 @@ vi.mock('@/lib/supabase/middleware', () => ({
   updateSession: async () => {
     const from = (table: string) => ({
       select: () => ({
-        eq: () => ({
+        eq: () => withAbort({
           maybeSingle: async () => ({
             data: table === 'profiles' ? { role: s.role, status: 'approved' } : s.staffRow,
           }),
