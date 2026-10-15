@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const state = vi.hoisted(() => ({ staffRole: null as string | null }))
 
+// postgrest builders accept .abortSignal() (middleware times its reads out)
+const withAbort = <T extends object>(o: T): T => Object.assign(o, { abortSignal: () => o })
 vi.mock('@/lib/supabase/middleware', () => ({
   updateSession: async (request: NextRequest) => {
     const role = request.cookies.get('aistart360_role')?.value ?? null
@@ -17,7 +19,7 @@ vi.mock('@/lib/supabase/middleware', () => ({
       supabase: {
         from: (table: string) => ({
           select: () => ({
-            eq: () => ({
+            eq: () => withAbort({
               maybeSingle: async () => ({
                 data: table === 'staff_roles'
                   ? (state.staffRole ? { role: state.staffRole } : null)

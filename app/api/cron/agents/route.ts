@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { drainQueue } from '@/lib/agents/queue'
-import { enqueueScheduledAgents } from '@/lib/functions/agents'
+import { enqueueScheduledAgents, scheduledAgentsOn } from '@/lib/functions/agents'
 import { redispatchPending } from '@/lib/events/platform'
 import { drainPointARecalc } from '@/lib/point-a/recalc-queue'
 import { pruneRateLimits } from '@/lib/rate-limit'
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: auth.status === 503 ? 'CRON_SECRET не настроен' : 'Unauthorized' }, { status: auth.status })
   }
   try {
-    const scheduled = await enqueueScheduledAgents(new Date())
+    const scheduled = (await scheduledAgentsOn()) ? await enqueueScheduledAgents(new Date()) : []
     const redispatched = await redispatchPending()
     // WhatsApp notifications outbox (migration 104): retries and missed inline sends;
     // bounded (50 rows, 30 s) and before the long agent drain.

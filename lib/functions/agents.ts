@@ -44,7 +44,14 @@ export const agentsMaintenance = inngest.createFunction(
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
   async () => {
-    const scheduled = await enqueueScheduledAgents(new Date())
+    // «Агенты по расписанию (24/7)» off (default): no scheduled agents, and the
+    // queue upkeep runs every 15 minutes instead of every minute — the site's
+    // database is not kept busy around the clock. Event-driven tasks still run
+    // at once through agentsTaskRequested.
+    const now = new Date()
+    const around = await scheduledAgentsOn()
+    if (!around && now.getUTCMinutes() % 15 !== 0) return { skipped: 'quiet_mode' }
+    const scheduled = around ? await enqueueScheduledAgents(now) : []
     const redispatched = await redispatchPending()
     // WhatsApp outbox first (bounded, seconds): retries must not wait behind a long agent drain.
     // A run every minute must END within the minute: budgets ~45 s in total.
@@ -69,6 +76,12 @@ export const agentsMaintenance = inngest.createFunction(
     }
   },
 )
+
+/** The «Агенты по расписанию (24/7)» setting (off unless an admin turns it on). */
+export async function scheduledAgentsOn(): Promise<boolean> {
+  const { getSetting } = await import('@/lib/settings/store')
+  return getSetting('agents_scheduled').catch(() => false)
+}
 
 /** Platform-scope agents with a cron (definition or admin override) get one task per matching minute. */
 export async function enqueueScheduledAgents(now: Date): Promise<string[]> {
