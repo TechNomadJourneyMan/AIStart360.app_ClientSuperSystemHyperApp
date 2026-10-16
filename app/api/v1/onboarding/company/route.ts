@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
+import { flattenText, profanityResponse } from '@/lib/moderation/http'
 
 // POST /api/v1/onboarding/company — upsert the caller's own company record.
 // user_id comes from the session, never the body. See technical-audit A5.
@@ -10,6 +11,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { user_id: _ignored, ...companyData } = body
+    // Названия и тексты компании: проверяем все строковые поля (и списки — регионы).
+    const profane = profanityResponse(flattenText(companyData))
+    if (profane) return profane
 
     const sb = createServerClient()
     const { data: { user } } = await sb.auth.getUser()

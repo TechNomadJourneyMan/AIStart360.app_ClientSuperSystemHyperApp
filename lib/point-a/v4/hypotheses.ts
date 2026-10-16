@@ -9,6 +9,7 @@
 import { z } from 'zod'
 import type { V4Block, V4Hypothesis } from './engine'
 import { CHECK_LABELS } from './check-labels'
+import { maskProfanity } from '@/lib/moderation/profanity'
 
 export const MAX_HYPOTHESIS_CONFIDENCE = 0.4
 
@@ -90,7 +91,8 @@ export async function generateHypotheses(
     made.set(b.key, {
       score: Math.max(0, Math.min(100, Math.round(r.score))),
       confidence: hypothesisConfidence(b.coverage),
-      rationale: r.rationale.trim(),
+      // AI text shown to the client: profanity masked at this one boundary.
+      rationale: maskProfanity(r.rationale.trim()),
       generatedAt: (deps.now ?? (() => new Date()))().toISOString(),
     })
   }

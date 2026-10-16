@@ -12,6 +12,8 @@ import type { ChatWithToolsOptions, ChatWithToolsResult, ToolCall, ToolChatMessa
 import { ChatToolError, type ChatTool, type ToolContext } from './tools'
 import { BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
 import { getMetricById } from '@/lib/metrics/registry'
+import { maskProfanity } from '@/lib/moderation/profanity'
+import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
 
 export const MAX_STEPS = 6
 const MAX_TOOL_CALLS_PER_STEP = 6
@@ -119,6 +121,8 @@ async function runToolCall(call: ToolCall, tools: readonly ChatTool[], t: ToolCo
 }
 
 export interface TurnResult {
+  /** The user's question as sent to the model and to be stored (profanity masked). */
+  question: string
   answer: string
   proposals: string[]
   toolsUsed: string[]
@@ -141,18 +145,25 @@ export async function runChatTurn(args: {
 }): Promise<TurnResult> {
   const { llm, tools, ctx, onEvent } = args
   const deadlineAt = args.deadlineAt ?? Number.POSITIVE_INFINITY
+  // Profanity: the question is not refused — the model sees (and history
+  // keeps) the masked text, the answer gets a short polite note on top.
+  const asked = maskUserQuestion(args.message)
+  const question = asked.text
   const messages: ToolChatMessage[] = [
     { role: 'system', content: systemPrompt(args.surface, args.focus, ctx.canManage, ctx.now) },
-    ...args.history.slice(-12).map((m): ToolChatMessage => (m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', content: m.content })),
-    { role: 'user', content: args.message },
+    ...args.history.slice(-12).map((m): ToolChatMessage => (m.role === 'user' ? { role: 'user', content: maskProfanity(m.content) } : { role: 'assistant', content: m.content })),
+    { role: 'user', content: question },
   ]
   const specs = tools.map(toolSpec)
   const proposals: string[] = []
   const used: string[] = []
   let toolChars = 0
-  const finish = (text: string, outcome: TurnResult['outcome']): TurnResult => {
+  // The one boundary where the answer leaves the engine: masked before it is
+  // shown (onEvent) and stored (the route saves result.answer).
+  const finish = (raw: string, outcome: TurnResult['outcome']): TurnResult => {
+    const text = safeAnswer(raw, asked.masked)
     onEvent?.({ type: 'answer', text })
-    return { answer: text, proposals, toolsUsed: used, outcome }
+    return { question, answer: text, proposals, toolsUsed: used, outcome }
   }
   const left = () => deadlineAt - Date.now()
   const timeoutMs = () => Math.max(1_000, Math.min(STEP_TIMEOUT_MS, left() - 1_000))
@@ -161,7 +172,7 @@ export async function runChatTurn(args: {
   const closing = (msgs: ToolChatMessage[]) => llm({ messages: msgs, tools: specs, toolChoice: 'none', tier: 'standard', timeoutMs: timeoutMs() })
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    if (args.signal?.aborted) return { answer: '', proposals, toolsUsed: used, outcome: 'aborted' }
+    if (args.signal?.aborted) return { question, answer: '', proposals, toolsUsed: used, outcome: 'aborted' }
     if (left() < MIN_STEP_MS) {
       return finish(proposals.length ? 'Подготовил изменение — проверьте карточку и нажмите «Применить».' : 'Не успел собрать ответ — спросите короче или по частям.', 'timeout')
     }
@@ -170,7 +181,7 @@ export async function runChatTurn(args: {
     if (!res.ok) {
       const text = 'AI сейчас недоступен — попробуйте ещё раз через минуту.'
       onEvent?.({ type: 'error', text })
-      return { answer: text, proposals, toolsUsed: used, outcome: 'ai_error' }
+      return { question, answer: text, proposals, toolsUsed: used, outcome: 'ai_error' }
     }
     const calls = res.message.tool_calls.slice(0, MAX_TOOL_CALLS_PER_STEP)
     if (!calls.length || last) {

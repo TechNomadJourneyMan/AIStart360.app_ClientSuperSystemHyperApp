@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { notifyAdmins } from '@/lib/notifications'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // Service-role helper — bypasses RLS (profiles RLS has infinite recursion bug)
 function srBase() {
@@ -46,6 +47,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const text = body.text?.trim()
   if (!text || text.length < 1 || text.length > 5000)
     return NextResponse.json({ error: 'text must be 1..5000 chars' }, { status: 400 })
+  const profane = profanityResponse({ text })
+  if (profane) return profane
 
   // Check ownership via service-role (avoids expert_read_all → profiles RLS recursion)
   const res = await srFetch('GET', `expert_comments?id=eq.${params.id}&select=author_id&limit=1`)

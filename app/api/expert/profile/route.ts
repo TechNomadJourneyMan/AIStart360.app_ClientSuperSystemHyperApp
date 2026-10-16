@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // Both handlers: approved expert/admin with the second factor where required
 // (resolveExpert); a refused caller gets the MFA code the UI acts on.
@@ -38,6 +39,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   const update: Record<string, unknown> = {}
+  const profane = profanityResponse({ expertTitle: body.expertTitle, fullName: body.fullName })
+  if (profane) return profane
   if (body.expertTitle !== undefined) {
     const t = (body.expertTitle ?? '').toString().trim()
     update.expert_title = t.length > 0 ? t.slice(0, 120) : null

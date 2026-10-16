@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
+import { profanityResponse } from '@/lib/moderation/http'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -45,6 +46,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Invalid request body' }, { status: 422 })
   }
   const body = parsed.data
+  const profane = profanityResponse({ question_text: body.question_text, answer_text: body.answer_text })
+  if (profane) return profane
 
   try {
     const svc = createServiceClient()

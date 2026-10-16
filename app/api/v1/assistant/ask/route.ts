@@ -12,6 +12,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { gateFeature } from '@/lib/access/gate'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { validateAiText } from '@/lib/ai/validation/apply'
+import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
 
 /**
  * POST /api/v1/assistant/ask
@@ -71,7 +72,10 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
-  const question = parsed.data.question
+  // Profanity is not refused: the model and the expert case get the masked
+  // text, the answer gets a short polite note on top (lib/moderation/chat).
+  const asked = maskUserQuestion(parsed.data.question)
+  const question = asked.text
 
   try {
     const locale = localeFromRequestCookie(req)
@@ -96,10 +100,11 @@ export async function POST(req: NextRequest) {
         userMessage: question,
         assistantRecommendation: result?.answer || undefined,
       })
+      const escalatedText = checked?.text ?? null
       return NextResponse.json({
         ok: true,
         escalated: true,
-        answer: checked?.text ?? null,
+        answer: escalatedText != null ? safeAnswer(escalatedText, asked.masked) : null,
         validation: checked?.meta ?? null,
       })
     }
@@ -107,7 +112,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       escalated: false,
-      answer: checked?.text ?? result.answer,
+      answer: safeAnswer(checked?.text ?? result.answer, asked.masked),
       validation: checked?.meta ?? null,
     })
   } catch (error) {

@@ -3,6 +3,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { decideReportReview, listReviews } from '@/lib/reports/review-flow'
 import { ReviewBodySchema, reviewResponse } from '@/lib/reports/review-http'
+import { profanityResponse } from '@/lib/moderation/http'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (g.response) return g.response
   const parsed = ReviewBodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверные данные: для правок нужен комментарий (от 3 символов)' }, { status: 400 })
+  const profane = profanityResponse({ comment: parsed.data.decision === 'changes_requested' ? parsed.data.comment : null })
+  if (profane) return profane
   try {
     const res = await decideReportReview({
       versionId: params.id,

@@ -39,6 +39,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/cjm`, label: 'Путь клиента (CJM)', icon: 'route', permission: 'cjm.view' },
   ] },
   { label: 'Коммуникации', items: [
+    // Platform ↔ user conversations (lib/comm); answering needs inbox.manage (checked by the API).
+    { href: `${GIGA_BASE}/messages`, label: 'Сообщения', icon: 'chat', permission: 'inbox.view' },
     { href: `${GIGA_BASE}/inbox`, label: 'Instagram / WhatsApp', icon: 'messages', permission: 'inbox.view' },
     { href: `${GIGA_BASE}/market`, label: 'Инсайты рынка', icon: 'lightbulb', permission: 'market.manage' },
   ] },

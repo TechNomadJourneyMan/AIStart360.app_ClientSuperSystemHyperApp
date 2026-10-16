@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { checkRateLimitForRequest, isRateLimitedKey, rateLimitResponse } from '@/lib/rate-limit'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * POST /api/client/register
@@ -35,6 +36,8 @@ export async function POST(req: NextRequest) {
     if (!userId || !email) {
       return NextResponse.json({ error: 'userId and email are required' }, { status: 400 })
     }
+    const profane = profanityResponse({ name, company })
+    if (profane) return profane
 
     const supabaseAdmin = createServerClient()
 

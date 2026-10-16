@@ -30,10 +30,15 @@ import {
   verifySignedBridgeRequest,
   WHATSAPP_WEB_PORTAL_AUDIENCE,
 } from "@/lib/omnichannel/whatsapp-web-signature";
-import { parseWhatsAppWebBridgeEvent } from "@/lib/omnichannel/whatsapp-web-webhook";
+import {
+  parseWhatsAppWebBridgeEvent,
+  type ParsedWhatsAppWebBridgeEvent,
+} from "@/lib/omnichannel/whatsapp-web-webhook";
 import { shouldUseOmnichannelPostgres } from "@/lib/omnichannel/postgres-runtime";
 import { enqueueOmnichannelProcessingJob } from "@/lib/omnichannel/processing-jobs";
 import { drainOmnichannelProcessingJobs } from "@/lib/omnichannel/process-job-queue";
+import { runInBackground } from "@/lib/background";
+import { mirrorWhatsAppInbound } from "@/lib/comm/inbound";
 
 const WEBHOOK_PATH = "/api/webhooks/whatsapp-web";
 const MAX_BODY_BYTES = 256_000;
@@ -117,6 +122,38 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
     // Local/non-Vercel runtimes may not provide an execution context. The
     // promise has already started; database durability still covers failure.
   }
+}
+
+/**
+ * Platform conversations (lib/comm, GIGA «Сообщения»): when the sender's phone
+ * belongs to a platform user, the message is ALSO copied into that user's
+ * conversation. Mirror, never divert — the inbox above has already taken the
+ * message exactly as before. Runs after the response is decided, in the
+ * background, and can never fail the webhook; the copy is idempotent on the
+ * provider message id. A LID-only contact (no verified phone) is skipped
+ * without touching the database.
+ */
+function mirrorToPlatformConversation(
+  parsed: ParsedWhatsAppWebBridgeEvent,
+  ingested: IngestNormalizedMessageResult,
+): void {
+  const phone = parsed.message.contactPhone;
+  if (!phone) return;
+  const metadata = parsed.message.metadata ?? {};
+  void runInBackground("comm-whatsapp-mirror", () =>
+    mirrorWhatsAppInbound({
+      phone,
+      text: parsed.message.text,
+      messageType: parsed.message.messageType,
+      externalMessageId: parsed.message.externalMessageId,
+      occurredAt: parsed.message.occurredAt ?? new Date().toISOString(),
+      live: parsed.live,
+      bridgeSessionId: parsed.sessionId,
+      jid: typeof metadata.remoteJid === "string" ? metadata.remoteJid : parsed.message.conversationExternalId,
+      omnichannelConversationId: ingested.conversationId,
+      omnichannelMessageId: ingested.messageId,
+    }),
+  );
 }
 
 function isOwnedDuplicate(audit: RecordedWebhookEvent): boolean {
@@ -296,6 +333,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     await store.transitionWebhookEvent(audit.id, "processed");
+    mirrorToPlatformConversation(parsed, ingested);
     return response();
   } catch {
     // Before the compare-and-set this request does not own the audit row. Do

@@ -5,6 +5,7 @@ import { isRateLimited } from '@/lib/rate-limit'
 import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // Public self-registration creates ONLY clients. The legacy 'owner' role was
 // removed from the product (2026-09-24); admin/expert/super_admin can NEVER be
@@ -36,6 +37,8 @@ export async function POST(request: Request) {
     }
 
     const { email, password, name, organization, position } = parsed.data
+    const profane = profanityResponse({ name, organization, position })
+    if (profane) return profane
     const admin = createServiceClient()
 
     // Admin-controlled registration mode (fail-safe 'approval').

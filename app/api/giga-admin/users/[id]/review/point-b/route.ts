@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { UUID_RE, authorNames, displayNameOf } from '@/lib/expert-review/server'
 import { POINT_B_VERSION_COLUMNS, canApprovePointB } from '@/lib/expert-review/point-b'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/review/point-b — версии экспертной Точки Б
@@ -76,6 +77,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверные данные' }, { status: 400 })
   }
+  const profane = profanityResponse({ expert_notes: parsed.data.expert_notes })
+  if (profane) return profane
 
   const diagId = await currentDiagId(params.id)
   if (!diagId) return NextResponse.json({ ok: false, error: 'У клиента нет текущей диагностики (Точки А)' }, { status: 400 })

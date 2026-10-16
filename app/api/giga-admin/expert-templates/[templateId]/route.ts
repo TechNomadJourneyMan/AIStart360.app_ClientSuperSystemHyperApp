@@ -6,6 +6,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { UUID_RE } from '@/lib/expert-review/server'
 import { TEMPLATE_COLUMNS, templatePatchSchema } from '@/lib/expert-review/templates'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PUT    /api/giga-admin/expert-templates/:templateId { block?, title?, body?, is_shared? }
@@ -51,6 +52,8 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный шаблон' }, { status: 400 })
   }
+  const profane = profanityResponse({ title: parsed.data.title, body: parsed.data.body })
+  if (profane) return profane
   const patch = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined))
 
   const { data, error } = await createServiceClient()

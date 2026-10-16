@@ -88,6 +88,7 @@ export default function UserHome({ data }: { data: UserHomeData }) {
           <nav className="flex items-center gap-1 text-xs" aria-label="Разделы">
             <a href="#profile" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Анкета</a>
             <a href="#gri" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">GRI</a>
+            <Link href="/client/messages" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Сообщения</Link>
             {approved && (
               <Link href="/dashboard" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Кабинет</Link>
             )}

@@ -6,6 +6,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { badRequest, guardPointAExpert, staffDisplayName, zodMessage } from '@/lib/admin/point-a-expert'
 import { isBlockKey } from '@/lib/point-a/v4/config'
 import { getMetricById } from '@/lib/metrics/registry'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * POST /api/giga-admin/users/:id/point-a/v4/comments
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest(zodMessage(parsed.error.issues))
   const { targetKind, body } = parsed.data
+  const profane = profanityResponse({ body })
+  if (profane) return profane
   const targetKey = targetKind === 'overall' ? null : parsed.data.targetKey ?? null
   if (targetKind === 'block' && !isBlockKey(targetKey)) return badRequest('Неизвестный блок')
   if (targetKind === 'metric' && (!targetKey || !getMetricById(targetKey))) return badRequest('Неизвестная метрика')

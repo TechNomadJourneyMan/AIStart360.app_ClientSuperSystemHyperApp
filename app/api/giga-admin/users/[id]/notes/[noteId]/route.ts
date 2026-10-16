@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PATCH  /api/giga-admin/users/:id/notes/:noteId { body?, pinned? }
@@ -39,6 +40,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success || (parsed.data.body === undefined && parsed.data.pinned === undefined)) {
     return NextResponse.json({ ok: false, error: 'Нечего изменять' }, { status: 400 })
   }
+  const profane = profanityResponse({ body: parsed.data.body })
+  if (profane) return profane
 
   const note = await loadNote(params.noteId, params.id)
   if (!note) return NextResponse.json({ ok: false, error: 'Заметка не найдена' }, { status: 404 })

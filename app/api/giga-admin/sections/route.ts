@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { loadSections } from '@/lib/platform/sections'
 import { visibilitySchema } from '@/lib/platform/visibility'
+import { flattenText, profanityResponse } from '@/lib/moderation/http'
 
 // GET /api/giga-admin/sections — built-in cabinet sections.
 // PUT /api/giga-admin/sections { sections: [{ key, title, description, enabled, visibility, sort_order }] }
@@ -31,6 +32,8 @@ export async function PUT(req: NextRequest) {
   if (guard.response) return guard.response
   const parsed = schema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверные данные' }, { status: 400 })
+  const profane = profanityResponse(flattenText(parsed.data.sections.map((s) => ({ title: s.title, description: s.description })), 'sections'))
+  if (profane) return profane
 
   const current = new Map((await loadSections()).map((s) => [s.key, s]))
   const sb = createServiceClient()

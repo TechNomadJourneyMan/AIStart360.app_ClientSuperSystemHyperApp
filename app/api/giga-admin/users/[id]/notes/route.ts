@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { addClientNote } from '@/lib/admin/client-actions'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/notes — заметки сотрудников о клиенте.
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверная заметка' }, { status: 400 })
   }
+  const profane = profanityResponse({ body: parsed.data.body })
+  if (profane) return profane
 
   const res = await addClientNote({
     userId: params.id,

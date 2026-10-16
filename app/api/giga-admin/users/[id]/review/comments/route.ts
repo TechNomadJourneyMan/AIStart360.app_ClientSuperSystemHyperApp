@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isReviewBlockKey, reviewBlockLabel, toStoredBlockKey } from '@/lib/expert-review/blocks'
 import { COMMENT_COLUMNS, UUID_RE, ensureDraftReview, type CommentRow } from '@/lib/expert-review/server'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * POST /api/giga-admin/users/:id/review/comments { block, text }
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный комментарий' }, { status: 400 })
   }
+  const profane = profanityResponse({ text: parsed.data.text })
+  if (profane) return profane
   const block = parsed.data.block as Parameters<typeof toStoredBlockKey>[0]
 
   const sb = createServiceClient()

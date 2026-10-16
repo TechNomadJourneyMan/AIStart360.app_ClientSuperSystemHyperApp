@@ -8,6 +8,7 @@ import { badRequest, guardPointAExpert } from '@/lib/admin/point-a-expert'
 import { resolveDiscrepancy } from '@/lib/data-layer/resolve'
 import { refreshCompanyDataInBackground } from '@/lib/data-layer/refresh'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * POST /api/giga-admin/users/:id/point-a/v4/discrepancies/:discrepancyId
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string;
 
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest('Неверный запрос')
+  const profane = profanityResponse({ note: parsed.data.note })
+  if (profane) return profane
 
   const out = await resolveDiscrepancy(sb, companyId, params.discrepancyId, parsed.data, { userId: actor.id, expert: true })
   if (!out.ok) {

@@ -10,6 +10,7 @@ import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { createClient as createSr } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { dbError } from '@/lib/api-error'
+import { profanityResponse } from '@/lib/moderation/http'
 
 function sr() {
   return createSr(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const notes = String(body?.expert_notes ?? '').trim()
   if (!notes) return NextResponse.json({ ok: false, error: 'expert_notes required' }, { status: 400 })
   if (notes.length > 8000) return NextResponse.json({ ok: false, error: 'expert_notes too long' }, { status: 400 })
+  const profane = profanityResponse({ expert_notes: notes })
+  if (profane) return profane
 
   const diagId = await currentDiagId(params.id)
   if (!diagId) return NextResponse.json({ ok: false, error: 'client has no current diagnostic' }, { status: 400 })

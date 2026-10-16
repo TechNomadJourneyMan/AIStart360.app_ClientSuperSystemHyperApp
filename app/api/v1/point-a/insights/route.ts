@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -155,6 +156,8 @@ export async function POST(req: NextRequest) {
     )
   }
   const body = parsed.data
+  const profane = profanityResponse({ question_text: body.question_text, author_name: body.author_name })
+  if (profane) return profane
 
   // SECURITY: type, author and status are provenance («вопрос от эксперта /
   // ИИ», who asked, already confirmed). Only staff may set them; a client's

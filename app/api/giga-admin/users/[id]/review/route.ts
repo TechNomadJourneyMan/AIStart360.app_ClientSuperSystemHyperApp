@@ -15,6 +15,7 @@ import {
   listDraftComments,
   type ReviewRow,
 } from '@/lib/expert-review/server'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/review — текущий черновик разбора клиента,
@@ -98,6 +99,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверные данные' }, { status: 400 })
   }
+  const profane = profanityResponse({ title: parsed.data.title, summary: parsed.data.summary })
+  if (profane) return profane
 
   const sb = createServiceClient()
   let review: ReviewRow

@@ -22,6 +22,7 @@ import { evaluateGoal } from '@/lib/goals/evaluate'
 import { loadGoalsWithEvaluation, valuePeriod } from '@/lib/goals/current'
 import { upsertGoal } from '@/lib/goals/store'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { profanityResponse } from '@/lib/moderation/http'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +64,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   if ('error' in t) return t.error
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return apiError('Неверный запрос', 400)
+  const profane = profanityResponse({ label: parsed.data.label, note: parsed.data.note })
+  if (profane) return profane
   const entry = getMetricById(parsed.data.metricId)
   if (!entry) return apiError('Неизвестная метрика', 400)
 

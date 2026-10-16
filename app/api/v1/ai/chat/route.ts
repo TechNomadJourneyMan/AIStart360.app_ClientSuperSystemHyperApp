@@ -20,6 +20,7 @@ import { guardAiBudget } from '@/lib/ai/budget'
 import { generateObjectViaOpenRouter } from '@/lib/ai/structured'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { trackUserAction } from '@/lib/events/server'
+import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
 
 /**
  * POST /api/v1/ai/chat  { message, personaId?, surface?, conversationId? }
@@ -95,7 +96,11 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid message' }, { status: 400 })
   }
-  const { message, surface = 'report' } = parsed.data
+  const { surface = 'report' } = parsed.data
+  // Profanity is not refused: the model and the stored history get the masked
+  // text, the answer gets a short polite note on top (lib/moderation/chat).
+  const asked = maskUserQuestion(parsed.data.message)
+  const message = asked.text
 
   // Personalization (files 06/07): psych-profile tags feed tone/warnings and the
   // default persona — only with the explicit psych_profile consent, and never
@@ -177,7 +182,7 @@ export async function POST(req: NextRequest) {
     // 4. Parse + drop citations to sources that were never in context.
     const parsedAnswer = rawAnswer ? parseReportChatAnswer(rawAnswer, providedSources) : null
     if (!parsedAnswer || !parsedAnswer.can_answer || parsedAnswer.answer.trim() === '') {
-      const fallback = renderTemplate('T1', { missing: 'нужные данные по вашему вопросу' })
+      const fallback = safeAnswer(renderTemplate('T1', { missing: 'нужные данные по вашему вопросу' }), asked.masked)
       await persist(sb, user.id, surface, persona.id, parsed.data.conversationId, message, {
         content: fallback, grounding: [], validation: { status: 'needs_revision', risk_level: 'low' },
       })
@@ -201,9 +206,10 @@ export async function POST(req: NextRequest) {
       providedSources,
     })
 
-    // 6. Persist and respond.
+    // 6. Persist and respond (the answer masked once, here).
+    const finalAnswer = safeAnswer(validation.finalAnswer, asked.masked)
     const conversationId = await persist(sb, user.id, surface, persona.id, parsed.data.conversationId, message, {
-      content: validation.finalAnswer,
+      content: finalAnswer,
       grounding: sanitized.used_sources,
       validation: { status: validation.status, risk_level: validation.riskLevel, template: validation.templateId },
     })
@@ -226,7 +232,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       conversationId,
-      answer: docsNotIndexed ? `${validation.finalAnswer}\n\n${DOCUMENTS_NOT_INDEXED_NOTICE}` : validation.finalAnswer,
+      answer: docsNotIndexed ? `${finalAnswer}\n\n${DOCUMENTS_NOT_INDEXED_NOTICE}` : finalAnswer,
       notice: docsNotIndexed ? DOCUMENTS_NOT_INDEXED_NOTICE : null,
       documents_index: docIndex.state,
       validation: { status: validation.status, risk_level: validation.riskLevel, template: validation.templateId },

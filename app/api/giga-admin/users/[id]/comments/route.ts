@@ -8,6 +8,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { notifyUser } from '@/lib/notifications'
 import { MAX_TARGET_ID_LENGTH } from '@/lib/comment-targets'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/comments — комментарии экспертов клиенту
@@ -76,6 +77,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный комментарий' }, { status: 400 })
+  const profane = profanityResponse({ text: parsed.data.text })
+  if (profane) return profane
   const targetId = parsed.data.targetId || null
 
   const sb = createServiceClient()

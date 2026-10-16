@@ -4,6 +4,7 @@ import { isSameOriginMutation } from '@/lib/admin/giga-actor'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 import { decideReportReview } from '@/lib/reports/review-flow'
 import { ReviewBodySchema, reviewResponse } from '@/lib/reports/review-http'
+import { profanityResponse } from '@/lib/moderation/http'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!auth.ok) return expertBlockResponse(auth.block)
   const parsed = ReviewBodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверные данные: для правок нужен комментарий (от 3 символов)' }, { status: 400 })
+  const profane = profanityResponse({ comment: parsed.data.decision === 'changes_requested' ? parsed.data.comment : null })
+  if (profane) return profane
   const actor = { id: auth.viewer.id, kind: 'session' as const, email: auth.viewer.email ?? undefined }
   try {
     const res = await decideReportReview({

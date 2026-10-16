@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { maskPii } from '@/lib/assistant/mascot/sanitize'
 import { isRateLimited } from '@/lib/rate-limit'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * POST /api/v1/assistant/feedback — rate an assistant answer or a hint.
@@ -47,6 +48,8 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     )
   }
+  const profane = profanityResponse({ comment: parsed.data.comment })
+  if (profane) return profane
   const { target, targetId, rating, comment } = parsed.data
 
   try {

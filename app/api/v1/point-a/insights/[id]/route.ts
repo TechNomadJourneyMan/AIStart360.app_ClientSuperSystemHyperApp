@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { isStaffRole } from '@/lib/api-identity'
+import { profanityResponse } from '@/lib/moderation/http'
 
 const ALLOWED_STATUS = [
   'pending_ai',
@@ -72,6 +73,8 @@ export async function PATCH(
     )
   }
   const body = parsed.data
+  const profane = profanityResponse({ question_text: body.question_text, answer_text: body.answer_text, answer_author_name: body.answer_author_name })
+  if (profane) return profane
 
   // SECURITY: `answer_author_role` / `answer_author_name` are provenance shown
   // to the client as «кто ответил». Whenever the answer changes they are set

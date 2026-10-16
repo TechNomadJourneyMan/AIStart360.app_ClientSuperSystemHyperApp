@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { slugify } from '@/lib/cms/blocks'
 import { PAGE_COLUMNS } from '@/lib/cms/server'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // GET  /api/giga-admin/content/pages?status=&q= — all pages (any status).
 // POST /api/giga-admin/content/pages { title, slug? } — new draft.
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
   if (guard.response) return guard.response
   const parsed = createSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })
+  const profane = profanityResponse({ title: parsed.data.title })
+  if (profane) return profane
   const sb = createServiceClient()
   const baseSlug = slugify(parsed.data.slug || parsed.data.title)
   let slug = baseSlug

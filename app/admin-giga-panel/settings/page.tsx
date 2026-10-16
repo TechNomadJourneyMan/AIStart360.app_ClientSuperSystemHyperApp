@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, Bell, Bot, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
-  Megaphone, Plug, RefreshCw, ScrollText, Send, ShieldCheck, Siren, Sparkles, UserPlus, Users2, Wrench, XCircle,
+  Megaphone, MessageCircle, Plug, RefreshCw, ScrollText, Send, ShieldCheck, Siren, Sparkles, UserPlus, Users2, Wrench, XCircle,
 } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import {
@@ -249,6 +249,8 @@ export default function SettingsPage() {
             ]} />
           </Panel>
 
+          <CommCard values={v} meta={meta} disabled={!canEdit} saving={saving} onSave={save} />
+
           {canEdit && <HealthCard />}
         </div>
       )}
@@ -375,6 +377,92 @@ function NumberSetting({ value, min, max, step = 1, integer = true, suffix, disa
       )}
       {!valid && <span className="sr-only">Допустимо от {min} до {max}</span>}
     </div>
+  )
+}
+
+const WEEKDAYS = [[1, 'Пн'], [2, 'Вт'], [3, 'Ср'], [4, 'Чт'], [5, 'Пт'], [6, 'Сб'], [7, 'Вс']] as const
+const COMM_TIMEZONES = ['Asia/Almaty', 'Asia/Aqtobe', 'Asia/Tashkent', 'Asia/Bishkek', 'Europe/Moscow', 'Asia/Dubai', 'UTC']
+
+/** «Общение»: working hours and pace of broadcasts, reply deadline, bot auto-reply default (lib/comm). */
+function CommCard({ values: v, meta, disabled, saving, onSave }: {
+  values: Values; meta: SettingsResponse['meta']; disabled: boolean; saving: string | null
+  onSave: (patch: Partial<Values>, label: string) => Promise<boolean>
+}) {
+  const [from, setFrom] = useState(v.comm_work_from)
+  const [to, setTo] = useState(v.comm_work_to)
+  useEffect(() => { setFrom(v.comm_work_from); setTo(v.comm_work_to) }, [v.comm_work_from, v.comm_work_to])
+  const hoursDirty = from !== v.comm_work_from || to !== v.comm_work_to
+  const hoursValid = /^\d{2}:\d{2}$/.test(from) && /^\d{2}:\d{2}$/.test(to) && from < to
+  const toggleDay = (d: number) => {
+    const next = v.comm_work_days.includes(d) ? v.comm_work_days.filter((x) => x !== d) : [...v.comm_work_days, d].sort((a, b) => a - b)
+    if (next.length) void onSave({ comm_work_days: next }, 'Рабочие дни')
+  }
+  const zones = COMM_TIMEZONES.includes(v.comm_timezone) ? COMM_TIMEZONES : [v.comm_timezone, ...COMM_TIMEZONES]
+  return (
+    <Panel
+      title={<Title icon={<MessageCircle size={14} />}>Общение</Title>}
+      description="Раздел «Сообщения» и рассылки: когда можно писать пользователям, с какой паузой и как быстро отвечать."
+    >
+      <SettingRow k="comm_work_days" meta={meta} stacked>
+        <div className="flex flex-wrap gap-1">
+          {WEEKDAYS.map(([d, label]) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={v.comm_work_days.includes(d)}
+              disabled={disabled || saving === 'comm_work_days'}
+              onClick={() => toggleDay(d)}
+              className={cx(
+                'rounded-lg border px-2.5 py-1 text-[11px] font-medium disabled:opacity-50',
+                v.comm_work_days.includes(d) ? 'border-blue-500/40 bg-blue-500/15 text-blue-200' : 'border-white/[0.08] text-slate-500',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </SettingRow>
+      <div className="flex flex-col gap-2 border-b border-white/[0.05] py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-medium text-slate-200">Рабочее время рассылок</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{SETTINGS.comm_work_from.help}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="time" value={from} disabled={disabled} onChange={(e) => setFrom(e.target.value)} aria-label="С" className={cx(inputClass, 'w-28 py-1.5')} />
+          <span className="text-slate-500">—</span>
+          <input type="time" value={to} disabled={disabled} onChange={(e) => setTo(e.target.value)} aria-label="До" className={cx(inputClass, 'w-28 py-1.5')} />
+          {hoursDirty && (
+            <Button size="sm" variant="primary" disabled={!hoursValid || disabled} loading={saving === 'comm_work_from,comm_work_to'} onClick={() => void onSave({ comm_work_from: from, comm_work_to: to }, 'Рабочее время')}>
+              Сохранить
+            </Button>
+          )}
+        </div>
+      </div>
+      <SettingRow k="comm_timezone" meta={meta}>
+        <select
+          value={v.comm_timezone}
+          disabled={disabled || !!saving}
+          onChange={(e) => void onSave({ comm_timezone: e.target.value }, 'Часовой пояс')}
+          aria-label={SETTINGS.comm_timezone.label}
+          className="rounded-xl border border-white/[0.08] bg-[#0b1128] px-3 py-2 text-xs text-slate-200 focus:outline-none"
+        >
+          {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+        </select>
+      </SettingRow>
+      <SettingRow k="comm_send_interval_seconds" meta={meta}>
+        <NumberSetting value={v.comm_send_interval_seconds} min={3} max={600} suffix="с" disabled={disabled} saving={saving === 'comm_send_interval_seconds'} onSave={(n) => onSave({ comm_send_interval_seconds: n }, 'Пауза рассылки')} />
+      </SettingRow>
+      <SettingRow k="comm_send_jitter_seconds" meta={meta}>
+        <NumberSetting value={v.comm_send_jitter_seconds} min={0} max={120} suffix="с" disabled={disabled} saving={saving === 'comm_send_jitter_seconds'} onSave={(n) => onSave({ comm_send_jitter_seconds: n }, 'Случайная пауза')} />
+      </SettingRow>
+      <SettingRow k="comm_escalation_minutes" meta={meta}>
+        <NumberSetting value={v.comm_escalation_minutes} min={5} max={1440} step={5} suffix="мин" disabled={disabled} saving={saving === 'comm_escalation_minutes'} onSave={(n) => onSave({ comm_escalation_minutes: n }, 'Срок ответа')} />
+      </SettingRow>
+      <SettingRow k="comm_bot_auto_default" meta={meta}>
+        <Toggle checked={v.comm_bot_auto_default} disabled={disabled || !!saving} onChange={(n) => void onSave({ comm_bot_auto_default: n }, SETTINGS.comm_bot_auto_default.label)} label={SETTINGS.comm_bot_auto_default.label} />
+      </SettingRow>
+      <Links items={[{ href: '/admin-giga-panel/messages', label: 'Сообщения' }]} />
+    </Panel>
   )
 }
 

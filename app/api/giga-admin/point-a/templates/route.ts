@@ -10,6 +10,7 @@ import { BLOCK_KEYS, BLOCK_LIBRARY, type BlockTemplate } from '@/lib/point-a/v4/
 import { getMetricById } from '@/lib/metrics/registry'
 import { TemplateCreate, orderedBlocks } from '@/lib/point-a/template-schema'
 import { enqueueTemplateRecalc, loadCompanyTemplates, loadTemplates, templateUsage } from '@/lib/point-a/template-impact'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * Industry templates of Point A (pa_templates) — GIGA-CRM «Шаблоны Точки А»,
@@ -68,6 +69,8 @@ export async function POST(req: NextRequest) {
 
   const parsed = TemplateCreate.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest(zodMessage(parsed.error.issues))
+  const profane = profanityResponse({ title: parsed.data.title, industries: parsed.data.industries.join(', ') })
+  if (profane) return profane
   const { key, title, industries } = parsed.data
   const blocks = orderedBlocks(parsed.data.blocks)
 

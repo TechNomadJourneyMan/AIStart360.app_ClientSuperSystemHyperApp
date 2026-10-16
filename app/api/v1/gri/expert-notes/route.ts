@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { profanityResponse } from '@/lib/moderation/http'
 
 const GRI_BLOCKS = ['product', 'trust', 'bizmodel', 'cash', 'ops', 'team', 'founder'] as const
 type GriBlock = typeof GRI_BLOCKS[number]
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+    const profane = profanityResponse({ note })
+    if (profane) return profane
 
     if (!isValidBlock(block)) {
       return NextResponse.json(

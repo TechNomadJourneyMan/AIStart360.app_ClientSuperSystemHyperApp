@@ -9,6 +9,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { firstSeenUpdate, forgetUpdate, handleApprovalCallback, handleStaffStart, type TgCallbackQuery, type TgUser } from '@/lib/telegram/staff-updates'
 import { answerCallback } from '@/lib/telegram/bot-api'
 import type { StaffRole } from '@/lib/admin/rbac'
+import { handleTelegramInbound } from '@/lib/comm/inbound'
 
 /**
  * POST /api/telegram/webhook — приём апдейтов Telegram.
@@ -16,6 +17,12 @@ import type { StaffRole } from '@/lib/admin/rbac'
  *   /start <code>          — привязка чата клиента (profiles.telegram_chat_id)
  *   /start staff_<code>    — привязка Telegram сотрудника (staff_telegram_links)
  *   callback «ap:…»        — решение по действию ИИ-агента (кнопки Одобрить / Отклонить)
+ *   свободный текст        — из чата, привязанного к профилю, → входящее сообщение
+ *                            в диалог пользователя (lib/comm/inbound.ts, раздел
+ *                            GIGA «Сообщения»); короткая квитанция не чаще раза
+ *                            в 6 ч. Только при заданном секрете: без него апдейт
+ *                            можно подделать, а сообщение попало бы в чужой диалог.
+ *                            Чат без привязки — игнор, как раньше.
  *
  * Защита: заголовок X-Telegram-Bot-Api-Secret-Token сравнивается с
  * TELEGRAM_WEBHOOK_SECRET за постоянное время. Привязка сотрудников и
@@ -90,7 +97,7 @@ async function handleUpdate(req: NextRequest, update: Record<string, unknown>, s
     return NextResponse.json({ ok: true })
   }
 
-  const msg = update.message as { chat?: { id?: unknown }; text?: unknown; from?: TgUser } | undefined
+  const msg = update.message as { chat?: { id?: unknown }; text?: unknown; caption?: unknown; message_id?: unknown; date?: unknown; from?: TgUser } | undefined
   const rawChatId = msg?.chat?.id
   const chatId = typeof rawChatId === 'number' || typeof rawChatId === 'string' ? String(rawChatId) : null
   const text = typeof msg?.text === 'string' ? msg.text : ''
@@ -105,7 +112,19 @@ async function handleUpdate(req: NextRequest, update: Record<string, unknown>, s
 
   // ── Привязка клиента (как раньше) ──
   const m = text.trim().match(/^\/start(?:\s+(\S+))?/)
-  if (!m) return NextResponse.json({ ok: true }) // не /start — игнор
+  if (!m) {
+    // Свободный текст (или подпись к фото) от привязанного чата → диалог пользователя.
+    const free = text || (typeof msg?.caption === 'string' ? msg.caption : '')
+    if (staffFeaturesEnabled && free.trim()) {
+      await handleTelegramInbound({
+        chatId,
+        text: free,
+        messageId: typeof msg?.message_id === 'number' || typeof msg?.message_id === 'string' ? msg.message_id : null,
+        date: typeof msg?.date === 'number' ? msg.date : null,
+      })
+    }
+    return NextResponse.json({ ok: true })
+  }
 
   const code = m[1]
   if (!code) {

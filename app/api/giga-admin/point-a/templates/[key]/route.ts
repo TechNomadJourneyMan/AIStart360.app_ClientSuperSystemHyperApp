@@ -9,6 +9,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { TEMPLATE_KEY_RE, TemplateContent, orderedBlocks } from '@/lib/point-a/template-schema'
 import { enqueueTemplateRecalc, loadCompanyTemplates, loadTemplates } from '@/lib/point-a/template-impact'
 import type { BlockTemplate } from '@/lib/point-a/v4/config'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PUT    /api/giga-admin/point-a/templates/:key { title, industries[], blocks[7] }
@@ -29,6 +30,8 @@ export async function PUT(req: NextRequest, { params }: { params: { key: string 
 
   const parsed = TemplateContent.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest(zodMessage(parsed.error.issues))
+  const profane = profanityResponse({ title: parsed.data.title, industries: parsed.data.industries.join(', ') })
+  if (profane) return profane
   const { title, industries } = parsed.data
   const blocks = orderedBlocks(parsed.data.blocks)
 

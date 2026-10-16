@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
 import { logAudit } from '@/lib/audit'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { profanityResponse } from '@/lib/moderation/http'
 const MAX_TARGET_ID = 200  // see lib/comment-targets.ts — free-form TEXT, cap length
 
 // ── Service-role helper ──────────────────────────────────────────────────────
@@ -202,6 +203,8 @@ export async function POST(req: NextRequest) {
   if (!clientId) return NextResponse.json({ error: 'clientId required' }, { status: 400 })
   if (!text || text.length < 1 || text.length > 5000)
     return NextResponse.json({ error: 'text must be 1..5000 chars' }, { status: 400 })
+  const profane = profanityResponse({ text })
+  if (profane) return profane
   if (targetId && targetId.length > MAX_TARGET_ID)
     return NextResponse.json({ error: `targetId must be ≤${MAX_TARGET_ID} chars` }, { status: 400 })
 

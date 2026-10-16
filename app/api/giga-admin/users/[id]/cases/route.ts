@@ -7,6 +7,7 @@ import { guardClientAccess } from '@/lib/admin/client-scope'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { notifyUser } from '@/lib/notifications'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET   /api/giga-admin/users/:id/cases — обращения клиента к эксперту
@@ -55,6 +56,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })
+  const profane = profanityResponse({ expert_action_recommended: parsed.data.expert_action_recommended })
+  if (profane) return profane
   const { caseId, ...fields } = parsed.data
   const patch: Record<string, unknown> = {}
   if (fields.status !== undefined) patch.status = fields.status

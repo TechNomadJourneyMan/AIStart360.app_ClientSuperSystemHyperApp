@@ -31,10 +31,11 @@ import { PointATab } from '@/components/giga-panel/user360/PointATab'
 import { PointBTab } from '@/components/giga-panel/user360/PointBTab'
 import { PulseTab } from '@/components/giga-panel/user360/PulseTab'
 import { CasesTab } from '@/components/giga-panel/user360/CasesTab'
+import { MessagesTab } from '@/components/giga-panel/user360/MessagesTab'
 import { CommentsTab } from '@/components/giga-panel/user360/CommentsTab'
 import { ReviewTab } from '@/components/giga-panel/user360/review/ReviewTab'
 
-type TabKey = 'profile' | 'timeline' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
+type TabKey = 'profile' | 'messages' | 'timeline' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 
 function User360Inner({ id }: { id: string }) {
   const { base, label } = useWorkspace()
@@ -107,6 +108,7 @@ function User360Inner({ id }: { id: string }) {
             tabs={[
               { key: 'profile', label: 'Профиль' },
               { key: 'timeline', label: 'Лента' },
+              { key: 'messages', label: 'Сообщения', hidden: !can('inbox.view') },
               { key: 'survey', label: 'Анкета', hidden: !u.can.viewSurvey },
               { key: 'point-a', label: 'Точка А', hidden: !expertTabs },
               { key: 'point-b', label: 'Точка Б', hidden: !expertTabs },
@@ -127,6 +129,7 @@ function User360Inner({ id }: { id: string }) {
           />
           {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
           {tab === 'timeline' && <TimelineTab userId={id} />}
+          {tab === 'messages' && can('inbox.view') && <MessagesTab userId={id} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
           {tab === 'gri' && (
             <>

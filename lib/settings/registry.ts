@@ -25,6 +25,17 @@ const notificationShape = Object.fromEntries(
   (Object.keys(NOTIFICATION_TYPES) as AdminNotificationType[]).map((k) => [k, z.boolean()]),
 ) as Record<AdminNotificationType, z.ZodBoolean>
 
+const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+
+function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const safeHref = z.string().max(300).refine((v) => v === '' || (v.startsWith('/') && !v.startsWith('//')) || v.startsWith('https://'), 'Ссылка: https:// или путь /…')
 
 export const SETTINGS = {
@@ -224,6 +235,48 @@ export const SETTINGS = {
     help: 'Сколько минут выполняющаяся задача может не писать ни одного события, прежде чем считаться зависшей.',
     schema: z.number().int().min(5).max(240), default: 20, critical: false,
   },
+  // ── Общение с пользователями (lib/comm, раздел GIGA «Сообщения») ──
+  comm_work_days: {
+    group: 'comm', label: 'Рабочие дни',
+    help: 'В эти дни уходят рассылки (1 — понедельник … 7 — воскресенье). Личные сообщения уходят сразу, в любой день.',
+    schema: z.array(z.number().int().min(1).max(7)).min(1, 'Выберите хотя бы один день').max(7),
+    default: [1, 2, 3, 4, 5] as number[], critical: false,
+  },
+  comm_work_from: {
+    group: 'comm', label: 'Рабочее время: с',
+    help: 'Начало окна рассылок (ЧЧ:ММ, по часовому поясу общения).',
+    schema: z.string().regex(HHMM, 'Время в формате ЧЧ:ММ'), default: '09:00', critical: false,
+  },
+  comm_work_to: {
+    group: 'comm', label: 'Рабочее время: до',
+    help: 'Конец окна рассылок (ЧЧ:ММ). После него рассылка ждёт следующего рабочего дня.',
+    schema: z.string().regex(HHMM, 'Время в формате ЧЧ:ММ'), default: '19:00', critical: false,
+  },
+  comm_timezone: {
+    group: 'comm', label: 'Часовой пояс общения',
+    help: 'По нему считаются рабочие дни и часы рассылок.',
+    schema: z.string().trim().min(1).max(64).refine(isTimeZone, 'Неизвестный часовой пояс'), default: 'Asia/Almaty', critical: false,
+  },
+  comm_send_interval_seconds: {
+    group: 'comm', label: 'Пауза между сообщениями рассылки, секунд',
+    help: 'Рассылка отправляет по одному сообщению с этой паузой — так номер WhatsApp и бот Telegram не попадают под ограничения.',
+    schema: z.number().int().min(3).max(600), default: 10, critical: false,
+  },
+  comm_send_jitter_seconds: {
+    group: 'comm', label: 'Случайная добавка к паузе, до секунд',
+    help: 'К паузе добавляется случайная задержка от 0 до этого значения, чтобы отправка не выглядела как робот.',
+    schema: z.number().int().min(0).max(120), default: 5, critical: false,
+  },
+  comm_escalation_minutes: {
+    group: 'comm', label: 'Ответ пользователю — в течение, минут',
+    help: 'Пользователь написал, а персонал не ответил за это время — диалог считается просроченным и ответственному приходит напоминание.',
+    schema: z.number().int().min(5).max(1440), default: 30, critical: false,
+  },
+  comm_bot_auto_default: {
+    group: 'comm', label: 'Автоответ бота в новых диалогах',
+    help: 'Новый диалог создаётся в режиме «Авто»: бот отвечает сам (всегда представляясь ботом) и зовёт эксперта, когда нужен человек. Режим меняется на каждом диалоге.',
+    schema: z.boolean(), default: false, critical: false,
+  },
 } as const
 
 export type SettingKey = keyof typeof SETTINGS
@@ -240,6 +293,7 @@ export const SETTING_GROUPS = {
   automation: { label: 'Автоматические касания', icon: 'send' },
   agents: { label: 'Автоматизация агентов', icon: 'bot' },
   point_a: { label: 'Точка А', icon: 'target' },
+  comm: { label: 'Общение', icon: 'messages' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {

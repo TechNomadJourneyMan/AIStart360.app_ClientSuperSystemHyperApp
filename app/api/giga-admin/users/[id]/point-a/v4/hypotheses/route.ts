@@ -9,6 +9,7 @@ import { BLOCK_KEYS, isBlockKey } from '@/lib/point-a/v4/config'
 import { requestPointARecalc } from '@/lib/point-a/recalc-queue'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 import type { V4Block } from '@/lib/point-a/v4/engine'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * The expert's decision on the AI hypothesis of a block without data
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest(zodMessage(parsed.error.issues))
+  const profane = profanityResponse({ rationale: parsed.data.rationale })
+  if (profane) return profane
   const { block: key, decision } = parsed.data
 
   const latest = await sb.from('point_a_snapshots').select('id, blocks').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)

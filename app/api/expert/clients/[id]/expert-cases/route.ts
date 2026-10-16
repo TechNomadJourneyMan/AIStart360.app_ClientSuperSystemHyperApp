@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { notifyUser, notifyAdmins } from '@/lib/notifications'
 import type { ExpertCase } from '@/lib/assistant/types'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // Allowed enum values — must mirror the CHECK constraints in migration 032.
 const STATUSES = new Set<ExpertCase['status']>(['new', 'in_progress', 'resolved', 'closed'])
@@ -86,6 +87,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const caseId = String(body?.caseId ?? '').trim()
   if (!caseId) return NextResponse.json({ ok: false, error: 'caseId required' }, { status: 400 })
+  const profane = profanityResponse({ expert_action_recommended: body?.expert_action_recommended })
+  if (profane) return profane
 
   // Build the patch from only the provided, validated fields.
   const patch: Record<string, unknown> = {}

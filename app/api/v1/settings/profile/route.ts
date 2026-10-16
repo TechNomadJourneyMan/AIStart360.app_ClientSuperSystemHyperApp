@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
+import { profanityResponse } from '@/lib/moderation/http'
 
 // Self-scoped profile read/write for the Settings › Профиль tab.
 // Mirrors the proven write pattern in app/api/expert/profile but WITHOUT the
@@ -50,6 +51,13 @@ export async function PATCH(request: Request) {
       { status: 422 },
     )
   }
+
+  const profane = profanityResponse({
+    full_name: parsed.data.full_name,
+    position: parsed.data.position,
+    organization: parsed.data.organization,
+  })
+  if (profane) return profane
 
   // Patch only the fields the client actually sent.
   const update = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined))

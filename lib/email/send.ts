@@ -38,6 +38,8 @@ export type EmailKind =
   | 'client_digest'
   /** Утренний список задач сотрудника. */
   | 'staff_tasks'
+  /** Личное сообщение сотрудника пользователю (lib/comm). */
+  | 'direct_message'
 
 /**
  * A file attached to the letter. Resend «Send email» (resend.com/docs/api-reference/emails/send-email):

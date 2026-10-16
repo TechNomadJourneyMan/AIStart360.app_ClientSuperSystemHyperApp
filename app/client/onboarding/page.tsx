@@ -13,6 +13,8 @@ import { overallFill, stepFillFromAnswers } from '@/lib/survey/progress'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
+import FieldIssueNote, { questionLabel } from '@/components/onboarding/FieldIssueNote'
+import { profanityRejection } from '@/lib/moderation/client'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -33,6 +35,19 @@ const COMPANY_FIELD_KEYS = new Set([
   's1_company_name', 's1_industry', 's1_employee_count', 's1_founded_at', 's1_business_model',
   's1_regions', 's1_contact_name', 's1_contact_position', 's1_contact_phone', 's1_contact_email',
 ])
+
+// /api/v1/onboarding/company body field → survey question key (for errors).
+const COMPANY_BODY_TO_KEY: Record<string, string> = {
+  name: 's1_company_name', industry: 's1_industry', regions: 's1_regions', business_model: 's1_business_model',
+  contact_name: 's1_contact_name', contact_position: 's1_contact_position', contact_phone: 's1_contact_phone', contact_email: 's1_contact_email',
+}
+
+/** The server refused a text answer (e.g. profanity): show it next to the question. */
+class FieldRejectedError extends Error {
+  constructor(message: string, readonly field: string | null) {
+    super(message)
+  }
+}
 
 // Map step number to component
 const STEP_FORMS: Record<number, React.ComponentType<{ data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }>> = {
@@ -65,6 +80,8 @@ function OnboardingPageInner() {
   const [stepData, setStepData] = useState<Record<string, unknown>>({})
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // A question the server refused (profanity): the note sits next to the field.
+  const [fieldIssue, setFieldIssue] = useState<{ key: string; message: string } | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -201,6 +218,11 @@ function OnboardingPageInner() {
             }),
           })
           const compData = await compRes.json().catch(() => null)
+          const compRejected = profanityRejection(compData)
+          if (compRejected) {
+            const bodyField = compRejected.field?.split('.')[0] ?? ''
+            throw new FieldRejectedError(compRejected.message, COMPANY_BODY_TO_KEY[bodyField] ?? null)
+          }
           if (!compRes.ok || !compData?.ok) throw new Error(compData?.error || `HTTP ${compRes.status}`)
           if (compData.data?.id) {
             companyIdRef.current = String(compData.data.id)
@@ -217,6 +239,8 @@ function OnboardingPageInner() {
         })
         const json = await res.json().catch(() => null)
         if (res.status === 401) throw new Error('Сессия истекла — войдите заново. Ответы сохранены на этом устройстве.')
+        const rejected = profanityRejection(json)
+        if (rejected) throw new FieldRejectedError(rejected.message, rejected.field)
         if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`)
 
         // Clear only the keys that did not change again while the request was in flight.
@@ -225,11 +249,22 @@ function OnboardingPageInner() {
         }
         persistDraft()
         setSaveError(null)
+        setFieldIssue(null)
         retryAttemptRef.current = 0
         setSavedAt(new Date())
         setSaveState(dirtyRef.current.size ? 'dirty' : 'saved')
         return true
       } catch (e) {
+        if (e instanceof FieldRejectedError) {
+          // Not a network problem: no retry. Shown even for a background save —
+          // the answer stays in the form and in the local draft until fixed.
+          const label = e.field ? questionLabel(e.field) : null
+          setFieldIssue(e.field ? { key: e.field, message: e.message } : null)
+          setSaveError(label ? `${e.message} Вопрос: «${label}».` : e.message)
+          setSaveState('dirty')
+          persistDraft()
+          return false
+        }
         const msg = e instanceof Error ? e.message : String(e)
         // A background save fails quietly: the chip shows it and a retry is scheduled.
         if (!quiet || msg.startsWith('Сессия')) {
@@ -282,6 +317,10 @@ function OnboardingPageInner() {
   }, [])
 
   const handleFieldChange = (key: string, value: unknown) => {
+    if (fieldIssue?.key === key) {
+      setFieldIssue(null)
+      setSaveError(null)
+    }
     dirtyRef.current.add(key)
     setSaveState((s) => (s === 'saving' ? s : 'dirty'))
     setStepData(prev => ({ ...prev, [key]: value }))
@@ -468,6 +507,7 @@ function OnboardingPageInner() {
             <p className="text-xs text-on-surface leading-snug">{saveError}</p>
           </div>
         )}
+        {fieldIssue && !isReview && <FieldIssueNote fieldKey={fieldIssue.key} message={fieldIssue.message} />}
 
         {isReview ? (
           <SurveyReview

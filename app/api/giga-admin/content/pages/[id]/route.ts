@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { hasPermission } from '@/lib/admin/rbac'
 import { pageSaveSchema } from '@/lib/cms/blocks'
 import { loadPageWithBlocks, PAGE_COLUMNS } from '@/lib/cms/server'
+import { flattenText, profanityResponse } from '@/lib/moderation/http'
 
 // GET    /api/giga-admin/content/pages/:id — page, blocks, revision history.
 // PUT    /api/giga-admin/content/pages/:id { page, blocks, expectedVersion }
@@ -40,6 +41,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const i = parsed.error.issues[0]
     return NextResponse.json({ ok: false, error: i ? `${i.message}${i.path.length ? ` (${i.path.join('.')})` : ''}` : 'Неверные данные' }, { status: 400 })
   }
+  const profane = profanityResponse({ ...flattenText({ title: parsed.data.page.title, summary: parsed.data.page.summary, category: parsed.data.page.category }), ...flattenText(parsed.data.blocks.map((b) => b.content), 'blocks') })
+  if (profane) return profane
   const { page, blocks, expectedVersion } = parsed.data
   const current = await loadPageWithBlocks({ id: params.id })
   if (!current) return NextResponse.json({ ok: false, error: 'Страница не найдена' }, { status: 404 })

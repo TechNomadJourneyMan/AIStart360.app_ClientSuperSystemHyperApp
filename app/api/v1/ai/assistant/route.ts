@@ -147,7 +147,7 @@ export async function POST(req: Request): Promise<Response> {
         // An AI outage / abandoned turn is not a reply worth feeding back to the model.
         if (conversationId && result.outcome !== 'ai_error' && result.outcome !== 'aborted') {
           await sb.from('ai_messages').insert([
-            { conversation_id: conversationId, role: 'user', content: message, created_at: askedAt.toISOString() },
+            { conversation_id: conversationId, role: 'user', content: result.question, created_at: askedAt.toISOString() },
             { conversation_id: conversationId, role: 'assistant', content: result.answer, created_at: new Date(Math.max(Date.now(), askedAt.getTime() + 1)).toISOString(), grounding: { tools: result.toolsUsed, proposals: result.proposals, surface, focus: focus ?? null } },
           ])
           await sb.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)

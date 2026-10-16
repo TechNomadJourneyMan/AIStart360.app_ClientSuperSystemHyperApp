@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { createClientTask } from '@/lib/admin/client-actions'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/tasks — задачи по клиенту.
@@ -66,6 +67,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверная задача' }, { status: 400 })
   }
+  const profane = profanityResponse({ title: parsed.data.title })
+  if (profane) return profane
 
   const res = await createClientTask({
     userId: params.id,

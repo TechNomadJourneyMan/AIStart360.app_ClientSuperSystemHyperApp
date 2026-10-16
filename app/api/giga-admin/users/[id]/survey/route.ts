@@ -9,6 +9,7 @@ import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { answersProfanityResponse } from '@/lib/moderation/http'
 
 // GET   /api/giga-admin/users/:id/survey?historyPage=1 — all answers grouped by
 //       theme + change history (who / when / old → new).
@@ -90,6 +91,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверный формат изменений' }, { status: 400 })
+  const profane = answersProfanityResponse(parsed.data.changes)
+  if (profane) return profane
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })

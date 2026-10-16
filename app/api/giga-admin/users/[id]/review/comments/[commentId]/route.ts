@@ -7,6 +7,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isReviewBlockKey, reviewBlockLabel, toStoredBlockKey, type ReviewBlockKey } from '@/lib/expert-review/blocks'
 import { COMMENT_COLUMNS, UUID_RE, type CommentRow } from '@/lib/expert-review/server'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PUT    /api/giga-admin/users/:id/review/comments/:commentId { text?, block? }
@@ -62,6 +63,8 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверные данные' }, { status: 400 })
   }
+  const profane = profanityResponse({ text: parsed.data.text })
+  if (profane) return profane
   const patch: Record<string, unknown> = { ai_flags: null }
   if (parsed.data.text !== undefined) patch.text = parsed.data.text
   if (parsed.data.block !== undefined) patch.block_key = toStoredBlockKey(parsed.data.block as ReviewBlockKey)

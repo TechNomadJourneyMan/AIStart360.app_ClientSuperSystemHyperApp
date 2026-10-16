@@ -68,6 +68,17 @@ export interface StaffNotification {
    */
   audiencePermission?: Permission | null
   /**
+   * Only these staff members (Telegram and WhatsApp), e.g. the expert assigned
+   * to a conversation. Combined with audiencePermission when both are set.
+   * Legacy env chats are skipped: they cannot be attributed to a person.
+   */
+  audienceUserIds?: string[] | null
+  /**
+   * Do not apply the per-(type, company) cooldown: the caller already limits
+   * how often it notifies (e.g. once per unanswered conversation, lib/comm).
+   */
+  skipCooldown?: boolean
+  /**
    * Inline keyboard for linked staff in Telegram, built for the bot that
    * carries staff traffic (signed callbacks are bot-specific). Ignored for
    * approvals (they get Approve / Reject) and for legacy env chats.
@@ -218,7 +229,7 @@ export async function notifyStaff(n: StaffNotification, opts: {
   const bot = staffBot()
   const text = formatTelegram(n)
   const quiet = inQuietHours(n.level, cfg, opts.now)
-  const cooled = await inCooldown(n, eventId)
+  const cooled = n.skipCooldown ? false : await inCooldown(n, eventId)
   const staff = await linkedStaff(event.duplicate ? event.createdAt : null)
   const isApproval = n.level === 'APPROVAL_REQUIRED'
   const scheduled = n.scheduled === true && !isApproval
@@ -233,7 +244,8 @@ export async function notifyStaff(n: StaffNotification, opts: {
         return kb && kb.length ? kb : undefined
       })()
 
-  const targets = staff.filter((s) => (isApproval
+  const inAudience = (userId: string) => !n.audienceUserIds || n.audienceUserIds.includes(userId)
+  const targets = staff.filter((s) => inAudience(s.userId) && (isApproval
     ? hasPermission(s.role, 'approvals.decide')
     : n.audiencePermission ? hasPermission(s.role, n.audiencePermission) : true))
   for (const s of targets) {
@@ -255,7 +267,7 @@ export async function notifyStaff(n: StaffNotification, opts: {
 
   // Legacy env chats: same text, no buttons (cannot attribute a press to a person).
   const linkedChats = new Set(staff.map((s) => s.chatId))
-  for (const chatId of legacyChatIds()) {
+  for (const chatId of n.audienceUserIds ? [] : legacyChatIds()) {
     if (linkedChats.has(chatId)) continue
     if (!(await claimDelivery(eventId, 'telegram', chatId))) continue
     if (!scheduled && !reaches(n.level, n.telegramMinLevel ?? cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
@@ -321,11 +333,12 @@ async function notifyStaffWhatsApp(
     const people = (await optedInRecipients('staff', { verifiedBefore: event.duplicate ? event.createdAt : null }))
       .map((r) => ({ ...r, staffRoleResolved: (r.role === 'super_admin' ? 'super_admin' : isStaffRole(r.staffRole) ? r.staffRole : null) as StaffRole | null }))
       .filter((r) => r.staffRoleResolved !== null)
+      .filter((r) => !n.audienceUserIds || n.audienceUserIds.includes(r.userId))
       .filter((r) => (isApproval
         ? hasPermission(r.staffRoleResolved, 'approvals.decide')
         : n.audiencePermission ? hasPermission(r.staffRoleResolved, n.audiencePermission) : true))
     if (people.length === 0) return
-    const cooled = await inCooldown(n, eventId, 'whatsapp')
+    const cooled = n.skipCooldown ? false : await inCooldown(n, eventId, 'whatsapp')
     const now = ctx.now ?? new Date()
     const payload = staffAlertTemplate({
       levelLabel: LEVEL_LABELS[n.level],

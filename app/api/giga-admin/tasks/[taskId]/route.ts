@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { NOT_ASSIGNED_ERROR, canAccessClient } from '@/lib/admin/client-scope'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PATCH /api/giga-admin/tasks/:taskId { status?, title?, dueAt?, assigneeId? }
@@ -31,6 +32,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { taskId: st
   if (!parsed.success || !Object.keys(parsed.data).length) {
     return NextResponse.json({ ok: false, error: 'Нечего изменять' }, { status: 400 })
   }
+  const profane = profanityResponse({ title: parsed.data.title })
+  if (profane) return profane
 
   // Эксперт со scope 'assigned' правит задачи своих клиентов и задачи,
   // назначенные ему самому.

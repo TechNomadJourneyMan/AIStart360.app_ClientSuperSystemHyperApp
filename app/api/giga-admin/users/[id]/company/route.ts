@@ -7,6 +7,7 @@ import { canManageTarget } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PATCH /api/giga-admin/users/:id/company — данные компании и контакта.
@@ -71,6 +72,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный формат данных' }, { status: 400 })
   }
+  const c = parsed.data.company ?? {}
+  const p = parsed.data.profile ?? {}
+  const profane = profanityResponse({
+    'company.name': c.name,
+    'company.industry': c.industry,
+    'company.regions': c.regions?.join(', '),
+    'company.contact_name': c.contact_name,
+    'company.contact_position': c.contact_position,
+    'profile.full_name': p.full_name,
+    'profile.organization': p.organization,
+    'profile.position': p.position,
+    reason: parsed.data.reason,
+  })
+  if (profane) return profane
   const companyPatch = clean(parsed.data.company ?? {})
   const profilePatch = clean(parsed.data.profile ?? {})
   if (!Object.keys(companyPatch).length && !Object.keys(profilePatch).length) {

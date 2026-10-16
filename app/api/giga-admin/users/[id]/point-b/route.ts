@@ -9,6 +9,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { calculatePointBV2 } from '@/lib/point-b/engine'
 import { loadPointBMetricOptions } from '@/lib/point-b/metrics'
 import { diagToPointA, mapGriTop5 } from '@/lib/admin/expert-client-data'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/users/:id/point-b — Точка Б клиента (тот же расчёт, что
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })
+  const profane = profanityResponse({ expert_notes: parsed.data.expert_notes })
+  if (profane) return profane
 
   const sb = createServiceClient()
   const diag = await currentDiagnostic(sb, params.id)

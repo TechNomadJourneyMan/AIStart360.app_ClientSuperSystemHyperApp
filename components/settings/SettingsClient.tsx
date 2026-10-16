@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { apiErrorMessage } from '@/lib/moderation/client'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
 import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
@@ -118,10 +119,10 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
         body: JSON.stringify({ full_name: `${form.firstName} ${form.lastName}`.trim(), position: form.position.trim(), organization: form.organization.trim(), phone: form.phone.trim() }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) throw new Error()
+      if (!res.ok || !json.ok) throw new Error(apiErrorMessage(json, 'Не удалось сохранить профиль.'))
       setBaseline(form)
       toast.success('Профиль сохранён')
-    } catch { toast.error('Не удалось сохранить профиль.') } finally { setSaving(false) }
+    } catch (e) { toast.error(e instanceof Error && e.message ? e.message : 'Не удалось сохранить профиль.') } finally { setSaving(false) }
   }
 
   return (

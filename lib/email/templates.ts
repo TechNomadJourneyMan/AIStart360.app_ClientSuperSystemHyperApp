@@ -370,3 +370,43 @@ export function buildClientNotificationEmail(input: ClientNotificationEmailInput
     },
   }
 }
+
+// ─── 6. Личное сообщение от эксперта / администратора (lib/comm) ─────────────
+
+export interface DirectMessageEmailInput {
+  /** Имя получателя. */
+  name?: string | null
+  /** Кто написал: имя сотрудника или «Бот AIStart360». */
+  authorName?: string | null
+  /** Тема, которую задал автор; по умолчанию — «Новое сообщение от AIStart360». */
+  subject?: string | null
+  /** Текст сообщения как его написал автор (экранирует макет). */
+  body: string
+  /** Абсолютная ссылка на «Сообщения» в кабинете. */
+  url?: string | null
+}
+
+/**
+ * Свободный текст сотрудника в фирменной вёрстке. Текст идёт цитатой — макет
+ * экранирует его и сохраняет переносы строк. Ответ на письмо уходит в
+ * поддержку (Reply-To), поэтому письмо зовёт отвечать в кабинете.
+ */
+export function buildDirectMessageEmail(input: DirectMessageEmailInput): BuiltEmail {
+  const subject = nameOrNull(input.subject)
+  const author = nameOrNull(input.authorName)
+  const body = input.body.trim()
+  return {
+    subject: subject ?? 'Новое сообщение от AIStart360',
+    content: {
+      preheader: body.replace(/\s+/g, ' ').slice(0, 140),
+      eyebrow: 'Сообщение',
+      title: subject ?? 'Вам написали в AIStart360',
+      greeting: greeting(input.name),
+      paragraphs: [author ? `${author} написал(а) вам:` : 'Вам пришло сообщение:'],
+      quote: { label: author, text: body },
+      cta: input.url ? { label: 'Ответить в кабинете', url: input.url } : null,
+      note: 'Чтобы ответить, откройте раздел «Сообщения» в кабинете или напишите нашему боту в Telegram — так ответ сразу увидит эксперт.',
+      footnote: 'Письмо отправлено сотрудником AIStart360 по вашему аккаунту.',
+    },
+  }
+}

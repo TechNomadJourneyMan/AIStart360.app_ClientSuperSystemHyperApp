@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * PATCH /api/v1/action-plan/tasks/[id]  { status?, snoozedUntil?, comment? }
@@ -43,6 +44,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid update' }, { status: 400 })
   }
+  const profane = profanityResponse({ comment: parsed.data.comment })
+  if (profane) return profane
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (parsed.data.status !== undefined) {

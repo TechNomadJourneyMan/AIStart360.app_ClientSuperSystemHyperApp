@@ -34,6 +34,11 @@ vi.mock("@/lib/omnichannel/processing-jobs", () => ({
 vi.mock("@/lib/omnichannel/process-job-queue", () => ({
   drainOmnichannelProcessingJobs: jobDrain.drain,
 }));
+// The platform-conversation mirror (lib/comm) has its own tests
+// (tests/unit/comm/whatsapp-mirror-route.test.ts); never reach a database here.
+vi.mock("@/lib/comm/inbound", () => ({
+  mirrorWhatsAppInbound: vi.fn(async () => "no_user"),
+}));
 
 import { POST } from "@/app/api/webhooks/whatsapp-web/route";
 

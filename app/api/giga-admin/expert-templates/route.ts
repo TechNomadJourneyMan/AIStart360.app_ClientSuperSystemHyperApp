@@ -6,6 +6,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isReviewBlockKey, reviewBlockLabel } from '@/lib/expert-review/blocks'
 import { TEMPLATE_COLUMNS, templateBlockFilter, templateBodySchema } from '@/lib/expert-review/templates'
+import { profanityResponse } from '@/lib/moderation/http'
 
 /**
  * GET  /api/giga-admin/expert-templates?block=<key> — шаблоны эксперта:
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный шаблон' }, { status: 400 })
   }
+  const profane = profanityResponse({ title: parsed.data.title, body: parsed.data.body })
+  if (profane) return profane
   const block = parsed.data.block
 
   const { data, error } = await createServiceClient()

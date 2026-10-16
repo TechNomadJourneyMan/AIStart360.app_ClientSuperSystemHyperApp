@@ -27,6 +27,7 @@ import { activeImpersonation } from '@/lib/impersonation/server'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { answersProfanityResponse } from '@/lib/moderation/http'
 
 // GET /api/v1/onboarding/survey — the caller's own survey answers (session user).
 // SECURITY (audit 2026-07-02): identity is derived from the Supabase session,
@@ -88,6 +89,15 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
   const { user_id, step: bodyStep, answers, autosave } = parsed.data
   const finalSubmitted = parsed.data.final
+
+  // Свободные текстовые ответы с матом не сохраняем: 400 с ключом вопроса,
+  // чтобы мастер показал ошибку рядом с ним. Числа и выбор не трогаем.
+  const profane = answersProfanityResponse(Object.fromEntries(
+    Object.entries(answers)
+      .filter(([k]) => isWritableSurveyKey(k))
+      .map(([k, a]) => [k, (a as { value?: unknown } | null)?.value]),
+  ))
+  if (profane) return profane
 
   const sb = createServerClient()
   // SECURITY (audit 2026-07-02): write to the session user's own answers, not a

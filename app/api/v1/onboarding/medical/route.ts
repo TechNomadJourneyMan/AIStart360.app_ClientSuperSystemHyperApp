@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { MEDICAL_INTAKE_FIELDS } from '@/lib/intake-schemas'
 import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { answersProfanityResponse } from '@/lib/moderation/http'
 
 function srBase() {
   return {
@@ -101,6 +102,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `missing required field: ${f.key}` }, { status: 400 })
     }
   }
+
+  // Анкета клиники: текстовые ответы с матом не сохраняем (поле = ключ вопроса).
+  const profane = answersProfanityResponse(answers)
+  if (profane) return profane
 
   // ── 1. Upsert companies row ───────────────────────────────────────────────
   const clinicName = answers.clinic_name?.trim() || 'Клиника'

@@ -12,6 +12,8 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { gateFeature } from '@/lib/access/gate'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { validateAiText } from '@/lib/ai/validation/apply'
+import { maskProfanity } from '@/lib/moderation/profanity'
+import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
 
 /**
  * POST /api/v1/assistant/converse — a multi-turn chat turn with «Гри».
@@ -74,7 +76,12 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     )
   }
-  const { message, history, screen } = parsed.data
+  const { screen } = parsed.data
+  // Profanity is not refused: the model sees the masked text, the answer gets
+  // a short polite note on top (lib/moderation/chat).
+  const asked = maskUserQuestion(parsed.data.message)
+  const message = asked.text
+  const history = parsed.data.history.map((h) => (h.role === 'user' ? { ...h, content: maskProfanity(h.content) } : h))
 
   try {
     const locale = localeFromRequestCookie(req)
@@ -111,7 +118,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({
       ok: true,
-      answer: checked?.text ?? turn.answer,
+      answer: safeAnswer(checked?.text ?? turn.answer, asked.masked),
       needs_expert: turn.needs_expert || checked?.meta.status === 'blocked',
       on_topic: turn.on_topic,
       validation: checked?.meta ?? null,
