@@ -4,6 +4,7 @@ import {
   WHATSAPP_WEB_PORTAL_AUDIENCE,
 } from "./whatsapp-web-signature";
 import { shouldUseOmnichannelPostgres } from "./postgres-runtime";
+import { whatsappWebBridgeControlMode } from "./whatsapp-web-client";
 
 const MAX_REPLAY_ENTRIES = 4_096;
 const REPLAY_TTL_SECONDS = 120;
@@ -52,14 +53,16 @@ export async function verifyWhatsAppPortalPullRequest(
   req: NextRequest,
   path: string,
   maxBodyBytes = 4_096,
+  options: { requirePostgres?: boolean } = {},
 ): Promise<VerifiedWhatsAppPortalRequest> {
   if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) {
     return { ok: false, status: 503 };
   }
   // Consumer endpoints stay available in direct mode so a bridge can be
   // switched to pull first and drain residual work during rollback. Only
-  // producers are gated by WHATSAPP_WEB_DELIVERY_MODE.
-  if (!shouldUseOmnichannelPostgres()) {
+  // producers are gated by WHATSAPP_WEB_DELIVERY_MODE. Session-control
+  // endpoints store through the Supabase service client instead and opt out.
+  if (options.requirePostgres !== false && !shouldUseOmnichannelPostgres()) {
     return { ok: false, status: 503 };
   }
   const secret = hmacSecret(process.env.WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET);
@@ -109,4 +112,23 @@ export async function verifyWhatsAppPortalPullRequest(
   }
   const sessionId = process.env.WHATSAPP_WEB_BRIDGE_SESSION_ID?.trim() || "primary";
   return { ok: true, rawBody, payload, sessionId };
+}
+
+/**
+ * Verifier for the pull-control endpoints (session status push, command
+ * claim/ack). They exist only when WHATSAPP_WEB_BRIDGE_CONTROL=pull and store
+ * through the Supabase service client, so the direct Postgres adapter is not
+ * required. Same HMAC protocol, audience, skew and replay window as above.
+ */
+export async function verifyWhatsAppBridgeControlRequest(
+  req: NextRequest,
+  path: string,
+  maxBodyBytes = 1_024,
+): Promise<VerifiedWhatsAppPortalRequest> {
+  if (whatsappWebBridgeControlMode() !== "pull") {
+    return { ok: false, status: 404 };
+  }
+  return verifyWhatsAppPortalPullRequest(req, path, maxBodyBytes, {
+    requirePostgres: false,
+  });
 }

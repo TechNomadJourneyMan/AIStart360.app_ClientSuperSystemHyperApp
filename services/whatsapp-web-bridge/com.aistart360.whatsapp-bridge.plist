@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE — do not load as is. Replace the placeholders and install as
+  ~/Library/LaunchAgents/com.aistart360.whatsapp-bridge.plist:
+
+    __NODE_BIN__   absolute path of node ≥ 20   (`command -v node`, e.g. /opt/homebrew/bin/node)
+    __REPO_DIR__   absolute path of the AIStart360 repository checkout (the launcher
+                   resolves services/whatsapp-web-bridge/... relative to it)
+    __LOG_DIR__    absolute log directory, e.g. $HOME/Library/Logs/AIStart360 (create it first)
+
+  Example:
+    sed -e "s#__NODE_BIN__#$(command -v node)#" \
+        -e "s#__REPO_DIR__#$PWD#" \
+        -e "s#__LOG_DIR__#$HOME/Library/Logs/AIStart360#g" \
+        services/whatsapp-web-bridge/com.aistart360.whatsapp-bridge.plist \
+        > ~/Library/LaunchAgents/com.aistart360.whatsapp-bridge.plist
+    mkdir -p "$HOME/Library/Logs/AIStart360"
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.aistart360.whatsapp-bridge.plist
+
+  Secrets live in the login Keychain (see README «Mac LaunchAgent»), never here.
+  Optional overrides go into an EnvironmentVariables dict: AISTART360_PORTAL_ORIGIN,
+  BRIDGE_AUTH_DIR, BRIDGE_STATE_DIR, PORTAL_CONTROL_MODE.
+-->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -8,15 +30,15 @@
   <array>
     <string>/usr/bin/caffeinate</string>
     <string>-i</string>
-    <string>/opt/homebrew/bin/node</string>
+    <string>__NODE_BIN__</string>
     <string>scripts/run-whatsapp-bridge-production.js</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/admin/Documents/Проекты /Вайбкодинг/AIStart360, через jules /AIStart360_HyperApp</string>
+  <string>__REPO_DIR__</string>
   <key>StandardOutPath</key>
-  <string>/Users/admin/Library/Logs/AIStart360/whatsapp-bridge.log</string>
+  <string>__LOG_DIR__/whatsapp-bridge.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/admin/Library/Logs/AIStart360/whatsapp-bridge.log</string>
+  <string>__LOG_DIR__/whatsapp-bridge.log</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

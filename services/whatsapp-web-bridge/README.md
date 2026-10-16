@@ -74,6 +74,17 @@ PORTAL_OUTBOUND_READY_INTERVAL_MS=1000
 PORTAL_OUTBOUND_IDLE_INTERVAL_MS=10000
 PORTAL_OUTBOUND_OFFLINE_INTERVAL_MS=10000
 PORTAL_OUTBOUND_TIMEOUT_MS=5000
+
+# Default direct keeps the portal → bridge session-control API (status, QR,
+# connect, logout). Pull pushes status and claims commands from the portal, so
+# the bridge needs NO public URL at all (pair with WHATSAPP_WEB_DELIVERY_MODE=pull).
+PORTAL_CONTROL_MODE=direct
+PORTAL_CONTROL_HEARTBEAT_MS=30000
+PORTAL_CONTROL_PAIRING_HEARTBEAT_MS=15000
+PORTAL_CONTROL_FAST_POLL_MS=2000
+PORTAL_CONTROL_IDLE_POLL_MS=10000
+PORTAL_CONTROL_OFFLINE_POLL_MS=15000
+PORTAL_CONTROL_TIMEOUT_MS=5000
 ```
 
 `BRIDGE_AUTOSTART=true` reconnects a previously linked session on process
@@ -138,6 +149,32 @@ The signed claim/authorize/result endpoints remain drain-capable while the
 portal producer is in `direct` mode. This permits a no-loss cutover (bridge
 first, portal second) and a no-loss rollback (portal first, wait for zero
 nonterminal deliveries, bridge second).
+
+### Pull control (bridge behind NAT, no public URL)
+
+`PORTAL_CONTROL_MODE=pull` on the bridge together with
+`WHATSAPP_WEB_BRIDGE_CONTROL=pull` on the portal moves session control onto
+signed bridge → portal calls (same HMAC protocol and secret as the webhook):
+
+| Call | Body | Purpose |
+| --- | --- | --- |
+| `POST /api/webhooks/whatsapp-web/session` | `{version:1, session_id, state, connected, updated_at, qr, qr_expires_at, error_code, bridge_version}` | Status push on every state change and QR rotation (debounced), plus a heartbeat every `PORTAL_CONTROL_PAIRING_HEARTBEAT_MS` while connecting/pairing and `PORTAL_CONTROL_HEARTBEAT_MS` otherwise (both ≥ 15 s). `qr` is non-null only while `state = "qr"`. |
+| `POST /api/webhooks/whatsapp-web/commands/claim` | `{version:1, session_id}` | Returns `{ok:true, command:null}` or `{command_id, action: "connect"\|"logout", lease_token, expires_at}`. |
+| `POST /api/webhooks/whatsapp-web/commands/ack` | `{version:1, session_id, command_id, lease_token, outcome: "succeeded"\|"failed", error_code?}` | Reports the result under the lease token; `accepted:false` means the command was fenced (expired/re-leased). |
+
+The portal stores one status row per session (migration
+`123_whatsapp_bridge_control.sql`); GIGA shows the pushed QR and treats a status
+older than 90 s as «bridge не на связи». «Получить QR-код» / «Завершить сессию»
+record a command (at most one in flight per session, expires after 2 minutes).
+The bridge executes it with the same semantics as
+`POST /v1/sessions/:session/connect|logout` (connect is a no-op while a session
+is active and rate-limited otherwise; logout deletes the local auth state) and
+remembers recently executed command ids, so a re-leased command is acked, not
+re-run. Command polling is fast (`PORTAL_CONTROL_FAST_POLL_MS`) for two minutes
+after a command and while a QR is shown, then backs off exponentially to
+`PORTAL_CONTROL_IDLE_POLL_MS` (~8,640 claims/day at the 10 s default), and uses
+the offline interval with back-off after portal failures. The QR string is never
+logged by the bridge or the portal.
 
 ## HMAC protocol
 
@@ -346,6 +383,28 @@ connected and both auth persistence and the durable webhook outbox are healthy.
 Monitor `last_webhook_error` and the owner-only `webhook-dead-letter` directory
 as separate alerts: a quarantined permanent rejection no longer blocks the
 active outbox, so readiness can recover while operator review is still needed.
+
+## Mac LaunchAgent (owner's Mac, no tunnel)
+
+`scripts/run-whatsapp-bridge-production.js` (run from the repository root)
+starts the bridge on `127.0.0.1:3100` with `WHATSAPP_WEB_DELIVERY_MODE=pull`,
+`PORTAL_CONTROL_MODE=pull`, `BRIDGE_AUTOSTART=true` and the portal origin
+`https://portal.aistart360.app` (override: `AISTART360_PORTAL_ORIGIN`). Auth and
+state default to `services/whatsapp-web-bridge/.data/auth` and `.data/state`
+(override: `BRIDGE_AUTH_DIR`, `BRIDGE_STATE_DIR`); both are created with mode
+`0700` on first run. Without `creds.json` the bridge simply waits: press
+«Получить QR-код» in GIGA → «Единый inbox» and scan the code.
+
+Secrets come from the login Keychain (account = the macOS user):
+
+```bash
+security add-generic-password -a "$USER" -s "AIStart360 WhatsApp Bridge API Secret" -w "<= WHATSAPP_WEB_BRIDGE_API_SECRET>"
+security add-generic-password -a "$USER" -s "AIStart360 WhatsApp Portal Secret" -w "<= WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET>"
+```
+
+`com.aistart360.whatsapp-bridge.plist` is a template: replace `__NODE_BIN__`,
+`__REPO_DIR__` and `__LOG_DIR__` (see the comment inside) and install it into
+`~/Library/LaunchAgents`. Run `npm ci` in this directory once before loading it.
 
 ## Railway deployment
 

@@ -4,6 +4,7 @@ import type {
   JsonObject,
   NormalizedOmnichannelMessage,
   NormalizedWhatsAppStatus,
+  OmnichannelChannel,
   OmnichannelContact,
   OmnichannelConversation,
   OmnichannelMessage,
@@ -120,7 +121,7 @@ function normalizeProviderTimestamp(value: string | null | undefined): {
 }
 
 export interface RecordWebhookEventInput {
-  channel: "instagram" | "whatsapp";
+  channel: OmnichannelChannel;
   eventHash: string;
   eventType?: string | null;
   accountExternalId?: string | null;
@@ -232,6 +233,9 @@ export async function ingestNormalizedMessage(
     contactPayload.display_name = message.contactName;
     if (message.channel === "instagram")
       contactPayload.username = message.contactName;
+  }
+  if (message.channel === "telegram" && message.contactUsername) {
+    contactPayload.username = message.contactUsername;
   }
   if (message.channel === "whatsapp") {
     // WhatsApp Web v7 can identify a contact by an opaque LID. Never present
@@ -859,7 +863,7 @@ export async function markMessageReplied(
 
 export interface LogOutboundMessageInput {
   conversationId: string;
-  channel: "instagram" | "whatsapp";
+  channel: OmnichannelChannel;
   externalMessageId: string;
   text: string;
   messageType?: OmnichannelMessageType;

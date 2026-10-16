@@ -14,10 +14,21 @@ import { getMetaConfigurationHealth } from '@/lib/omnichannel/meta-client'
 import { getWhatsAppWebBridgeConfigurationHealth } from '@/lib/omnichannel/whatsapp-web-client'
 import { getOmnichannelAutoReplyReadiness } from '@/lib/omnichannel/auto-reply-readiness'
 import { createServiceClient } from '@/lib/supabase-service'
+import { getTelegramBotConnection } from '@/lib/omnichannel/telegram-connections'
+
+/** Business bot connected and its webhook accepted (the client bot never counts). */
+async function telegramBotConnected(): Promise<boolean> {
+  try {
+    const connection = await getTelegramBotConnection()
+    return connection?.status === 'active' && connection.webhookOk
+  } catch {
+    return false
+  }
+}
 
 const updateSchema = z
   .object({
-    channel: z.enum(['instagram', 'whatsapp']),
+    channel: z.enum(['instagram', 'whatsapp', 'telegram']),
     enabled: z.boolean().optional(),
     mode: z.enum(['off', 'draft', 'auto']).optional(),
     business_context: z.string().trim().max(8_000).nullable().optional(),
@@ -139,10 +150,11 @@ export async function PATCH(req: NextRequest) {
       enabled: nextEnabled,
       mode: nextMode,
       businessContext: nextBusinessContext,
-      metaConfigured: meta[channel].configured,
+      metaConfigured: channel === 'telegram' ? false : meta[channel].configured,
       whatsAppWebConfigured: channel === 'whatsapp'
         ? getWhatsAppWebBridgeConfigurationHealth().configured
         : false,
+      telegramBotConnected: channel === 'telegram' ? await telegramBotConnected() : false,
     })
     const activatesAuto = nextEnabled && nextMode === 'auto' && (
       patch.mode === 'auto'

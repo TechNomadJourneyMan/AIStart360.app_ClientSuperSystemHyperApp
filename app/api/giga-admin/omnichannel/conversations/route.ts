@@ -8,7 +8,7 @@ import {
 } from '@/lib/omnichannel/development-admin-postgres'
 import { createServiceClient } from '@/lib/supabase-service'
 
-const channels = new Set(['instagram', 'whatsapp'])
+const channels = new Set(['instagram', 'whatsapp', 'telegram'])
 export async function GET(req: NextRequest) {
   const guard = await requireGiga(req, 'inbox.view')
   if (guard.response) return guard.response
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   if (shouldUseDevelopmentAdminPostgres()) {
     try {
       const result = await listDevelopmentAdminInbox(
-        channel as 'instagram' | 'whatsapp' | null,
+        channel as 'instagram' | 'whatsapp' | 'telegram' | null,
         200,
       )
       return NextResponse.json(result)

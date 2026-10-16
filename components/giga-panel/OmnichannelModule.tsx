@@ -15,11 +15,17 @@ import {
   Settings2,
   UserRound,
 } from 'lucide-react'
+import {
+  isTelegramBotReady,
+  telegramSourceLabel,
+  TelegramBotConnectBlock,
+  useTelegramInboxBot,
+} from './TelegramInboxBot'
 
-type Channel = 'instagram' | 'whatsapp'
+type Channel = 'instagram' | 'whatsapp' | 'telegram'
 type Mode = 'off' | 'draft' | 'auto'
 type ConversationStatus = 'open' | 'needs_human' | 'resolved' | 'muted'
-type WhatsAppWebState = 'disabled' | 'idle' | 'connecting' | 'qr' | 'connected' | 'logged_out' | 'error'
+type WhatsAppWebState = 'disabled' | 'idle' | 'connecting' | 'qr' | 'connected' | 'logged_out' | 'error' | 'offline'
 
 interface ChannelSetting {
   channel: Channel
@@ -95,6 +101,17 @@ interface WhatsAppWebConnector {
     updated_at?: string
     error_code?: string | null
   }
+  /** Pull control (bridge behind NAT): last push and the in-flight command. */
+  bridge?: {
+    control: 'pull'
+    online: boolean
+    last_seen_at: string | null
+    pending_command: {
+      action: 'connect' | 'logout'
+      status: string
+      created_at: string
+    } | null
+  }
 }
 
 interface MetaChannelConfiguration {
@@ -124,6 +141,7 @@ function displayName(conversation: InboxConversation): string {
 }
 
 function channelLabel(channel: Channel): string {
+  if (channel === 'telegram') return 'Telegram'
   return channel === 'instagram' ? 'Instagram' : 'WhatsApp'
 }
 
@@ -140,6 +158,7 @@ function whatsAppWebStateLabel(state: WhatsAppWebState): string {
   if (state === 'qr') return 'Ожидает сканирования QR'
   if (state === 'logged_out') return 'Сессия завершена'
   if (state === 'error') return 'Ошибка'
+  if (state === 'offline') return 'Bridge не на связи'
   if (state === 'disabled') return 'Выключен'
   return 'Не подключён'
 }
@@ -152,7 +171,13 @@ function equipmentFlowConfig(item: ChannelSetting): Record<string, unknown> | nu
 }
 
 function ChannelIcon({ channel, size = 16 }: { channel: Channel; size?: number }) {
+  if (channel === 'telegram') return <Send size={size} />
   return channel === 'instagram' ? <Instagram size={size} /> : <MessageCircle size={size} />
+}
+
+function channelBadgeClass(channel: Channel): string {
+  if (channel === 'telegram') return 'bg-sky-500/15 text-sky-300'
+  return channel === 'instagram' ? 'bg-fuchsia-500/15 text-fuchsia-300' : 'bg-emerald-500/15 text-emerald-300'
 }
 
 export function OmnichannelModule() {
@@ -172,10 +197,13 @@ export function OmnichannelModule() {
   const [metaConfiguration, setMetaConfiguration] = useState<MetaConfiguration | null>(null)
   const [whatsAppWebLoading, setWhatsAppWebLoading] = useState(true)
   const [whatsAppWebAction, setWhatsAppWebAction] = useState<'connect' | 'logout' | null>(null)
+  const [whatsAppWebCardVisible, setWhatsAppWebCardVisible] = useState(true)
+  const whatsAppWebCardRef = useRef<HTMLDivElement | null>(null)
   const settingMutationRef = useRef(false)
   const settingMutationVersionRef = useRef(0)
   const detailRequestRef = useRef(0)
   const selectedIdRef = useRef<string | null>(null)
+  const telegramBot = useTelegramInboxBot()
 
   const loadConversations = useCallback(async () => {
     const settingsVersion = settingMutationVersionRef.current
@@ -265,11 +293,26 @@ export function OmnichannelModule() {
   useEffect(() => { void loadConversations() }, [loadConversations])
   useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => { void loadWhatsAppWeb() }, [loadWhatsAppWeb])
+  // Poll the QR card only while pairing (or a pull-control command waits for
+  // the bridge) AND the card is on screen in a visible tab.
   useEffect(() => {
-    if (!['connecting', 'qr'].includes(whatsAppWeb?.status?.state ?? '')) return
-    const interval = window.setInterval(() => { void loadWhatsAppWeb() }, 3_000)
+    const node = whatsAppWebCardRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(([entry]) => {
+      setWhatsAppWebCardVisible(Boolean(entry?.isIntersecting))
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const whatsAppWebPolling = ['connecting', 'qr'].includes(whatsAppWeb?.status?.state ?? '')
+    || Boolean(whatsAppWeb?.bridge?.pending_command)
+  useEffect(() => {
+    if (!whatsAppWebPolling || !whatsAppWebCardVisible) return
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadWhatsAppWeb()
+    }, 3_000)
     return () => window.clearInterval(interval)
-  }, [loadWhatsAppWeb, whatsAppWeb?.status?.state])
+  }, [loadWhatsAppWeb, whatsAppWebPolling, whatsAppWebCardVisible])
   useEffect(() => {
     selectedIdRef.current = selectedId
     setDetail(null)
@@ -290,14 +333,20 @@ export function OmnichannelModule() {
 
   const whatsAppWebState: WhatsAppWebState = whatsAppWeb?.status?.state
     ?? (whatsAppWeb?.configuration.enabled ? 'idle' : 'disabled')
-  const whatsAppWebBusy = whatsAppWebAction !== null || ['connecting', 'qr'].includes(whatsAppWebState)
+  const whatsAppWebPendingCommand = whatsAppWeb?.bridge?.pending_command ?? null
+  const whatsAppWebBusy = whatsAppWebAction !== null
+    || ['connecting', 'qr'].includes(whatsAppWebState)
+    || whatsAppWebPendingCommand?.action === 'connect'
 
   function channelAutoReadiness(item: ChannelSetting) {
     const businessContextReady = Boolean(item.business_context?.trim())
-    const metaReady = metaConfiguration?.[item.channel]?.configured === true
-    const providerReady = metaReady || (
-      item.channel === 'whatsapp' && whatsAppWeb?.configuration.configured === true
-    )
+    const metaReady = item.channel !== 'telegram'
+      && metaConfiguration?.[item.channel]?.configured === true
+    const providerReady = item.channel === 'telegram'
+      ? isTelegramBotReady(telegramBot.status)
+      : metaReady || (
+        item.channel === 'whatsapp' && whatsAppWeb?.configuration.configured === true
+      )
     return {
       ready: businessContextReady && providerReady,
       businessContextReady,
@@ -470,11 +519,16 @@ export function OmnichannelModule() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       })
-      const json = (await res.json()) as Partial<WhatsAppWebConnector> & { error?: string }
+      const json = (await res.json()) as Partial<WhatsAppWebConnector> & { error?: string; warning?: string }
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
       if (json.configuration) setWhatsAppWeb(json as WhatsAppWebConnector)
       await loadWhatsAppWeb(true)
-      toast.success(action === 'connect' ? 'Подключение запущено' : 'Сессия WhatsApp Web завершена')
+      if (json.warning) toast.warning(json.warning)
+      else if (json.bridge?.control === 'pull') {
+        toast.success(action === 'connect'
+          ? 'Команда отправлена bridge — QR-код появится через несколько секунд'
+          : 'Команда завершения сессии отправлена bridge')
+      } else toast.success(action === 'connect' ? 'Подключение запущено' : 'Сессия WhatsApp Web завершена')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Операция WhatsApp Web не выполнена')
     } finally {
@@ -489,7 +543,7 @@ export function OmnichannelModule() {
           <div className="flex items-center gap-2 text-blue-300">
             <MessageCircle size={18} /><h2 className="text-xl font-bold">Единый inbox</h2>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Instagram + WhatsApp · AI-черновики, автоответы и передача человеку</p>
+          <p className="text-xs text-slate-500 mt-1">Instagram + WhatsApp + Telegram · AI-черновики, автоответы и передача человеку</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => void startBackfill(backfillTarget)} disabled={backfilling !== null || backfillMonitoring !== null} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20 disabled:opacity-50">
@@ -519,7 +573,7 @@ export function OmnichannelModule() {
       </div>
 
       <details open className="rounded-2xl bg-white/[0.03] border border-white/[0.07] overflow-hidden">
-        <summary className="flex items-center gap-2 px-4 py-3 text-xs font-semibold text-slate-300 cursor-pointer"><Settings2 size={14} /> WhatsApp QR, режимы AI и база ответов</summary>
+        <summary className="flex items-center gap-2 px-4 py-3 text-xs font-semibold text-slate-300 cursor-pointer"><Settings2 size={14} /> WhatsApp QR, Telegram-бот, режимы AI и база ответов</summary>
         <div className="grid lg:grid-cols-2 gap-4 p-4 border-t border-white/[0.06]">
           {settings.map((item) => (
             <div key={item.channel} className="rounded-xl bg-black/10 border border-white/[0.06] p-4 space-y-3">
@@ -539,6 +593,14 @@ export function OmnichannelModule() {
                   /> активен
                 </label>
               </div>
+              {item.channel === 'telegram' && (
+                <TelegramBotConnectBlock
+                  status={telegramBot.status}
+                  loading={telegramBot.loading}
+                  onStatus={telegramBot.setStatus}
+                  onReload={telegramBot.reload}
+                />
+              )}
               <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.03] p-1">
                 {(['off', 'draft', 'auto'] as Mode[]).map((mode) => (
                   <button
@@ -626,10 +688,22 @@ export function OmnichannelModule() {
                       !channelAutoReadiness(item).businessContextReady ? 'база ответов пуста' : null,
                     ].filter(Boolean).join(', ')}.`}
               </div>
-              <p className="text-[10px] text-slate-600">Auto: только низкий риск, уверенность ≥ {Math.round(item.confidence_threshold * 100)}% и окно 24 часа.</p>
+              <p className="text-[10px] text-slate-600">Auto: только низкий риск, уверенность ≥ {Math.round(item.confidence_threshold * 100)}%{item.channel === 'telegram' ? ' (у Telegram нет 24-часового окна; «стоп» отключает AI). Чаты «Бот AIStart360» — только черновики.' : ' и окно 24 часа.'}</p>
             </div>
           ))}
-          <div className="order-first lg:col-span-2 rounded-xl bg-amber-500/[0.035] border border-amber-500/15 p-4 space-y-4">
+          {settings.length > 0 && !settings.some((item) => item.channel === 'telegram') && (
+            <div className="rounded-xl bg-black/10 border border-white/[0.06] p-4 space-y-3">
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-200"><ChannelIcon channel="telegram" /> Telegram</span>
+              <TelegramBotConnectBlock
+                status={telegramBot.status}
+                loading={telegramBot.loading}
+                onStatus={telegramBot.setStatus}
+                onReload={telegramBot.reload}
+              />
+              <p className="text-[10px] text-amber-300">Режимы AI для Telegram появятся после применения миграции 124.</p>
+            </div>
+          )}
+          <div ref={whatsAppWebCardRef} className="order-first lg:col-span-2 rounded-xl bg-amber-500/[0.035] border border-amber-500/15 p-4 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
@@ -640,7 +714,7 @@ export function OmnichannelModule() {
               <span className={`w-fit px-2 py-1 rounded-lg border text-[10px] ${
                 whatsAppWebState === 'connected'
                   ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                  : whatsAppWebState === 'error'
+                  : whatsAppWebState === 'error' || whatsAppWebState === 'offline'
                     ? 'bg-red-500/10 text-red-300 border-red-500/20'
                     : ['connecting', 'qr'].includes(whatsAppWebState)
                       ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
@@ -663,6 +737,12 @@ export function OmnichannelModule() {
                   <p className="text-xs text-slate-400">QR-коннектор выключен на сервере. Он не запускается автоматически и не влияет на официальный Cloud API.</p>
                 ) : !whatsAppWeb.configuration.configured ? (
                   <p className="text-xs text-slate-400">Bridge-сервер ещё не настроен. Администратору нужно добавить серверные переменные окружения и постоянное хранилище сессии.</p>
+                ) : whatsAppWebState === 'offline' ? (
+                  <p className="text-xs text-red-300">
+                    Bridge не на связи{whatsAppWeb.bridge?.last_seen_at
+                      ? ` с ${formatTime(whatsAppWeb.bridge.last_seen_at)}`
+                      : ' — он ещё ни разу не присылал статус'}. Проверьте, что bridge запущен на Mac и видит интернет.
+                  </p>
                 ) : whatsAppWebState === 'connected' ? (
                   <p className="text-xs text-emerald-300">Номер авторизован. Новые входящие сообщения доступны bridge-серверу, пока он работает и сохраняет сессию.</p>
                 ) : whatsAppWebState === 'qr' ? (
@@ -675,8 +755,20 @@ export function OmnichannelModule() {
                   <p className="text-xs text-slate-400">Сессия не активна. После запуска появится QR-код для сканирования телефоном.</p>
                 )}
 
+                {whatsAppWebPendingCommand && (
+                  <p className="flex items-center gap-1.5 text-[10px] text-amber-200/80">
+                    <Loader2 size={11} className="animate-spin" />
+                    {whatsAppWebPendingCommand.status === 'claimed'
+                      ? 'Bridge выполняет команду…'
+                      : `Команда «${whatsAppWebPendingCommand.action === 'connect' ? 'Получить QR-код' : 'Завершить сессию'}» ждёт bridge (до 2 минут)`}
+                  </p>
+                )}
+
                 {whatsAppWeb?.status?.updated_at && (
                   <p className="text-[10px] text-slate-600">Статус обновлён: {formatTime(whatsAppWeb.status.updated_at)}</p>
+                )}
+                {whatsAppWeb?.bridge?.online && whatsAppWeb.bridge.last_seen_at && (
+                  <p className="text-[10px] text-slate-600">Bridge на связи: {formatTime(whatsAppWeb.bridge.last_seen_at)}</p>
                 )}
 
                 <div className="flex flex-wrap gap-2">
@@ -747,7 +839,7 @@ export function OmnichannelModule() {
       </details>
 
       <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07] w-fit">
-        {(['all', 'instagram', 'whatsapp'] as const).map((value) => (
+        {(['all', 'instagram', 'whatsapp', 'telegram'] as const).map((value) => (
           <button key={value} onClick={() => setChannel(value)} className={`px-3 py-2 rounded-lg text-xs ${channel === value ? 'bg-blue-500/20 text-blue-300' : 'text-slate-500'}`}>
             {value === 'all' ? 'Все' : channelLabel(value)}
           </button>
@@ -763,12 +855,13 @@ export function OmnichannelModule() {
           ) : conversations.map((item) => (
             <button key={item.id} onClick={() => { selectedIdRef.current = item.id; setSelectedId(item.id) }} className={`w-full text-left p-4 border-b border-white/[0.05] hover:bg-white/[0.04] ${selectedId === item.id ? 'bg-blue-500/[0.08]' : ''}`}>
               <div className="flex items-start gap-3">
-                <div className={`mt-0.5 p-2 rounded-xl ${item.channel === 'instagram' ? 'bg-fuchsia-500/15 text-fuchsia-300' : 'bg-emerald-500/15 text-emerald-300'}`}><ChannelIcon channel={item.channel} size={14} /></div>
+                <div className={`mt-0.5 p-2 rounded-xl ${channelBadgeClass(item.channel)}`}><ChannelIcon channel={item.channel} size={14} /></div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold text-slate-200 truncate">{displayName(item)}</p><span className="text-[9px] text-slate-600 flex-shrink-0">{formatTime(item.last_message_at)}</span></div>
                   <p className="text-[11px] text-slate-500 truncate mt-1">{item.last_message?.text || item.summary || '[нет текста]'}</p>
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                     <span className={`px-1.5 py-0.5 rounded text-[9px] ${item.status === 'needs_human' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/[0.05] text-slate-500'}`}>{statusLabel(item.status)}</span>
+                    {item.channel === 'telegram' && telegramSourceLabel(item.contact?.external_id, telegramBot.status) && <span className="px-1.5 py-0.5 rounded text-[9px] bg-sky-500/15 text-sky-300">{telegramSourceLabel(item.contact?.external_id, telegramBot.status)}</span>}
                     {item.last_message?.ai_draft && <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-500/15 text-blue-300">AI-черновик</span>}
                     {(item.lead_score ?? 0) >= 60 && <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/15 text-emerald-300">лид {item.lead_score}</span>}
                   </div>
@@ -781,7 +874,7 @@ export function OmnichannelModule() {
         <div className="min-w-0 flex flex-col max-h-[760px]">
           {!selectedId ? <div className="flex-1 flex items-center justify-center text-sm text-slate-600">Выберите диалог</div> : detailLoading && !detail ? <div className="flex-1 flex items-center justify-center text-slate-600"><Loader2 className="animate-spin" /></div> : detail && detail.conversation.id === selectedId ? <>
             <div className="p-4 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-              <div className="min-w-0"><p className="text-sm font-semibold text-slate-100 truncate">{displayName(detail.conversation)}</p><p className="text-[11px] text-slate-500 mt-1">{channelLabel(detail.conversation.channel)}{detail.conversation.intent ? ` · ${detail.conversation.intent}` : ''}{detail.conversation.lead_score != null ? ` · лид ${detail.conversation.lead_score}/100` : ''}</p>{detail.conversation.summary && <p className="text-[11px] text-slate-400 mt-2 max-w-2xl">{detail.conversation.summary}</p>}</div>
+              <div className="min-w-0"><p className="text-sm font-semibold text-slate-100 truncate">{displayName(detail.conversation)}</p><p className="text-[11px] text-slate-500 mt-1">{channelLabel(detail.conversation.channel)}{detail.conversation.channel === 'telegram' && telegramSourceLabel(detail.conversation.contact?.external_id, telegramBot.status) ? ` · ${telegramSourceLabel(detail.conversation.contact?.external_id, telegramBot.status)}` : ''}{detail.conversation.intent ? ` · ${detail.conversation.intent}` : ''}{detail.conversation.lead_score != null ? ` · лид ${detail.conversation.lead_score}/100` : ''}</p>{detail.conversation.summary && <p className="text-[11px] text-slate-400 mt-2 max-w-2xl">{detail.conversation.summary}</p>}</div>
               <div className="flex gap-1 flex-wrap"><button onClick={() => void patchConversation({ status: 'open' })} className="px-2 py-1.5 rounded-lg text-[10px] text-blue-300 bg-blue-500/10 border border-blue-500/15">В работу</button><button onClick={() => void patchConversation({ status: 'resolved' })} className="px-2 py-1.5 rounded-lg text-[10px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/15">Закрыть</button><button onClick={() => void patchConversation({ status: 'muted' })} className="px-2 py-1.5 rounded-lg text-[10px] text-slate-400 bg-white/[0.04] border border-white/[0.07]">AI выкл.</button>{detail.conversation.auto_reply_override === false && <button onClick={() => void patchConversation({ auto_reply_override: null, status: 'open' })} className="px-2 py-1.5 rounded-lg text-[10px] text-violet-300 bg-violet-500/10 border border-violet-500/15">Вернуть AI</button>}</div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[320px]">

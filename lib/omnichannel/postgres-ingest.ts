@@ -182,6 +182,14 @@ export async function ingestNormalizedMessage(
   const catchUp = isCatchUp(message);
   const persistedStatus = catchUp ? "imported" : message.status;
   const hasContactName = Boolean(message.contactName);
+  const username =
+    message.channel === "instagram"
+      ? hasContactName
+        ? message.contactName
+        : null
+      : message.channel === "telegram"
+        ? message.contactUsername ?? null
+        : null;
   const hasPhone = message.channel === "whatsapp";
   const phone =
     message.channel === "whatsapp"
@@ -210,12 +218,10 @@ export async function ingestNormalizedMessage(
           message.channel,
           message.contactExternalId,
           hasContactName ? message.contactName : null,
-          hasContactName && message.channel === "instagram"
-            ? message.contactName
-            : null,
+          username,
           phone,
           hasContactName,
-          hasContactName && message.channel === "instagram",
+          username !== null,
           hasPhone,
         ],
       );

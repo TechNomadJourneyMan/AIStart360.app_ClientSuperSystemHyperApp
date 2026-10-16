@@ -31,6 +31,7 @@ COPY --chown=bridge:bridge \
   bridge-reliability.mjs \
   portal-job-drain-kicker.mjs \
   portal-outbound-puller.mjs \
+  portal-session-control.mjs \
   docker-entrypoint.sh \
   ./
 

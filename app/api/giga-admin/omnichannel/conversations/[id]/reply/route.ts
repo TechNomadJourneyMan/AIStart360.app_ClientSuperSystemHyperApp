@@ -153,7 +153,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const error =
       window.mode === 'template_required'
         ? '24-часовое окно WhatsApp закрыто: нужен заранее одобренный template'
-        : 'Разрешённое Meta окно ответа уже закрыто'
+        : conversation.channel === 'telegram'
+          ? 'Время последнего сообщения Telegram некорректно — проверьте диалог'
+          : 'Разрешённое Meta окно ответа уже закрыто'
     return NextResponse.json({ error, code: window.reason }, { status: 409 })
   }
 

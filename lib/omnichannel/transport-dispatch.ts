@@ -2,6 +2,7 @@ import {
   createMetaClient,
   isConfiguredMetaAccount,
   type MetaInteractiveOption,
+  type MetaSendFailure,
   type MetaSendResult,
 } from './meta-client'
 import type { JsonObject, OmnichannelChannel } from './types'
@@ -17,11 +18,24 @@ import {
   type WhatsAppWebPresence,
   type WhatsAppWebPresenceResult,
 } from './whatsapp-web-client'
+import { isEncryptionConfigured } from '@/lib/crypto/secrets'
+import { botToken } from '@/lib/telegram/bots/registry'
+import {
+  telegramBotIdFromToken,
+  telegramSendChatAction,
+  telegramSendText,
+} from './telegram-bot-api'
+import {
+  botIdFromBusinessAccount,
+  getActiveTelegramBotToken,
+} from './telegram-connections'
 
 export const OMNICHANNEL_TRANSPORTS = [
   'instagram_graph',
   'whatsapp_cloud',
   'whatsapp_web',
+  'telegram_bot',
+  'telegram_client_bot',
 ] as const
 
 export type OmnichannelTransport = (typeof OMNICHANNEL_TRANSPORTS)[number]
@@ -103,6 +117,10 @@ export function resolveOmnichannelTransport(
   metadata: JsonObject | null | undefined,
 ): OmnichannelTransport | null {
   const declared = metadataString(metadata, 'transport')
+  if (channel === 'telegram') {
+    // No legacy Telegram rows exist: the transport must always be explicit.
+    return declared === 'telegram_bot' || declared === 'telegram_client_bot' ? declared : null
+  }
   if (!declared) return channel === 'instagram' ? 'instagram_graph' : 'whatsapp_cloud'
   if (channel === 'instagram') return declared === 'instagram_graph' ? declared : null
   return declared === 'whatsapp_cloud' || declared === 'whatsapp_web' ? declared : null
@@ -115,6 +133,15 @@ export function isConfiguredOmnichannelSender(input: {
 }): boolean {
   const transport = resolveOmnichannelTransport(input.channel, input.metadata)
   if (!transport) return false
+  if (transport === 'telegram_bot') {
+    // Presence-only: the token is looked up (and must be ACTIVE) at send time,
+    // so a disconnected bot still fails closed in dispatchOmnichannelReply.
+    return botIdFromBusinessAccount(input.accountExternalId) !== null
+      && isEncryptionConfigured()
+  }
+  if (transport === 'telegram_client_bot') {
+    return isTelegramClientBotAccount(input.accountExternalId)
+  }
   if (transport === 'whatsapp_web') {
     const deliveryMode = whatsappWebDeliveryMode()
     if (deliveryMode === null) return false
@@ -132,6 +159,97 @@ export function isConfiguredOmnichannelSender(input: {
 
 function localFailure(code: string, message: string): MetaSendResult {
   return { ok: false, status: null, code, message, retryable: false }
+}
+
+/** A local refusal that provably never reached Telegram. */
+function telegramLocalFailure(code: string, message: string): MetaSendFailure {
+  return { ok: false, status: null, code, message, retryable: false, requestSent: false }
+}
+
+/** `tgclient:<id>` of the platform's client bot (TELEGRAM_BOT_TOKEN), or null. */
+export function telegramClientBotAccountExternalId(): string | null {
+  const botId = telegramBotIdFromToken(botToken('client'))
+  return botId ? `tgclient:${botId}` : null
+}
+
+function isTelegramClientBotAccount(accountExternalId: string): boolean {
+  const expected = telegramClientBotAccountExternalId()
+  return expected !== null && expected === accountExternalId
+}
+
+/**
+ * Chats of the platform's client bot are never answered automatically: the
+ * inbox settings (business context, scenario) describe the business, not
+ * AIStart360. AI still prepares a draft; an operator sends it.
+ */
+export function isDraftOnlyOmnichannelTransport(
+  channel: OmnichannelChannel,
+  metadata: JsonObject | null | undefined,
+): boolean {
+  return resolveOmnichannelTransport(channel, metadata) === 'telegram_client_bot'
+}
+
+function isTelegramTransport(
+  transport: OmnichannelTransport | null,
+): transport is 'telegram_bot' | 'telegram_client_bot' {
+  return transport === 'telegram_bot' || transport === 'telegram_client_bot'
+}
+
+/** Resolve the Bot API token for a Telegram conversation; never returns it to callers outside the server. */
+async function telegramTokenFor(
+  transport: 'telegram_bot' | 'telegram_client_bot',
+  accountExternalId: string,
+): Promise<{ ok: true; token: string } | { ok: false; failure: MetaSendResult }> {
+  if (transport === 'telegram_client_bot') {
+    const token = botToken('client')
+    if (!token || !isTelegramClientBotAccount(accountExternalId)) {
+      return {
+        ok: false,
+        failure: telegramLocalFailure('telegram_bot_not_connected', 'Клиентский бот AIStart360 не настроен или сменился'),
+      }
+    }
+    return { ok: true, token }
+  }
+  const botId = botIdFromBusinessAccount(accountExternalId)
+  if (!botId) {
+    return { ok: false, failure: telegramLocalFailure('unsupported_transport', 'Unknown Telegram account') }
+  }
+  let token: string | null
+  try {
+    token = await getActiveTelegramBotToken(botId)
+  } catch {
+    return {
+      ok: false,
+      failure: telegramLocalFailure('telegram_bot_unavailable', 'Не удалось прочитать подключение Telegram-бота'),
+    }
+  }
+  if (!token) {
+    return {
+      ok: false,
+      failure: telegramLocalFailure('telegram_bot_not_connected', 'Telegram-бот отключён — подключите его в настройках inbox'),
+    }
+  }
+  return { ok: true, token }
+}
+
+async function dispatchTelegramReply(
+  transport: 'telegram_bot' | 'telegram_client_bot',
+  input: OmnichannelDispatchInput,
+): Promise<MetaSendResult> {
+  const chatId = input.conversationExternalId
+  if (!/^-?\d{1,20}$/.test(chatId)) {
+    return telegramLocalFailure('invalid_input', 'Telegram chat id is invalid')
+  }
+  const resolved = await telegramTokenFor(transport, input.accountExternalId)
+  if (!resolved.ok) return resolved.failure
+  // Equipment-flow choices are already rendered as numbered text in `text`.
+  const result = await telegramSendText(resolved.token, { chatId, text: input.text })
+  if (!result.ok) return result
+  // Telegram message ids are unique per chat only: namespace them like inbound ids.
+  return {
+    ...result,
+    externalMessageId: `${input.accountExternalId}:${chatId}:${result.externalMessageId}`,
+  }
 }
 
 function bridgeReplyToId(
@@ -174,6 +292,10 @@ export async function dispatchOmnichannelReply(
   }
   if (!input.idempotencyKey.trim()) {
     return localFailure('invalid_input', 'A stable idempotency key is required')
+  }
+
+  if (isTelegramTransport(transport)) {
+    return dispatchTelegramReply(transport, input)
   }
 
   if (transport === 'whatsapp_web') {
@@ -275,13 +397,22 @@ export async function dispatchOmnichannelReply(
 }
 
 /**
- * Presence is intentionally limited to the Web transport. Cloud API and
- * Instagram have no equivalent transient typing command in this integration.
+ * Presence: WhatsApp Web (composing/paused) and Telegram (sendChatAction
+ * typing). Cloud API and Instagram have no equivalent transient typing
+ * command in this integration.
  */
 export async function dispatchOmnichannelPresence(
   input: OmnichannelPresenceInput,
 ): Promise<WhatsAppWebPresenceResult | null> {
   const transport = resolveOmnichannelTransport(input.channel, input.metadata)
+  if (isTelegramTransport(transport)) {
+    // Telegram's "typing…" lasts ~5 s or until the next message; there is no
+    // explicit stop, so `paused` is a no-op.
+    if (input.presence !== 'composing') return { ok: true, rawStatus: 204 }
+    const resolved = await telegramTokenFor(transport, input.accountExternalId)
+    if (!resolved.ok) return null
+    return telegramSendChatAction(resolved.token, input.conversationExternalId)
+  }
   if (transport !== 'whatsapp_web') return null
   return createWhatsAppWebClient().sendPresence({
     recipientId: input.conversationExternalId,

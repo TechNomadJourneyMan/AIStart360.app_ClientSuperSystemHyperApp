@@ -7,6 +7,11 @@ export interface OmnichannelAutoReplyReadinessInput {
   businessContext: string | null | undefined
   metaConfigured: boolean
   whatsAppWebConfigured?: boolean
+  /**
+   * Telegram: the inbox's business bot is connected (token validated, webhook
+   * set). The platform's client bot never counts — its chats are draft-only.
+   */
+  telegramBotConnected?: boolean
 }
 
 export interface OmnichannelAutoReplyReadiness {
@@ -20,8 +25,10 @@ export function getOmnichannelAutoReplyReadiness(
 ): OmnichannelAutoReplyReadiness {
   const missing: OmnichannelAutoReplyReadiness['missing'] = []
   if (!input.businessContext?.trim()) missing.push('business_context')
-  const providerConfigured = input.metaConfigured
-    || (input.channel === 'whatsapp' && input.whatsAppWebConfigured === true)
+  const providerConfigured = input.channel === 'telegram'
+    ? input.telegramBotConnected === true
+    : input.metaConfigured
+      || (input.channel === 'whatsapp' && input.whatsAppWebConfigured === true)
   if (!providerConfigured) missing.push('provider_configuration')
   return { ready: missing.length === 0, missing }
 }

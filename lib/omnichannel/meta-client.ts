@@ -182,16 +182,18 @@ export function getMetaConfigurationHealth(
 }
 
 export function getConfiguredMetaAccountId(
-  channel: 'instagram' | 'whatsapp',
+  channel: 'instagram' | 'whatsapp' | 'telegram',
   env: MetaEnvironment = process.env,
 ): string | null {
+  // Telegram is not a Meta channel: never configured here.
+  if (channel === 'telegram') return null
   return nonEmpty(
     channel === 'instagram' ? env.INSTAGRAM_ACCOUNT_ID : env.WHATSAPP_PHONE_NUMBER_ID,
   )
 }
 
 export function isConfiguredMetaAccount(
-  channel: 'instagram' | 'whatsapp',
+  channel: 'instagram' | 'whatsapp' | 'telegram',
   accountExternalId: string,
   env: MetaEnvironment = process.env,
 ): boolean {

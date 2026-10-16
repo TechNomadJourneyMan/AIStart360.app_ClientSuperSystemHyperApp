@@ -43,6 +43,10 @@ import {
   parsePortalOutboundUrls,
   PortalOutboundPuller,
 } from './portal-outbound-puller.mjs'
+import {
+  parsePortalControlUrls,
+  PortalSessionControl,
+} from './portal-session-control.mjs'
 
 // Baileys auth files are account-equivalent credentials. Force newly created
 // files to owner-only permissions even if the container host has a permissive umask.
@@ -255,6 +259,38 @@ const PORTAL_OUTBOUND_TIMEOUT_MS = envInteger(
   5_000,
   { min: 500, max: 30_000 },
 )
+// Pull control: status push + command polling for a bridge without a public
+// URL. Heartbeats are >= 15 s because every accepted push is a portal DB write.
+const PORTAL_CONTROL_HEARTBEAT_MS = envInteger(
+  'PORTAL_CONTROL_HEARTBEAT_MS',
+  30_000,
+  { min: 15_000, max: 60_000 },
+)
+const PORTAL_CONTROL_PAIRING_HEARTBEAT_MS = envInteger(
+  'PORTAL_CONTROL_PAIRING_HEARTBEAT_MS',
+  15_000,
+  { min: 15_000, max: 60_000 },
+)
+const PORTAL_CONTROL_FAST_POLL_MS = envInteger(
+  'PORTAL_CONTROL_FAST_POLL_MS',
+  2_000,
+  { min: 1_000, max: 30_000 },
+)
+const PORTAL_CONTROL_IDLE_POLL_MS = envInteger(
+  'PORTAL_CONTROL_IDLE_POLL_MS',
+  10_000,
+  { min: 2_000, max: 300_000 },
+)
+const PORTAL_CONTROL_OFFLINE_POLL_MS = envInteger(
+  'PORTAL_CONTROL_OFFLINE_POLL_MS',
+  15_000,
+  { min: 2_000, max: 300_000 },
+)
+const PORTAL_CONTROL_TIMEOUT_MS = envInteger(
+  'PORTAL_CONTROL_TIMEOUT_MS',
+  5_000,
+  { min: 500, max: 30_000 },
+)
 
 if (!/^[A-Za-z0-9._-]{1,64}$/.test(SESSION_ID)) {
   throw new Error('WHATSAPP_SESSION_ID contains unsupported characters')
@@ -316,6 +352,21 @@ const PORTAL_JOB_DRAIN_URL = parsePortalJobDrainUrl(
 const PORTAL_OUTBOUND_URLS =
   WHATSAPP_WEB_DELIVERY_MODE === 'pull'
     ? parsePortalOutboundUrls(PORTAL_WEBHOOK_URL)
+    : null
+const PORTAL_CONTROL_MODE = envString('PORTAL_CONTROL_MODE', {
+  fallback: 'direct',
+}).toLowerCase()
+if (!['direct', 'pull'].includes(PORTAL_CONTROL_MODE)) {
+  throw new Error('PORTAL_CONTROL_MODE must be direct or pull')
+}
+if (PORTAL_CONTROL_IDLE_POLL_MS < PORTAL_CONTROL_FAST_POLL_MS) {
+  throw new Error(
+    'PORTAL_CONTROL_IDLE_POLL_MS must not be below PORTAL_CONTROL_FAST_POLL_MS',
+  )
+}
+const PORTAL_CONTROL_URLS =
+  PORTAL_CONTROL_MODE === 'pull'
+    ? parsePortalControlUrls(PORTAL_WEBHOOK_URL)
     : null
 
 class HttpError extends Error {
@@ -1101,6 +1152,24 @@ const portalOutboundPuller = PORTAL_OUTBOUND_URLS
       log: safeLog,
     })
   : null
+const portalSessionControl = PORTAL_CONTROL_URLS
+  ? new PortalSessionControl({
+      urls: PORTAL_CONTROL_URLS,
+      sessionId: SESSION_ID,
+      secret: PORTAL_SECRET,
+      keyId: PORTAL_KEY_ID,
+      bridgeVersion: SERVICE_VERSION,
+      getStatus: () => publicSessionStatus(),
+      execute: executePortalControlCommand,
+      heartbeatMs: PORTAL_CONTROL_HEARTBEAT_MS,
+      pairingHeartbeatMs: PORTAL_CONTROL_PAIRING_HEARTBEAT_MS,
+      fastPollMs: PORTAL_CONTROL_FAST_POLL_MS,
+      idlePollMs: PORTAL_CONTROL_IDLE_POLL_MS,
+      offlinePollMs: PORTAL_CONTROL_OFFLINE_POLL_MS,
+      timeoutMs: PORTAL_CONTROL_TIMEOUT_MS,
+      log: safeLog,
+    })
+  : null
 let reconnectAttempt = 0
 let manualStop = false
 let inboundTail = Promise.resolve()
@@ -1124,6 +1193,9 @@ function persistAuthState(saveCreds) {
 function setSessionState(nextState) {
   sessionState = nextState
   stateUpdatedAt = new Date().toISOString()
+  // Pull control: every state change and QR rotation (which re-enters 'qr')
+  // is pushed to the portal; the push is debounced inside the controller.
+  portalSessionControl?.notifyStatusChanged()
 }
 
 function clearQr() {
@@ -1363,6 +1435,38 @@ async function deleteSession() {
   reconnectAttempt = 0
   setSessionState('idle')
   safeLog('info', 'whatsapp_session_deleted')
+}
+
+/**
+ * Pull-control command execution. Same semantics as the signed HTTP routes
+ * POST /v1/sessions/:session/connect|logout: connect is a no-op while a
+ * session is already active (and rate-limited otherwise), logout always ends
+ * the session and deletes the local auth state.
+ */
+async function executePortalControlCommand({ action }) {
+  if (shuttingDown) {
+    throw Object.assign(new Error('bridge stopping'), { code: 'bridge_stopping' })
+  }
+  if (action === 'connect') {
+    if (!['connected', 'connecting', 'qr'].includes(sessionState)) {
+      try {
+        enforceConnectRateLimit()
+      } catch {
+        return { outcome: 'failed', error_code: 'connect_rate_limited' }
+      }
+    }
+    try {
+      await connectSession('portal_command')
+    } catch {
+      return { outcome: 'failed', error_code: 'connect_failed' }
+    }
+    return { outcome: 'succeeded' }
+  }
+  if (action === 'logout') {
+    await deleteSession()
+    return { outcome: 'succeeded' }
+  }
+  return { outcome: 'failed', error_code: 'unsupported_command' }
 }
 
 const commandCache = new Map()
@@ -1814,6 +1918,7 @@ function readinessStatus() {
       last_webhook_error: outbox.last_webhook_error,
       idempotency_cache: idempotencyCache,
       outbound_pull: outboundPull,
+      portal_control: portalSessionControl?.snapshot() ?? null,
     },
   }
 }
@@ -2000,6 +2105,15 @@ async function start() {
       offline_interval_ms: PORTAL_OUTBOUND_OFFLINE_INTERVAL_MS,
     })
   }
+  portalSessionControl?.start()
+  if (portalSessionControl) {
+    safeLog('info', 'portal_session_control_started', {
+      heartbeat_ms: PORTAL_CONTROL_HEARTBEAT_MS,
+      idle_poll_ms: PORTAL_CONTROL_IDLE_POLL_MS,
+    })
+  }
+  // Autostart only reconnects an already paired session. A first pairing
+  // (no creds.json yet) starts on an explicit connect command / API call.
   if (AUTOSTART && (await authStateExists())) {
     void connectSession('startup').catch(() => scheduleReconnect())
   }
@@ -2014,6 +2128,7 @@ async function shutdown(signal) {
   outboxDrainTimer = null
   portalJobDrainKicker?.stop()
   portalOutboundPuller?.stop()
+  portalSessionControl?.stop()
   clearQr()
   safeLog('info', 'bridge_stopping', { signal })
 
@@ -2046,6 +2161,7 @@ async function shutdown(signal) {
         authPersistQueue.idle(),
         portalJobDrainKicker?.idle() ?? Promise.resolve(),
         portalOutboundPuller?.idle() ?? Promise.resolve(),
+        portalSessionControl?.idle() ?? Promise.resolve(),
         persistCommandCache(),
       ],
       remaining(),

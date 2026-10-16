@@ -122,6 +122,24 @@ export function getSendWindow(input: {
 }): SendWindowResult {
   const inboundMs = parseTime(input.lastInboundAt)
   const nowMs = parseTime(input.now ?? new Date()) ?? Date.now()
+  if (input.channel === 'telegram') {
+    // Telegram has no customer-service window: a bot may answer a private chat
+    // at any time until the user blocks it. Opt-out, mute and the policy gates
+    // still apply; only a provably bogus (future) timestamp or an automated
+    // send without a trusted inbound time is refused.
+    if (inboundMs != null && inboundMs > nowMs + 5 * 60 * 1000) {
+      return { allowed: false, mode: 'expired', ageMs: 0, reason: 'provider_timestamp_in_future' }
+    }
+    if (inboundMs == null && input.actor === 'automated') {
+      return { allowed: false, mode: 'expired', ageMs: null, reason: 'last_inbound_unknown' }
+    }
+    return {
+      allowed: true,
+      mode: 'standard',
+      ageMs: inboundMs == null ? null : Math.max(0, nowMs - inboundMs),
+      reason: 'telegram_no_reply_window',
+    }
+  }
   if (inboundMs == null) {
     return { allowed: false, mode: 'expired', ageMs: null, reason: 'last_inbound_unknown' }
   }

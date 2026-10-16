@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check catch-up-policy.mjs && node --check bridge-reliability.mjs && node --check portal-job-drain-kicker.mjs && node --check portal-outbound-puller.mjs"
+    "check": "node --check server.mjs && node --check catch-up-policy.mjs && node --check bridge-reliability.mjs && node --check portal-job-drain-kicker.mjs && node --check portal-outbound-puller.mjs && node --check portal-session-control.mjs"
   },
   "dependencies": {
     "baileys": "7.0.0-rc13"

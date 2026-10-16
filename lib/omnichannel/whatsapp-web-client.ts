@@ -15,6 +15,13 @@ export interface WhatsAppWebBridgeEnvironment {
   WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET?: string
   WHATSAPP_WEB_BRIDGE_API_KEY_ID?: string
   WHATSAPP_WEB_BRIDGE_TIMEOUT_MS?: string
+  /**
+   * `pull` — session control (status, QR, connect, logout) goes through the
+   * portal: the bridge pushes its status and claims commands over signed
+   * webhooks, so WHATSAPP_WEB_BRIDGE_URL is not needed. Unset/`direct` keeps
+   * the portal → bridge HTTP control API.
+   */
+  WHATSAPP_WEB_BRIDGE_CONTROL?: string
   NODE_ENV?: string
   [key: string]: string | undefined
 }
@@ -28,12 +35,16 @@ export interface WhatsAppWebBridgeConfig {
   timeoutMs: number
 }
 
+export type WhatsAppWebBridgeControlMode = 'direct' | 'pull'
+
 export interface WhatsAppWebBridgeConfigurationHealth {
   enabled: boolean
   configured: boolean
   missing: string[]
   sessionIdConfigured: boolean
   accountExternalId: string | null
+  /** Present only in pull-control mode; direct-mode output is unchanged. */
+  controlMode?: 'pull'
 }
 
 export interface SendWhatsAppWebTextInput {
@@ -140,6 +151,19 @@ function accountExternalId(sessionId: string): string {
   return `${WHATSAPP_WEB_ACCOUNT_PREFIX}${sessionId}`
 }
 
+/**
+ * How the portal controls the bridge session. Unset or `direct` → direct HTTP
+ * calls to WHATSAPP_WEB_BRIDGE_URL; `pull` → signed bridge-to-portal webhooks.
+ * Any other value is a misconfiguration (null) and fails closed.
+ */
+export function whatsappWebBridgeControlMode(
+  env: WhatsAppWebBridgeEnvironment = process.env,
+): WhatsAppWebBridgeControlMode | null {
+  const raw = env.WHATSAPP_WEB_BRIDGE_CONTROL?.trim().toLowerCase()
+  if (!raw) return 'direct'
+  return raw === 'direct' || raw === 'pull' ? raw : null
+}
+
 export function getWhatsAppWebBridgeConfig(
   env: WhatsAppWebBridgeEnvironment = process.env,
   timeoutOverride?: number,
@@ -177,7 +201,13 @@ export function getWhatsAppWebBridgeConfigurationHealth(
   const missing: string[] = []
   const enabled = enabledFlag(env.WHATSAPP_WEB_BRIDGE_ENABLED)
   if (!enabled) missing.push('WHATSAPP_WEB_BRIDGE_ENABLED')
-  if (!normalizedBridgeUrl(nonEmpty(env.WHATSAPP_WEB_BRIDGE_URL), env.NODE_ENV)) {
+  const controlMode = whatsappWebBridgeControlMode(env)
+  if (controlMode === null) {
+    missing.push('WHATSAPP_WEB_BRIDGE_CONTROL')
+  } else if (
+    controlMode === 'direct'
+    && !normalizedBridgeUrl(nonEmpty(env.WHATSAPP_WEB_BRIDGE_URL), env.NODE_ENV)
+  ) {
     missing.push('WHATSAPP_WEB_BRIDGE_URL')
   }
   const sessionId = validSessionId(nonEmpty(env.WHATSAPP_WEB_BRIDGE_SESSION_ID))
@@ -199,15 +229,22 @@ export function getWhatsAppWebBridgeConfigurationHealth(
     missing,
     sessionIdConfigured: Boolean(sessionId),
     accountExternalId: sessionId ? accountExternalId(sessionId) : null,
+    ...(controlMode === 'pull' ? { controlMode: 'pull' as const } : {}),
   }
 }
 
+/**
+ * The account can be sent to directly (portal → bridge HTTP). Requires the
+ * full direct config including the bridge URL: in pull-control mode without a
+ * URL the bridge is "configured" for session control but not reachable for a
+ * direct send (pull delivery is gated separately by WHATSAPP_WEB_DELIVERY_MODE).
+ */
 export function isConfiguredWhatsAppWebAccount(
   candidate: string,
   env: WhatsAppWebBridgeEnvironment = process.env,
 ): boolean {
-  const health = getWhatsAppWebBridgeConfigurationHealth(env)
-  return health.configured && health.accountExternalId === nonEmpty(candidate)
+  const config = getWhatsAppWebBridgeConfig(env)
+  return config !== null && config.accountExternalId === nonEmpty(candidate)
 }
 
 function validRecipientJid(value: string): boolean {

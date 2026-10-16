@@ -47,6 +47,7 @@ import {
   dispatchOmnichannelPresence,
   dispatchOmnichannelReply,
   isConfiguredOmnichannelSender,
+  isDraftOnlyOmnichannelTransport,
   outboundTransportMetadata,
   resolveOmnichannelTransport,
   type OmnichannelDispatchResult,
@@ -589,7 +590,17 @@ async function handleOmnichannelMessage({ event, step }: any) {
     metadata: context.message.metadata,
     accountExternalId: context.conversation.accountExternalId,
   });
-  const mode = accountMatches ? configuredMode : "draft";
+  // The platform's client bot (Telegram, unlinked chats) is draft-only: the
+  // inbox's business context must never auto-answer AIStart360's own bot.
+  const draftOnlyTransport = isDraftOnlyOmnichannelTransport(
+    context.conversation.channel,
+    context.message.metadata,
+  );
+  const mode = !accountMatches
+    ? "draft"
+    : draftOnlyTransport && configuredMode === "auto"
+      ? "draft"
+      : configuredMode;
   const sendWindow = getSendWindow({
     channel: context.conversation.channel,
     lastInboundAt: providerTimestampTrusted ? context.message.occurredAt : null,
@@ -667,8 +678,11 @@ async function handleOmnichannelMessage({ event, step }: any) {
   const pullWebDelivery =
     outboundTransport === "whatsapp_web" &&
     isWhatsAppWebPullDeliveryEnabled();
+  const telegramTransport =
+    outboundTransport === "telegram_bot" ||
+    outboundTransport === "telegram_client_bot";
   const typingDelaySeconds =
-    outboundTransport === "whatsapp_web"
+    outboundTransport === "whatsapp_web" || telegramTransport
       ? humanTypingDelaySeconds(aiReply.answer, context.message.id)
       : 0;
   const delayedReplyMetadata: JsonObject = delayedReplyAssessment.prependApology
@@ -680,7 +694,9 @@ async function handleOmnichannelMessage({ event, step }: any) {
         ),
       }
     : {};
-  if (outboundTransport === "whatsapp_web" && !pullWebDelivery) {
+  // WhatsApp Web (push mode) and Telegram show "typing…" during the
+  // human-like delay; the step ids are shared, the transport picks the call.
+  if ((outboundTransport === "whatsapp_web" && !pullWebDelivery) || telegramTransport) {
     const presenceTarget = {
       channel: context.conversation.channel,
       metadata: context.message.metadata,

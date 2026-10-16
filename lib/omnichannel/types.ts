@@ -1,4 +1,4 @@
-export const OMNICHANNEL_CHANNELS = ['instagram', 'whatsapp'] as const
+export const OMNICHANNEL_CHANNELS = ['instagram', 'whatsapp', 'telegram'] as const
 export type OmnichannelChannel = (typeof OMNICHANNEL_CHANNELS)[number]
 
 export const OMNICHANNEL_MODES = ['off', 'draft', 'auto'] as const
@@ -40,6 +40,10 @@ export type OmnichannelTransport =
   | 'instagram_graph'
   | 'whatsapp_cloud'
   | 'whatsapp_web'
+  /** The inbox's own business bot, connected by token in the GIGA inbox settings. */
+  | 'telegram_bot'
+  /** The platform's client bot (TELEGRAM_BOT_TOKEN): chats not linked to a profile. */
+  | 'telegram_client_bot'
 
 export type OmnichannelMessageType =
   | 'text'
@@ -148,6 +152,8 @@ export interface NormalizedOmnichannelMessage {
   contactName: string | null
   /** Optional verified phone. Canonical WhatsApp Web identities may be opaque LIDs. */
   contactPhone?: string | null
+  /** Optional provider @username (Telegram). Instagram keeps using contactName. */
+  contactUsername?: string | null
   externalMessageId: string
   direction: OmnichannelDirection
   messageType: OmnichannelMessageType

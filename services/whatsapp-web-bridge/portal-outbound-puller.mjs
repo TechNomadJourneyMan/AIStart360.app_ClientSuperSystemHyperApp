@@ -34,7 +34,7 @@ function canonicalHmac({ method, requestPath, bodyHash, timestamp, nonce, keyId 
   ].join('\n')
 }
 
-function signedRequest({ url, payload, secret, keyId }) {
+export function signedRequest({ url, payload, secret, keyId }) {
   const rawBody = JSON.stringify(payload)
   const timestamp = String(Math.floor(Date.now() / 1_000))
   const nonce = randomBytes(18).toString('base64url')

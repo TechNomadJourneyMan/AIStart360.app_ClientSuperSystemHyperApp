@@ -5,6 +5,7 @@ import {
 } from "./postgres-runtime";
 import type {
   JsonObject,
+  OmnichannelChannel,
   OmnichannelContact,
   OmnichannelConversation,
   OmnichannelMessage,
@@ -475,7 +476,7 @@ export async function markMessageNeedsHumanViaPostgres(
 
 export interface DevelopmentLogOutboundMessageInput {
   conversationId: string;
-  channel: "instagram" | "whatsapp";
+  channel: OmnichannelChannel;
   externalMessageId: string;
   text: string;
   messageType?: OmnichannelMessageType;

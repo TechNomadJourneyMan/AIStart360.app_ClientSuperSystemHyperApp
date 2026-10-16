@@ -1,25 +1,38 @@
 #!/usr/bin/env node
 
 /**
- * LaunchAgent entrypoint for the already-paired WhatsApp Web bridge.
+ * LaunchAgent entrypoint for the WhatsApp Web bridge on the owner's Mac.
+ *
+ * The bridge listens on 127.0.0.1 only and has no public URL: inbound messages
+ * and outbound sends (WHATSAPP_WEB_DELIVERY_MODE=pull) as well as session
+ * control (PORTAL_CONTROL_MODE=pull — status push, QR pairing, connect/logout
+ * commands from GIGA) all go bridge → portal over signed HTTPS.
+ *
+ * Paths are relative to the working directory (the repository root, set by
+ * the LaunchAgent). Auth/state default to services/whatsapp-web-bridge/.data/
+ * {auth,state} and are created on first run: a missing creds.json is a fresh
+ * install that waits for a QR pairing requested from GIGA.
+ *
  * Secrets are read from the logged-in user's macOS Keychain and are never
  * stored in the plist, repository, argv, or logs.
  */
 
 const { spawn, spawnSync } = require("node:child_process");
-const { existsSync } = require("node:fs");
+const { chmodSync, existsSync, mkdirSync } = require("node:fs");
+const { userInfo } = require("node:os");
 const { resolve } = require("node:path");
 
 const BRIDGE_SECRET_SERVICE = "AIStart360 WhatsApp Bridge API Secret";
 const PORTAL_SECRET_SERVICE = "AIStart360 WhatsApp Portal Secret";
-const SESSION_ID = "primary";
-const DEFAULT_PORTAL_ORIGIN = "https://aistart360.vercel.app";
+const SESSION_ID = process.env.BRIDGE_SESSION_ID?.trim() || "primary";
+const DEFAULT_PORTAL_ORIGIN = "https://portal.aistart360.app";
 const AUTH_DIR = resolve(
-  "services/whatsapp-web-bridge/.data/auth-history-sync-20260714",
+  process.env.BRIDGE_AUTH_DIR?.trim() || "services/whatsapp-web-bridge/.data/auth",
 );
 const STATE_DIR = resolve(
-  "services/whatsapp-web-bridge/.data/state-history-sync-20260714",
+  process.env.BRIDGE_STATE_DIR?.trim() || "services/whatsapp-web-bridge/.data/state",
 );
+const CONTROL_MODE = process.env.PORTAL_CONTROL_MODE?.trim().toLowerCase() || "pull";
 
 function fail(message) {
   console.error(
@@ -70,7 +83,7 @@ function keychainSecret(service) {
       "find-generic-password",
       "-w",
       "-a",
-      process.env.USER || "admin",
+      process.env.USER || userInfo().username,
       "-s",
       service,
     ],
@@ -83,10 +96,30 @@ function keychainSecret(service) {
   return value;
 }
 
-if (!existsSync(resolve(AUTH_DIR, "creds.json"))) {
-  fail("paired WhatsApp auth state is unavailable");
+function ensurePrivateDirectory(directory) {
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    chmodSync(directory, 0o700);
+  } catch {
+    fail("bridge data directory cannot be created");
+  }
 }
-if (!existsSync(STATE_DIR)) fail("bridge state directory is unavailable");
+
+if (!/^[A-Za-z0-9._-]{1,64}$/.test(SESSION_ID)) fail("session id is invalid");
+if (!["direct", "pull"].includes(CONTROL_MODE)) fail("control mode is invalid");
+ensurePrivateDirectory(STATE_DIR);
+ensurePrivateDirectory(AUTH_DIR);
+if (!existsSync(resolve(AUTH_DIR, "creds.json"))) {
+  // Not an error: a fresh install pairs by QR («Получить QR-код» in GIGA).
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      service: "whatsapp-web-bridge-launcher",
+      event: "launcher_awaiting_pairing",
+    }),
+  );
+}
 
 const bridgeSecret = keychainSecret(BRIDGE_SECRET_SERVICE);
 const portalSecret = keychainSecret(PORTAL_SECRET_SERVICE);
@@ -129,6 +162,13 @@ const child = spawn(
       PORTAL_OUTBOUND_IDLE_INTERVAL_MS: "10000",
       PORTAL_OUTBOUND_OFFLINE_INTERVAL_MS: "10000",
       PORTAL_OUTBOUND_TIMEOUT_MS: "5000",
+      PORTAL_CONTROL_MODE: CONTROL_MODE,
+      PORTAL_CONTROL_HEARTBEAT_MS: "30000",
+      PORTAL_CONTROL_PAIRING_HEARTBEAT_MS: "15000",
+      PORTAL_CONTROL_FAST_POLL_MS: "2000",
+      PORTAL_CONTROL_IDLE_POLL_MS: "10000",
+      PORTAL_CONTROL_OFFLINE_POLL_MS: "15000",
+      PORTAL_CONTROL_TIMEOUT_MS: "5000",
       CATCH_UP_MESSAGE_MAX_AGE_SECONDS: "1209600",
       CATCH_UP_MAX_MESSAGES_TOTAL: "200",
       CATCH_UP_MAX_MESSAGES_PER_CHAT: "20",

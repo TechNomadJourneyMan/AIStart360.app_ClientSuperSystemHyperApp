@@ -10,6 +10,7 @@ import { firstSeenUpdate, forgetUpdate, handleApprovalCallback, handleStaffStart
 import { answerCallback } from '@/lib/telegram/bot-api'
 import type { StaffRole } from '@/lib/admin/rbac'
 import { handleTelegramInbound } from '@/lib/comm/inbound'
+import { forwardUnlinkedClientBotUpdate } from '@/lib/omnichannel/telegram-client-bot'
 
 /**
  * POST /api/telegram/webhook — приём апдейтов Telegram.
@@ -22,7 +23,9 @@ import { handleTelegramInbound } from '@/lib/comm/inbound'
  *                            GIGA «Сообщения»); короткая квитанция не чаще раза
  *                            в 6 ч. Только при заданном секрете: без него апдейт
  *                            можно подделать, а сообщение попало бы в чужой диалог.
- *                            Чат без привязки — игнор, как раньше.
+ *                            Чат без привязки → единый inbox GIGA (канал
+ *                            Telegram, источник «Бот AIStart360»; только черновики),
+ *                            lib/omnichannel/telegram-client-bot.ts.
  *
  * Защита: заголовок X-Telegram-Bot-Api-Secret-Token сравнивается с
  * TELEGRAM_WEBHOOK_SECRET за постоянное время. Привязка сотрудников и
@@ -116,12 +119,15 @@ async function handleUpdate(req: NextRequest, update: Record<string, unknown>, s
     // Свободный текст (или подпись к фото) от привязанного чата → диалог пользователя.
     const free = text || (typeof msg?.caption === 'string' ? msg.caption : '')
     if (staffFeaturesEnabled && free.trim()) {
-      await handleTelegramInbound({
+      const linked = await handleTelegramInbound({
         chatId,
         text: free,
         messageId: typeof msg?.message_id === 'number' || typeof msg?.message_id === 'string' ? msg.message_id : null,
         date: typeof msg?.date === 'number' ? msg.date : null,
       })
+      // Чат без привязки к профилю → единый inbox (GIGA, «Бот AIStart360»).
+      // Только после проверки секрета; fail-soft, никогда не роняет webhook.
+      if (!linked) await forwardUnlinkedClientBotUpdate(update, { linkChecked: !free.trim().startsWith('/') })
     }
     return NextResponse.json({ ok: true })
   }
