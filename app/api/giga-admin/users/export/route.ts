@@ -8,7 +8,7 @@ import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { csvFilename, csvResponse, toCsv } from '@/lib/admin/csv'
 import { SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
 import { scopedClientIds } from '@/lib/admin/client-scope'
-import { scanAdminListUsers } from '@/lib/admin/list-users'
+import { assigneeParam, scanAdminListUsers } from '@/lib/admin/list-users'
 
 /**
  * GET /api/giga-admin/users/export?<те же фильтры, что и в списке>
@@ -39,10 +39,16 @@ export async function GET(req: NextRequest) {
   if (!SEGMENTS.has(segment) || !STATUSES.has(status) || !ROLES.has(role)) {
     return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
   }
+  // Same «Ответственный» filter as the list: the file = the rows on screen.
+  const assignee = assigneeParam(sp.get('assignee'), guard.actor.id)
+  if (assignee === undefined) {
+    return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
+  }
 
   // Выгрузка честно проходит все страницы: admin_list_users отдаёт не больше
   // 200 строк за вызов. Эксперт со scope 'assigned' выгружает только своих.
   const data = await scanAdminListUsers(createServiceClient(), {
+    ...(assignee ? { p_assignee: assignee } : {}),
     p_search: (sp.get('q') ?? '').trim().slice(0, 100) || null,
     p_status: status || null,
     p_role: role || null,

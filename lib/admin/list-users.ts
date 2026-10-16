@@ -31,3 +31,19 @@ export async function scanAdminListUsers(
   }
   return out.slice(0, opts.maxRows)
 }
+
+const ASSIGNEE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** p_assignee of admin_list_users for «без ответственного» (migration 088). */
+export const NO_ASSIGNEE = '00000000-0000-0000-0000-000000000000'
+
+/**
+ * ?assignee= me | none | <uuid> → p_assignee; '' → no filter (null);
+ * undefined → an invalid value (400). Shared by the list and the CSV export,
+ * so the file holds exactly the rows the screen shows.
+ */
+export function assigneeParam(raw: string | null, actorId: string): string | null | undefined {
+  if (!raw) return null
+  if (raw === 'me') return ASSIGNEE_UUID_RE.test(actorId) ? actorId : undefined
+  if (raw === 'none') return NO_ASSIGNEE
+  return ASSIGNEE_UUID_RE.test(raw) ? raw : undefined
+}

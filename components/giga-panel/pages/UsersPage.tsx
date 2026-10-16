@@ -110,7 +110,7 @@ function UsersInner() {
 
   const exportCsv = () => {
     const p = new URLSearchParams({ sort, dir })
-    for (const k of ['q', 'segment', 'status', 'role']) if (get(k)) p.set(k, get(k))
+    for (const k of ['q', 'segment', 'status', 'role', 'assignee']) if (get(k)) p.set(k, get(k))
     toast.success('Готовим файл — он скачается через пару секунд')
     window.location.href = `/api/giga-admin/users/export?${p.toString()}`
   }
