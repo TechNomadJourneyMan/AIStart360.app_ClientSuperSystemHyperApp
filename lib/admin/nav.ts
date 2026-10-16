@@ -41,6 +41,10 @@ export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Коммуникации', items: [
     // Platform ↔ user conversations (lib/comm); answering needs inbox.manage (checked by the API).
     { href: `${GIGA_BASE}/messages`, label: 'Сообщения', icon: 'chat', permission: 'inbox.view' },
+    // Broadcasts (lib/comm/campaigns.ts); creating / running needs inbox.manage (checked by the API).
+    { href: `${GIGA_BASE}/broadcasts`, label: 'Рассылки', icon: 'megaphone', permission: 'inbox.view' },
+    // Knowledge base of the client bot in auto mode (lib/comm/kb.ts, lib/comm/bot.ts).
+    { href: `${GIGA_BASE}/bot-knowledge`, label: 'База знаний бота', icon: 'book', permission: 'inbox.manage' },
     { href: `${GIGA_BASE}/inbox`, label: 'Instagram / WhatsApp', icon: 'messages', permission: 'inbox.view' },
     { href: `${GIGA_BASE}/market`, label: 'Инсайты рынка', icon: 'lightbulb', permission: 'market.manage' },
   ] },

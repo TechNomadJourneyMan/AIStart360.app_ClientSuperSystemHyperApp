@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Bell, Bot, Building2, ClipboardList, Coins, CopyCheck, Eye, FileBarChart, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
   Lightbulb, ListChecks, LogOut, Mail, MessageCircle, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, Stamp,
-  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, type LucideIcon,
+  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, Megaphone, BookOpen, type LucideIcon,
 } from 'lucide-react'
 import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
 import { useWorkspace } from './WorkspaceContext'
@@ -25,7 +25,7 @@ const ICONS: Record<string, LucideIcon> = {
   bell: Bell, bot: Bot, listchecks: ListChecks, stamp: Stamp, coins: Coins, zap: Zap,
   reports: FileBarChart, review: ScanSearch, plug: PlugZap, terminal: Terminal,
   sun: Sun, checklist: ListChecks, siren: Siren, experts: UserCheck, tune: SlidersHorizontal,
-  chat: MessageCircle,
+  chat: MessageCircle, megaphone: Megaphone, book: BookOpen,
 }
 
 const BADGE_REFRESH_MS = 60_000

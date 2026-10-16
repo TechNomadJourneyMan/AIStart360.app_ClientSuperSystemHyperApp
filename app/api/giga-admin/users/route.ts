@@ -6,14 +6,17 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { scopedClientIds } from '@/lib/admin/client-scope'
-import { assigneeParam, scanAdminListUsers, type AdminListRow } from '@/lib/admin/list-users'
+import {
+  USER_LIST_ROLES, USER_LIST_SEGMENTS, USER_LIST_SORTS, USER_LIST_STATUSES, assigneeParam, scanAdminListUsers, type AdminListRow,
+} from '@/lib/admin/list-users'
 
 // GET /api/giga-admin/users — server-side search / filters / segments / sort /
 // pagination over all accounts (SQL admin_list_users, migration 073).
-const SORTS = new Set(['created_at', 'last_seen_at', 'name', 'survey', 'survey_updated', 'gri'])
-const SEGMENTS = new Set(['', 'new_7d', 'active_7d', 'inactive_30d', 'survey_not_started', 'survey_in_progress', 'survey_completed', 'gri_not_started', 'gri_in_progress', 'gri_completed', 'staff'])
-const STATUSES = new Set(['', 'pending_approval', 'approved', 'rejected', 'requires_clarification', 'blocked', 'archived'])
-const ROLES = new Set(['', 'client', 'expert', 'admin', 'super_admin', 'manager', 'analyst'])
+// One list of allowed filter values with the broadcast audience (lib/admin/list-users.ts).
+const SORTS = USER_LIST_SORTS
+const SEGMENTS = USER_LIST_SEGMENTS
+const STATUSES = USER_LIST_STATUSES
+const ROLES = USER_LIST_ROLES
 
 type ListRow = AdminListRow
 export async function GET(req: NextRequest) {

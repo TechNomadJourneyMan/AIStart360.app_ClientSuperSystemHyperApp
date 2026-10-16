@@ -10,7 +10,8 @@
  *                    such as the profanity warning do not hide the user's
  *                    message in the staff list).
  *   user writes    → waiting_staff, unread_staff + 1. The deadline
- *                    (staff_reply_due_at = now + comm_escalation_minutes) is
+ *                    (staff_reply_due_at = now + comm_escalation_minutes, or
+ *                    counted in work hours — lib/comm/deadline.ts) is
  *                    set by the FIRST unanswered message and not pushed back
  *                    by the following ones; `startsWaiting` tells the caller
  *                    to notify staff (once per unanswered stretch, not per message).
@@ -56,7 +57,11 @@ export function threadPatchOnOutbound(thread: ThreadState, input: { authorKind: 
 
 export function threadPatchOnInbound(
   thread: ThreadState,
-  input: { body: string; at: Date; now: Date; escalationMinutes: number; profanity?: boolean },
+  input: {
+    body: string; at: Date; now: Date; escalationMinutes: number; profanity?: boolean
+    /** The deadline when it is not now + escalationMinutes (work hours, lib/comm/deadline.ts). */
+    dueAt?: Date | null
+  },
 ): { patch: ThreadPatch; startsWaiting: boolean } {
   const profanity = input.profanity ? { profanity_count: (thread.profanity_count ?? 0) + 1 } : {}
   if (thread.blocked_at) {
@@ -73,7 +78,7 @@ export function threadPatchOnInbound(
   const wasWaiting = thread.status === 'waiting_staff' && !!thread.staff_reply_due_at
   const due = wasWaiting
     ? thread.staff_reply_due_at
-    : new Date(input.now.getTime() + Math.max(1, input.escalationMinutes) * 60_000).toISOString()
+    : (input.dueAt ?? new Date(input.now.getTime() + Math.max(1, input.escalationMinutes) * 60_000)).toISOString()
   return {
     startsWaiting: !wasWaiting,
     patch: {

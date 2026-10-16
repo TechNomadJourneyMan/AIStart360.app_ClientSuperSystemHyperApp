@@ -43,6 +43,8 @@ export const AI_FEATURES = {
   bot_assistant: 'Бот: ассистент сотрудника',
   bot_transcribe: 'Бот: распознавание голоса',
   bot_vision: 'Бот: разбор изображения',
+  comm_bot: 'Бот общения: ответы пользователям',
+  kb_embed: 'База знаний бота: индексация и поиск',
 } as const
 
 export type AiFeature = keyof typeof AI_FEATURES

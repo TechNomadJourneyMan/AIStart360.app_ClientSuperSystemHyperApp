@@ -410,3 +410,44 @@ export function buildDirectMessageEmail(input: DirectMessageEmailInput): BuiltEm
     },
   }
 }
+
+// ─── 7. Пользователь ждёт ответа дольше срока (lib/comm/escalation.ts) ───────
+
+export interface CommEscalationEmailInput {
+  /** Имя сотрудника. */
+  name?: string | null
+  /** Кто ждёт ответа: имя пользователя или email. */
+  userName: string
+  company?: string | null
+  /** Последнее сообщение пользователя (для персонала — с замаскированным матом). */
+  preview?: string | null
+  /** Когда пользователь написал и каким был срок ответа. */
+  waitingSince?: Date | string | null
+  dueAt?: Date | string | null
+  /** Абсолютная ссылка на диалог в GIGA «Сообщения». */
+  url: string
+}
+
+/** Напоминание сотруднику: пользователь написал и ждёт ответа дольше срока. */
+export function buildCommEscalationEmail(input: CommEscalationEmailInput): BuiltEmail {
+  const who = nameOrNull(input.userName) ?? 'Пользователь'
+  const preview = nameOrNull(input.preview)
+  return {
+    subject: `Ждёт ответа: ${who}`.slice(0, 180),
+    content: {
+      preheader: preview ? preview.slice(0, 140) : `${who} ждёт ответа в «Сообщениях»`,
+      eyebrow: 'Сообщения',
+      title: 'Пользователь ждёт ответа',
+      greeting: greeting(input.name),
+      paragraphs: [`${who}${input.company ? ` (${input.company})` : ''} написал(а) на платформе, и срок ответа уже прошёл. Ответьте, пожалуйста, в GIGA «Сообщения».`],
+      facts: [
+        ...momentFacts(input.waitingSince, 'Написал(а)'),
+        { label: 'Срок ответа', value: formatMoment(input.dueAt)?.full ?? null },
+      ],
+      quote: preview ? { label: who, text: preview } : null,
+      cta: { label: 'Открыть диалог', url: input.url },
+      note: 'Ответ сотрудника снимает напоминание. Если диалог ведёт другой эксперт — назначьте его ответственным.',
+      footnote: 'Письмо отправлено автоматически: правило ответа пользователю в течение заданного времени (Настройки → Общение).',
+    },
+  }
+}

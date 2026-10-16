@@ -24,7 +24,7 @@ describe('«Общение» settings', () => {
   it('group, defaults from the design', () => {
     expect(SETTING_GROUPS.comm.label).toBe('Общение')
     const keys = Object.entries(SETTINGS).filter(([, s]) => s.group === 'comm').map(([k]) => k)
-    expect(keys).toEqual(['comm_work_days', 'comm_work_from', 'comm_work_to', 'comm_timezone', 'comm_send_interval_seconds', 'comm_send_jitter_seconds', 'comm_escalation_minutes', 'comm_bot_auto_default'])
+    expect(keys).toEqual(['comm_work_days', 'comm_work_from', 'comm_work_to', 'comm_timezone', 'comm_send_interval_seconds', 'comm_send_jitter_seconds', 'comm_escalation_minutes', 'comm_escalation_work_hours', 'comm_bot_auto_default'])
     expect(coerceSetting('comm_work_days', undefined)).toEqual([1, 2, 3, 4, 5])
     expect(coerceSetting('comm_work_from', undefined)).toBe('09:00')
     expect(coerceSetting('comm_work_to', undefined)).toBe('19:00')
@@ -33,6 +33,7 @@ describe('«Общение» settings', () => {
     expect(coerceSetting('comm_send_jitter_seconds', undefined)).toBe(5)
     expect(coerceSetting('comm_escalation_minutes', undefined)).toBe(30)
     expect(coerceSetting('comm_bot_auto_default', undefined)).toBe(false)
+    expect(coerceSetting('comm_escalation_work_hours', undefined)).toBe(false)
   })
 
   it('validation', () => {

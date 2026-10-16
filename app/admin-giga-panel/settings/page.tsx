@@ -458,10 +458,13 @@ function CommCard({ values: v, meta, disabled, saving, onSave }: {
       <SettingRow k="comm_escalation_minutes" meta={meta}>
         <NumberSetting value={v.comm_escalation_minutes} min={5} max={1440} step={5} suffix="мин" disabled={disabled} saving={saving === 'comm_escalation_minutes'} onSave={(n) => onSave({ comm_escalation_minutes: n }, 'Срок ответа')} />
       </SettingRow>
+      <SettingRow k="comm_escalation_work_hours" meta={meta}>
+        <Toggle checked={v.comm_escalation_work_hours} disabled={disabled || !!saving} onChange={(n) => void onSave({ comm_escalation_work_hours: n }, SETTINGS.comm_escalation_work_hours.label)} label={SETTINGS.comm_escalation_work_hours.label} />
+      </SettingRow>
       <SettingRow k="comm_bot_auto_default" meta={meta}>
         <Toggle checked={v.comm_bot_auto_default} disabled={disabled || !!saving} onChange={(n) => void onSave({ comm_bot_auto_default: n }, SETTINGS.comm_bot_auto_default.label)} label={SETTINGS.comm_bot_auto_default.label} />
       </SettingRow>
-      <Links items={[{ href: '/admin-giga-panel/messages', label: 'Сообщения' }]} />
+      <Links items={[{ href: '/admin-giga-panel/messages', label: 'Сообщения' }, { href: '/admin-giga-panel/bot-knowledge', label: 'База знаний бота' }]} />
     </Panel>
   )
 }

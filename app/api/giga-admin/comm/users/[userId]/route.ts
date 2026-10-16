@@ -6,6 +6,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { hasPermission } from '@/lib/admin/rbac'
 import { commError, conversationView, guardComm, threadDTO } from '@/lib/comm/admin'
+import { loadReplyDeadline, replyDueAt } from '@/lib/comm/deadline'
 import { ensureThread, findThreadByUser, updateThread } from '@/lib/comm/store'
 import { getSetting } from '@/lib/settings/store'
 import type { CommThreadRow } from '@/lib/comm/types'
@@ -94,9 +95,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { userId: st
       case 'unblock': patch = { blocked_at: null, blocked_by: null, block_reason: null }; break
     }
     if (body.action === 'reopen' && patch.status === 'waiting_staff') {
-      let minutes = 30
-      try { minutes = await getSetting('comm_escalation_minutes') } catch { /* default */ }
-      patch.staff_reply_due_at = new Date(Date.now() + minutes * 60_000).toISOString()
+      const { minutes, window } = await loadReplyDeadline()
+      patch.staff_reply_due_at = replyDueAt(new Date(), minutes, window).toISOString()
       patch.escalated_at = null
     }
     await updateThread(sb, thread.id, patch)

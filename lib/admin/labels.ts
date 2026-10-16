@@ -89,6 +89,25 @@ export const AUDIT_ACTION: Record<string, string> = {
   'staff.scope_changed': 'Изменена видимость клиентов',
   'case.updated': 'Эскалация изменена',
   'case.assigned': 'Эскалация назначена',
+  'comm.campaign.created': 'Рассылка создана',
+  'comm.campaign.started': 'Рассылка запущена',
+  'comm.campaign.paused': 'Рассылка на паузе',
+  'comm.campaign.resumed': 'Рассылка продолжена',
+  'comm.campaign.cancelled': 'Рассылка отменена',
+}
+
+/** Segments of the GIGA users list (admin_list_users; also the audience of a broadcast). */
+export const USER_SEGMENT_LABELS: Record<string, string> = {
+  new_7d: 'Новые (7 дней)',
+  active_7d: 'Активные (7 дней)',
+  inactive_30d: 'Неактивные 30+ дней',
+  survey_not_started: 'Анкета не начата',
+  survey_in_progress: 'Анкета в процессе',
+  survey_completed: 'Анкета заполнена',
+  gri_not_started: 'GRI не начат',
+  gri_in_progress: 'GRI в процессе',
+  gri_completed: 'GRI пройден',
+  staff: 'Персонал',
 }
 
 export function auditLabel(action: string): string {

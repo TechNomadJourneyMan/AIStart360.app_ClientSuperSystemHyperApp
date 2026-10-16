@@ -40,6 +40,8 @@ export type EmailKind =
   | 'staff_tasks'
   /** Личное сообщение сотрудника пользователю (lib/comm). */
   | 'direct_message'
+  /** Напоминание сотруднику: пользователь ждёт ответа дольше срока (lib/comm/escalation.ts). */
+  | 'comm_escalation'
 
 /**
  * A file attached to the letter. Resend «Send email» (resend.com/docs/api-reference/emails/send-email):

@@ -46,6 +46,8 @@ export interface SendToUserInput {
   authorName?: string | null
   campaignId?: string | null
   replyToId?: string | null
+  /** Title of the bell notification («app»); a broadcast passes its title. */
+  appTitle?: string | null
 }
 
 export interface SendToUserDeps {
@@ -129,7 +131,7 @@ export async function sendToUser(input: SendToUserInput, deps: SendToUserDeps = 
   const deliver = async (m: CommMessageRow): Promise<DeliveryResult> => {
     switch (m.channel) {
       case 'app':
-        return transports.app({ userId: input.userId, messageId: m.id, title: 'Новое сообщение', body: previewOf(body), link: CLIENT_MESSAGES_PATH })
+        return transports.app({ userId: input.userId, messageId: m.id, title: input.appTitle?.trim().slice(0, 200) || 'Новое сообщение', body: previewOf(body), link: CLIENT_MESSAGES_PATH })
       case 'email': {
         const built = buildDirectMessageEmail({ name: recipient.fullName, authorName: input.authorKind === 'bot' ? 'Бот AIStart360' : base.author_name, subject, body, url })
         return transports.email({ userId: input.userId, messageId: m.id, to: recipient.email!, subject: built.subject, content: built.content })

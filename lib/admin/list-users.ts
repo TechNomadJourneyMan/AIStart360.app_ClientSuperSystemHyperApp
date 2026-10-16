@@ -47,3 +47,45 @@ export function assigneeParam(raw: string | null, actorId: string): string | nul
   if (raw === 'none') return NO_ASSIGNEE
   return ASSIGNEE_UUID_RE.test(raw) ? raw : undefined
 }
+
+/**
+ * Allowed values of the GIGA users-list filters (admin_list_users). One list
+ * for the screen (/api/giga-admin/users), the CSV export and the audience of a
+ * broadcast (lib/comm/audience.ts) — a broadcast «по фильтрам» reaches exactly
+ * the people the list shows with the same filters. Survey / GRI progress are
+ * segments (survey_* / gri_*).
+ */
+export const USER_LIST_SORTS = new Set(['created_at', 'last_seen_at', 'name', 'survey', 'survey_updated', 'gri'])
+export const USER_LIST_SEGMENTS = new Set(['', 'new_7d', 'active_7d', 'inactive_30d', 'survey_not_started', 'survey_in_progress', 'survey_completed', 'gri_not_started', 'gri_in_progress', 'gri_completed', 'staff'])
+export const USER_LIST_STATUSES = new Set(['', 'pending_approval', 'approved', 'rejected', 'requires_clarification', 'blocked', 'archived'])
+export const USER_LIST_ROLES = new Set(['', 'client', 'expert', 'admin', 'super_admin', 'manager', 'analyst'])
+
+export interface UserListFilters {
+  q?: string | null
+  segment?: string | null
+  status?: string | null
+  role?: string | null
+  /** me | none | <uuid> | '' (see assigneeParam). */
+  assignee?: string | null
+}
+
+/**
+ * Filters → the filter arguments of admin_list_users (no paging / sort), the
+ * same mapping as the list route; undefined — an invalid value (400).
+ */
+export function userListFilterArgs(f: UserListFilters, actorId: string): Record<string, unknown> | undefined {
+  const segment = f.segment ?? ''
+  const status = f.status ?? ''
+  const role = f.role ?? ''
+  if (!USER_LIST_SEGMENTS.has(segment) || !USER_LIST_STATUSES.has(status) || !USER_LIST_ROLES.has(role)) return undefined
+  const assignee = assigneeParam(f.assignee ?? null, actorId)
+  if (assignee === undefined) return undefined
+  const search = (f.q ?? '').trim().slice(0, 100)
+  return {
+    ...(assignee ? { p_assignee: assignee } : {}),
+    p_search: search || null,
+    p_status: status || null,
+    p_role: role || null,
+    p_segment: segment || null,
+  }
+}

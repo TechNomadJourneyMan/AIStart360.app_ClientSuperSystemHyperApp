@@ -4,6 +4,8 @@ import { assistantEventsRetention } from '@/lib/functions/assistant-events-reten
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
 import { pointANightly, pointARecalc } from '@/lib/functions/point-a'
+import { commCampaignRun, commCampaignWatchdog } from '@/lib/functions/comm-campaigns'
+import { commBotReply, commEscalations } from '@/lib/functions/comm'
 import { processOmnichannelMessage } from '@/lib/functions/process-omnichannel-message'
 import { backfillOmnichannel } from '@/lib/functions/backfill-omnichannel'
 import {
@@ -31,5 +33,11 @@ export const { GET, POST, PUT } = serve({
     demoAccountsCleanup,
     pointARecalc,
     pointANightly,
+    // Broadcasts «Рассылки» (lib/comm/campaigns.ts): one short step per recipient, sleeps between.
+    commCampaignRun,
+    commCampaignWatchdog,
+    // «Сообщения»: the 30-minute rule (cron */5, cheap) and the client bot in auto mode (one reply at a time).
+    commEscalations,
+    commBotReply,
   ],
 })

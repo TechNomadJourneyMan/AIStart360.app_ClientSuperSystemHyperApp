@@ -20,6 +20,16 @@
  * Inbound rows are unique per (channel, external_id): a redelivered update or
  * bridge event is recognised as a duplicate and notifies nobody.
  *
+ * Reply deadline: now + comm_escalation_minutes, or counted in work hours when
+ * «Срок ответа — только в рабочие часы» is on (lib/comm/deadline.ts).
+ *
+ * Auto mode (comm_threads.mode = 'auto', phase 5): a message that is not just
+ * profanity, in a conversation that is not blocked, emits COMM_BOT_REPLY_EVENT
+ * — the bot answers from Inngest (lib/comm/bot.ts), never inside the webhook.
+ * Staff are then told only if the bot does not answer (it hands off, is over
+ * its hourly cap, or the event could not be sent); the Telegram receipt is
+ * skipped because the bot itself answers in the chat.
+ *
  * Moderation (lib/comm/moderation.ts): the text is stored as written plus a
  * masked copy and flags; profanity → profanity_count + 1 and PROFANITY_WARNING
  * back on the same channel, at most once per 6 h per thread
@@ -33,6 +43,8 @@ import { runInBackground } from '@/lib/background'
 import { notifyStaff } from '@/lib/notifications/staff'
 import { getSetting } from '@/lib/settings/store'
 import { sendTelegramMessage } from '@/lib/telegram'
+import { COMM_BOT_REPLY_EVENT, isProfanityOnly, type BotJob } from './bot-rules'
+import { loadReplyDeadline, replyDueAt, type ReplyDeadlineConfig } from './deadline'
 import { attachmentLabel, TELEGRAM_RECEIPT_TEXT } from './format'
 import { phoneKey } from './phone'
 import { moderateInbound, PROFANITY_WARNING, shouldWarnProfanity, staffVisibleBody } from './moderation'
@@ -57,6 +69,10 @@ export interface InboundDeps {
   /** The automatic profanity warning on the user's channel; default sendToUser (author system). */
   warn?: (w: { userId: string; channel: CommChannel; text: string }) => Promise<void>
   escalationMinutes?: number
+  /** Minutes + work window of the reply deadline; default from the settings. */
+  replyDeadline?: ReplyDeadlineConfig
+  /** Auto mode: hand the reply to the bot (default: Inngest event); false — not queued. */
+  queueBot?: (job: BotJob) => Promise<boolean>
 }
 
 export interface RecordInboundInput {
@@ -76,19 +92,24 @@ export interface RecordInboundResult {
   startsWaiting: boolean
   /** The profanity warning went back to the user (the Telegram receipt is then skipped). */
   warned: boolean
+  /** Auto mode: the bot will answer this message (lib/comm/bot.ts). */
+  botQueued: boolean
 }
 
 async function defaultWarn(sb: SupabaseClient, w: { userId: string; channel: CommChannel; text: string }): Promise<void> {
   await sendToUser({ userId: w.userId, channels: [w.channel], body: w.text, authorKind: 'system', authorName: 'AIStart360' }, { sb })
 }
 
-async function escalationMinutes(deps: InboundDeps): Promise<number> {
-  if (deps.escalationMinutes) return deps.escalationMinutes
-  try {
-    return await getSetting('comm_escalation_minutes')
-  } catch {
-    return 30
-  }
+async function deadlineConfig(deps: InboundDeps): Promise<ReplyDeadlineConfig> {
+  if (deps.replyDeadline) return deps.replyDeadline
+  if (deps.escalationMinutes) return { minutes: deps.escalationMinutes, window: null }
+  return loadReplyDeadline()
+}
+
+async function defaultQueueBot(job: BotJob): Promise<boolean> {
+  const { inngest } = await import('@/lib/inngest')
+  await inngest.send({ name: COMM_BOT_REPLY_EVENT, data: job })
+  return true
 }
 
 async function defaultMode(): Promise<'manual' | 'auto'> {
@@ -152,11 +173,13 @@ export async function recordInbound(input: RecordInboundInput, deps: InboundDeps
     created_at: at.toISOString(),
     sent_at: at.toISOString(),
   }])
-  if (duplicate || !rows[0]) return { duplicate: true, thread, message: null, startsWaiting: false, warned: false }
+  if (duplicate || !rows[0]) return { duplicate: true, thread, message: null, startsWaiting: false, warned: false, botQueued: false }
   const message = rows[0]
 
+  const deadline = await deadlineConfig(deps)
   const { patch, startsWaiting } = threadPatchOnInbound(thread, {
-    body: moderation.bodyMasked ?? body, at, now, escalationMinutes: await escalationMinutes(deps), profanity,
+    body: moderation.bodyMasked ?? body, at, now, escalationMinutes: deadline.minutes, profanity,
+    dueAt: replyDueAt(now, deadline.minutes, deadline.window),
   })
   const warned = profanity && !thread.blocked_at && shouldWarnProfanity(thread.profanity_warned_at, now)
   const fullPatch = warned ? { ...patch, profanity_warned_at: now.toISOString() } : patch
@@ -171,7 +194,16 @@ export async function recordInbound(input: RecordInboundInput, deps: InboundDeps
     }
   }
 
-  if (startsWaiting) {
+  let botQueued = false
+  if (updated.mode === 'auto' && !updated.blocked_at && !isProfanityOnly(body)) {
+    try {
+      botQueued = await (deps.queueBot ?? defaultQueueBot)({ threadId: updated.id, messageId: message.id, notifyOnSkip: startsWaiting })
+    } catch (err) {
+      console.error('[comm] bot reply not queued', err instanceof Error ? err.message.slice(0, 120) : err)
+    }
+  }
+
+  if (startsWaiting && !botQueued) {
     const notify = deps.notify ?? ((n: InboundNotice) => runInBackground('comm-inbound-notify', () => notifyStaffOfInbound(n)))
     try {
       const recipient = await loadRecipient(sb, input.userId).catch(() => null)
@@ -180,7 +212,7 @@ export async function recordInbound(input: RecordInboundInput, deps: InboundDeps
       console.error('[comm] staff notification failed', err instanceof Error ? err.message : err)
     }
   }
-  return { duplicate: false, thread: updated, message, startsWaiting, warned }
+  return { duplicate: false, thread: updated, message, startsWaiting, warned, botQueued }
 }
 
 // ─── Telegram ───────────────────────────────────────────────────────────────
@@ -215,7 +247,7 @@ export async function handleTelegramInbound(input: TelegramInboundInput, deps: T
     metadata: { chatId: input.chatId },
     at: typeof input.date === 'number' ? new Date(input.date * 1000) : undefined,
   }, { ...deps, sb, now })
-  if (res.duplicate || res.warned || res.thread.blocked_at) return true
+  if (res.duplicate || res.warned || res.thread.blocked_at || res.botQueued) return true
 
   if (shouldSendReceipt(res.thread.tg_receipt_at, now)) {
     await updateThread(sb, res.thread.id, { tg_receipt_at: now.toISOString() })

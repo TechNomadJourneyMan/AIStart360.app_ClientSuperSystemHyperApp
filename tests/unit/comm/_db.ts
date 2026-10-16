@@ -45,7 +45,7 @@ export function commDb(seed: Record<string, Row[]> = {}) {
       return { data: null, error: { code: 'PGRST202', message: 'no such function' } }
     },
     from(table: string) {
-      let op: 'select' | 'insert' | 'update' = 'select'
+      let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
       let payload: Row | Row[] | null = null
       let single = false
       let cap: number | null = null
@@ -68,11 +68,17 @@ export function commDb(seed: Record<string, Row[]> = {}) {
           writes.push({ table, op, payload })
           return { data: single ? out[0] ?? null : out, error: null }
         }
+        if (op === 'delete') {
+          const gone = rows.filter(match)
+          db[table] = rows.filter((r) => !match(r))
+          writes.push({ table, op, payload: gone.map((r) => r.id) })
+          return { data: null, error: null }
+        }
         if (op === 'update') {
           const hit = rows.filter(match)
           for (const r of hit) Object.assign(r, payload)
           writes.push({ table, op, payload })
-          return { data: hit, error: null }
+          return { data: single ? hit[0] ?? null : hit, error: null }
         }
         let found = rows.filter(match)
         if (sort) {
@@ -80,12 +86,17 @@ export function commDb(seed: Record<string, Row[]> = {}) {
           found = [...found].sort((a, b) => (String(a[col]) < String(b[col]) ? -1 : String(a[col]) > String(b[col]) ? 1 : 0) * (asc ? 1 : -1))
         }
         if (cap !== null) found = found.slice(0, cap)
+        // Copies, like rows read from a real database (a later update must not change them).
+        found = found.map((r) => ({ ...r }))
         return { data: single ? found[0] ?? null : found, error: null }
       }
       const b: Record<string, unknown> = {
         select: () => b,
         insert: (p: Row | Row[]) => { op = 'insert'; payload = p; return b },
         update: (p: Row) => { op = 'update'; payload = p; return b },
+        delete: () => { op = 'delete'; return b },
+        not: (c: string, o: string, v: unknown) => { filters.push((r) => (o === 'is' && v === null ? r[c] != null : r[c] !== v)); return b },
+        gt: (c: string, v: unknown) => { filters.push((r) => r[c] != null && String(r[c]) > String(v)); return b },
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
         neq: (c: string, v: unknown) => { filters.push((r) => r[c] !== v); return b },
         is: (c: string, v: unknown) => { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return b },
