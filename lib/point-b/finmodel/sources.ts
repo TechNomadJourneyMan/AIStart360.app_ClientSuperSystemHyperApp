@@ -104,3 +104,18 @@ export async function loadFinmodelFacts(sb: SupabaseClient, companyId: string | 
     return { ...NO_FACTS }
   }
 }
+
+/** The questionnaire answers of a user as {question_key: value} (the same unwrapping as lib/point-b/inputs). */
+export async function loadSurveyAnswers(sb: SupabaseClient, userId: string): Promise<Record<string, unknown>> {
+  const { data, error } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', userId)
+  if (error) {
+    if (!isMissingTable(`(${error.code ?? ''})`)) console.error('[point-b/finmodel] survey answers not read', error.code ?? 'unknown')
+    return {}
+  }
+  const out: Record<string, unknown> = {}
+  for (const row of (data ?? []) as Array<{ question_key: string; answer: unknown }>) {
+    const a = row.answer
+    out[row.question_key] = a && typeof a === 'object' && 'value' in a ? (a as { value?: unknown }).value : a
+  }
+  return out
+}

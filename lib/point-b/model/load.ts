@@ -10,7 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { expertDisplayName } from '@/lib/expert-review/blocks'
 import { goalStart } from '@/lib/goals/evaluate'
 import { loadGoals } from '@/lib/goals/store'
-import { loadFinmodel, type FinmodelState } from '../finmodel/store'
+import { finmodelStatus, loadFinmodel, type FinmodelState } from '../finmodel/store'
 import { loadPointBInputs, type PointBInputs } from '../inputs'
 import { companyOfUser } from '../plan/flow'
 import { snapshotGoals } from '../plan/goals'
@@ -118,6 +118,7 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
     access: 'ok',
     // The client sees the preliminary calculation WITHOUT its scenarios: scenarios are the experts' plan (approved version only, spec §6).
     overview: { result: { ...result, scenarios: [] }, labelledAutomatic: true },
+    finmodel: finmodelStatus(inputs.finmodel),
     plan: {
       status: published ? 'published' : preparing ? 'preparing' : 'none',
       version: published?.version ?? null,
@@ -126,5 +127,19 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
     },
+  }
+}
+
+/** The warnings of the calculation that are about the finmodel (the expert panel shows them next to the values). */
+const FINMODEL_WARNING = /^(Расходы по модели расходятся|Оборотный капитал и налог — допущения|Деньги не рассчитаны)/
+
+export async function loadFinmodelWarnings(sb: SupabaseClient, input: { userId: string; companyId: string; now?: Date }): Promise<string[]> {
+  try {
+    const goals = await snapshotGoals(sb, input.companyId)
+    const { inputs } = await loadModelForCompany(sb, { userId: input.userId, companyId: input.companyId, goals, now: input.now })
+    return computeModel(inputs).warnings.filter((w) => FINMODEL_WARNING.test(w))
+  } catch (err) {
+    console.error('[point-b/model] finmodel warnings not calculated', err instanceof Error ? err.message : err)
+    return []
   }
 }

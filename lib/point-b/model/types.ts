@@ -9,6 +9,7 @@
  * RUN-RATES: the goal is an annual revenue at the deadline and it is reached in the first month whose
  * (de-seasonalised) monthly run-rate × 12 is at least the goal.
  */
+import type { FinmodelKey } from '../finmodel/keys'
 import type { FinmodelState } from '../finmodel/store'
 import type { GoalReviewStatus } from '../plan/types'
 
@@ -163,6 +164,8 @@ export type Forecast = ModelResult['forecast']
 export interface PointBState {
   access: 'ok'
   overview: { result: ModelResult; labelledAutomatic: true }
+  /** Completeness of the «Финмодель» (level 2) — never the values: they come from GET /api/v1/point-b/finmodel. */
+  finmodel: { complete: boolean; missing: FinmodelKey[]; defaulted: FinmodelKey[] }
   plan: {
     status: 'none' | 'preparing' | 'published'
     version: number | null

@@ -161,6 +161,12 @@ export function mergeFinmodel(input: {
   return { values, missing, complete: missing.length === 0, defaulted, facts: input.facts ?? { ...NO_FACTS } }
 }
 
+/** The completeness of a state without its values (what `PointBState.finmodel` carries). */
+export function finmodelStatus(state: FinmodelState | null | undefined): { complete: boolean; missing: FinmodelKey[]; defaulted: FinmodelKey[] } {
+  if (!state) return { complete: false, missing: FINMODEL_KEYS.filter((k) => FINMODEL_DEFS[k].required), defaulted: [] }
+  return { complete: state.complete, missing: [...state.missing], defaulted: [...state.defaulted] }
+}
+
 // ─── reads ──────────────────────────────────────────────────────────────────
 
 const COLUMNS = 'key, value, period_key, as_of, origin, status, note, verified_by_name, verified_at, updated_at'
@@ -177,7 +183,7 @@ export async function readFinmodelRows(sb: SupabaseClient, companyId: string): P
 
 export async function loadFinmodel(
   sb: SupabaseClient,
-  input: { companyId: string; template: TemplateKey; pb: PointBInputs },
+  input: { companyId: string; template: TemplateKey; pb: Pick<PointBInputs, 'answers'> },
 ): Promise<FinmodelState> {
   const [rows, facts] = await Promise.all([
     readFinmodelRows(sb, input.companyId),
