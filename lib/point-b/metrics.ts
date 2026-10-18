@@ -20,16 +20,29 @@ export function pointBOptionsFromMetrics(metrics: CompanyMetrics): Pick<PointBOp
   return { currentRevenueYear: revenue !== null && revenue > 0 ? revenue : null, metrics: values }
 }
 
-/** Read them for a company. A failed read is logged and yields no metric values (Point B then reads the survey). */
-export async function loadPointBMetricOptions(
+export type PointBMetricOptions = Pick<PointBOptions, 'currentRevenueYear' | 'metrics'>
+
+/** Engine options plus the calendar period of the revenue row ('2024', '2025-Q2'), null when it has none. */
+export async function loadPointBMetrics(
   client: SupabaseClient,
   companyId: string | null,
-): Promise<Pick<PointBOptions, 'currentRevenueYear' | 'metrics'>> {
-  if (!companyId) return { currentRevenueYear: null, metrics: {} }
+): Promise<{ options: PointBMetricOptions; revenuePeriod: string | null }> {
+  if (!companyId) return { options: { currentRevenueYear: null, metrics: {} }, revenuePeriod: null }
   try {
-    return pointBOptionsFromMetrics(await loadCompanyMetrics(client, companyId, POINT_B_METRIC_IDS))
+    const metrics = await loadCompanyMetrics(client, companyId, POINT_B_METRIC_IDS)
+    const revenue = metrics.get(POINT_B_LEVER_METRICS.revenue)
+    const quarter = revenue?.periodQuarter ? Number(String(revenue.periodQuarter).replace(/^q/i, '')) : null
+    const revenuePeriod = typeof revenue?.periodYear === 'number'
+      ? (quarter && quarter >= 1 && quarter <= 4 ? `${revenue.periodYear}-Q${quarter}` : String(revenue.periodYear))
+      : null
+    return { options: pointBOptionsFromMetrics(metrics), revenuePeriod }
   } catch (err) {
     console.error('[point-b] metrics read failed — Point B falls back to the questionnaire', err)
-    return { currentRevenueYear: null, metrics: {} }
+    return { options: { currentRevenueYear: null, metrics: {} }, revenuePeriod: null }
   }
+}
+
+/** Read them for a company. A failed read is logged and yields no metric values (Point B then reads the survey). */
+export async function loadPointBMetricOptions(client: SupabaseClient, companyId: string | null): Promise<PointBMetricOptions> {
+  return (await loadPointBMetrics(client, companyId)).options
 }
