@@ -1,69 +1,44 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
-import { Save } from 'lucide-react'
+import { useEffect } from 'react'
 import PointBView from '@/components/point-b/PointBView'
 import type { PointBV2 } from '@/lib/point-b/engine'
-import { Button, ErrorState, GigaApiError, Panel, fmtDateTime, gigaFetch, inputClass, useGigaQuery } from '../kit'
+import { ErrorState, useGigaQuery } from '../kit'
+import { GoalReviewPanel } from './point-b/GoalReviewPanel'
+import { PlanPanel } from './point-b/PlanPanel'
+import { usePlanController } from './point-b/usePlanController'
 
 /**
- * Точка Б клиента: тот же расчёт, что видит клиент, и экспертная корректировка
- * (point_b_versions). Править может только тот, у кого есть clients.review.
+ * Точка Б клиента: тот же расчёт, что видит клиент, плюс работа эксперта по плану —
+ * проверка целей и версии плана (черновик → на одобрение → одобрена). Прямой записи
+ * «корректировки» больше нет: любой текст эксперта — это версия плана, и клиент видит
+ * его только после одобрения Admin / Super Admin. Работать с планом может только тот,
+ * у кого есть clients.review.
  */
 
 interface Version { id: string; expert_notes: string; author_name: string | null; is_approved: boolean; created_at: string }
 interface PointBData { pointB: PointBV2 | null; reason: string | null; version: Version | null }
 
+/** Goals + plan versions share one controller: a verified goal unlocks the approval. */
+function PlanWorkspace({ userId, onChanged }: { userId: string; onChanged: () => void }) {
+  const { ctl, snap } = usePlanController(userId)
+  // A published / returned version changes what the calculation below shows.
+  useEffect(() => { if (snap.notice) onChanged() }, [snap.notice, onChanged])
+  return (
+    <div className="space-y-4">
+      <GoalReviewPanel ctl={ctl} snap={snap} />
+      <PlanPanel ctl={ctl} snap={snap} />
+    </div>
+  )
+}
+
 export function PointBTab({ userId, canReview }: { userId: string; canReview: boolean }) {
   const { data, error, loading, reload } = useGigaQuery<{ data: PointBData }>(`/api/giga-admin/users/${userId}/point-b`)
   const d = data?.data
-  const [draft, setDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => { setDraft(d?.version?.expert_notes ?? '') }, [d?.version?.id, d?.version?.expert_notes])
-
-  const save = async () => {
-    if (!draft.trim()) return
-    setSaving(true)
-    try {
-      await gigaFetch(`/api/giga-admin/users/${userId}/point-b`, { method: 'POST', json: { expert_notes: draft.trim() } })
-      toast.success('Корректировка отправлена на одобрение старшим экспертом. Клиент увидит её после одобрения')
-      reload()
-    } catch (e) {
-      toast.error(e instanceof GigaApiError ? e.message : 'Не удалось сохранить')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   return (
     <div className="space-y-4">
-      {canReview && d?.pointB && (
-        <Panel
-          title="Экспертная корректировка плана"
-          description="После одобрения старшим экспертом текст увидит клиент на странице Точки Б как «Экспертную корректировку»."
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={4}
-            maxLength={8000}
-            placeholder="Например: цель агрессивная — в первом квартале сфокусируйтесь на конверсии; найм РОПа отложите до закрытия кассового разрыва…"
-            className={inputClass}
-          />
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] text-slate-600">
-              {d.version
-                ? `Последняя: ${fmtDateTime(d.version.created_at)}${d.version.author_name ? ` · ${d.version.author_name}` : ''} · ${d.version.is_approved ? 'одобрена' : 'ждёт одобрения'}`
-                : 'Корректировок ещё не было'}
-            </span>
-            <Button variant="primary" icon={<Save size={13} />} loading={saving} disabled={!draft.trim() || draft.trim() === d.version?.expert_notes} onClick={() => void save()}>
-              Сохранить корректировку
-            </Button>
-          </div>
-        </Panel>
-      )}
+      {canReview && <PlanWorkspace userId={userId} onChanged={reload} />}
       <ErrorState error={error} onRetry={reload} />
       {!error && (
         <PointBView

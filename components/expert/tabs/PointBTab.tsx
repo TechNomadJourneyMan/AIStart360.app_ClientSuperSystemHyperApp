@@ -1,7 +1,9 @@
 'use client'
 
 // Expert view of a client's Точка Б — same goal-driven plan the client sees,
-// plus an expert-correction editor (saves a DRAFT point_b_versions row; the client sees it after Admin approval).
+// plus an expert-correction editor. Saving writes a version of the client's PLAN (server-side, the
+// one write path of plan Task 6) and sends it for approval: the client sees it only after Admin /
+// Super Admin approves it. Goal verification and the version list live in the GIGA panel (User 360).
 
 import { useEffect, useState, useCallback } from 'react'
 import PointBView from '@/components/point-b/PointBView'
@@ -60,7 +62,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
       })
       const json = (await res.json()) as { ok: boolean; error?: string }
       if (!res.ok || !json.ok) setSaveMsg(json.error || 'Не удалось сохранить')
-      else { setSaveMsg('Корректировка отправлена на одобрение старшим экспертом. Клиент увидит её после одобрения'); await loadVersion() }
+      else { setSaveMsg('Версия плана отправлена на одобрение. Клиент увидит её после одобрения Admin или Super Admin'); await loadVersion() }
     } catch (e) {
       setSaveMsg(e instanceof Error ? e.message : 'Ошибка сети')
     } finally {
@@ -77,7 +79,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
           <p className="text-sm font-semibold text-on-surface">Экспертная корректировка плана</p>
         </div>
         <p className="text-xs text-on-surface-variant mb-3">
-          Усильте/скорректируйте Точку Б клиента. После одобрения старшим экспертом текст увидит клиент как «Экспертную корректировку».
+          Усильте/скорректируйте Точку Б клиента. Текст сохраняется как новая версия плана и уходит на одобрение Admin или Super Admin; клиент увидит его как «Экспертную корректировку» только после одобрения.
         </p>
         <textarea
           value={draft}
@@ -93,7 +95,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
             className="inline-flex items-center gap-2 bg-secondary/15 hover:bg-secondary/25 border border-secondary/30 text-secondary text-sm px-5 py-2 rounded-xl transition-all disabled:opacity-50"
           >
             <span className="material-symbols-outlined text-base" aria-hidden>{saving ? 'progress_activity' : 'save'}</span>
-            {saving ? 'Сохранение…' : 'Сохранить корректировку'}
+            {saving ? 'Отправка…' : 'Отправить на одобрение'}
           </button>
           {saveMsg && <span className="text-xs text-on-surface-variant">{saveMsg}</span>}
           {version?.created_at && !saveMsg && (
