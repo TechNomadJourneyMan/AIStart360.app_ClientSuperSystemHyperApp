@@ -112,9 +112,11 @@ const INDEX_MIN = 0.3
 const INDEX_MAX = 3
 
 /**
- * Seasonal index by CALENDAR month (0 = January) from the monthly revenue: the ratio of each month
- * to a log-linear trend of the series (so growth is not mistaken for seasonality), averaged per
- * calendar month and normalised to a mean of 1. Fewer than 24 months → twelve 1.0 and `defaulted`.
+ * Seasonal index by CALENDAR month (0 = January) from the monthly revenue. In logarithms the series is
+ * a linear trend plus a seasonal term; the two are fitted alternately (the trend on the series without
+ * the season, the season on the series without the trend) until they settle, so a growing business
+ * is not mistaken for a seasonal one and a seasonal one does not fake a trend. The result is
+ * normalised to a mean of 1. Fewer than 24 months → twelve 1.0 and `defaulted`.
  */
 export function seasonalityIndex(history: ModelInputs['history']): { index: number[]; defaulted: boolean } {
   const pts = history
@@ -123,24 +125,35 @@ export function seasonalityIndex(history: ModelInputs['history']): { index: numb
   if (pts.length < SEASONALITY_MIN_MONTHS) return { index: ONES(), defaulted: true }
 
   const n = pts.length
+  const y = pts.map((p) => Math.log(p.revenue))
   const mx = pts.reduce((s, p) => s + p.ord, 0) / n
-  const my = pts.reduce((s, p) => s + Math.log(p.revenue), 0) / n
-  let sxx = 0
-  let sxy = 0
-  for (const p of pts) {
-    sxx += (p.ord - mx) ** 2
-    sxy += (p.ord - mx) * (Math.log(p.revenue) - my)
+  const sxx = pts.reduce((s, p) => s + (p.ord - mx) ** 2, 0)
+  const season = Array(12).fill(0) as number[]
+  let slope = 0
+  let intercept = 0
+  for (let iter = 0; iter < 50; iter++) {
+    // trend on the series without the season
+    const adj = pts.map((p, k) => y[k] - season[p.month])
+    const my = adj.reduce((a, b) => a + b, 0) / n
+    slope = sxx > 0 ? pts.reduce((s, p, k) => s + (p.ord - mx) * (adj[k] - my), 0) / sxx : 0
+    intercept = my - slope * mx
+    // season on the series without the trend, centred
+    const sums = Array(12).fill(0) as number[]
+    const counts = Array(12).fill(0) as number[]
+    pts.forEach((p, k) => {
+      sums[p.month] += y[k] - (intercept + slope * p.ord)
+      counts[p.month] += 1
+    })
+    const raw = sums.map((sum, m) => (counts[m] > 0 ? sum / counts[m] : 0))
+    const mean = raw.reduce((a, b) => a + b, 0) / 12
+    let moved = 0
+    raw.forEach((v, m) => {
+      moved = Math.max(moved, Math.abs(v - mean - season[m]))
+      season[m] = v - mean
+    })
+    if (moved < 1e-12) break
   }
-  const slope = sxx > 0 ? sxy / sxx : 0
-
-  const sums = Array(12).fill(0) as number[]
-  const counts = Array(12).fill(0) as number[]
-  for (const p of pts) {
-    const trend = Math.exp(my + slope * (p.ord - mx))
-    sums[p.month] += p.revenue / trend
-    counts[p.month] += 1
-  }
-  const raw = sums.map((s, m) => (counts[m] > 0 ? s / counts[m] : 1)).map((v) => Math.min(INDEX_MAX, Math.max(INDEX_MIN, v)))
+  const raw = season.map((v) => Math.min(INDEX_MAX, Math.max(INDEX_MIN, Math.exp(v))))
   const mean = raw.reduce((a, b) => a + b, 0) / 12
   return { index: raw.map((v) => v / mean), defaulted: false }
 }
