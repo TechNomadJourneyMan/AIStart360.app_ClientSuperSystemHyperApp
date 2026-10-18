@@ -23,6 +23,7 @@ import { loadGoalsWithEvaluation, valuePeriod } from '@/lib/goals/current'
 import { upsertGoal } from '@/lib/goals/store'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { profanityResponse } from '@/lib/moderation/http'
+import { notifyGoalNeedsReview } from '@/lib/point-b/plan/notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +75,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     const service = createServiceClient()
     const metrics = await loadCompanyMetrics(service, companyId, [entry.id])
     const current = metrics.get(entry.id)
-    const goal = await upsertGoal(service, companyId, { ...parsed.data, source: role === 'staff' || role === 'partner_expert' ? 'expert' : 'owner' }, {
+    const source = role === 'staff' || role === 'partner_expert' ? 'expert' : 'owner'
+    const goal = await upsertGoal(service, companyId, { ...parsed.data, source }, {
       actorId: t.user.id,
       baseline: { value: current?.value ?? null, period: valuePeriod(current) },
     })
@@ -82,6 +84,15 @@ export async function POST(req: Request): Promise<NextResponse> {
       name: 'TARGET_CHANGED', companyId, subjectType: 'goal', subjectId: goal.id, actor: `user:${t.user.id}`,
       payload: { metric: goal.metricId, target: goal.targetValue, period: goal.periodLabel }, dedupeKey: `target_changed:${goal.id}:${Date.now()}`,
     })
+    // The owner set or changed a goal: the assigned expert is asked to look at it (Point B plan).
+    // A failure here never touches the answer — the goal is already saved.
+    if (source === 'owner') {
+      try {
+        await notifyGoalNeedsReview(service, { userId: t.user.id, companyId, metricLabel: goal.label || entry.label })
+      } catch (err) {
+        console.error('[api/v1/goals] review notification failed', err instanceof Error ? err.message : err)
+      }
+    }
     const evaluation = evaluateGoal(goal, { value: current?.value ?? null, period: valuePeriod(current) }, new Date())
     return NextResponse.json({ ok: true, data: { goal, evaluation } })
   } catch (err) {

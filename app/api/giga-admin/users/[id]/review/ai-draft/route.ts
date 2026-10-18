@@ -16,6 +16,7 @@ import {
   parseAiDraft,
   validateDraftItems,
 } from '@/lib/expert-review/ai-draft'
+import { loadLatestExpertNotes } from '@/lib/point-b/compat'
 import type { SurveyStepRow } from '@/lib/survey/steps'
 
 /**
@@ -72,16 +73,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .eq('is_current', true)
         .limit(1)
         .maybeSingle(),
-      sb
-        .from('point_b_versions')
-        .select('expert_notes')
-        .eq('diagnostic_id', diagnostic.id as string)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+      // The newest expert notes: from the client's plan versions (any status), else the legacy rows.
+      loadLatestExpertNotes(sb, { companyId: (diagnostic.company_id as string | null | undefined) ?? null, diagnosticId: diagnostic.id as string }),
     ])
     pointB = (pb.data as Record<string, unknown> | null) ?? null
-    expertPointB = (ev.data as Record<string, unknown> | null) ?? null
+    expertPointB = ev
   }
 
   const ctx = buildReviewContext({

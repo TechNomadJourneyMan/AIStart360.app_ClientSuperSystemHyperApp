@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   del: vi.fn(),
   emit: vi.fn(),
   list: vi.fn(),
+  review: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: h.user }, error: null }) } }) }))
@@ -16,6 +17,7 @@ vi.mock('@/lib/metrics/company-metrics', () => ({ loadCompanyMetrics: async () =
 vi.mock('@/lib/goals/store', () => ({ upsertGoal: h.upsert, deleteGoal: h.del }))
 vi.mock('@/lib/goals/current', async (orig) => ({ ...(await orig<typeof import('@/lib/goals/current')>()), loadGoalsWithEvaluation: h.list }))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: h.emit }))
+vi.mock('@/lib/point-b/plan/notify', () => ({ notifyGoalNeedsReview: h.review }))
 
 const { GET, POST } = await import('@/app/api/v1/goals/route')
 const { DELETE } = await import('@/app/api/v1/goals/[id]/route')
@@ -33,6 +35,7 @@ beforeEach(() => {
   h.del.mockReset().mockResolvedValue(true)
   h.emit.mockReset()
   h.list.mockReset().mockResolvedValue([])
+  h.review.mockReset().mockResolvedValue(undefined)
 })
 
 describe('/api/v1/goals', () => {
@@ -56,6 +59,23 @@ describe('/api/v1/goals', () => {
     h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'partner_expert', canManage: true, legacy: false } }
     await post({ metricId: 'biz.finansy.valovaya_marzha', targetValue: 40, periodLabel: '12m' })
     expect(h.upsert.mock.calls[0][2]).toMatchObject({ source: 'expert' })
+    expect(h.review).not.toHaveBeenCalled() // an expert's own goal needs no review request
+  })
+
+  it('POST: an owner changing a goal triggers notifyGoalNeedsReview without changing the response', async () => {
+    const { status, body } = await post({ metricId: 'biz.finansy.valovaya_marzha', targetValue: 40, periodLabel: '12m' })
+    expect(status).toBe(200)
+    expect(h.review).toHaveBeenCalledTimes(1)
+    expect(h.review.mock.calls[0][1]).toEqual({ userId: 'u-1', companyId: 'co-1', metricLabel: 'Маржа' })
+    expect(body.data).toMatchObject({ goal: { id: 'g1', targetValue: 40 }, evaluation: { current: 25, target: 40 } })
+  })
+
+  it('POST: a failing review notification never fails the request', async () => {
+    h.review.mockRejectedValue(new Error('staff notifications are down'))
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { status, body } = await post({ metricId: 'biz.finansy.valovaya_marzha', targetValue: 40, periodLabel: '12m' })
+    expect(status).toBe(200)
+    expect(body.data.goal.id).toBe('g1')
   })
 
   it('POST: bad body, unknown metric, no access', async () => {
