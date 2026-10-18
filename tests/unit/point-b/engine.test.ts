@@ -319,3 +319,70 @@ describe('calculatePointBV2', () => {
     expect(withMetric.data_sufficiency.sufficient).toBe(true)
   })
 })
+
+// ─── blocks without data / stale base (Ф0) ───────────────────────────────────
+
+describe('blocks without data and the revenue base', () => {
+  const zeroed = () =>
+    makePointA({
+      blocks: {
+        finance: { score: 70, status: 'strong', top_issues: [], recommendations: [] },
+        marketing: { score: 0, status: 'critical', top_issues: [], recommendations: [] },
+        operations: { score: 70, status: 'strong', top_issues: [], recommendations: [] },
+        strategy: { score: 70, status: 'strong', top_issues: [], recommendations: [] },
+        sales: { score: 0, status: 'critical', top_issues: [], recommendations: [] },
+      },
+    })
+  const gap = computeGap(60_000_000, 100_000_000, 36) // ~19% a year → «realistic» before any penalty
+
+  it('blocks without data do not count as weak and do not lower realism', () => {
+    const penalised = assessRealism(zeroed(), gap, [])
+    expect(penalised.weak_blocks).toEqual(expect.arrayContaining(['marketing', 'sales']))
+    expect(penalised.level).toBe('ambitious')
+
+    const honest = assessRealism(zeroed(), gap, [], undefined, { blocksWithoutData: ['sales', 'marketing'] })
+    expect(honest.weak_blocks).not.toContain('sales')
+    expect(honest.weak_blocks).not.toContain('marketing')
+    expect(honest.level).toBe('realistic')
+    expect(honest.score).toBeGreaterThan(penalised.score)
+  })
+
+  it('a block with a real score under 50 is still weak', () => {
+    const pa = zeroed()
+    pa.blocks.finance = { score: 30, status: 'weak', top_issues: [], recommendations: [] }
+    const r = assessRealism(pa, gap, [], undefined, { blocksWithoutData: ['sales', 'marketing'] })
+    expect(r.weak_blocks).toEqual(['finance'])
+  })
+
+  it('blocks_without_data is echoed in data_quality', () => {
+    const pb = calculatePointBV2(zeroed(), answersWithGoals(), { blocksWithoutData: ['sales', 'marketing'] })
+    expect(pb.data_quality.blocks_without_data).toEqual(['sales', 'marketing'])
+    expect(pb.data_quality.snapshot).toBeNull()
+    expect(pb.data_quality.base).toEqual({ period: null, age_months: null, stale: false })
+    expect(pb.realism.rationale.join(' ')).toContain('Продажи')
+  })
+
+  it('a block without data is not listed as the weak-block fallback of the top-5 limits', () => {
+    const pb = calculatePointBV2(zeroed(), answersWithGoals(), { blocksWithoutData: ['sales', 'marketing'] })
+    expect(pb.top5_limits.map((t) => t.block)).not.toContain('sales')
+    expect(pb.top5_limits.map((t) => t.block)).not.toContain('marketing')
+  })
+
+  it('stale base adds a risk factor and a rationale line mentioning the base period', () => {
+    const base = { period: '2024', ageMonths: 22, stale: true }
+    const pb = calculatePointBV2(makePointA(), answersWithGoals(), { currentRevenueYear: 60_000_000, baseRevenue: base })
+    expect(pb.data_quality.base).toEqual({ period: '2024', age_months: 22, stale: true })
+    expect(pb.realism.rationale.some((l) => l.includes('2024') && l.includes('устарел'))).toBe(true)
+    expect(pb.realism.risk_factors.some((l) => l.includes('2024'))).toBe(true)
+    const fresh = calculatePointBV2(makePointA(), answersWithGoals(), { currentRevenueYear: 60_000_000 })
+    expect(pb.realism.level).toBe(fresh.realism.level) // the level is not changed
+  })
+
+  it('fresh base adds none', () => {
+    const base = { period: '2026-09', ageMonths: 1, stale: false }
+    const pb = calculatePointBV2(makePointA(), answersWithGoals(), { currentRevenueYear: 60_000_000, baseRevenue: base })
+    expect(pb.realism.rationale.some((l) => l.includes('устарел'))).toBe(false)
+    expect(pb.realism.risk_factors.some((l) => l.includes('устарел'))).toBe(false)
+    expect(pb.data_quality.base.stale).toBe(false)
+  })
+})

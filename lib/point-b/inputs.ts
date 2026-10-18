@@ -70,13 +70,17 @@ function isMissingTable(e: { code?: string } | null | undefined): boolean {
 }
 
 /**
- * End of a period key in months since year 0. Understands the keys the Point A
- * snapshot stores ('2025', '2026-09', '2025-Q2', and '2025-2' — the quarter
- * written without «Q» by the snapshot's period label) and lib/data-layer keys.
+ * The Point A snapshot writes a quarter as '2025-2' (lib/point-a/snapshot.ts
+ * pickedPeriod); lib/data-layer keys use '2025-Q2'. One spelling for Point B.
  */
-function periodEndMonths(key: string): number | null {
+export function normalizePeriodKey(key: string | null | undefined): string | null {
+  if (!key) return null
   const q = /^(\d{4})-([1-4])$/.exec(key)
-  if (q) return Number(q[1]) * 12 + Number(q[2]) * 3
+  return q ? `${q[1]}-Q${q[2]}` : key
+}
+
+/** End of a period key in months since year 0, null when unknown. */
+function periodEndMonths(key: string): number | null {
   const p = parsePeriodKey(key)
   return p ? periodOrdinal(p) : null
 }
@@ -180,7 +184,7 @@ export async function loadPointBInputs(
   const registryRevenue = positive(metrics.options.currentRevenueYear)
   if (registryRevenue !== null) {
     const snapInputs = snapRow?.inputs as { metrics?: Record<string, { period?: string | null }> } | null | undefined
-    const period = snapInputs?.metrics?.[POINT_B_LEVER_METRICS.revenue]?.period ?? metrics.revenuePeriod ?? null
+    const period = normalizePeriodKey(snapInputs?.metrics?.[POINT_B_LEVER_METRICS.revenue]?.period) ?? metrics.revenuePeriod ?? null
     base = { revenue: registryRevenue, period, ...baseFreshness(period, now) }
   } else {
     const fromSurvey = surveyRevenueBase(answers, now)

@@ -143,7 +143,7 @@ describe('loadPointBInputs', () => {
     const a = seed({ point_a_snapshots: [snapshot({ inputs: { metrics: { [REVENUE]: { value: 1, source: 'survey', period: '2025' } } } })], metrics: [revenueRow({ period_year: 2025 })] })
     expect((await loadPointBInputs(a.sb, 'u1', { now: NOW })).base).toMatchObject({ period: '2025', ageMonths: 10, stale: false })
     const q = seed({ point_a_snapshots: [snapshot({ inputs: { metrics: { [REVENUE]: { value: 1, source: 'survey', period: '2025-2' } } } })], metrics: [revenueRow({ period_year: 2025 })] })
-    expect((await loadPointBInputs(q.sb, 'u1', { now: NOW })).base).toMatchObject({ period: '2025-2', ageMonths: 16, stale: true })
+    expect((await loadPointBInputs(q.sb, 'u1', { now: NOW })).base).toMatchObject({ period: '2025-Q2', ageMonths: 16, stale: true })
   })
 
   it('no revenue → base.revenue null, stale false', async () => {

@@ -1,4 +1,5 @@
 import type { PointA, DiagnosticStage } from '@/types/onboarding'
+import { parsePeriodKey, periodLabel } from '@/lib/data-layer/period-key'
 
 /**
  * Point B engine (v2) — goal-driven.
@@ -163,6 +164,17 @@ export interface PointBV2 {
 
   ai_strategy: Record<string, unknown> | null
   ai_status: 'none' | 'processing' | 'completed' | 'failed'
+
+  /**
+   * How far the numbers can be trusted: Point A blocks that have no score
+   * (not weak — unknown), the revenue base with its period, and the Point A
+   * snapshot the result rests on (null for a diagnostics row without one).
+   */
+  data_quality: {
+    blocks_without_data: string[]
+    base: { period: string | null; age_months: number | null; stale: boolean }
+    snapshot: { id: string; confidence: number | null; coverage: number | null } | null
+  }
 }
 
 export interface PointBOptions {
@@ -190,6 +202,14 @@ export interface PointBOptions {
    */
   goal12mYear?: number | null
   goal3yYear?: number | null
+  /**
+   * Point A blocks with no score (a v4 block with `score === null`): they are
+   * «данных не хватает», not weak — they do not lower realism or become a
+   * «слабый блок» (lib/point-b/inputs.ts).
+   */
+  blocksWithoutData?: string[]
+  /** Calendar period and age of the revenue the plan starts from. */
+  baseRevenue?: { period: string | null; ageMonths: number | null; stale: boolean }
 }
 
 // ─── Block metadata ────────────────────────────────────────────────────────
@@ -361,6 +381,12 @@ export function buildScenarios(
 
 // ─── assessRealism ───────────────────────────────────────────────────────
 
+/** «2024», «II кв. 2025», or «прошлый период», when the base has no known period. */
+function basePeriodLabel(period: string | null | undefined): string {
+  if (!period) return 'прошлый период'
+  return parsePeriodKey(period) ? periodLabel(period) : period
+}
+
 const LEVEL_ORDER = ['realistic', 'ambitious', 'aggressive', 'unrealistic'] as const
 type RealLevel = (typeof LEVEL_ORDER)[number]
 const LEVEL_SCORE: Record<RealLevel, number> = {
@@ -372,8 +398,12 @@ export function assessRealism(
   gap3y: GapMetrics,
   extraWeakBlocks: string[] = [],
   gap12m?: GapMetrics,
+  quality: Pick<PointBOptions, 'blocksWithoutData' | 'baseRevenue'> = {},
 ): Realism {
-  const weakFromScores = BLOCK_KEYS.filter((k) => (pointA.blocks[k]?.score ?? 0) < 50)
+  // A block with no score is unknown, not weak: it neither lowers the level
+  // nor appears in the «weak blocks» list.
+  const withoutData = new Set(quality.blocksWithoutData ?? [])
+  const weakFromScores = BLOCK_KEYS.filter((k) => !withoutData.has(k) && (pointA.blocks[k]?.score ?? 0) < 50)
   const weak_blocks = Array.from(new Set([...weakFromScores, ...extraWeakBlocks]))
 
   // Prefer the 3-year horizon; fall back to the 12-month goal when the owner
@@ -418,10 +448,20 @@ export function assessRealism(
     )
   }
 
+  const noData = BLOCK_KEYS.filter((k) => withoutData.has(k))
+  if (noData.length > 0) {
+    rationale.push(`Нет данных по блокам: ${noData.map((b) => BLOCK_LABELS[b] ?? b).join(', ')} — они не учтены в оценке.`)
+  }
+
   const risk_factors: string[] = []
   if (cagr > 50) risk_factors.push('Высокий требуемый темп роста — риск кассовых разрывов при масштабировании.')
   for (const b of weak_blocks) {
     risk_factors.push(`Блок «${BLOCK_LABELS[b] ?? b}» не выдержит рост без укрепления.`)
+  }
+  if (quality.baseRevenue?.stale) {
+    const label = basePeriodLabel(quality.baseRevenue.period)
+    rationale.push(`Выручка взята за ${label} — данные устарели, оценка приблизительна.`)
+    risk_factors.push(`Расчёт опирается на устаревшую выручку (${label}): реальный разрыв до цели может отличаться.`)
   }
 
   // One-line "почему": verdict + the single biggest driver (growth multiple or
@@ -647,8 +687,9 @@ function buildHorizons(
   targetOverall: number,
   monthly12m: TrajectoryPoint[],
   top5: PointBV2['top5_limits'],
+  withoutData: ReadonlySet<string> = new Set(),
 ): PointBV2['horizons'] {
-  const weakOrdered = [...BLOCK_KEYS]
+  const weakOrdered = BLOCK_KEYS.filter((k) => !withoutData.has(k))
     .sort((a, b) => (pointA.blocks[a]?.score ?? 0) - (pointA.blocks[b]?.score ?? 0))
     .map((k) => BLOCK_LABELS[k])
   const quickWins = (pointA.quick_wins ?? []).map((q) => q.action)
@@ -750,6 +791,7 @@ export function calculatePointBV2(
 
   const stage: DiagnosticStage = pointA.stage ?? 'seed'
   const cur = goals.current_revenue_year
+  const withoutData = new Set(options.blocksWithoutData ?? [])
 
   // Gaps per horizon
   const gap: GapEntry[] = [
@@ -780,18 +822,21 @@ export function calculatePointBV2(
   // TOP-5 limits (from GRI if provided, else lowest blocks)
   const top5_limits = options.griTop5?.length
     ? options.griTop5.map((t, i) => ({ rank: t.rank ?? i + 1, title: t.title, block: t.block ?? '', severity: t.severity ?? 'high' }))
-    : [...BLOCK_KEYS]
+    : BLOCK_KEYS.filter((k) => !withoutData.has(k))
         .sort((a, b) => (pointA.blocks[a]?.score ?? 0) - (pointA.blocks[b]?.score ?? 0))
         .slice(0, 5)
         .map((k, i) => ({ rank: i + 1, title: `Слабый блок: ${BLOCK_LABELS[k]}`, block: k, severity: (pointA.blocks[k]?.score ?? 0) < 40 ? 'critical' : 'high' }))
 
   const weakBlocks = Array.from(new Set([
-    ...BLOCK_KEYS.filter((k) => (pointA.blocks[k]?.score ?? 0) < 50),
+    ...BLOCK_KEYS.filter((k) => !withoutData.has(k) && (pointA.blocks[k]?.score ?? 0) < 50),
     ...(options.griWeakBlocks ?? []),
   ]))
 
   const gap12m = gap.find((g) => g.horizon === '12m')
-  const realism = assessRealism(pointA, gap3y, options.griWeakBlocks ?? [], gap12m)
+  const realism = assessRealism(pointA, gap3y, options.griWeakBlocks ?? [], gap12m, {
+    blocksWithoutData: options.blocksWithoutData,
+    baseRevenue: options.baseRevenue,
+  })
   void weakBlocks
 
   return {
@@ -809,10 +854,19 @@ export function calculatePointBV2(
     target_overall_score: targetOverall,
     target_health_index: targetHealth,
     target_stage: nextStage(stage),
-    horizons: buildHorizons(goals, pointA, targetOverall, monthly12m, top5_limits),
+    horizons: buildHorizons(goals, pointA, targetOverall, monthly12m, top5_limits, withoutData),
     top5_limits,
     ai_strategy: null,
     ai_status: 'none',
+    data_quality: {
+      blocks_without_data: [...(options.blocksWithoutData ?? [])],
+      base: {
+        period: options.baseRevenue?.period ?? null,
+        age_months: options.baseRevenue?.ageMonths ?? null,
+        stale: options.baseRevenue?.stale ?? false,
+      },
+      snapshot: null,
+    },
   }
 }
 
