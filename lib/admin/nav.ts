@@ -22,6 +22,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
     { href: `${GIGA_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
     { href: `${GIGA_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
+    // Plan versions the experts sent for approval (pb_plan_versions in_review); the API scopes the list to the actor.
+    { href: `${GIGA_BASE}/point-b-queue`, label: 'Точка Б — на одобрении', icon: 'stamp', permission: 'clients.review' },
     { href: `${GIGA_BASE}/experts`, label: 'Эксперты', icon: 'experts', permission: 'experts.manage' },
     { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import PointBView from './PointBView'
 import PointBPaywall from './PointBPaywall'
+import PlanWorkflowSection from './PlanWorkflowSection'
 import { isUpgradeRequired } from './pointBAccess'
 import type { PointBV2 } from '@/lib/point-b/engine'
 
@@ -125,16 +126,20 @@ export default function PointBContainer() {
   if (locked) return <PointBPaywall />
 
   return (
-    <PointBView
-      pointB={pointB}
-      loading={loading}
-      error={error}
-      reason={reason}
-      onRecalculate={load}
-      onGenerate={generate}
-      aiStatus={aiStatus}
-      onSaveCurrentRevenue={saveCurrentRevenue}
-      expertNote={expertNote}
-    />
+    <div className="space-y-4">
+      {/* The expert's plan: status banner and goal corrections that wait for the owner's answer. */}
+      <PlanWorkflowSection />
+      <PointBView
+        pointB={pointB}
+        loading={loading}
+        error={error}
+        reason={reason}
+        onRecalculate={load}
+        onGenerate={generate}
+        aiStatus={aiStatus}
+        onSaveCurrentRevenue={saveCurrentRevenue}
+        expertNote={expertNote}
+      />
+    </div>
   )
 }
