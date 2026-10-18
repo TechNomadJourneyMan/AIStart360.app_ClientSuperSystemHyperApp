@@ -56,3 +56,6 @@ ruvector.db
 
 # Playwright output (screenshots, traces, test results)
 /artifacts/
+
+# visual companion (brainstorming)
+.superpowers/
