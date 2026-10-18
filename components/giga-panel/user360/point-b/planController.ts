@@ -196,7 +196,7 @@ export class PlanController {
   private listeners = new Set<() => void>()
   private seq = 0
 
-  constructor(private readonly userId: string, private readonly fetchFn: typeof fetch) {}
+  constructor(readonly userId: string, private readonly fetchFn: typeof fetch) {}
 
   private get base(): string { return `/api/giga-admin/users/${this.userId}/point-b/plan` }
 

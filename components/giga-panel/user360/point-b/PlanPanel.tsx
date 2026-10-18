@@ -16,6 +16,7 @@ import {
   NOTES_MAX, REJECT_REASON_MIN, STATUS_LABEL, STATUS_TONE, versionActions,
   type PlanController, type PlanSnapshot, type UiError,
 } from './planController'
+import { ScenariosPanel } from './ScenariosPanel'
 import { usePlanController } from './usePlanController'
 
 const INVALID = 'border-red-500/50 focus:border-red-500/60'
@@ -115,6 +116,8 @@ export interface PlanPanelViewProps {
   onExceptionConfirm: () => void
   /** Extra content under the header (e.g. the goal panel placed by the parent). */
   children?: ReactNode
+  /** The scenario calculation of the open version (draft: editable; in review: read-only). */
+  scenarios?: ReactNode
 }
 
 export function PlanPanelView(p: PlanPanelViewProps) {
@@ -192,6 +195,8 @@ export function PlanPanelView(p: PlanPanelViewProps) {
               </div>
             </div>
           )}
+
+          {open && p.scenarios}
 
           {plan.versions.length === 0 && !draft ? (
             <EmptyState
@@ -324,6 +329,7 @@ export function PlanPanel({ ctl, snap, children }: { ctl: PlanController; snap: 
       onExceptionText={setExceptionText}
       onExceptionClose={() => ctl.closeException()}
       onExceptionConfirm={() => { const x = snap.exception; if (x) void ctl.approve(x.versionId, exceptionText) }}
+      scenarios={snap.plan?.open ? <ScenariosPanel userId={ctl.userId} version={snap.plan.open} onChanged={() => void ctl.load()} /> : undefined}
     >
       {children}
     </PlanPanelView>
