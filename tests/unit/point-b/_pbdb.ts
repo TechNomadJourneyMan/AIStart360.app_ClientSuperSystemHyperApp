@@ -29,6 +29,9 @@ const DEFAULTS: Record<string, () => Row> = {
     proposed_value: null, proposed_deadline: null, previous_value: null, reason: null, reviewer_id: null, reviewer_name: null,
     owner_agreed_at: null, applied_without_agreement: false, reminded_at: null,
   }),
+  pb_finmodel_inputs: () => ({
+    period_key: '', as_of: null, status: 'entered', note: null, verified_by: null, verified_by_name: null, verified_at: null, updated_by: null,
+  }),
   metric_targets: () => ({ direction: 'higher_is_better', source: 'owner', note: null, set_by: null, deadline: null, label: null, baseline_value: null, baseline_period: null }),
 }
 
@@ -38,6 +41,9 @@ function uniqueViolation(table: string, rows: Row[], row: Row, ignoreId?: unknow
   if (table === 'pb_plan_versions') {
     if (others.some((r) => r.plan_id === row.plan_id && r.version === row.version)) return true
     return OPEN.includes(String(row.status)) && others.some((r) => r.plan_id === row.plan_id && OPEN.includes(String(r.status)))
+  }
+  if (table === 'pb_finmodel_inputs') {
+    return others.some((r) => r.company_id === row.company_id && r.key === row.key && r.period_key === row.period_key)
   }
   if (table === 'metric_targets') {
     return others.some((r) => r.company_id === row.company_id && r.metric_key === row.metric_key && r.period_label === row.period_label)
@@ -66,7 +72,7 @@ function cmp(a: unknown, b: unknown): number {
 export function pbDb(seed: Record<string, Row[]> = {}) {
   let seq = 0
   const db: Record<string, Row[]> = {
-    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
+    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
   }
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()
@@ -90,9 +96,9 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
             if (op === 'upsert' && conflictCols.length) {
               const hit = rows.find((r) => conflictCols.every((c) => r[c] === p[c]))
-              if (hit) { Object.assign(hit, p); out.push(hit); writes.push({ table, op, payload: p }); continue }
+              if (hit) { Object.assign(hit, structuredClone(p), table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}); out.push(hit); writes.push({ table, op, payload: p }); continue }
             }
-            const row: Row = { id: `${table}-${++seq}`, created_at: stamp(), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
+            const row: Row = { id: `${table}-${++seq}`, created_at: stamp(), ...(table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
             if (uniqueViolation(table, rows, row)) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint (${table})` } }
             rows.push(row)
             out.push(row)
@@ -113,7 +119,7 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
             if (immutableViolation(table, r, next)) return { data: null, error: { code: '23514', message: 'pb_plan_versions: immutable' } }
             if (uniqueViolation(table, rows, next, r.id)) return { data: null, error: { code: '23505', message: 'duplicate key value' } }
           }
-          for (const r of hit) Object.assign(r, structuredClone(payload as Row))
+          for (const r of hit) Object.assign(r, structuredClone(payload as Row), table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {})
           if (hit.length) writes.push({ table, op, payload })
           return { data: ret(hit), error: null }
         }
