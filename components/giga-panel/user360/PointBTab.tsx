@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import PointBView from '@/components/point-b/PointBView'
 import type { PointBV2 } from '@/lib/point-b/engine'
 import { ErrorState, useGigaQuery } from '../kit'
+import { FinmodelPanel } from './point-b/FinmodelPanel'
 import { GoalReviewPanel } from './point-b/GoalReviewPanel'
 import { PlanPanel } from './point-b/PlanPanel'
 import { usePlanController } from './point-b/usePlanController'
@@ -13,7 +14,8 @@ import { usePlanController } from './point-b/usePlanController'
  * проверка целей и версии плана (черновик → на одобрение → одобрена). Прямой записи
  * «корректировки» больше нет: любой текст эксперта — это версия плана, и клиент видит
  * его только после одобрения Admin / Super Admin. Работать с планом может только тот,
- * у кого есть clients.review.
+ * у кого есть clients.review. Там же — «Финмодель» клиента: проверка допущений (деньги, расходы,
+ * долги) и подтверждение значений.
  */
 
 interface Version { id: string; expert_notes: string; author_name: string | null; is_approved: boolean; created_at: string }
@@ -39,6 +41,8 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
   return (
     <div className="space-y-4">
       {canReview && <PlanWorkspace userId={userId} onChanged={reload} />}
+      {/* The money of the client (level 2): the expert checks the assumptions and verifies them. */}
+      {canReview && <FinmodelPanel userId={userId} />}
       <ErrorState error={error} onRetry={reload} />
       {!error && (
         <PointBView

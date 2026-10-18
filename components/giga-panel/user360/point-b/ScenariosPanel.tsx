@@ -12,7 +12,7 @@ import { Calculator, CheckCircle2, RotateCcw, Scale } from 'lucide-react'
 import { Badge, Button, cx, inputClass } from '../../kit'
 import type { PlanVersionRow } from '@/lib/point-b/plan/types'
 import type { ModelResult, ScenarioProfile, ScenarioResult } from '@/lib/point-b/model/types'
-import { GAP_ACTIONS, comparisonRows, parseScenarios } from '@/components/point-b/overviewModel'
+import { GAP_ACTIONS, comparisonRows, dataLevelText, parseScenarios } from '@/components/point-b/overviewModel'
 import {
   DEFAULT_PROFILES, LEVER_KEYS, LEVER_LABEL, PROFILE_LIMITS, SCENARIO_KEYS,
   mixSum, normalizeForm, profileToForm, seedProfiles, validateForms,
@@ -86,7 +86,7 @@ function ProfileFieldset({ form, errors, disabled, locked, p, uid }: {
       <legend className="px-1 text-xs font-semibold text-slate-200">{form.label}</legend>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field id={id('ramp')} label="Срок выхода рычагов, мес." hint={`от ${L.rampMonths.min} до ${L.rampMonths.max}`} value={form.rampMonths} error={errors.rampMonths} onChange={(v) => p.onField(form.key, 'rampMonths', v)} />
-        <Field id={id('reserve')} label="Резерв, мес." hint={`от ${L.reserveMonths.min} до ${L.reserveMonths.max} (считается в Ф3)`} value={form.reserveMonths} error={errors.reserveMonths} onChange={(v) => p.onField(form.key, 'reserveMonths', v)} />
+        <Field id={id('reserve')} label="Резерв, мес." hint={`от ${L.reserveMonths.min} до ${L.reserveMonths.max}`} value={form.reserveMonths} error={errors.reserveMonths} onChange={(v) => p.onField(form.key, 'reserveMonths', v)} />
         <Field id={id('cap')} label="Потолок роста в год, %" hint={`от ${L.growthCapAnnual.min * 100} до ${L.growthCapAnnual.max * 100}`} value={form.growthCapPct} error={errors.growthCapPct} onChange={(v) => p.onField(form.key, 'growthCapPct', v)} />
         <Field id={id('gain')} label="Прирост выручки на сотрудника, %" hint={`от ${L.productivityGain.min * 100} до ${L.productivityGain.max * 100}`} value={form.productivityGainPct} error={errors.productivityGainPct} onChange={(v) => p.onField(form.key, 'productivityGainPct', v)} />
       </div>
@@ -122,6 +122,8 @@ export function ScenariosPanelView(p: ScenariosPanelViewProps) {
   const missing = p.model?.missing ?? []
   const warnings = p.model?.warnings ?? []
   const hasErrors = Object.keys(p.formErrors).length > 0
+  const level = dataLevelText(p.model, p.scenarios)
+  const levelTwo = p.scenarios.some((s) => s.finance) || p.model?.level === 2
 
   return (
     <section aria-label="Сценарии темпа" className="space-y-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
@@ -137,6 +139,9 @@ export function ScenariosPanelView(p: ScenariosPanelViewProps) {
         )}
       </div>
       {!p.editable && <p className="text-[11px] text-slate-500">Сценарии меняются только в черновике. Здесь — то, что сохранено в этой версии.</p>}
+      {level && (
+        <p className={cx('text-xs', levelTwo ? 'text-emerald-300' : 'text-amber-200')} data-testid="data-level">{level}</p>
+      )}
 
       <div aria-live="polite" className="space-y-2">
         {p.notice && <p className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{p.notice}</p>}
@@ -199,8 +204,8 @@ export function ScenariosPanelView(p: ScenariosPanelViewProps) {
                 <tr key={r.key} className="border-b border-white/[0.04] align-top">
                   <th scope="row" className="py-2 pr-3 font-medium text-slate-500">{r.label}</th>
                   {r.cells.map((lines, i) => (
-                    <td key={i} className="px-2 py-2 text-slate-200">
-                      {lines.map((l, j) => <span key={j} className={cx('block', j > 0 && 'text-[11px] text-slate-500')}>{l}</span>)}
+                    <td key={i} className={cx('px-2 py-2', r.tones?.[i] === 'bad' ? 'font-semibold text-red-300' : r.tones?.[i] === 'warn' ? 'font-semibold text-amber-300' : 'text-slate-200')}>
+                      {lines.map((l, j) => <span key={j} className={cx('block', j > 0 && 'text-[11px] font-normal text-slate-500')}>{l}</span>)}
                     </td>
                   ))}
                 </tr>
