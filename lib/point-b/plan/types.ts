@@ -26,6 +26,8 @@ export interface PlanGoalItem {
   targetValue: number
   deadline: string | null
   reviewStatus: GoalReviewStatus
+  /** The expert's correction was applied after 14 days without the owner's answer (visible in the version). */
+  appliedWithoutAgreement?: boolean
 }
 
 export interface PlanGoalsSnapshot {
