@@ -51,6 +51,8 @@ export interface PointBViewProps {
   actionPlanUserId?: string
   /** Latest approved expert correction of this plan (shown to the client). */
   expertNote?: { expert_notes: string; author_name?: string | null; created_at?: string } | null
+  /** Read-only fixture preview (/dev/point-b-preview): nothing is fetched. */
+  previewMode?: boolean
 }
 
 // ─── Localized AI-section copy (portal locale; ru is the default surface) ─────
@@ -862,6 +864,7 @@ export default function PointBView({
   onSaveCurrentRevenue,
   actionPlanUserId,
   expertNote,
+  previewMode = false,
 }: PointBViewProps) {
   // Locale read after mount (cookie isn't available during SSR); default ru.
   // Only the AI-strategy section follows it in this phase.
@@ -950,7 +953,11 @@ export default function PointBView({
       </Section>
 
       <Section eyebrow="Карта роста" title="План действий (90 дней)" icon="checklist">
-        <ActionPlanBoard userId={actionPlanUserId} />
+        {previewMode ? (
+          <p className="text-sm text-on-surface-variant">Карта роста в предпросмотре не загружается (нет обращений к данным).</p>
+        ) : (
+          <ActionPlanBoard userId={actionPlanUserId} />
+        )}
       </Section>
 
       <Top5Limits limits={pointB.top5_limits} />
