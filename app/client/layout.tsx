@@ -1,6 +1,7 @@
 import ImpersonationBanner from '@/components/impersonation/ImpersonationBanner'
 import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { ChatHost } from '@/components/ai-chat/ChatHost'
+import { PopupLayer } from '@/components/popups/PopupLayer'
 import ActivityTracker from '@/components/analytics/ActivityTracker'
 import AnnouncementBar from '@/components/platform/AnnouncementBar'
 import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
@@ -28,6 +29,8 @@ export default async function ClientLayout({ children }: { children: React.React
       {/* Floating assistant — the mascot «Гри» on every client page (survey,
           Point A, etc.); static-launcher fallback via MascotLauncher */}
       <MascotLauncher />
+      {/* Pop-ups on every cabinet page: expert messages (card; modal for «важное») */}
+      <PopupLayer />
       <ChatHost />
     </div>
     </PlatformSectionsProvider>
