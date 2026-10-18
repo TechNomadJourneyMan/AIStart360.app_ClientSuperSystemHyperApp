@@ -10,22 +10,22 @@
 import { CARD, CARD_TITLE, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import type { ModelResult } from '@/lib/point-b/model/types'
+import CashChart from '../CashChart'
 import DataGapBanner from '../DataGapBanner'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
   TONE_CLASS, comparisonGroups, comparisonRows, fmtLongDate, scenarioCards, scenariosMode,
-  type PointBPlanState,
+  type PointBPlanState, type Tone,
 } from '../overviewModel'
 import { SectionError, SectionSkeleton } from './OverviewTab'
 
-function Lines({ lines }: { lines: string[] }) {
-  return (
-    <>
-      {lines.map((l, i) => (
-        <span key={i} className={cn('block', i > 0 && 'text-xs text-on-surface-variant')}>{l}</span>
-      ))}
-    </>
-  )
+function Lines({ lines, tone }: { lines: string[]; tone?: Tone }) {
+  const body = lines.map((l, i) => (
+    <span key={i} className={cn('block', i > 0 && 'text-xs text-on-surface-variant')}>{l}</span>
+  ))
+  // A cash gap or a funding need is a plaque, not just a colour: the text says it too.
+  if (!tone) return <>{body}</>
+  return <span className={cn('block rounded-lg border px-2 py-1', TONE_CLASS[tone].border, TONE_CLASS[tone].bg, tone !== 'neutral' && '[&>span:first-child]:font-semibold', TONE_CLASS[tone].text)}>{body}</span>
 }
 
 export function ScenariosPreparing({ result }: { result: ModelResult | null }) {
@@ -58,6 +58,7 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
   const rows = comparisonRows(plan.scenarios)
   const groups = comparisonGroups(plan.scenarios)
   const date = fmtLongDate(plan.approvedAt)
+  const hasMoney = plan.scenarios.some((s) => s.finance)
 
   return (
     <div className="space-y-4">
@@ -88,7 +89,24 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
                 {c.revenue.range && <dd className="text-xs text-on-surface-variant">диапазон {c.revenue.range}</dd>}
                 {c.share && <dd className="text-xs text-on-surface-variant">{c.share}</dd>}
               </div>
+              {c.money && (
+                <div>
+                  <dt className={CARD_TITLE}>Минимальная касса</dt>
+                  <dd className="text-base font-semibold text-on-surface">{c.money.minCash}</dd>
+                </div>
+              )}
             </dl>
+            {c.money && (c.money.cashGap || c.money.funding) && (
+              <div className="mt-3 space-y-1.5">
+                {c.money.cashGap && (
+                  <p role="note" className={cn('flex items-start gap-1.5 rounded-xl border px-3 py-2 text-xs', TONE_CLASS.bad.border, TONE_CLASS.bad.bg, TONE_CLASS.bad.text)}>
+                    <Icon name="payments" className="text-base" />
+                    <span><b>{c.money.cashGap}.</b></span>
+                  </p>
+                )}
+                {c.money.funding && <p className={cn('text-xs', TONE_CLASS.warn.text)}>{c.money.funding}</p>}
+              </div>
+            )}
             {c.reason && (
               <p role="note" className={cn('mt-3 flex items-start gap-1.5 rounded-xl border px-3 py-2 text-xs', TONE_CLASS.bad.border, TONE_CLASS.bad.bg, TONE_CLASS.bad.text)}>
                 <Icon name="warning" className="text-base" />
@@ -116,7 +134,7 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
               {rows.map((r) => (
                 <tr key={r.key} className="border-b border-white/[0.04] align-top">
                   <th scope="row" className="w-1/4 px-5 py-2.5 text-xs font-medium text-on-surface-variant">{r.label}</th>
-                  {r.cells.map((lines, i) => <td key={i} className="px-3 py-2.5 text-on-surface"><Lines lines={lines} /></td>)}
+                  {r.cells.map((lines, i) => <td key={i} className="px-3 py-2.5 text-on-surface"><Lines lines={lines} tone={r.tones?.[i]} /></td>)}
                 </tr>
               ))}
             </tbody>
@@ -132,7 +150,7 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
                 {rows.map((r) => (
                   <div key={r.key}>
                     <dt className="text-[11px] text-on-surface-variant">{r.label}</dt>
-                    <dd className="text-sm text-on-surface"><Lines lines={r.cells[i]} /></dd>
+                    <dd className="text-sm text-on-surface"><Lines lines={r.cells[i]} tone={r.tones?.[i]} /></dd>
                   </div>
                 ))}
               </dl>
@@ -140,6 +158,23 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
           ))}
         </div>
       </section>
+
+      {hasMoney && (
+        <section aria-labelledby="pb-scn-cash" className="space-y-3">
+          <div>
+            <h3 id="pb-scn-cash" className="font-headline text-base font-bold text-on-surface">Деньги по месяцам</h3>
+            <p className="mt-0.5 text-xs text-on-surface-variant">Касса и прибыль — разные числа: оборотный капитал, налоги, капитальные затраты и платежи по долгам уменьшают деньги, даже когда бизнес прибыльный.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            {plan.scenarios.filter((s) => s.finance).map((s) => (
+              <article key={s.key} aria-label={`Касса: сценарий «${s.label}»`} className={cn(CARD, '!p-4')}>
+                <h4 className="mb-2 text-sm font-semibold text-on-surface">{s.label}</h4>
+                <CashChart finance={s.finance!} scenarioLabel={s.label} />
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section aria-label="Риски, условия и точки пересмотра" className="space-y-2">
         {groups.map((g) => (
@@ -166,9 +201,11 @@ export function ScenariosReady({ plan, target }: { plan: PointBPlanState; target
         ))}
       </section>
 
-      <p className="text-[11px] text-on-surface-variant">
-        Денежные последствия (резерв, кассовый разрыв) здесь не оцениваются: для этого нужны данные о деньгах компании.
-      </p>
+      {!hasMoney && (
+        <p className="text-[11px] text-on-surface-variant">
+          Денежные последствия (резерв, кассовый разрыв) здесь не оцениваются: для этого заполните вкладку «Финмодель».
+        </p>
+      )}
     </div>
   )
 }

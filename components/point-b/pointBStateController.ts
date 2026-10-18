@@ -8,7 +8,7 @@
  */
 import type { ModelResult } from '@/lib/point-b/model/types'
 import { isUpgradeRequired } from './pointBAccess'
-import { EMPTY_PLAN_STATE, parsePointBState, type PointBPlanState } from './overviewModel'
+import { EMPTY_PLAN_STATE, parsePointBState, type PointBFinmodelStatus, type PointBPlanState } from './overviewModel'
 
 export type StatePhase = 'loading' | 'ready' | 'error' | 'locked'
 
@@ -18,6 +18,8 @@ export interface PointBStateSnapshot {
   error: string | null
   result: ModelResult | null
   plan: PointBPlanState
+  /** Completeness of the finmodel (never the values); null = the server did not say. */
+  finmodel?: PointBFinmodelStatus | null
 }
 
 export const INITIAL_STATE_SNAPSHOT: PointBStateSnapshot = { phase: 'loading', error: null, result: null, plan: EMPTY_PLAN_STATE }
@@ -52,7 +54,7 @@ export class PointBStateController {
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null
       if (my !== this.seq) return
       if (isUpgradeRequired(res.status, body)) {
-        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE })
+        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE, finmodel: null })
         return
       }
       const parsed = res.ok ? parsePointBState(body) : null
@@ -64,7 +66,7 @@ export class PointBStateController {
         })
         return
       }
-      this.set({ phase: 'ready', error: null, result: parsed.result, plan: parsed.plan })
+      this.set({ phase: 'ready', error: null, result: parsed.result, plan: parsed.plan, finmodel: parsed.finmodel })
     } catch {
       if (my !== this.seq) return
       this.set({ phase: 'error', error: ERROR_TEXT[0] })

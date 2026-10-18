@@ -13,12 +13,13 @@ import { BTN_GHOST, BTN_PRIMARY, CARD, CARD_TITLE, CHIP, Icon } from '@/componen
 import { cn } from '@/lib/utils'
 import type { ModelResult } from '@/lib/point-b/model/types'
 import CorridorChart from '../CorridorChart'
+import CostOfGoalCard from '../CostOfGoalCard'
 import DataGapBanner from '../DataGapBanner'
 import StaleBaseBanner from '../StaleBaseBanner'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
-  TONE_CLASS, chartData, chartPlaceholder, fmtLongDate, otherWarnings, pathCells, staleWarning, verdictView,
-  type PointBPlanState,
+  TONE_CLASS, chartData, chartPlaceholder, costOfGoalView, fmtLongDate, otherWarnings, pathCells, staleWarning, verdictView,
+  type PointBFinmodelStatus, type PointBPlanState,
 } from '../overviewModel'
 import { useGoToTab } from './PointBTabs'
 
@@ -52,7 +53,7 @@ export function SectionError({ message, onRetry }: { message: string; onRetry?: 
   )
 }
 
-export function OverviewView({ result, plan }: { result: ModelResult; plan: PointBPlanState }) {
+export function OverviewView({ result, plan, finmodel = null }: { result: ModelResult; plan: PointBPlanState; finmodel?: PointBFinmodelStatus | null }) {
   const go = useGoToTab()
   const verdict = verdictView(result)
   const tone = TONE_CLASS[verdict.tone]
@@ -65,6 +66,7 @@ export function OverviewView({ result, plan }: { result: ModelResult; plan: Poin
     : chartPlaceholder(result)
   const computed = fmtLongDate(result.computedAt)
   const suggestScenarios = verdict.key === 'behind' || verdict.key === 'at_risk'
+  const cost = costOfGoalView(result, finmodel, plan.selectedScenario)
 
   return (
     <div className="space-y-4">
@@ -123,6 +125,8 @@ export function OverviewView({ result, plan }: { result: ModelResult; plan: Poin
         )}
       </section>
 
+      <CostOfGoalCard view={cost} onFill={() => go('finmodel')} />
+
       <DataGapBanner missing={result.missing} />
 
       {warnings.length > 0 && (
@@ -142,5 +146,5 @@ export function OverviewView({ result, plan }: { result: ModelResult; plan: Poin
 export default function OverviewTab({ snap, onRetry }: { snap: PointBStateSnapshot; onRetry?: () => void }) {
   if (snap.phase === 'loading') return <SectionSkeleton label="Загружаем обзор" />
   if (!snap.result) return <SectionError message={snap.error ?? 'Нет данных расчёта'} onRetry={onRetry} />
-  return <OverviewView result={snap.result} plan={snap.plan} />
+  return <OverviewView result={snap.result} plan={snap.plan} finmodel={snap.finmodel ?? null} />
 }

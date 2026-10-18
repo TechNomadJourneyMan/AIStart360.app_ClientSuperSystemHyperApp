@@ -13,22 +13,24 @@
  *
  * No invented numbers: every figure comes from the ModelResult; a missing one is «—».
  */
-import type { MissingInput, ModelResult, Range, ScenarioResult, VerdictKey } from '@/lib/point-b/model/types'
+import type { MissingInput, ModelResult, Range, ScenarioFinance, ScenarioResult, VerdictKey } from '@/lib/point-b/model/types'
+import { FINMODEL_DEFS, FINMODEL_KEYS, type FinmodelKey } from '@/lib/point-b/finmodel/keys'
 
 export const DASH = '—'
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 
-export type PointBTabKey = 'overview' | 'scenarios' | 'details'
+export type PointBTabKey = 'overview' | 'scenarios' | 'finmodel' | 'details'
 
 export const POINT_B_TABS: ReadonlyArray<{ key: PointBTabKey; label: string }> = [
   { key: 'overview', label: 'Обзор' },
   { key: 'scenarios', label: 'Сценарии' },
+  { key: 'finmodel', label: 'Финмодель' },
   { key: 'details', label: 'Подробности' },
 ]
 
 export function isTabKey(v: unknown): v is PointBTabKey {
-  return v === 'overview' || v === 'scenarios' || v === 'details'
+  return v === 'overview' || v === 'scenarios' || v === 'finmodel' || v === 'details'
 }
 
 /** Keyboard model of a tablist (arrows, Home, End); null = the key is not ours. */
@@ -60,7 +62,10 @@ export const EMPTY_PLAN_STATE: PointBPlanState = {
   status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null,
 }
 
-export interface PointBStateData { result: ModelResult; plan: PointBPlanState }
+/** `PointBState.finmodel` (plan Ф3 Task 4): completeness only, never the values. */
+export interface PointBFinmodelStatus { complete: boolean; missing: FinmodelKey[]; defaulted: FinmodelKey[] }
+
+export interface PointBStateData { result: ModelResult; plan: PointBPlanState; finmodel: PointBFinmodelStatus | null }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
@@ -72,11 +77,45 @@ function toRange(v: unknown): Range {
   return { low: num(r.low), base: num(r.base), high: num(r.high) }
 }
 
+const numArr = (v: unknown): number[] | null =>
+  Array.isArray(v) && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? (v as number[]) : null
+
+/** Level 2 money block; anything unreadable → undefined (the scenario then simply has no money rows). */
+export function toFinance(v: unknown): ScenarioFinance | undefined {
+  if (!isObj(v)) return undefined
+  const ebitda = numArr(v.ebitda)
+  const netProfit = numArr(v.netProfit)
+  const cash = numArr(v.cash)
+  const nwc = numArr(v.nwc)
+  const mc = isObj(v.minCash) ? v.minCash : null
+  const t = isObj(v.totals) ? v.totals : null
+  const minValue = mc ? num(mc.value) : null
+  const minMonth = mc ? num(mc.month) : null
+  const funding = num(v.fundingNeed)
+  const reserve = num(v.reserveRequired)
+  if (!ebitda || !netProfit || !cash || !nwc || cash.length === 0 || minValue === null || minMonth === null || funding === null || reserve === null || !t) return undefined
+  const totals = {
+    revenue: num(t.revenue), ebitda: num(t.ebitda), netProfit: num(t.netProfit),
+    operatingCashFlow: num(t.operatingCashFlow), capex: num(t.capex), debtService: num(t.debtService),
+  }
+  if (Object.values(totals).some((x) => x === null)) return undefined
+  return {
+    ebitda, netProfit, cash, nwc,
+    minCash: { value: minValue, month: minMonth },
+    cashGapMonth: num(v.cashGapMonth),
+    fundingNeed: funding,
+    reserveRequired: reserve,
+    totals: totals as ScenarioFinance['totals'],
+    assumptions: strArr(v.assumptions),
+  }
+}
+
 const SCENARIO_KEYS: ReadonlyArray<ScenarioResult['key']> = ['cautious', 'moderate', 'aggressive']
 
 function toScenario(v: unknown): ScenarioResult | null {
   if (!isObj(v) || !SCENARIO_KEYS.includes(v.key as ScenarioResult['key'])) return null
   const inv = isObj(v.investments) ? v.investments : {}
+  const finance = toFinance(v.finance)
   return {
     key: v.key as ScenarioResult['key'],
     label: str(v.label) ?? '',
@@ -108,6 +147,7 @@ function toScenario(v: unknown): ScenarioResult | null {
       .map((p) => ({ month: num(p.month), low: num(p.low), base: num(p.base), high: num(p.high) }))
       .filter((p): p is { month: number; low: number; base: number; high: number } => p.month !== null && p.low !== null && p.base !== null && p.high !== null)
       .sort((a, b) => a.month - b.month),
+    ...(finance ? { finance } : {}),
   }
 }
 
@@ -163,7 +203,14 @@ export function parsePointBState(body: unknown): PointBStateData | null {
     approvedAt: str(p.approvedAt),
     authorName: str(p.authorName),
   }
-  return { result, plan }
+  return { result, plan, finmodel: parseFinmodelStatus(body.data.finmodel) }
+}
+
+/** Absent or unreadable → null (the UI then falls back to the `finmodel:*` items of `result.missing`). */
+export function parseFinmodelStatus(v: unknown): PointBFinmodelStatus | null {
+  if (!isObj(v)) return null
+  const keys = (x: unknown): FinmodelKey[] => (Array.isArray(x) ? x.filter((k): k is FinmodelKey => (FINMODEL_KEYS as readonly unknown[]).includes(k)) : [])
+  return { complete: v.complete === true, missing: keys(v.missing), defaulted: keys(v.defaulted) }
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────
@@ -313,6 +360,9 @@ export const GAP_ACTIONS = {
 } as const
 
 export type GapActionKey = keyof typeof GAP_ACTIONS
+
+/** A missing input of the financial model (`finmodel:<key>`): it is filled on the «Финмодель» tab. */
+export const isFinmodelItem = (m: Pick<MissingInput, 'key'>): boolean => m.key.startsWith('finmodel:')
 
 export const MISSING_LEVEL_LABEL: Record<1 | 2, string> = { 1: 'Для расчёта сценариев', 2: 'Для расчёта денег' }
 
@@ -501,6 +551,8 @@ export interface ScenarioCardView {
   revenue: RangeText
   /** «89% цели к сроку» — only when the revenue at the deadline is below the target. */
   share: string | null
+  /** Level 2 only. */
+  money: { minCash: string; cashGap: string | null; funding: string | null } | null
 }
 
 export function scenarioCards(scenarios: ScenarioResult[], selected: string | null, target: number | null): ScenarioCardView[] {
@@ -516,11 +568,24 @@ export function scenarioCards(scenarios: ScenarioResult[], selected: string | nu
       time: monthsRange(s.timeToGoalMonths),
       revenue: moneyRange(s.revenueAtDeadline),
       share,
+      money: s.finance
+        ? {
+            minCash: `${fmtMoney(s.finance.minCash.value)} (мес. ${Math.round(s.finance.minCash.month)})`,
+            cashGap: s.finance.cashGapMonth === null ? null : `Кассовый разрыв в месяце ${Math.round(s.finance.cashGapMonth)}`,
+            funding: s.finance.fundingNeed > 0 ? `Нужно финансирование ${fmtMoney(s.finance.fundingNeed)}` : null,
+          }
+        : null,
     }
   })
 }
 
-export interface ComparisonRow { key: string; label: string; cells: string[][] }
+export interface ComparisonRow {
+  key: string
+  label: string
+  cells: string[][]
+  /** Optional emphasis per cell (the cash gap, a funding need). */
+  tones?: Array<Tone | undefined>
+}
 
 /** How a lever value reads: shares as %, money as ₸, counts as plain numbers. */
 function fmtLever(lever: ScenarioResult['requiredUplift'][number]['lever'], n: number | null): string {
@@ -550,7 +615,34 @@ export function comparisonRows(scenarios: ScenarioResult[]): ComparisonRow[] {
   if (scenarios.some((s) => s.investments.note)) {
     rows.push({ key: 'investNote', label: 'К вложениям', cells: cell((s) => [s.investments.note || DASH]) })
   }
-  return rows
+  return [...rows, ...moneyRows(scenarios)]
+}
+
+/** Money of the level-2 model: profit and cash are separate lines. Only when some scenario carries `finance`. */
+export function moneyRows(scenarios: ScenarioResult[]): ComparisonRow[] {
+  if (!scenarios.some((s) => s.finance)) return []
+  const cell = (fn: (f: ScenarioFinance) => string[]) => scenarios.map((s) => (s.finance ? fn(s.finance) : [DASH]))
+  const tone = (fn: (f: ScenarioFinance) => Tone | undefined) => scenarios.map((s) => (s.finance ? fn(s.finance) : undefined))
+  return [
+    { key: 'netProfit', label: 'Чистая прибыль за период', cells: cell((f) => [fmtMoney(f.totals.netProfit), `за ${f.cash.length} мес.`]) },
+    { key: 'cfo', label: 'Операционный денежный поток', cells: cell((f) => [fmtMoney(f.totals.operatingCashFlow), 'прибыль минус рост оборотного капитала и налог']) },
+    { key: 'minCash', label: 'Минимальная касса (месяц)', cells: cell((f) => [`${fmtMoney(f.minCash.value)} (мес. ${Math.round(f.minCash.month)})`]), tones: tone((f) => (f.minCash.value < 0 ? 'bad' : undefined)) },
+    {
+      key: 'cashGap', label: 'Кассовый разрыв',
+      cells: cell((f) => (f.cashGapMonth === null ? ['Нет'] : [`В месяце ${Math.round(f.cashGapMonth)}`, 'деньги на счёте уходят ниже нуля'])),
+      tones: tone((f) => (f.cashGapMonth === null ? undefined : 'bad')),
+    },
+    { key: 'funding', label: 'Нужно финансирование', cells: cell((f) => (f.fundingNeed > 0 ? [fmtMoney(f.fundingNeed)] : ['Не нужно'])), tones: tone((f) => (f.fundingNeed > 0 ? 'warn' : undefined)) },
+    { key: 'reserve', label: 'Резерв ликвидности', cells: cell((f) => [fmtMoney(f.reserveRequired), 'сколько нужно держать на счёте']) },
+  ]
+}
+
+/** «Уровень данных: 2» for the expert; null = no calculation to judge by. */
+export function dataLevelText(model: ModelResult | null, scenarios: ScenarioResult[]): string | null {
+  const level = model ? model.level : scenarios.length === 0 ? null : scenarios.some((s) => s.finance) ? 2 : 1
+  if (level === null) return null
+  if (level >= 2) return 'Уровень данных: 2 — прибыль и деньги считаются отдельно'
+  return `Уровень данных: ${level} — деньги не считаются: финмодель заполнена не полностью`
 }
 
 export interface ComparisonGroup {
@@ -572,6 +664,7 @@ export function comparisonGroups(scenarios: ScenarioResult[]): ComparisonGroup[]
     group('reviewPoints', 'Точки пересмотра', (s) => s.reviewPoints),
     group('signs', 'Признаки, что пора менять темп', (s) => s.signsToChangePace),
     group('assumptions', 'Допущения расчёта', (s) => s.assumptions),
+    ...(scenarios.some((s) => s.finance) ? [group('financeAssumptions', 'Допущения денежной модели', (s) => s.finance?.assumptions ?? [])] : []),
   ]
 }
 
@@ -591,4 +684,73 @@ export function nearestPoint(d: CorridorChartData, geo: Pick<CorridorGeometry, '
 export function pointReadout(p: TrajPoint): string {
   const when = p.month === 0 ? 'Сейчас' : `Через ${Math.round(p.month)} мес.`
   return p.low === p.high ? `${when}: ${fmtMoney(p.base)}` : `${when}: ${fmtMoney(p.base)} (коридор ${fmtMoney(p.low)} – ${fmtMoney(p.high)})`
+}
+
+// ── Cost of the goal (level 2) ──────────────────────────────────────────
+
+export interface CostCell { label: string; value: string; note: string | null; tone?: Tone }
+
+export interface CostOfGoalView {
+  mode: 'ready' | 'locked'
+  /** The pace the numbers belong to («Умеренный» unless the approved plan chose another). */
+  scenarioLabel: string | null
+  /** Why the numbers are of an unreachable pace; null when reachable. */
+  caveat: string | null
+  cells: CostCell[]
+  /** «заполнено N из M» of the inputs level 2 needs; null = unknown (the server did not say). */
+  progress: { filled: number; total: number } | null
+  /** Level 0: there is nothing to price yet. */
+  lockedText: string
+}
+
+/** Keys of the finmodel the calculation still lacks: from `PointBState.finmodel`, else from the `finmodel:*` missing items. */
+export function missingFinmodelKeys(result: ModelResult, finmodel: PointBFinmodelStatus | null): FinmodelKey[] | null {
+  if (finmodel) return finmodel.missing
+  const fromItems = result.missing
+    .filter((m) => m.key.startsWith('finmodel:'))
+    .map((m) => m.key.slice('finmodel:'.length))
+    .filter((k): k is FinmodelKey => (FINMODEL_KEYS as readonly string[]).includes(k))
+  return fromItems.length ? fromItems : null
+}
+
+/** N of M: the hard inputs plus the conditional ones that the server asks for (a debt service, a rate). */
+export function finmodelProgress(missing: FinmodelKey[] | null): { filled: number; total: number } | null {
+  if (!missing) return null
+  const hard = FINMODEL_KEYS.filter((k) => FINMODEL_DEFS[k].required).length
+  const conditional = missing.filter((k) => !FINMODEL_DEFS[k].required).length
+  const total = hard + conditional
+  return { filled: Math.max(0, total - missing.length), total }
+}
+
+export function pickMoneyScenario(result: ModelResult, selected: string | null): ScenarioResult | null {
+  const withMoney = result.scenarios.filter((s) => s.finance)
+  return withMoney.find((s) => s.key === selected) ?? withMoney.find((s) => s.key === 'moderate') ?? withMoney[0] ?? null
+}
+
+export function costOfGoalView(result: ModelResult, finmodel: PointBFinmodelStatus | null, selected: string | null): CostOfGoalView {
+  const sc = result.level >= 2 ? pickMoneyScenario(result, selected) : null
+  const progress = result.level >= 1 ? finmodelProgress(missingFinmodelKeys(result, finmodel)) : null
+  const lockedText = result.level < 1
+    ? 'Появится после того, как будут заданы цель и данные для расчёта сценариев.'
+    : 'Откроется после заполнения финмодели: тогда мы покажем, сколько денег нужно, когда их может не хватить и какой нужен резерв.'
+  const f = sc?.finance
+  if (!sc || !f) return { mode: 'locked', scenarioLabel: null, caveat: null, cells: [], progress, lockedText }
+  const time = monthsRange(sc.timeToGoalMonths)
+  const funding: CostCell = f.fundingNeed > 0
+    ? { label: 'Нехватка денег', value: fmtMoney(f.fundingNeed), note: f.cashGapMonth !== null ? `Кассовый разрыв в месяце ${Math.round(f.cashGapMonth)}` : 'Резерв ликвидности не набирается', tone: f.cashGapMonth !== null ? 'bad' : 'warn' }
+    : { label: 'Нехватка денег', value: 'Не нужна', note: 'Касса не опускается ниже резерва', tone: 'good' }
+  return {
+    mode: 'ready',
+    scenarioLabel: sc.label,
+    caveat: sc.feasible ? null : 'Этот темп не достигает цели: цифры показывают вложения и деньги при нём.',
+    progress,
+    lockedText,
+    cells: [
+      { label: 'Инвестиции', value: fmtMoney(sc.investments.totalOverRamp), note: sc.investments.note || null },
+      { label: 'Срок выхода на цель', value: time.main, note: time.range ? `диапазон ${time.range}` : null },
+      { label: 'Минимальная касса', value: fmtMoney(f.minCash.value), note: `в месяце ${Math.round(f.minCash.month)}`, tone: f.minCash.value < 0 ? 'bad' : undefined },
+      funding,
+      { label: 'Резерв ликвидности', value: fmtMoney(f.reserveRequired), note: 'сколько держать на счёте' },
+    ],
+  }
 }

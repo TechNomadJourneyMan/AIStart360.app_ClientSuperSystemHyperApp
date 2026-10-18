@@ -9,9 +9,12 @@
 import type { PointA } from '@/types/onboarding'
 import type { PointBStrategy } from '@/types/point-b'
 import { calculatePointBV2, POINT_B_LEVER_METRICS, type PointBOptions, type PointBV2 } from './engine'
-import type { ModelResult, Range, ScenarioResult } from './model/types'
+import type { FinmodelStateView } from '@/components/point-b/finmodelController'
+import type { FinmodelKey } from './finmodel/keys'
+import type { ModelResult, Range, ScenarioFinance, ScenarioResult } from './model/types'
 
-export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base'] as const
+/** `level2`: the same business as `full`, with the finmodel filled in — profit, cash flow, funding need. */
+export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base', 'level2'] as const
 export type PointBFixtureVariant = (typeof POINT_B_FIXTURE_VARIANTS)[number]
 
 export function isPointBFixtureVariant(v: unknown): v is PointBFixtureVariant {
@@ -92,7 +95,7 @@ export function fixturePointB(variant: PointBFixtureVariant): PointBV2 {
   const common: PointBOptions = { diagnosticId: `fixture-${variant}`, griTop5: GRI_TOP5 }
 
   let pb: PointBV2
-  if (variant === 'full') {
+  if (variant === 'full' || variant === 'level2') {
     pb = calculatePointBV2(pointA(variant), FULL_ANSWERS, {
       ...common,
       currentRevenueYear: 66_000_000,
@@ -277,6 +280,70 @@ function growthSeeds(): ScenarioSeed[] {
   ]
 }
 
+// ── Level 2 (finmodel) by hand ─────────────────────────────────────────────
+//
+// A small deterministic cash loop written for the preview, NOT the model: it only guarantees that
+// the numbers agree with each other (Σ CF = cash_end − cash_start, no negative debt, no NaN), so the
+// screens can be judged. The aggressive pace grows revenue fast, and receivables, stock and capex
+// eat the money: profit is positive while the cash goes below zero.
+
+const FIN = {
+  cash0: 4_200_000, margin: 0.5, payroll: 1_300_000, fixed: 600_000, debt0: 6_000_000, debtService: 400_000, rate: 0.18,
+  dso: 3, dio: 45, dpo: 20, tax: 0.1, capexYear: 3_000_000,
+} as const
+
+/** Marketing share of revenue and payroll growth by pace: the faster pace spends more and hires more. */
+const FIN_PACE: Record<ScenarioResult['key'], { marketingShare: number; payrollGrowth: number; reserveMonths: number }> = {
+  cautious: { marketingShare: 0.08, payrollGrowth: 0.2, reserveMonths: 2 },
+  moderate: { marketingShare: 0.11, payrollGrowth: 0.3, reserveMonths: 2 },
+  aggressive: { marketingShare: 0.15, payrollGrowth: 0.55, reserveMonths: 3 },
+}
+
+function buildFinance(seed: ScenarioSeed, start: number): ScenarioFinance {
+  const [slow, mid] = seed.reach
+  const pace = FIN_PACE[seed.key]
+  const H = Math.min(60, Math.ceil(slow) + 12)
+  const rev0 = start / 12
+  const nwcOf = (rev: number): number => Math.round((rev * FIN.dso) / 30 + (rev * (1 - FIN.margin) * (FIN.dio - FIN.dpo)) / 30)
+  let nwcPrev = nwcOf(rev0)
+  let debt = FIN.debt0
+  let cash = FIN.cash0
+  const out: ScenarioFinance = {
+    ebitda: [], netProfit: [], cash: [], nwc: [],
+    minCash: { value: Number.POSITIVE_INFINITY, month: 1 }, cashGapMonth: null, fundingNeed: 0, reserveRequired: 0,
+    totals: { revenue: 0, ebitda: 0, netProfit: 0, operatingCashFlow: 0, capex: 0, debtService: 0 },
+    assumptions: [
+      'Расходы на маркетинг — доля выручки; ФОТ растёт с наймом за срок выхода рычагов.',
+      'Допущения по отрасли: срок оплаты клиентами, оборачиваемость запасов, срок оплаты поставщикам и налог.',
+    ],
+  }
+  for (let t = 1; t <= H; t++) {
+    const rev = Math.round(runRate(start, GOAL, mid, Math.min(t, mid)) / 12)
+    const cogs = Math.round(rev * (1 - FIN.margin))
+    const marketing = Math.round(rev * pace.marketingShare)
+    const payroll = Math.round(FIN.payroll * (1 + pace.payrollGrowth * Math.min(1, t / seed.reach[1])))
+    const ebitda = rev - cogs - marketing - payroll - FIN.fixed
+    const interest = Math.round((debt * FIN.rate) / 12)
+    const principal = Math.min(debt, Math.max(0, FIN.debtService - interest))
+    debt -= principal
+    const tax = Math.max(0, Math.round(FIN.tax * (ebitda - interest)))
+    const net = ebitda - interest - tax
+    const nwc = nwcOf(rev)
+    const cfo = ebitda - tax - (nwc - nwcPrev)
+    const capex = Math.round(FIN.capexYear / 12)
+    cash += cfo - interest - principal - capex
+    nwcPrev = nwc
+    out.ebitda.push(ebitda); out.netProfit.push(net); out.cash.push(cash); out.nwc.push(nwc)
+    if (cash < out.minCash.value) out.minCash = { value: cash, month: t }
+    if (cash < 0 && out.cashGapMonth === null) out.cashGapMonth = t
+    out.totals.revenue += rev; out.totals.ebitda += ebitda; out.totals.netProfit += net
+    out.totals.operatingCashFlow += cfo; out.totals.capex += capex; out.totals.debtService += interest + principal
+    if (t === 1) out.reserveRequired = pace.reserveMonths * (payroll + FIN.fixed + marketing)
+  }
+  out.fundingNeed = Math.max(0, out.reserveRequired - out.minCash.value)
+  return out
+}
+
 const GAP_MISSING = [
   { key: 'leads', label: 'Заявки в месяц', unlocks: 'расчёт по воронке вместо упрощённой модели роста', level: 1 as const, actions: ['survey' as const, 'documents' as const, 'expert' as const] },
   { key: 'conversion', label: 'Конверсия в оплату', unlocks: 'сколько заявок нужно для цели', level: 1 as const, actions: ['survey' as const, 'expert' as const] },
@@ -313,16 +380,76 @@ export function fixtureModelResult(variant: PointBFixtureVariant): ModelResult {
   }
   const trend = 0.021
   const pace = Math.round(BASE_NOW * Math.pow(1 + trend, MONTHS_TO_GOAL))
+  const seeds = funnelSeeds()
+  const level2 = variant === 'level2'
   return {
-    modelVersion: 'pb-model-1', computedAt: GENERATED_AT, level: 1, kind: 'funnel', template: 'ecommerce',
+    modelVersion: level2 ? 'pb-model-2' : 'pb-model-1', computedAt: GENERATED_AT, level: level2 ? 2 : 1, kind: 'funnel', template: 'ecommerce',
     gap: { baseAnnual: BASE_NOW, targetAnnual: GOAL, absolute: GOAL - BASE_NOW, multiplier: Math.round((GOAL / BASE_NOW) * 100) / 100, requiredCagrPct: Math.round((GOAL / BASE_NOW - 1) * 1000) / 10, months: MONTHS_TO_GOAL },
     forecast: { atCurrentPace: { low: Math.round(pace * 0.8), base: pace, high: Math.round(pace * 1.2) }, trendMonthlyPct: trend * 100, basis: 'history' },
     verdict: {
       key: 'behind', headline: 'Отстаём от цели',
       reason: `При текущем темпе к сроку выйдете на ≈${Math.round(pace / 1e6)} млн ₸ при цели ${GOAL / 1e6} млн ₸ (${Math.round((pace / GOAL) * 100)}%).`,
     },
-    scenarios: funnelSeeds().map((s) => buildScenario(s, BASE_NOW)),
-    missing: [{ key: 'cash', label: 'Данные о деньгах: остатки и платежи', unlocks: 'резерв и нехватка денег по сценариям', level: 2, actions: ['documents', 'expert'] }],
-    warnings: [MONEY_NOTE, 'Цель ещё не проверена экспертом.'],
+    scenarios: seeds.map((s) => (level2 ? { ...buildScenario(s, BASE_NOW), finance: buildFinance(s, BASE_NOW) } : buildScenario(s, BASE_NOW))),
+    missing: level2 ? [] : FINMODEL_MISSING,
+    warnings: level2
+      ? ['Оборотный капитал и налог — допущения по отрасли.', 'Цель ещё не проверена экспертом.']
+      : [MONEY_NOTE, 'Цель ещё не проверена экспертом.'],
+  }
+}
+
+const FINMODEL_MISSING: ModelResult['missing'] = [
+  { key: 'finmodel:cash_balance', label: 'Деньги на счетах и в кассе', unlocks: 'Касса по месяцам, кассовый разрыв и потребность в финансировании', level: 2, actions: ['expert'] },
+  { key: 'finmodel:payroll_month', label: 'Фонд оплаты труда в месяц', unlocks: 'Операционная прибыль и стоимость найма под рост', level: 2, actions: ['expert'] },
+  { key: 'finmodel:debt_total', label: 'Долг по кредитам и займам', unlocks: 'Платежи по долгу в денежном потоке', level: 2, actions: ['survey', 'documents', 'expert'] },
+  { key: 'finmodel:capex_year', label: 'Капитальные затраты за год', unlocks: 'Плановые траты на развитие в денежном потоке', level: 2, actions: ['expert'] },
+]
+
+/** Completeness of the finmodel as `PointBState.finmodel` reports it for a variant. */
+export function fixtureFinmodelStatus(variant: PointBFixtureVariant): { complete: boolean; missing: FinmodelKey[]; defaulted: FinmodelKey[] } {
+  if (variant === 'level2') return { complete: true, missing: [], defaulted: ['tax_rate', 'dso_days', 'dio_days', 'dpo_days'] }
+  return { complete: false, missing: FINMODEL_MISSING.map((m) => m.key.slice('finmodel:'.length) as FinmodelKey), defaulted: ['tax_rate', 'dso_days', 'dio_days', 'dpo_days'] }
+}
+
+const FM_AT = '2026-10-17T09:00:00.000Z'
+const fmValue = (key: FinmodelKeyFx, value: number, origin: FinmodelOriginFx, status: 'entered' | 'verified' | 'auto', extra: Partial<FinmodelValueFx> = {}): FinmodelValueFx => ({
+  key, value, origin, status, note: null, verifiedByName: null, verifiedAt: null, updatedAt: FM_AT, ...extra,
+})
+type FinmodelValueFx = NonNullable<FinmodelStateView['values'][keyof FinmodelStateView['values']]>
+type FinmodelKeyFx = FinmodelValueFx['key']
+type FinmodelOriginFx = FinmodelValueFx['origin']
+
+/**
+ * The «Финмодель» tab of the preview: `level2` is filled (one value verified by an expert, one from the
+ * questionnaire, four assumptions by industry); the other variants lack the money and show the frames.
+ */
+export function fixtureFinmodel(variant: PointBFixtureVariant): FinmodelStateView {
+  const defaults = {
+    tax_rate: fmValue('tax_rate', 0.1, 'default', 'auto', { updatedAt: null }),
+    dso_days: fmValue('dso_days', FIN.dso, 'default', 'auto', { updatedAt: null }),
+    dio_days: fmValue('dio_days', FIN.dio, 'default', 'auto', { updatedAt: null }),
+    dpo_days: fmValue('dpo_days', FIN.dpo, 'default', 'auto', { updatedAt: null }),
+  }
+  if (variant === 'level2') {
+    return {
+      values: {
+        cash_balance: fmValue('cash_balance', FIN.cash0, 'expert', 'verified', { verifiedByName: 'Анна Ким', verifiedAt: '2026-10-16T12:00:00.000Z' }),
+        fixed_costs_month: fmValue('fixed_costs_month', FIN.fixed, 'owner', 'entered'),
+        payroll_month: fmValue('payroll_month', FIN.payroll, 'owner', 'entered'),
+        debt_total: fmValue('debt_total', FIN.debt0, 'survey', 'auto', { updatedAt: null }),
+        debt_service_month: fmValue('debt_service_month', FIN.debtService, 'owner', 'entered'),
+        interest_rate_annual: fmValue('interest_rate_annual', FIN.rate, 'owner', 'entered'),
+        capex_year: fmValue('capex_year', FIN.capexYear, 'owner', 'entered'),
+        ...defaults,
+      },
+      missing: [], complete: true, defaulted: ['tax_rate', 'dso_days', 'dio_days', 'dpo_days'],
+    }
+  }
+  return {
+    // Only part of the money is known: the form keeps the frames «Нужно для расчёта денег» for the rest.
+    values: { fixed_costs_month: fmValue('fixed_costs_month', 650_000, 'survey', 'auto', { updatedAt: null }), ...defaults },
+    missing: ['cash_balance', 'payroll_month', 'debt_total', 'capex_year'],
+    complete: false,
+    defaulted: ['tax_rate', 'dso_days', 'dio_days', 'dpo_days'],
   }
 }

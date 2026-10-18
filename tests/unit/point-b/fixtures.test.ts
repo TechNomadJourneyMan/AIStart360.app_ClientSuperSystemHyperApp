@@ -16,7 +16,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.resetModules() })
 
 describe('fixturePointB', () => {
   it('every variant is a valid PointBV2 (gap, trajectory, scenarios, horizons present; no NaN)', () => {
-    expect(POINT_B_FIXTURE_VARIANTS).toEqual(['full', 'no-goal', 'stale-base'])
+    expect(POINT_B_FIXTURE_VARIANTS).toEqual(['full', 'no-goal', 'stale-base', 'level2'])
     for (const variant of POINT_B_FIXTURE_VARIANTS) {
       const pb = fixturePointB(variant)
       expect(pb.gap).toHaveLength(2)

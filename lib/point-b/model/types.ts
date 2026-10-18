@@ -81,6 +81,25 @@ export interface ScenarioProfile {
   leverMix: { leads: number; conversion: number; avgCheck: number; repeat: number }
 }
 
+/**
+ * Level 2 (plan Ф3, «Контракты»): profit and cash flow, kept apart. Arrays are by month 1..H,
+ * H = max(months to the goal, months to the exit) + 12, at most 60. Money is KZT.
+ */
+export interface ScenarioFinance {
+  ebitda: number[]
+  netProfit: number[]
+  cash: number[]
+  nwc: number[]
+  minCash: { value: number; month: number }
+  /** The first month with cash below zero; null = never. */
+  cashGapMonth: number | null
+  /** max(0, MinReserve − min Cash). */
+  fundingNeed: number
+  reserveRequired: number
+  totals: { revenue: number; ebitda: number; netProfit: number; operatingCashFlow: number; capex: number; debtService: number }
+  assumptions: string[]
+}
+
 export interface ScenarioResult {
   key: ScenarioProfile['key']
   label: string
@@ -107,6 +126,8 @@ export interface ScenarioResult {
   assumptions: string[]
   /** Annual run-rate by month; month 0 is today (low = base = high = the base revenue). */
   trajectory: Array<{ month: number; low: number; base: number; high: number }>
+  /** Present at level 2 only. */
+  finance?: ScenarioFinance
 }
 
 export type VerdictKey = 'on_track' | 'at_risk' | 'behind' | 'no_data'

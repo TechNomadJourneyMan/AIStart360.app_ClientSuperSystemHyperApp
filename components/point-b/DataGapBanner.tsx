@@ -10,14 +10,21 @@ import Link from 'next/link'
 import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import type { MissingInput } from '@/lib/point-b/model/types'
-import { GAP_ACTIONS, MISSING_LEVEL_LABEL } from './overviewModel'
+import { GAP_ACTIONS, MISSING_LEVEL_LABEL, isFinmodelItem } from './overviewModel'
+import { useGoToTab } from './tabs/PointBTabs'
 
-export function GapActionLinks({ actions }: { actions: MissingInput['actions'] }) {
-  if (!actions.length) return null
+/** The questionnaire step with the money questions (debts, receivables, expenses). */
+export const FINMODEL_SURVEY_HREF = '/client/onboarding?step=9'
+
+export function GapActionLinks({ actions, finmodel = false }: { actions: MissingInput['actions']; finmodel?: boolean }) {
+  const go = useGoToTab()
+  if (!actions.length && !finmodel) return null
   return (
     <div className="mt-2 flex flex-wrap gap-2">
+      {/* The money inputs are typed on the «Финмодель» tab. */}
+      {finmodel && <button type="button" onClick={() => go('finmodel')} className={BTN_PRIMARY}>Заполнить финмодель</button>}
       {actions.map((a) => (
-        <Link key={a} href={GAP_ACTIONS[a].href} className={a === 'survey' ? BTN_PRIMARY : BTN_GHOST}>
+        <Link key={a} href={finmodel && a === 'survey' ? FINMODEL_SURVEY_HREF : GAP_ACTIONS[a].href} className={a === 'survey' && !finmodel ? BTN_PRIMARY : BTN_GHOST}>
           {GAP_ACTIONS[a].label}
         </Link>
       ))}
@@ -52,7 +59,7 @@ export default function DataGapBanner({
                   <span className={cn(CHIP, 'bg-white/[0.06] text-on-surface-variant')}>{MISSING_LEVEL_LABEL[m.level]}</span>
                 </div>
                 {m.unlocks && <p className="mt-0.5 text-xs text-on-surface-variant">Откроет: {m.unlocks}</p>}
-                <GapActionLinks actions={m.actions} />
+                <GapActionLinks actions={m.actions} finmodel={isFinmodelItem(m)} />
               </li>
             ))}
           </ul>

@@ -3,16 +3,18 @@
 import PlanWorkflowSection from './PlanWorkflowSection'
 import PointBDetails from './PointBDetails'
 import PointBPaywall from './PointBPaywall'
+import FinmodelTab from './tabs/FinmodelTab'
 import OverviewTab from './tabs/OverviewTab'
 import PointBTabs from './tabs/PointBTabs'
 import ScenariosTab from './tabs/ScenariosTab'
 import { usePointBState } from './usePointBState'
 
 /**
- * Client container for Point B (plan Phase 2 Task 8): the plan status above, then three tabs.
+ * Client container for Point B (plan Phase 2 Task 8, Ф3 Task 5): the plan status above, then four tabs.
  *   «Обзор»       — verdict, А → Б, trajectory with a corridor, what the data lacks
  *                   (preliminary automatic calculation, GET /api/v1/point-b/state);
  *   «Сценарии»    — three paces of the APPROVED plan version, or «Эксперт готовит сценарии»;
+ *   «Финмодель»   — the money of the business (level 2): inputs, hints, origin badges;
  *   «Подробности» — the previous page as it was ({@link PointBDetails}), loaded on first open.
  * A failure of the state request stays inside the first two tabs.
  *
@@ -33,6 +35,8 @@ export default function PointBContainer() {
         panels={{
           overview: <OverviewTab snap={snap} onRetry={() => void ctl.load()} />,
           scenarios: <ScenariosTab snap={snap} onRetry={() => void ctl.load()} />,
+          // A saved finmodel recalculates the overview and the scenarios from the new money.
+          finmodel: <FinmodelTab onSaved={() => void ctl.load()} />,
           details: <PointBDetails />,
         }}
       />
