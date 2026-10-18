@@ -40,6 +40,11 @@ export const EVENTS = {
   PULSE_SUBMITTED: { type: 'gri', client: false, label: 'Пульс GRI отправлен' },
   SIMULATION_RUN: { type: 'diagnostics', client: false, label: 'Запущена симуляция' },
   POINT_B_VIEWED: { type: 'diagnostics', client: false, label: 'Точка Б открыта' },
+  // Point B plan workflow (docs/superpowers/specs/2026-10-18-point-b-design.md §6).
+  POINT_B_PLAN_SUBMITTED: { type: 'diagnostics', client: false, label: 'План Точки Б отправлен на одобрение' },
+  POINT_B_PLAN_APPROVED: { type: 'diagnostics', client: false, label: 'План Точки Б одобрен и опубликован' },
+  POINT_B_GOAL_CORRECTED: { type: 'diagnostics', client: false, label: 'Эксперт скорректировал цель' },
+  POINT_B_GOAL_RESPONDED: { type: 'diagnostics', client: false, label: 'Владелец ответил на корректировку цели' },
   DOCUMENT_PARSED: { type: 'document', client: false, label: 'Документ разобран' },
   TIER_CHANGED: { type: 'system', client: false, label: 'Тариф изменён' },
   IMPERSONATION_STARTED: { type: 'admin', client: false, label: 'Админ открыл кабинет' },

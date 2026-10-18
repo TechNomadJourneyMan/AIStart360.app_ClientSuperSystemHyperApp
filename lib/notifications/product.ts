@@ -124,3 +124,55 @@ export async function notifyDocumentParsed(
     metadata: { documentId: input.documentId, fieldsCount: input.fieldsCount },
   })
 }
+
+/** Один абзац для текста уведомления: без переводов строк, не длиннее `max` символов. */
+function oneLine(text: string, max: number): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
+/**
+ * «План Точки Б одобрен» (категория «expert»). Сообщение эксперта в «Сообщения»
+ * уже создаёт запись в ленте, поэтому вызывающий выключает inApp здесь.
+ */
+export async function notifyPointBPlanApproved(
+  userId: string,
+  input: { versionId: string; first: boolean; inApp?: boolean },
+): Promise<NotifyClientResult> {
+  return notifyClient({
+    userId,
+    category: 'expert',
+    event: 'point_b_plan_approved',
+    title: input.first ? 'План «Точки Б» опубликован' : 'План «Точки Б» обновлён',
+    body: input.first
+      ? 'Ваш план опубликован. Откройте «Точку Б»: цели, комментарий эксперта и следующие шаги.'
+      : 'Новая версия вашего плана уже в кабинете. Что изменилось и почему — в комментарии эксперта.',
+    ctaUrl: '/client/point-b',
+    ctaLabel: 'Открыть «Точку Б»',
+    priority: input.first ? 'high' : 'medium',
+    dedupeKey: `point_b_plan_approved:${input.versionId}`,
+    channels: input.inApp === false ? { inApp: false } : undefined,
+    metadata: { versionId: input.versionId, first: input.first },
+  })
+}
+
+/** «Эксперт предлагает изменить цель» (категория «expert»); ответ — на странице «Точка Б». */
+export async function notifyPointBGoalCorrection(
+  userId: string,
+  input: { reviewId: string; metricLabel: string; fromText: string; toText: string; reason: string; expertName?: string | null; inApp?: boolean },
+): Promise<NotifyClientResult> {
+  const who = input.expertName?.trim() ? `Эксперт ${input.expertName.trim()}` : 'Эксперт'
+  return notifyClient({
+    userId,
+    category: 'expert',
+    event: 'point_b_goal_corrected',
+    title: 'Эксперт предлагает изменить цель',
+    body: `${who} предлагает изменить цель «${oneLine(input.metricLabel, 120)}»: ${input.fromText} → ${input.toText}. Причина: ${oneLine(input.reason, 300)}. Ответьте в «Точке Б»: пока вы не согласитесь, цель не изменится.`,
+    ctaUrl: '/client/point-b',
+    ctaLabel: 'Ответить',
+    priority: 'high',
+    dedupeKey: `point_b_goal_corrected:${input.reviewId}`,
+    channels: input.inApp === false ? { inApp: false } : undefined,
+    metadata: { reviewId: input.reviewId },
+  })
+}
