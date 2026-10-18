@@ -7,8 +7,9 @@
  * and the check; the repeat share raises (1 + R) the same way. The levers then move LINEARLY from
  * today's level to the target level in `rampMonths`; the trajectory is simulated month by month with
  * the funnel model (the active base catches up with a lag of up to 12 months) and the goal is reached
- * in the first month when the mean of the last three months × 12 is at least T. The run-rate is
- * seasonally adjusted. Sizing does not depend on the pace; the pace decides WHEN.
+ * in the first month t whose monthly run-rate × 12 is at least T (no averaging over several months:
+ * a 3-month mean would add an artificial lag of two months). The run-rate is seasonally adjusted.
+ * Sizing does not depend on the pace; the pace decides WHEN.
  *
  * Ranges. The band delta (bands.ts) scales the pace: the unfavourable case moves the levers
  * (1 − delta) as fast, the favourable (1 + delta) as fast — slower pace = later and lower at the deadline.
@@ -81,13 +82,9 @@ function firstMonthAtOrAbove(runRate: number[], target: number): number | null {
   return idx === -1 ? null : idx + 1
 }
 
-/** Mean of the last three months (fewer at the start) × 12. */
+/** The monthly run-rate: the (de-seasonalised) revenue of the month × 12. */
 function runRateSeries(monthlyRevenue: number[]): number[] {
-  return monthlyRevenue.map((_, t) => {
-    const from = Math.max(0, t - 2)
-    const slice = monthlyRevenue.slice(from, t + 1)
-    return (slice.reduce((a, b) => a + b, 0) / slice.length) * 12
-  })
+  return monthlyRevenue.map((v) => v * 12)
 }
 
 function staffNeed(i: ModelInputs, A: number, T: number, productivityGain: number): number | null {
@@ -295,7 +292,7 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
   const assumptions = [
     'Модель — воронка «лиды × конверсия × средний чек» с повторными заказами.',
     ...(Math.abs(otherMonthly) > 0 ? [`Выручка вне воронки учтена как постоянная: ${fmtMoney(otherMonthly)} в месяц (остаток калибровки по факту).`] : []),
-    `Рычаги растут линейно и выходят на целевой уровень за ${fmtMonths(ramp)}; цель достигнута, когда среднее трёх последних месяцев × 12 не ниже цели.`,
+    `Рычаги растут линейно и выходят на целевой уровень за ${fmtMonths(ramp)}; цель достигнута в первом месяце, когда месячная выручка × 12 (с поправкой на сезон) не ниже цели.`,
     seasonText(season),
     `Диапазон: темп рычагов ±${delta}%, источник — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
     `Вклад рычагов в рост: лиды ${fmtPct(w.leads)}, конверсия ${fmtPct(w.conversion)}, средний чек ${fmtPct(w.avgCheck)}, повторные продажи ${fmtPct(w.repeat)}${redistributed ? ' (доля повторных продаж перераспределена: повторные продажи не заданы)' : ''}.`,

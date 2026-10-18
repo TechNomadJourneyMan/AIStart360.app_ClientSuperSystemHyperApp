@@ -157,8 +157,8 @@ describe('POST …/scenarios', () => {
     expect(r.status, JSON.stringify(r.body)).toBe(200)
     const result = r.body.data.result
     expect(result).toMatchObject({ modelVersion: 'pb-model-1', level: 1, kind: 'funnel', template: 'ecommerce' })
-    // the golden of the funnel (base 60M, goal 120M in 12 months, 300 × 12% × 140 000): 20 / 14 / 8
-    expect(result.scenarios.map((x: { timeToGoalMonths: { base: number } }) => x.timeToGoalMonths.base)).toEqual([20, 14, 8])
+    // the golden of the funnel (base 60M, goal 120M in 12 months, 300 × 12% × 140 000): 18 / 12 / 6
+    expect(result.scenarios.map((x: { timeToGoalMonths: { base: number } }) => x.timeToGoalMonths.base)).toEqual([18, 12, 6])
     expect(result.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000, months: 12 })
     expect(r.body.data.profiles.map((p: { key: string }) => p.key)).toEqual(['cautious', 'moderate', 'aggressive'])
 
@@ -256,14 +256,14 @@ describe('POST …/scenarios', () => {
     draft()
     const first = await post({ profiles: [{ key: 'moderate', rampMonths: 9 }] })
     expect(first.status).toBe(200)
-    expect(first.body.data.result.scenarios[1].timeToGoalMonths.base).toBe(11) // plateau at month 9, +2
+    expect(first.body.data.result.scenarios[1].timeToGoalMonths.base).toBe(9) // the plateau (= the goal) is reached in month 9
     expect(first.body.data.profiles[1].rampMonths).toBe(9)
     expect(s.audits[0].metadata).toMatchObject({ customProfiles: true })
     expect((versions()[0].assumptions as { profiles: Array<{ key: string; rampMonths: number }> }).profiles.find((p) => p.key === 'moderate')!.rampMonths).toBe(9)
 
     // a recompute without profiles (e.g. after the client changed the data) keeps the expert's edit
     const again = await post({})
-    expect(again.body.data.result.scenarios[1].timeToGoalMonths.base).toBe(11)
+    expect(again.body.data.result.scenarios[1].timeToGoalMonths.base).toBe(9)
     expect(again.body.data.profiles[1].rampMonths).toBe(9)
   })
 

@@ -69,8 +69,8 @@ describe('golden — one per template', () => {
     const r = computeModel(ecommerce())
     expect(r).toMatchObject({ level: 1, kind: 'funnel', template: 'ecommerce' })
     expect(r.scenarios.map((s) => s.key)).toEqual(['cautious', 'moderate', 'aggressive'])
-    // by hand: plateau month 18 / 12 / 6 + 2 months for the three-month mean
-    expect(times(r)).toEqual([20, 14, 8])
+    // by hand: the levers reach their target level in month 18 / 12 / 6 and that month's run-rate is the goal
+    expect(times(r)).toEqual([18, 12, 6])
     for (let k = 1; k < 3; k++) expect(times(r)[k]!).toBeLessThan(times(r)[k - 1]!)
     expect(r.scenarios.every((s) => s.feasible)).toBe(true)
     // bounds, not only values
@@ -111,13 +111,15 @@ describe('golden — one per template', () => {
     const p = { leads: t('leads'), conversion: t('conversion'), avgCheck: t('avgCheck'), repeat: t('repeat'), activeBase0: 12 * t('leads') * t('conversion'), seasonality: ONES, otherMonthly: 0 }
     const plateau = simulateFunnel(p, { leads: [], conversion: [], avgCheck: [], repeat: [] }, 12).revenue.reduce((a, b) => a + b, 0)
     expect(plateau).toBeCloseTo(54_000_000, 0)
-    // ordering and the lag window: the plateau month r, + 2 for the mean, + up to 12 for the repeat base
+    // ordering and the lag: the repeat base is built at the target levels 12 months after the levers reach them,
+    // so (by hand, see model-scenarios.test.ts) the goal is reached in month ramp + 12: 30 / 24 / 18
     const ts = times(r)
+    expect(ts).toEqual([30, 24, 18])
     expect(ts[0]!).toBeGreaterThan(ts[1]!)
     expect(ts[1]!).toBeGreaterThan(ts[2]!)
     ;[18, 12, 6].forEach((ramp, k) => {
-      expect(ts[k]!).toBeGreaterThanOrEqual(ramp + 2)
-      expect(ts[k]!).toBeLessThanOrEqual(ramp + 14)
+      expect(ts[k]!).toBeGreaterThan(ramp)
+      expect(ts[k]!).toBeLessThanOrEqual(ramp + 12)
     })
     expect(r.missing.map((m) => m.key)).toEqual(['cac', 'headcount'])
     expectCleanResult(r)
@@ -182,7 +184,7 @@ describe('the funnel against the fact', () => {
     const profiles = defaultProfiles('ecommerce')
     profiles[1] = { ...profiles[1], rampMonths: 3 }
     const r = computeModel(ecommerce(), profiles)
-    expect(r.scenarios[1].timeToGoalMonths.base).toBe(5) // plateau at 3, +2
+    expect(r.scenarios[1].timeToGoalMonths.base).toBe(3) // the levers reach the plateau in month 3 and that month's run-rate is the goal
     const bad = computeModel(ecommerce(), [{ ...profiles[0], rampMonths: 0 }, profiles[1], profiles[2]])
     expect(bad.level).toBe(0)
     expect(bad.scenarios).toEqual([])
@@ -332,7 +334,7 @@ describe('history, forecast and verdict through the orchestrator', () => {
     expect(old.verdict.key).toBe('no_data')
     expect(hasWarning(old, /закончилась 22 мес\. назад/)).toBe(true)
     // the scenarios do not depend on the history that is too short
-    expect(short.scenarios.map((s) => s.timeToGoalMonths.base)).toEqual([20, 14, 8])
+    expect(short.scenarios.map((s) => s.timeToGoalMonths.base)).toEqual([18, 12, 6])
   })
 
   it('a history that contradicts the base revenue is flagged but not corrected', () => {

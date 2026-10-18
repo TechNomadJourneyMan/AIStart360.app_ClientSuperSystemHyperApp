@@ -6,8 +6,8 @@
  * Infinity (they survive a JSON round-trip), and carry `MODEL_VERSION`.
  *
  * Money is KZT. Ratios (`conversion`, `repeat`) are fractions 0..1, not percent. Annual figures are
- * RUN-RATES: the goal is an annual revenue at the deadline and it is reached when the mean of the
- * last three months × 12 is at least the goal.
+ * RUN-RATES: the goal is an annual revenue at the deadline and it is reached in the first month whose
+ * (de-seasonalised) monthly run-rate × 12 is at least the goal.
  */
 import type { GoalReviewStatus } from '../plan/types'
 

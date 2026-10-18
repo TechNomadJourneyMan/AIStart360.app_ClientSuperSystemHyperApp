@@ -10,9 +10,27 @@
  *   w = 0.4667 / 0.3333 / 0.2, so leads × exp(0.4667·0.689171) = ×1.3794 → 413.8, conversion
  *   × exp(0.3333·0.689171) = ×1.2583 → 15.10%, check × exp(0.2·0.689171) = ×1.1478 → 160 690 ₸.
  *   Their product is Gm, so at the plateau 12·(10 040 000 − 40 000) = 120 000 000 = T exactly.
- *   The levers reach that plateau at month r (ramp 6 / 12 / 18); the goal counts as reached when the
- *   mean of the last three months × 12 ≥ T, i.e. at month r + 2: 8 / 14 / 20.
- *   The pace band (default ±20%, no history) moves the plateau month to r/0.8 and r/1.2.
+ *   The levers reach that plateau at month r (ramp 6 / 12 / 18). The goal counts as reached in the
+ *   first month t whose monthly run-rate (revenue of the month × 12, seasonality removed) is at least
+ *   T — no averaging over three months, which used to add two artificial months. With no repeat the
+ *   month's revenue is just L_t·c_t·p_t + other, and the levers move linearly, u(t) = min(1, t/r'),
+ *   r' = r/pace, so the run-rate is below T until t = r' and equals T from then on:
+ *   time = ceil(r'). Base (pace 1): 18 / 12 / 6. The pace band (default ±20%, no history) moves the
+ *   plateau month to r/0.8 and r/1.2:
+ *     cautious   r=18: low 18/0.8 = 22.5 → 23, high 18/1.2 = 15 → 15
+ *     moderate   r=12: low 12/0.8 = 15,        high 12/1.2 = 10
+ *     aggressive r=6:  low  6/0.8 = 7.5 → 8,   high  6/1.2 = 5
+ *   Revenue at the deadline (month 12, the run-rate of that month): on or past the plateau it is the
+ *   goal exactly (moderate base, aggressive base/low/high, moderate high); otherwise the lever
+ *   product at u = 12/r', e.g. cautious base u = 2/3: leads 300 + 113.8·2/3 = 375.9, conversion
+ *   12% + 3.10 pp·2/3 = 14.07%, check 140 000 + 20 690·2/3 = 153 793 ₸ → 12·(375.9·0.14067·153 793
+ *   − 40 000) = 97.09M; cautious low (u = 12/22.5) 88.77M, cautious high and moderate low
+ *   (u = 12/15 = 0.8) 105.89M. The same figures come from an independent month-by-month
+ *   calculation.
+ *   With repeat purchases the revenue reaches T only when the whole active base has been built at
+ *   the target levels: the base of month t−1 is the new customers of months t−12 … t−1 (plus the
+ *   fading opening base), so it is complete at t = r' + 12 and not earlier (a strict lag), i.e. the
+ *   time is exactly ceil(r') + 12: 30 / 24 / 18 for the services golden and for the repeat case.
  */
 import { describe, expect, it } from 'vitest'
 import { calibrate, simulateFunnel } from '@/lib/point-b/model/funnel'
@@ -108,13 +126,13 @@ describe('funnel scenarios — golden', () => {
 
   it('cautious reaches the goal later than moderate, moderate later than aggressive (funnel golden: base 60M, goal 120M, 12 months)', () => {
     const [c, m, a] = trio(golden())
-    // by hand: the plateau month r (18 / 12 / 6) + 2 months for the three-month mean
-    expect([c.timeToGoalMonths.base, m.timeToGoalMonths.base, a.timeToGoalMonths.base]).toEqual([20, 14, 8])
+    // by hand: the levers reach their target level in month r = 18 / 12 / 6, and that month's run-rate is the goal
+    expect([c.timeToGoalMonths.base, m.timeToGoalMonths.base, a.timeToGoalMonths.base]).toEqual([18, 12, 6])
     expect(c.timeToGoalMonths.base!).toBeGreaterThan(m.timeToGoalMonths.base!)
     expect(m.timeToGoalMonths.base!).toBeGreaterThan(a.timeToGoalMonths.base!)
     // the band: the unfavourable case is LATER (low), the favourable EARLIER (high)
-    expect([c.timeToGoalMonths.low, m.timeToGoalMonths.low, a.timeToGoalMonths.low]).toEqual([25, 17, 10])
-    expect([c.timeToGoalMonths.high, m.timeToGoalMonths.high, a.timeToGoalMonths.high]).toEqual([17, 12, 7])
+    expect([c.timeToGoalMonths.low, m.timeToGoalMonths.low, a.timeToGoalMonths.low]).toEqual([23, 15, 8])
+    expect([c.timeToGoalMonths.high, m.timeToGoalMonths.high, a.timeToGoalMonths.high]).toEqual([15, 10, 5])
     for (const r of [c, m, a]) {
       expect(r.timeToGoalMonths.low!).toBeGreaterThanOrEqual(r.timeToGoalMonths.base!)
       expect(r.timeToGoalMonths.base!).toBeGreaterThanOrEqual(r.timeToGoalMonths.high!)
@@ -156,16 +174,24 @@ describe('funnel scenarios — golden', () => {
 
   it('revenue at the deadline: by the deadline the fast pace is at the goal, the slow one is not', () => {
     const [c, m, a] = trio(golden())
-    // aggressive: the plateau (= the goal) is reached by month 8, month 12 is on it
+    // aggressive reaches the plateau (= the goal) in month 6, moderate exactly at month 12: both are on it at the deadline
     expect(a.revenueAtDeadline.base!).toBeCloseTo(120_000_000, 0)
-    // moderate and cautious are late (time > 12): the run-rate at month 12 is below the goal
-    expect(m.revenueAtDeadline.base!).toBeLessThan(120_000_000)
-    expect(c.revenueAtDeadline.base!).toBeLessThan(m.revenueAtDeadline.base!)
+    expect(m.revenueAtDeadline.base!).toBeCloseTo(120_000_000, 0)
+    // cautious is late (18 > 12): by hand 12·(375.9·0.14067·153 793 − 40 000) = 97.09M at u = 12/18
+    expect(c.revenueAtDeadline.base!).toBeLessThan(120_000_000)
+    expect(c.revenueAtDeadline.base!).toBeCloseTo(97_092_564, -4)
     // and more than the base (the levers have started working)
     expect(c.revenueAtDeadline.base!).toBeGreaterThan(60_000_000)
-    // identity: a scenario that is late reaches less than the goal at the deadline
+    // the band at the deadline: cautious low u = 12/22.5, cautious high and moderate low u = 0.8; faster paces are on the plateau
+    expect(c.revenueAtDeadline.low!).toBeCloseTo(88_772_730, -4)
+    expect(c.revenueAtDeadline.high!).toBeCloseTo(105_887_966, -4)
+    expect(m.revenueAtDeadline.low!).toBeCloseTo(105_887_966, -4)
+    expect(m.revenueAtDeadline.high!).toBeCloseTo(120_000_000, 0)
+    expect(a.revenueAtDeadline.low!).toBeCloseTo(120_000_000, 0)
+    // identity: a scenario that is late reaches less than the goal at the deadline; one that is not late has reached it
     for (const r of [c, m, a]) {
       if (r.timeToGoalMonths.base! > 12) expect(r.revenueAtDeadline.base!).toBeLessThan(120_000_000 * (1 - 1e-9))
+      else expect(r.revenueAtDeadline.base!).toBeGreaterThanOrEqual(120_000_000 * (1 - 1e-9))
       expect(r.revenueAtDeadline.low!).toBeLessThanOrEqual(r.revenueAtDeadline.base!)
       expect(r.revenueAtDeadline.base!).toBeLessThanOrEqual(r.revenueAtDeadline.high!)
     }
@@ -232,15 +258,20 @@ describe('funnel scenarios — repeat purchases', () => {
     expect(plateau.reduce((x, y) => x + y, 0)).toBeCloseTo(120_000_000, 0)
   })
 
-  it('the repeat base catches up with a lag: later than without repeat, but never later than 12 months more', () => {
+  it('the repeat base catches up with a lag: exactly 12 months after the levers reach the target level (ramp + 12)', () => {
     const rep = trio(withRepeat(), other)
     const none = trio(golden())
     expect(rep.map((r) => r.timeToGoalMonths.base)).toEqual(rep.map((r) => r.timeToGoalMonths.base).sort((x, y) => y! - x!))
+    // by hand: the base of month t−1 covers the new customers of months t−12 … t−1, so it is built at the target
+    // levels only from t = ramp + 12 (and the opening base is gone by then): 30 / 24 / 18; the band: ceil(ramp/0.8 | ramp/1.2) + 12
+    expect(rep.map((r) => r.timeToGoalMonths.base)).toEqual([30, 24, 18])
+    expect(rep.map((r) => r.timeToGoalMonths.low)).toEqual([35, 27, 20])
+    expect(rep.map((r) => r.timeToGoalMonths.high)).toEqual([27, 22, 17])
     rep.forEach((r, k) => {
       const ramp = [18, 12, 6][k]
-      expect(r.timeToGoalMonths.base!).toBeGreaterThanOrEqual(ramp + 2)
-      expect(r.timeToGoalMonths.base!).toBeLessThanOrEqual(ramp + 2 + 12)
-      expect(r.timeToGoalMonths.base!).toBeGreaterThanOrEqual(none[k].timeToGoalMonths.base! - 0)
+      expect(r.timeToGoalMonths.base!).toBeGreaterThan(ramp)
+      expect(r.timeToGoalMonths.base!).toBeLessThanOrEqual(ramp + 12)
+      expect(r.timeToGoalMonths.base!).toBeGreaterThan(none[k].timeToGoalMonths.base!)
     })
     expect(rep[2].timeToGoalMonths.base!).toBeGreaterThan(none[2].timeToGoalMonths.base!)
   })
