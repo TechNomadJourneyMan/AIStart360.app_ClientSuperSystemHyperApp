@@ -38,6 +38,11 @@ function deadlineOf(goal: HorizonGoal, now: Date): Date {
   return goalDeadline({ deadline: goal.deadline, periodLabel: goal.periodLabel, createdAt: goal.createdAt ?? null, baselineAt: goal.baselineAt ?? null }, now)
 }
 
+/** The deadline of a goal as YYYY-MM-DD (UTC). */
+export function horizonDeadline(goal: HorizonGoal, now: Date): string {
+  return deadlineOf(goal, now).toISOString().slice(0, 10)
+}
+
 /** Months from `now` to the goal's deadline, rounded up; 0 when the deadline has passed. */
 export function horizonMonths(goal: HorizonGoal, now: Date): number {
   const deadline = deadlineOf(goal, now).getTime()

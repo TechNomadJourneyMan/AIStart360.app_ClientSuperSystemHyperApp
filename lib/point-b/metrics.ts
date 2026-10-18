@@ -10,7 +10,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadCompanyMetrics, metricNumber, type CompanyMetrics } from '@/lib/metrics/company-metrics'
 import { POINT_B_LEVER_METRICS, type PointBOptions } from './engine'
 
-export const POINT_B_METRIC_IDS: readonly string[] = Object.values(POINT_B_LEVER_METRICS)
+/** The model (lib/point-b/model) also reads the active client base and the headcount. */
+export const POINT_B_ACTIVE_CLIENTS_METRIC = 'biz.klienty.aktivnykh_klientov'
+export const POINT_B_HEADCOUNT_METRIC = 'biz.hr.kol_vo_sotrudnikov'
+
+export const POINT_B_METRIC_IDS: readonly string[] = [
+  ...Object.values(POINT_B_LEVER_METRICS),
+  POINT_B_ACTIVE_CLIENTS_METRIC,
+  POINT_B_HEADCOUNT_METRIC,
+]
 
 /** Engine options (current revenue + lever values) from the company's current metrics. */
 export function pointBOptionsFromMetrics(metrics: CompanyMetrics): Pick<PointBOptions, 'currentRevenueYear' | 'metrics'> {

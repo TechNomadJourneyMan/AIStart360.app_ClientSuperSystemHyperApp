@@ -3,7 +3,7 @@
  * (rounded up, never negative), the presets of the goal wizard, and the main revenue goal.
  */
 import { describe, expect, it } from 'vitest'
-import { HORIZON_PRESETS, horizonMonths, isValidPeriodLabel, pickPrimaryRevenueGoal } from '@/lib/point-b/horizons'
+import { HORIZON_PRESETS, horizonDeadline, horizonMonths, isValidPeriodLabel, pickPrimaryRevenueGoal } from '@/lib/point-b/horizons'
 import type { PlanGoalItem } from '@/lib/point-b/plan/types'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
@@ -42,6 +42,14 @@ describe('horizonMonths', () => {
   it('a deadline in the past gives 0', () => {
     expect(horizonMonths({ deadline: '2026-01-01', periodLabel: '12m' }, NOW)).toBe(0)
     expect(horizonMonths({ deadline: null, periodLabel: '2025' }, NOW)).toBe(0)
+  })
+})
+
+describe('horizonDeadline', () => {
+  it('is the deadline as YYYY-MM-DD: explicit date, else from the label', () => {
+    expect(horizonDeadline({ deadline: '2027-04-18', periodLabel: '3y' }, NOW)).toBe('2027-04-18')
+    expect(horizonDeadline({ deadline: null, periodLabel: '12m' }, NOW)).toBe('2027-10-18')
+    expect(horizonDeadline({ deadline: null, periodLabel: '2027-Q2' }, NOW)).toBe('2027-06-30')
   })
 })
 
