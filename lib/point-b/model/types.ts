@@ -60,6 +60,10 @@ export interface ModelInputs {
   now: string
 }
 
+/**
+ * A band. For money `low ≤ base ≤ high`. For TIME (`timeToGoalMonths`) `low` is the unfavourable case —
+ * the LATER month — and `high` the favourable one: low ≥ base ≥ high. null = not reached within 60 months.
+ */
 export interface Range { low: number | null; base: number | null; high: number | null }
 
 export interface ScenarioProfile {
@@ -85,6 +89,7 @@ export interface ScenarioResult {
   timeToGoalMonths: Range
   /** Annual run-rate at the goal's deadline. */
   revenueAtDeadline: Range
+  /** `current` / `target`: leads per month, a check in ₸, conversion and repeat as FRACTIONS 0..1, growth as a fraction (0.25 = 25% a year). */
   requiredUplift: Array<{
     lever: 'leads' | 'conversion' | 'avgCheck' | 'repeat' | 'growth'
     label: string
@@ -122,6 +127,24 @@ export interface ModelResult {
 }
 
 export type Forecast = ModelResult['forecast']
+
+/**
+ * GET /api/v1/point-b/state — everything the client page needs in one read.
+ * `overview.result` is the automatic preliminary calculation (always, for a PRO client); `plan.scenarios`
+ * come from the APPROVED plan version only — a draft or a version in review never reaches the client.
+ */
+export interface PointBState {
+  access: 'ok'
+  overview: { result: ModelResult; labelledAutomatic: true }
+  plan: {
+    status: 'none' | 'preparing' | 'published'
+    version: number | null
+    selectedScenario: string | null
+    scenarios: ScenarioResult[]
+    approvedAt: string | null
+    authorName: string | null
+  }
+}
 
 /** An input the model cannot work with (a zero check, a conversion above 100%…). The text is for the user. */
 export class ModelInputError extends Error {

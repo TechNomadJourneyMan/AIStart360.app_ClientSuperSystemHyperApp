@@ -28,6 +28,11 @@ export interface PlanGoalItem {
   reviewStatus: GoalReviewStatus
   /** The expert's correction was applied after 14 days without the owner's answer (visible in the version). */
   appliedWithoutAgreement?: boolean
+  /**
+   * When the horizon of the goal started (a label like «12m» counts from here). NOT part of the stored
+   * snapshot: lib/point-b/model/load.ts adds it in memory so the model can date the goal exactly.
+   */
+  baselineAt?: string | null
 }
 
 export interface PlanGoalsSnapshot {

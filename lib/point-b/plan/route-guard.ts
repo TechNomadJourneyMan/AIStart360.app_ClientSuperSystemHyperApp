@@ -33,6 +33,8 @@ export const PLAN_AUDIT = {
   approved: 'point_b.plan.approved',
   rejected: 'point_b.plan.rejected',
   goalReviewed: 'point_b.goal.reviewed',
+  scenariosComputed: 'point_b.scenarios.computed',
+  scenarioSelected: 'point_b.scenario.selected',
 } as const
 
 export interface PlanRouteContext {

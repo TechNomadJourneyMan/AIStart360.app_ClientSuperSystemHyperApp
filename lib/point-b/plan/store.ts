@@ -184,6 +184,40 @@ export async function updateDraft(sb: SupabaseClient, versionId: string, patch: 
   throw planError(cur ? 'not_editable' : 'not_found')
 }
 
+export interface ScenariosInput {
+  /** ScenarioResult[] of lib/point-b/model. */
+  scenarios: unknown[]
+  /** The pace profiles the scenarios were calculated with (stored in assumptions.profiles). */
+  profiles: unknown
+  baseSnapshotId: string | null
+  /** A summary of the calculation (level, kind, gap, warnings…), stored in assumptions.model. */
+  model?: Record<string, unknown>
+  selectedScenario?: string | null
+}
+
+/**
+ * Stores a model calculation in a DRAFT: the scenarios, the profiles and the summary in
+ * `assumptions`, the Point A snapshot it was calculated against. Any other status →
+ * PlanError('not_editable'); the update is conditional on `status = 'draft'`, so a version that was
+ * sent for approval a moment ago is not touched.
+ */
+export async function saveScenarios(sb: SupabaseClient, versionId: string, input: ScenariosInput): Promise<PlanVersionRow> {
+  const cur = await fetchVersion(sb, versionId)
+  if (!cur) throw planError('not_found')
+  if (!isEditable(cur.status)) throw planError('not_editable')
+  const row: Record<string, unknown> = {
+    scenarios: input.scenarios,
+    assumptions: { ...(cur.assumptions ?? {}), profiles: input.profiles, ...(input.model ? { model: input.model } : {}) },
+    base_snapshot_id: input.baseSnapshotId,
+  }
+  if (input.selectedScenario !== undefined) row.selected_scenario = input.selectedScenario
+  const { data, error } = await sb.from('pb_plan_versions').update(row).eq('id', versionId).eq('status', 'draft').select('*').maybeSingle()
+  if (error) throw dbError('save scenarios', error)
+  if (data) return data as PlanVersionRow
+  const now = await fetchVersion(sb, versionId)
+  throw planError(now ? 'not_editable' : 'not_found')
+}
+
 /**
  * Refreshes the goals SNAPSHOT of an open version (draft or in_review) from the live goals. The
  * snapshot is derived data (metric_targets + pb_goal_reviews), not content the author wrote, so it
