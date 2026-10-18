@@ -59,5 +59,5 @@ export function bandText(b: { delta: number; source: 'history' | 'default' }): s
   const pct = Math.round(b.delta * 100)
   return b.source === 'history'
     ? `по волатильности выручки за последние месяцы (±${pct}%)`
-    : `по умолчанию ±${pct}%: мало данных, диапазон широкий`
+    : `по умолчанию (±${pct}%): мало данных, диапазон широкий`
 }

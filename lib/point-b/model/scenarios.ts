@@ -265,8 +265,9 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
   const conditions: string[] = []
   if (!alreadyThere) {
     for (const u of requiredUplift) {
-      const fmtLever = u.lever === 'avgCheck' ? fmtMoney : u.lever === 'leads' ? (n: number | null) => `${fmtNum(n, 0)} в месяц` : (n: number | null) => fmtPct(n, 1)
-      conditions.push(`${u.label}: довести с ${fmtLever(u.current)} до ${fmtLever(u.target)}.`)
+      if (u.lever === 'leads') conditions.push(`${u.label}: довести с ${fmtNum(u.current, 0)} до ${fmtNum(u.target, 0)} в месяц.`)
+      else if (u.lever === 'avgCheck') conditions.push(`${u.label}: довести с ${fmtMoney(u.current)} до ${fmtMoney(u.target)}.`)
+      else conditions.push(`${u.label}: довести с ${fmtPct(u.current, 1)} до ${fmtPct(u.target, 1)}.`)
     }
   } else {
     conditions.push('Удерживать лиды, конверсию и средний чек на текущем уровне.')
@@ -296,7 +297,7 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
     ...(Math.abs(otherMonthly) > 0 ? [`Выручка вне воронки учтена как постоянная: ${fmtMoney(otherMonthly)} в месяц (остаток калибровки по факту).`] : []),
     `Рычаги растут линейно и выходят на целевой уровень за ${fmtMonths(ramp)}; цель достигнута, когда среднее трёх последних месяцев × 12 не ниже цели.`,
     seasonText(season),
-    `Диапазон: темп рычагов ±${delta}% — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
+    `Диапазон: темп рычагов ±${delta}%, источник — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
     `Вклад рычагов в рост: лиды ${fmtPct(w.leads)}, конверсия ${fmtPct(w.conversion)}, средний чек ${fmtPct(w.avgCheck)}, повторные продажи ${fmtPct(w.repeat)}${redistributed ? ' (доля повторных продаж перераспределена: повторные продажи не заданы)' : ''}.`,
     ...(hasRepeat ? [] : ['Повторные продажи не заданы: учтены как 0%.']),
     ...(levers.activeBase.origin === 'derived' ? ['Активная база клиентов выведена: лиды × конверсия × 12.'] : []),
@@ -399,7 +400,7 @@ export function solveGrowthScenario(i: ModelInputs, profile: ScenarioProfile): S
     assumptions: [
       'Модель — упрощённая: годовая выручка растёт с постоянным темпом, не больше потолка сценария.',
       'Рычаги воронки не используются: нет лидов, конверсии или среднего чека, либо отрасль не про поток заявок.',
-      `Диапазон: темп роста ±${delta}% — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
+      `Диапазон: темп роста ±${delta}%, источник — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
       'Деньги (резерв, нехватка средств, денежный поток) не рассчитаны: нужны данные уровня 2.',
     ],
     trajectory,

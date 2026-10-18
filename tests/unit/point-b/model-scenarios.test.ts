@@ -350,7 +350,7 @@ describe('funnel scenarios — limits and edges', () => {
     expect(r.assumptions.join(' ')).toMatch(/волатильности выручки/)
     // a calmer history gives a narrower pace band than the 20% default: the range is tighter
     const calm = solve(golden(), AGGRESSIVE)
-    expect(calm.assumptions.join(' ')).toMatch(/по умолчанию ±20%: мало данных, диапазон широкий/)
+    expect(calm.assumptions.join(' ')).toMatch(/источник — по умолчанию \(±20%\): мало данных, диапазон широкий/)
     expect(r.timeToGoalMonths.low! - r.timeToGoalMonths.high!).toBeLessThanOrEqual(calm.timeToGoalMonths.low! - calm.timeToGoalMonths.high!)
   })
 
