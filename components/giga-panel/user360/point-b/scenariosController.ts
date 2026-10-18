@@ -37,9 +37,10 @@ export const PROFILE_LIMITS = {
 } as const
 
 /**
- * The three paces of plan Task 5 (`defaultProfiles`). The shares of the levers depend on the
- * industry template on the server (equal shares here); the form seeds from the version's saved
- * profiles as soon as a calculation has stored them.
+ * The three paces of plan Task 5 (`defaultProfiles`) with GENERIC shares of the levers: the real
+ * shares depend on the industry template on the server. These only fill the form while it is
+ * locked (read-only) before the first calculation; the form becomes editable and is seeded from
+ * the profiles the server returned (or the draft saved) after «Рассчитать сценарии».
  */
 export const DEFAULT_PROFILES: ScenarioProfile[] = [
   { key: 'cautious', label: 'Осторожный', rampMonths: 18, reserveMonths: 3, productivityGain: 0, growthCapAnnual: 0.25, leverMix: { leads: 0.25, conversion: 0.25, avgCheck: 0.25, repeat: 0.25 } },
@@ -71,6 +72,14 @@ export function parseProfiles(v: unknown): ScenarioProfile[] | null {
     })
   }
   return out
+}
+
+/**
+ * The real profiles the form is seeded from: the ones the last calculation returned, else the ones
+ * the draft stores. null → there is no calculation yet and the form stays read-only.
+ */
+export function seedProfiles(calculated: ScenarioProfile[] | null, savedRaw: unknown): ScenarioProfile[] | null {
+  return calculated ?? parseProfiles(savedRaw)
 }
 
 // ── The profile form ────────────────────────────────────────────────────
@@ -200,8 +209,8 @@ const DEFAULT_ERROR: Record<number, string> = {
 
 export interface ScenariosSnapshot {
   busy: 'compute' | 'select' | null
-  /** Result of the last calculation, for the version it was made for. */
-  result: { versionId: string; model: ModelResult } | null
+  /** Result of the last calculation, for the version it was made for; `profiles` are the ones the server used (null if unreadable). */
+  result: { versionId: string; model: ModelResult; profiles: ScenarioProfile[] | null } | null
   /** A pace chosen in this session (the version on the server follows after the reload); undefined = nothing chosen here. */
   selected: { versionId: string; key: ScenarioKey | null } | null
   notice: string | null
@@ -255,12 +264,13 @@ export class ScenariosController {
     if (this.snap.busy) return false
     this.set({ busy: 'compute', error: null, notice: null })
     const r = await this.call('POST', versionId, profiles ? { profiles } : {})
-    const model = r.ok && isObj(r.body?.data) ? parseModelResult((r.body!.data as Record<string, unknown>).result) : null
+    const data = r.ok && isObj(r.body?.data) ? (r.body!.data as Record<string, unknown>) : null
+    const model = data ? parseModelResult(data.result) : null
     if (!model) {
       this.set({ busy: null, error: r.ok ? { message: 'Сервер вернул расчёт, который не удалось прочитать', status: r.status } : this.toError(r) })
       return false
     }
-    this.set({ busy: null, result: { versionId, model }, notice: 'Сценарии рассчитаны и сохранены в черновике' })
+    this.set({ busy: null, result: { versionId, model, profiles: parseProfiles(data!.profiles) }, notice: 'Сценарии рассчитаны и сохранены в черновике' })
     return true
   }
 

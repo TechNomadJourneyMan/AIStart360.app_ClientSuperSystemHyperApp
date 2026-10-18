@@ -15,12 +15,15 @@ import type { ModelResult, ScenarioProfile, ScenarioResult } from '@/lib/point-b
 import { GAP_ACTIONS, comparisonRows, parseScenarios } from '@/components/point-b/overviewModel'
 import {
   DEFAULT_PROFILES, LEVER_KEYS, LEVER_LABEL, PROFILE_LIMITS, SCENARIO_KEYS,
-  mixSum, normalizeForm, parseProfiles, profileToForm, validateForms,
+  mixSum, normalizeForm, profileToForm, seedProfiles, validateForms,
   type ProfileErrors, type ProfileForm, type ScenarioError, type ScenarioKey,
 } from './scenariosController'
 import { useScenariosController } from './useScenariosController'
 
 const INVALID = 'border-red-500/50 focus:border-red-500/60'
+
+/** Before the first calculation the real (industry-template) profiles are unknown to the client. */
+export const PROFILES_LOCKED_TEXT = 'Сначала рассчитайте сценарии по шаблону отрасли — затем можно настроить профили темпа'
 
 export interface ScenariosPanelViewProps {
   versionNumber: number
@@ -35,8 +38,11 @@ export interface ScenariosPanelViewProps {
   notice: string | null
   forms: ProfileForm[]
   formErrors: Partial<Record<ScenarioKey, ProfileErrors>>
-  /** The forms hold the profiles saved in the draft (otherwise: the default paces). */
-  fromSaved: boolean
+  /**
+   * The forms hold the real profiles (saved in the draft or returned by a calculation). Until then
+   * the form is read-only: the template mix is not known to the client.
+   */
+  profilesReady: boolean
   onField: (key: ScenarioKey, field: 'rampMonths' | 'reserveMonths' | 'growthCapPct' | 'productivityGainPct', value: string) => void
   onMix: (key: ScenarioKey, lever: keyof ScenarioProfile['leverMix'], value: string) => void
   onNormalize: (key: ScenarioKey) => void
@@ -68,8 +74,8 @@ function Field({ id, label, hint, error, value, onChange, disabled }: {
   )
 }
 
-function ProfileFieldset({ form, errors, disabled, p, uid }: {
-  form: ProfileForm; errors: ProfileErrors; disabled: boolean; p: ScenariosPanelViewProps; uid: string
+function ProfileFieldset({ form, errors, disabled, locked, p, uid }: {
+  form: ProfileForm; errors: ProfileErrors; disabled: boolean; locked: boolean; p: ScenariosPanelViewProps; uid: string
 }) {
   const L = PROFILE_LIMITS
   const sum = Math.round(mixSum(form.mix) * 10) / 10
@@ -103,7 +109,7 @@ function ProfileFieldset({ form, errors, disabled, p, uid }: {
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
         <span className={cx(sum === 100 ? 'text-slate-500' : 'text-amber-300')}>Сумма долей: {sum}%{sum !== 100 && sum > 0 ? ' — при расчёте будет приведена к 100%' : ''}</span>
-        {sum !== 100 && <Button size="sm" onClick={() => p.onNormalize(form.key)}>Привести к 100%</Button>}
+        {sum !== 100 && !locked && <Button size="sm" onClick={() => p.onNormalize(form.key)}>Привести к 100%</Button>}
       </div>
       {errors.mix && <p id={mixErr} role="alert" className="mt-1 text-[11px] text-red-300">{errors.mix}</p>}
     </fieldset>
@@ -211,15 +217,15 @@ export function ScenariosPanelView(p: ScenariosPanelViewProps) {
           </summary>
           <div className="space-y-3 border-t border-white/[0.06] p-3">
             <p className="text-[11px] text-slate-500">
-              {p.fromSaved
+              {p.profilesReady
                 ? 'Значения из черновика. Пустые правки не отправляются: без изменений сервер использует профили по шаблону отрасли.'
-                : 'Пока значения по умолчанию: точные доли вклада по отрасли клиента подставит расчёт. Если ничего не менять, сервер возьмёт профили по шаблону.'}
+                : PROFILES_LOCKED_TEXT}
             </p>
             {SCENARIO_KEYS.map((k) => {
               const form = p.forms.find((f) => f.key === k)
-              return form ? <ProfileFieldset key={k} form={form} errors={p.formErrors[k] ?? {}} disabled={p.busy !== null} p={p} uid={uid} /> : null
+              return form ? <ProfileFieldset key={k} form={form} errors={p.formErrors[k] ?? {}} disabled={p.busy !== null || !p.profilesReady} locked={!p.profilesReady} p={p} uid={uid} /> : null
             })}
-            <Button size="sm" icon={<RotateCcw size={12} />} onClick={p.onResetForms} disabled={p.busy !== null}>Вернуть значения по умолчанию</Button>
+            <Button size="sm" icon={<RotateCcw size={12} />} onClick={p.onResetForms} disabled={p.busy !== null || !p.profilesReady}>Вернуть значения по умолчанию</Button>
           </div>
         </details>
       )}
@@ -230,12 +236,16 @@ export function ScenariosPanelView(p: ScenariosPanelViewProps) {
 /** Stateful wrapper: the controller + the local form fields. `onChanged` reloads the plan. */
 export function ScenariosPanel({ userId, version, onChanged }: { userId: string; version: PlanVersionRow; onChanged: () => void }) {
   const { ctl, snap } = useScenariosController(userId)
-  const saved = parseProfiles(version.assumptions?.profiles)
-  const seedJson = JSON.stringify(saved)
-  const [forms, setForms] = useState<ProfileForm[]>(() => (saved ?? DEFAULT_PROFILES).map(profileToForm))
+  // The real profiles: what a calculation in this session returned, else what the draft stores.
+  // None of them yet → the form is locked (read-only) until the first calculation.
+  const calculated = snap.result?.versionId === version.id ? snap.result.profiles : null
+  const seed = seedProfiles(calculated, version.assumptions?.profiles)
+  const seedJson = JSON.stringify(seed)
+  const profilesReady = seed !== null
+  const [forms, setForms] = useState<ProfileForm[]>(() => (seed ?? DEFAULT_PROFILES).map(profileToForm))
   const [dirty, setDirty] = useState(false)
 
-  // The forms follow the draft on the server (another version, or the profiles a calculation saved).
+  // The forms follow the real profiles (another version, or the profiles a calculation returned).
   useEffect(() => {
     const profiles = (JSON.parse(seedJson) as ScenarioProfile[] | null) ?? DEFAULT_PROFILES
     setForms(profiles.map(profileToForm))
@@ -243,6 +253,7 @@ export function ScenariosPanel({ userId, version, onChanged }: { userId: string;
   }, [version.id, seedJson])
 
   const edit = (key: ScenarioKey, fn: (f: ProfileForm) => ProfileForm) => {
+    if (!profilesReady) return
     setForms((prev) => prev.map((f) => (f.key === key ? fn(f) : f)))
     setDirty(true)
   }
@@ -253,6 +264,8 @@ export function ScenariosPanel({ userId, version, onChanged }: { userId: string;
   const pick = snap.selected?.versionId === version.id ? snap.selected.key : version.selected_scenario
 
   const compute = async () => {
+    // Locked (no real profiles yet): nothing was edited, the server calculates by the industry template.
+    if (!profilesReady) { if (await ctl.compute(version.id)) onChanged(); return }
     if (!checked.ok) { ctl.setError('Исправьте параметры темпа: есть значения вне допустимых границ'); return }
     if (await ctl.compute(version.id, dirty ? checked.profiles : undefined)) onChanged()
   }
@@ -269,11 +282,11 @@ export function ScenariosPanel({ userId, version, onChanged }: { userId: string;
       notice={snap.notice}
       forms={forms}
       formErrors={formErrors}
-      fromSaved={saved !== null}
+      profilesReady={profilesReady}
       onField={(key, field, value) => edit(key, (f) => ({ ...f, [field]: value }))}
       onMix={(key, lever, value) => edit(key, (f) => ({ ...f, mix: { ...f.mix, [lever]: value } }))}
       onNormalize={(key) => edit(key, normalizeForm)}
-      onResetForms={() => { setForms((saved ?? DEFAULT_PROFILES).map(profileToForm)); setDirty(false) }}
+      onResetForms={() => { if (!profilesReady) return; setForms((seed ?? DEFAULT_PROFILES).map(profileToForm)); setDirty(false) }}
       onCompute={() => void compute()}
       onSelect={async (key) => { if (await ctl.select(version.id, key)) onChanged() }}
     />

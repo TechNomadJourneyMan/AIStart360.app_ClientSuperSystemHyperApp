@@ -13,7 +13,7 @@ import type { ModelResult, ScenarioProfile } from '@/lib/point-b/model/types'
 import type { PlanVersionRow, PlanVersionStatus } from '@/lib/point-b/plan/types'
 import {
   DEFAULT_PROFILES, ScenariosController, mixSum, normalizeForm, normalizeMixPercent, parseProfiles, profileToForm,
-  validateForms, validateProfileForm, type ProfileForm,
+  seedProfiles, validateForms, validateProfileForm, type ProfileForm,
 } from '@/components/giga-panel/user360/point-b/scenariosController'
 import { parseScenarios } from '@/components/point-b/overviewModel'
 
@@ -43,7 +43,7 @@ function harness(replies: Reply[]) {
 }
 
 const result = (): ModelResult => fixtureModelResult('full')
-const computed = (model = result()): Reply => ({ status: 200, body: { ok: true, data: { result: model } } })
+const computed = (model = result(), profiles?: unknown): Reply => ({ status: 200, body: { ok: true, data: { result: model, ...(profiles === undefined ? {} : { profiles }) } } })
 
 const baseView = (over: Partial<ViewProps> = {}): ViewProps => ({
   versionNumber: 3,
@@ -56,7 +56,7 @@ const baseView = (over: Partial<ViewProps> = {}): ViewProps => ({
   notice: null,
   forms: DEFAULT_PROFILES.map(profileToForm),
   formErrors: {},
-  fromSaved: false,
+  profilesReady: true,
   onField: () => undefined,
   onMix: () => undefined,
   onNormalize: () => undefined,
@@ -89,6 +89,19 @@ describe('ScenariosController', () => {
     expect(out).toContain('Прирост рычагов')
     expect(out.match(/Не достижим/g)).toHaveLength(2) // the header badge and the «Реализуемость» row of one scenario
     expect(out).toContain('Сценарии рассчитаны и сохранены в черновике')
+  })
+
+  it('keeps the profiles the server used (template mix) so the form can be seeded from them', async () => {
+    const template = DEFAULT_PROFILES.map((p) => ({ ...p, leverMix: { leads: 0.35, conversion: 0.25, avgCheck: 0.15, repeat: 0.25 } }))
+    const { ctl } = harness([computed(result(), template)])
+    expect(await ctl.compute(VERSION)).toBe(true)
+    expect(ctl.getSnapshot().result?.profiles).toEqual(template)
+    // unreadable or absent profiles do not fail the calculation: the draft reload brings the saved ones
+    const odd = harness([computed(result(), [{ key: 'cautious' }]), computed()])
+    expect(await odd.ctl.compute(VERSION)).toBe(true)
+    expect(odd.ctl.getSnapshot().result?.profiles).toBeNull()
+    expect(await odd.ctl.compute(VERSION)).toBe(true)
+    expect(odd.ctl.getSnapshot().result?.profiles).toBeNull()
   })
 
   it('without edits sends no profiles so the server uses the template defaults', async () => {
@@ -146,6 +159,27 @@ describe('ScenariosController', () => {
     expect(slow).toHaveBeenCalledTimes(1)
     release!()
     expect(await first).toBe(true)
+  })
+})
+
+describe('seedProfiles', () => {
+  const template = DEFAULT_PROFILES.map((p) => ({ ...p, leverMix: { leads: 0.35, conversion: 0.25, avgCheck: 0.15, repeat: 0.25 } }))
+  const saved = DEFAULT_PROFILES.map((p) => ({ ...p, rampMonths: 9 }))
+
+  it('no calculation and nothing saved in the draft → null (the form stays locked)', () => {
+    expect(seedProfiles(null, undefined)).toBeNull()
+    expect(seedProfiles(null, {})).toBeNull()
+    expect(seedProfiles(null, [DEFAULT_PROFILES[0]])).toBeNull() // unusable saved profiles are not profiles
+  })
+
+  it('the profiles saved in the draft unlock the form', () => {
+    expect(seedProfiles(null, saved)).toEqual(saved)
+  })
+
+  it('the profiles returned by a calculation win over the (not yet reloaded) draft and carry the template mix', () => {
+    expect(seedProfiles(template, undefined)).toEqual(template)
+    expect(seedProfiles(template, saved)).toEqual(template)
+    expect(profileToForm(seedProfiles(template, undefined)![0]).mix).toEqual({ leads: '35', conversion: '25', avgCheck: '15', repeat: '25' })
   })
 })
 
@@ -227,6 +261,30 @@ describe('profile form', () => {
 
 describe('ScenariosPanelView', () => {
   const model = result()
+
+  it('before the first calculation the profile form is read-only and says why', () => {
+    const forms = DEFAULT_PROFILES.map(profileToForm)
+    forms[0] = { ...forms[0], mix: { leads: '50', conversion: '30', avgCheck: '10', repeat: '30' } } // would offer «Привести к 100%»
+    const out = html({ profilesReady: false, forms })
+    expect(out).toContain('Сначала рассчитайте сценарии по шаблону отрасли — затем можно настроить профили темпа')
+    // every profile is a disabled fieldset: nothing can be typed over the template mix
+    expect(out.match(/<fieldset disabled=""/g)).toHaveLength(3)
+    expect(out).not.toContain('Привести к 100%')
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Вернуть значения по умолчанию/)
+    expect(out).not.toContain('Значения из черновика')
+    // the calculation itself is available
+    expect(out).toMatch(/<button(?![^>]*disabled="")[^>]*>(<svg[\s\S]*?<\/svg>)?Рассчитать сценарии/)
+  })
+
+  it('once the draft has profiles or a calculation returned them the form is editable and the hint is gone', () => {
+    const out = html({ profilesReady: true })
+    expect(out).not.toContain('Сначала рассчитайте сценарии по шаблону отрасли')
+    expect(out).toContain('Значения из черновика')
+    expect(out).not.toContain('<fieldset disabled=""')
+    expect(out).toMatch(/<button(?![^>]*disabled="")[^>]*>(<svg[\s\S]*?<\/svg>)?Вернуть значения по умолчанию/)
+    // busy still disables the fields of an editable form
+    expect(html({ profilesReady: true, busy: 'compute' }).match(/<fieldset disabled=""/g)).toHaveLength(3)
+  })
 
   it('a draft offers the calculation, the profile form and the choice of a pace', () => {
     const out = html({ scenarios: model.scenarios, model, selected: 'moderate' })
