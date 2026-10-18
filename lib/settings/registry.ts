@@ -282,6 +282,17 @@ export const SETTINGS = {
     help: 'Новый диалог создаётся в режиме «Авто»: бот отвечает сам (всегда представляясь ботом) и зовёт эксперта, когда нужен человек. Режим меняется на каждом диалоге.',
     schema: z.boolean(), default: false, critical: false,
   },
+  // ── Точка Б: всплывающий слой кабинета (lib/popups, spec §12.2) ──
+  pb_popups_enabled: {
+    group: 'point_b', label: 'Всплывающие окна в кабинете',
+    help: 'Сообщения эксперта (а позже рекомендации и подсказки) появляются карточкой в углу любой страницы кабинета; «важное» — окном. Выключено — слой молчит, сообщения остаются в разделе «Сообщения».',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  pb_popup_cards_per_day: {
+    group: 'point_b', label: 'Карточек подсказок в сутки на пользователя',
+    help: 'Сколько карточек с рекомендациями и подсказками платформы показывать одному пользователю в сутки. Сообщения эксперта этим лимитом не ограничены.',
+    schema: z.number().int().min(0).max(10), default: 3, critical: false,
+  },
 } as const
 
 export type SettingKey = keyof typeof SETTINGS
@@ -299,6 +310,7 @@ export const SETTING_GROUPS = {
   agents: { label: 'Автоматизация агентов', icon: 'bot' },
   point_a: { label: 'Точка А', icon: 'target' },
   comm: { label: 'Общение', icon: 'messages' },
+  point_b: { label: 'Точка Б', icon: 'target' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {
