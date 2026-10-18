@@ -84,6 +84,12 @@ export interface CommMessageRow {
 export interface CommMessageFlags {
   profanity?: boolean
   words?: number
+  /**
+   * A staff message marked «важное / требует ответа» (outgoing, app channel):
+   * the cabinet shows it as a modal pop-up (lib/popups). Honoured only for
+   * author_kind = 'staff'.
+   */
+  important?: boolean
 }
 
 /** What lib/comm needs to know about the recipient (profiles + availability). */

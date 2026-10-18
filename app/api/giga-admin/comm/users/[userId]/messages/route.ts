@@ -16,19 +16,23 @@ import { getSetting } from '@/lib/settings/store'
 
 /**
  * POST /api/giga-admin/comm/users/:userId/messages (inbox.manage)
- *   { body, subject?, channels: ['app'|'email'|'telegram'|'whatsapp', …] | 'auto' }
+ *   { body, subject?, channels: ['app'|'email'|'telegram'|'whatsapp', …] | 'auto', important? }
  * A personal message from the staff member to the user, sent at once over the
  * chosen channels (lib/comm/send.ts). The conversation is created on first
  * use. A channel that cannot reach the user is recorded as skipped with the
  * reason. Audit: comm.message.sent. At most 30 sends per minute per staff member.
  * A text with profanity is refused (400, the field named: body / subject); a
- * user blocked in communication cannot be written to (409).
+ * user blocked in communication cannot be written to (409). `important: true`
+ * marks the in-app copy «важное / требует ответа» (flags.important): the cabinet
+ * shows it as a modal pop-up (lib/popups).
  */
 
 const Body = z.object({
   body: z.string().max(MAX_BODY + 200),
   subject: z.string().trim().max(200).nullable().optional(),
   channels: z.union([z.literal('auto'), z.array(z.enum(COMM_CHANNELS)).min(1).max(COMM_CHANNELS.length)]),
+  /** «Важное — показать окном, требует ответа»: flags.important on the in-app message. */
+  important: z.boolean().optional(),
 })
 
 export async function POST(req: NextRequest, { params }: { params: { userId: string } }) {
@@ -54,12 +58,13 @@ export async function POST(req: NextRequest, { params }: { params: { userId: str
       authorKind: 'staff',
       authorId: g.actor.id,
       authorName: await actorName(g.sb, g.actor),
+      ...(parsed.data.important ? { flags: { important: true } } : {}),
     }, { sb: g.sb, defaultMode })
 
     await recordAdminAction(g.actor, {
       action: 'comm.message.sent',
       entityType: 'comm_thread', entityId: result.threadId, targetUserId: params.userId,
-      newValue: { subject: parsed.data.subject ?? null, body: parsed.data.body.slice(0, 500), channels: result.messages.map((m) => ({ channel: m.channel, status: m.status })) },
+      newValue: { subject: parsed.data.subject ?? null, body: parsed.data.body.slice(0, 500), ...(parsed.data.important ? { important: true } : {}), channels: result.messages.map((m) => ({ channel: m.channel, status: m.status })) },
       metadata: { groupId: result.groupId, request: parsed.data.channels === 'auto' ? 'auto' : 'explicit' },
     }, req)
 

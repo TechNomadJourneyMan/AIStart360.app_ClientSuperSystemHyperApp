@@ -276,9 +276,12 @@ function Composer({ userId, channels, onSent }: { userId: string; channels: Chan
   const [subject, setSubject] = useState('')
   const [auto, setAuto] = useState(true)
   const [picked, setPicked] = useState<CommChannel[]>(['app'])
+  const [important, setImportant] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const showSubject = auto ? channels.email.ok : picked.includes('email')
+  // The pop-up lives on the in-app copy: «важное» needs the «Платформа» channel.
+  const appIncluded = auto ? channels.app.ok : picked.includes('app')
   const canSend = body.trim().length > 0 && body.length <= MAX_BODY && (auto || picked.length > 0) && !sending
 
   const toggle = (c: CommChannel) => setPicked((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]))
@@ -291,13 +294,14 @@ function Composer({ userId, channels, onSent }: { userId: string; channels: Chan
     try {
       const res = await gigaFetch<{ data: { ok: boolean; messages: Array<{ channel: CommChannel; status: string; error: string | null }> } }>(
         `/api/giga-admin/comm/users/${userId}/messages`,
-        { method: 'POST', json: { body, subject: showSubject && subject.trim() ? subject.trim() : null, channels: auto ? 'auto' : picked } },
+        { method: 'POST', json: { body, subject: showSubject && subject.trim() ? subject.trim() : null, channels: auto ? 'auto' : picked, ...(important && appIncluded ? { important: true } : {}) } },
       )
       const failed = res.data.messages.filter((m) => m.status === 'failed' || m.status === 'skipped')
       if (res.data.ok) toast.success(failed.length ? `Отправлено, но не во все каналы: ${failed.map((f) => CHANNEL_LABELS[f.channel]).join(', ')}` : 'Сообщение отправлено')
       else toast.error('Сообщение не дошло ни до одного канала — причины в ленте')
       setBody('')
       setSubject('')
+      setImportant(false)
       onSent()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить')
@@ -342,6 +346,13 @@ function Composer({ userId, channels, onSent }: { userId: string; channels: Chan
         placeholder="Сообщение пользователю… (Ctrl+Enter — отправить)"
         className={cx(inputClass, 'resize-y')}
       />
+      <label className={cx('flex items-start gap-2 text-[11px]', appIncluded ? 'text-slate-300' : 'text-slate-600')} title={appIncluded ? undefined : 'Окно показывается в кабинете — выберите канал «Платформа»'}>
+        <input type="checkbox" checked={important && appIncluded} disabled={!appIncluded} onChange={(e) => setImportant(e.target.checked)} className="mt-0.5 accent-blue-500" />
+        <span>
+          Важное — показать окном, требует ответа
+          <span className="block text-[10px] text-slate-600">Пользователь увидит сообщение поверх страницы кабинета, не только в «Сообщениях».</span>
+        </span>
+      </label>
       {error && <p role="alert" className="text-[11px] text-red-300">{error}</p>}
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] text-slate-600">{body.length}/{MAX_BODY}</span>

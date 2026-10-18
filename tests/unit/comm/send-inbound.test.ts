@@ -119,6 +119,34 @@ describe('sendToUser', () => {
   })
 })
 
+describe('sendToUser: «важное» flag (drives the modal pop-up)', () => {
+  const send = async (input: Partial<Parameters<typeof sendToUser>[0]>) => {
+    const { sb, db } = commDb({ profiles: [profile()] })
+    const t = fakeTransports()
+    await sendToUser({ userId: USER, channels: ['app', 'email'], body: 'Нужен ваш ответ', authorKind: 'staff', authorId: STAFF, authorName: 'Анна', ...input }, { sb, transports: t.transports, now: NOW })
+    return db.comm_messages
+  }
+
+  it('important true is stored in flags.important of the app message', async () => {
+    const rows = await send({ flags: { important: true } })
+    expect(rows.find((r) => r.channel === 'app')!.flags).toEqual({ important: true })
+    // the other channels carry no pop-up flag
+    expect(rows.find((r) => r.channel === 'email')!.flags).toEqual({})
+  })
+
+  it('important is ignored for non-staff authors', async () => {
+    for (const authorKind of ['bot', 'system'] as const) {
+      const rows = await send({ authorKind, authorId: null, authorName: null, flags: { important: true } })
+      expect(rows.every((r) => !('important' in (r.flags as object))), authorKind).toBe(true)
+    }
+  })
+
+  it('missing important keeps flags {}', async () => {
+    expect((await send({})).every((r) => JSON.stringify(r.flags) === '{}')).toBe(true)
+    expect((await send({ flags: { important: false } })).every((r) => JSON.stringify(r.flags) === '{}')).toBe(true)
+  })
+})
+
 describe('recordInbound', () => {
   it('waiting_staff + unread + deadline; staff notified once per unanswered stretch', async () => {
     const { sb, db } = commDb({ profiles: [profile()] })

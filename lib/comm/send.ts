@@ -48,6 +48,12 @@ export interface SendToUserInput {
   replyToId?: string | null
   /** Title of the bell notification («app»); a broadcast passes its title. */
   appTitle?: string | null
+  /**
+   * Row flags. `important` («важное / требует ответа») is stored on the in-app
+   * row of a STAFF message only — it makes the cabinet show it as a modal
+   * pop-up; for a bot or system author it is ignored.
+   */
+  flags?: { important?: boolean }
 }
 
 export interface SendToUserDeps {
@@ -109,6 +115,7 @@ export async function sendToUser(input: SendToUserInput, deps: SendToUserDeps = 
   const resolved = resolveCommChannels(input.channels, { availability, prefs: recipient.preferences, lastInboundChannel: lastIn })
 
   const groupId = randomUUID()
+  const important = input.authorKind === 'staff' && input.flags?.important === true
   const base = {
     thread_id: thread.id,
     group_id: groupId,
@@ -122,7 +129,10 @@ export async function sendToUser(input: SendToUserInput, deps: SendToUserDeps = 
     reply_to_id: input.replyToId ?? null,
   }
   const rows: NewMessage[] = [
-    ...resolved.send.map((channel) => ({ ...base, channel, status: 'sending' as const })),
+    ...resolved.send.map((channel) => ({
+      ...base, channel, status: 'sending' as const,
+      ...(important && channel === 'app' ? { flags: { important: true } } : {}),
+    })),
     ...resolved.skipped.map(({ channel, reason }) => ({ ...base, channel, status: 'skipped' as const, error: reason })),
   ]
   const { rows: inserted } = await insertMessages(sb, rows)

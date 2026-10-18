@@ -136,6 +136,28 @@ describe('GIGA writes', () => {
     expect(h.sendToUser).not.toHaveBeenCalled()
   })
 
+  it('send: important is passed to sendToUser as flags.important and audited; absent → no flags', async () => {
+    const withFlag = await messagesPOST(req(`/api/giga-admin/comm/users/${USER}/messages`, 'POST', { body: 'Ответьте, пожалуйста', channels: ['app'], important: true }), P)
+    expect(withFlag.status).toBe(200)
+    expect(h.sendToUser).toHaveBeenLastCalledWith(expect.objectContaining({ authorKind: 'staff', flags: { important: true } }), expect.anything())
+    expect(h.audit).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ newValue: expect.objectContaining({ important: true }) }), expect.anything())
+
+    await messagesPOST(req(`/api/giga-admin/comm/users/${USER}/messages`, 'POST', { body: 'Добрый день', channels: ['app'] }), P)
+    expect((h.sendToUser.mock.calls.at(-1)![0] as { flags?: unknown }).flags).toBeUndefined()
+    const bad = await messagesPOST(req(`/api/giga-admin/comm/users/${USER}/messages`, 'POST', { body: 'ок', channels: ['app'], important: 'yes' }), P)
+    expect(bad.status).toBe(400)
+  })
+
+  it('profanity check and permissions are unchanged with important set', async () => {
+    h.sendToUser.mockClear()
+    const dirty = await messagesPOST(req(`/api/giga-admin/comm/users/${USER}/messages`, 'POST', { body: 'ну блядь', channels: ['app'], important: true }), P)
+    expect(dirty.status).toBe(400)
+    h.actor = { id: STAFF, kind: 'session', role: 'support', clientScope: 'all' }
+    const denied = await messagesPOST(req(`/api/giga-admin/comm/users/${USER}/messages`, 'POST', { body: 'Привет', channels: ['app'], important: true }), P)
+    expect(denied.status).toBe(403)
+    expect(h.sendToUser).not.toHaveBeenCalled()
+  })
+
   it('block / unblock is stored on the thread and audited', async () => {
     const res = await userPATCH(req(`/api/giga-admin/comm/users/${USER}`, 'PATCH', { action: 'block', reason: 'оскорбления' }), P)
     expect(res.status).toBe(200)
