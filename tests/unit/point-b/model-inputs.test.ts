@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { pbDb } from './_pbdb'
 import { FUNNEL_METRICS, NOW, REVENUE, finmodelState, modelInputs, modelInputsL2, pointBInputs, src } from './_model'
 import { loadRevenueHistory } from '@/lib/point-b/model/history'
+import { FINMODEL_DEFS, FINMODEL_KEYS } from '@/lib/point-b/finmodel/keys'
 import { buildModelInputs, sanitizeHistory, withDerivedActiveBase } from '@/lib/point-b/model/inputs'
 import { determineLevel, templateKeyFor } from '@/lib/point-b/model/levels'
 import type { PlanGoalsSnapshot } from '@/lib/point-b/plan/types'
@@ -174,6 +175,59 @@ describe('determineLevel', () => {
     expect(determineLevel(modelInputsL2({ template: 'production' }, {}, { template: 'production' }))).toMatchObject({ level: 2, kind: 'growth' })
     // a goalless client cannot reach level 2 whatever the finmodel says
     expect(determineLevel(modelInputsL2({ goal: null })).level).toBe(0)
+  })
+})
+
+describe('level 2 hints (finmodel)', () => {
+  const noFin = (keys: Parameters<typeof finmodelState>[0]) => determineLevel(modelInputsL2({}, keys)).missing.filter((m) => m.level === 2)
+
+  it('level 2 missing items carry the right actions per key', () => {
+    // every hard input missing at once
+    const all = noFin({ cash_balance: null, fixed_costs_month: null, payroll_month: null, debt_total: null, capex_year: null })
+    const byKey = Object.fromEntries(all.map((m) => [m.key, m.actions]))
+    expect(Object.keys(byKey)).toEqual(['finmodel:cash_balance', 'finmodel:fixed_costs_month', 'finmodel:payroll_month', 'finmodel:debt_total', 'finmodel:capex_year'])
+    // survey step 9 + documents + expert for what the questionnaire asks and the parser reads
+    expect(byKey['finmodel:debt_total']).toEqual(['survey', 'documents', 'expert'])
+    expect(byKey['finmodel:fixed_costs_month']).toEqual(['survey', 'documents', 'expert'])
+    // cash on the account, payroll and capex: the form and the expert only
+    expect(byKey['finmodel:cash_balance']).toEqual(['expert'])
+    expect(byKey['finmodel:payroll_month']).toEqual(['expert'])
+    expect(byKey['finmodel:capex_year']).toEqual(['expert'])
+    // the conditional keys of a debt
+    const debt = noFin({ debt_total: 5_000_000, debt_service_month: null, interest_rate_annual: null })
+    expect(debt.map((m) => [m.key, m.actions])).toEqual([
+      ['finmodel:debt_service_month', ['expert']],
+      ['finmodel:interest_rate_annual', ['expert']],
+    ])
+    // every item says what it unlocks
+    for (const m of all) {
+      expect(m.level).toBe(2)
+      expect(m.label.length).toBeGreaterThan(3)
+      expect(m.unlocks.length).toBeGreaterThan(10)
+      expect(m.actions.at(-1)).toBe('expert')
+    }
+    // only keys with a questionnaire key offer the survey; only the parser's keys offer documents
+    for (const key of FINMODEL_KEYS) {
+      const [item] = determineLevel(modelInputsL2({}, { [key]: null, debt_total: key === 'debt_total' ? null : 5_000_000 })).missing.filter((m) => m.key === `finmodel:${key}`)
+      if (!item) continue // a key with an industry default is not «missing»
+      expect(item.actions.includes('survey'), key).toBe(!!FINMODEL_DEFS[key].surveyKey)
+      expect(item.actions.includes('documents'), key).toBe(!!FINMODEL_DEFS[key].fromDocuments)
+    }
+  })
+
+  it('a complete finmodel leaves no level-2 missing items', () => {
+    const d = determineLevel(modelInputsL2())
+    expect(d.level).toBe(2)
+    expect(d.missing.filter((m) => m.level === 2)).toEqual([])
+    // industry defaults (tax, days) are not «missing» either: they are assumptions
+    const withDefaults = determineLevel(modelInputsL2({}, { tax_rate: null, dso_days: null, dio_days: null, dpo_days: null }))
+    expect(withDefaults.level).toBe(2)
+    expect(withDefaults.missing.filter((m) => m.level === 2)).toEqual([])
+  })
+
+  it('level-1 hints stay in front: the lever hints come before the money hints', () => {
+    const d = determineLevel(modelInputsL2({ levers: { cac: src(null) } }, { payroll_month: null }))
+    expect(d.missing.map((m) => m.key)).toEqual(['repeat', 'cac', 'finmodel:payroll_month'])
   })
 })
 

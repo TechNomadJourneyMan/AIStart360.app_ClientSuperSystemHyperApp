@@ -91,10 +91,19 @@ const MARGIN_MISSING: MissingInput = {
   actions: ['survey', 'documents', 'expert'],
 }
 
-/** A key of the finmodel as a missing input (level 2). */
+/**
+ * A key of the finmodel as a missing input (level 2). The expert and the «Финмодель» form can take any
+ * key; the questionnaire only the keys it asks (debt, days of payment, expenses — step 9); the documents
+ * only what the parser reads from a balance sheet / P&L (receivables, expenses, debt). Cash on the account
+ * and payroll are typed on the form or given to the expert.
+ */
 export function finmodelMissingInput(key: FinmodelKey): MissingInput {
   const d = FINMODEL_DEFS[key]
-  return { key: `finmodel:${key}`, label: d.label, unlocks: d.unlocks, level: 2, actions: ['expert'] }
+  const actions: MissingInput['actions'] = []
+  if (d.surveyKey) actions.push('survey')
+  if (d.fromDocuments) actions.push('documents')
+  actions.push('expert')
+  return { key: `finmodel:${key}`, label: d.label, unlocks: d.unlocks, level: 2, actions }
 }
 
 export function determineLevel(i: ModelInputs): { level: DataLevel; kind: ModelKind; missing: MissingInput[] } {

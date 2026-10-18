@@ -42,6 +42,8 @@ export interface FinmodelKeyDef {
   surveyKey?: string
   /** The platform metric the value is read from when nobody typed it. */
   metricId?: string
+  /** The document parser can read the value from a balance sheet / P&L (receivables, expenses, debt). */
+  fromDocuments?: boolean
   /** What opens once the value is there. */
   unlocks: string
   /** The group on the form. */
@@ -60,7 +62,7 @@ export const FINMODEL_DEFS: Record<FinmodelKey, FinmodelKeyDef> = {
   fixed_costs_month: {
     key: 'fixed_costs_month', label: 'Постоянные расходы в месяц', unit: '₸', min: 0, max: MONEY_MAX,
     hint: 'Аренда, коммунальные, сервисы и прочие расходы, которые не зависят от продаж. Без зарплаты и рекламы. Считается из «Аренда» и «Прочие расходы» анкеты (шаг 9), если они указаны числом.',
-    required: true, group: 'costs', surveyKey: 's9n_expense_rent',
+    required: true, group: 'costs', surveyKey: 's9n_expense_rent', fromDocuments: true,
     unlocks: 'Операционная прибыль и точка безубыточности',
   },
   payroll_month: {
@@ -72,7 +74,7 @@ export const FINMODEL_DEFS: Record<FinmodelKey, FinmodelKeyDef> = {
   debt_total: {
     key: 'debt_total', label: 'Долг по кредитам и займам', unit: '₸', min: 0, max: MONEY_MAX,
     hint: 'Остаток основного долга по всем кредитам и займам на сегодня. Если долгов нет, введите 0.',
-    required: true, group: 'debt', surveyKey: 's9n_debts_amount',
+    required: true, group: 'debt', surveyKey: 's9n_debts_amount', fromDocuments: true,
     unlocks: 'Платежи по долгу в денежном потоке',
   },
   debt_service_month: {
@@ -90,7 +92,7 @@ export const FINMODEL_DEFS: Record<FinmodelKey, FinmodelKeyDef> = {
   dso_days: {
     key: 'dso_days', label: 'Срок оплаты клиентами, дней', unit: 'days', min: 0, max: 365,
     hint: 'Через сколько дней после отгрузки в среднем платят клиенты. Берётся из анкеты (шаг 9); иначе принят по отрасли.',
-    required: false, group: 'nwc_tax', surveyKey: 's9n_debtor_days', metricId: 'biz.finansy.debitorskaya_zadolzhennost',
+    required: false, group: 'nwc_tax', surveyKey: 's9n_debtor_days', metricId: 'biz.finansy.debitorskaya_zadolzhennost', fromDocuments: true,
     unlocks: 'Деньги, застрявшие в дебиторке при росте продаж',
   },
   dio_days: {
