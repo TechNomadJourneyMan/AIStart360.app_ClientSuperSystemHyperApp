@@ -10,12 +10,12 @@
  * intentionally bypass RLS.
  */
 
-import {
-  calculatePointBV2,
-  type PointBOptions,
-  type PointBV2,
-} from '@/lib/point-b/engine'
-import type { PointA, BlockScore, AIAnalysis } from '@/types/onboarding'
+import type { PointBV2 } from '@/lib/point-b/engine'
+import { diagToPointA } from '@/lib/point-b/adapters'
+import { loadPointBInputs } from '@/lib/point-b/inputs'
+import { computePointB } from '@/lib/point-b/compute'
+import { createServiceClient } from '@/lib/supabase-service'
+import type { PointA, AIAnalysis } from '@/types/onboarding'
 
 // ─── Service-role REST helper ─────────────────────────────────────────────────
 
@@ -88,56 +88,6 @@ const GRI_SECTION_ORDER = [
   'team',
   'owner-readiness',
 ]
-
-const EMPTY_BLOCK: BlockScore = {
-  score: 0,
-  status: 'critical',
-  top_issues: [],
-  recommendations: [],
-}
-
-function diagToPointA(diag: Record<string, unknown>): PointA {
-  const block = (k: string): BlockScore => {
-    const v = diag[k] as BlockScore | null
-    return v && typeof v === 'object' ? v : EMPTY_BLOCK
-  }
-  return {
-    overall_score: (diag.overall_score as number) ?? 0,
-    health_index: (diag.health_index as number) ?? 0,
-    stage: (diag.stage as PointA['stage']) ?? 'seed',
-    blocks: {
-      finance: block('finance_score'),
-      marketing: block('marketing_score'),
-      operations: block('operations_score'),
-      strategy: block('strategy_score'),
-      sales: block('sales_score'),
-    },
-    risks: (diag.risks as PointA['risks']) ?? [],
-    insights: (diag.insights as PointA['insights']) ?? [],
-    quick_wins: (diag.quick_wins as PointA['quick_wins']) ?? [],
-    data_gaps: (diag.data_gaps as PointA['data_gaps']) ?? [],
-  }
-}
-
-function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
-  if (!Array.isArray(raw)) return undefined
-  return raw
-    .map((item, i) => {
-      if (!item || typeof item !== 'object') return null
-      const o = item as Record<string, unknown>
-      const title = String(
-        o.title ?? o.label ?? o.name ?? o.criterionText ?? o.criterion ?? '',
-      ).trim()
-      if (!title) return null
-      return {
-        rank: typeof o.rank === 'number' ? o.rank : i + 1,
-        title,
-        block: String(o.block ?? o.blockId ?? o.section ?? ''),
-        severity: String(o.severity ?? o.level ?? 'high'),
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-}
 
 function answersFromRows(
   rows: Array<{ question_key: string; answer: unknown }> | null,
@@ -337,57 +287,24 @@ export async function loadPointAView(
 export async function loadPointBView(
   subject: ReportSubject,
 ): Promise<PointBV2 | null> {
-  const diagRows = await srGet<Array<Record<string, unknown>>>(
-    `diagnostics?user_id=eq.${encodeURIComponent(subject.userId)}&is_current=eq.true&select=*&limit=1`,
-  )
-  const diag = diagRows?.[0]
-  if (!diag) return null
-
-  const surveyRows = await srGet<Array<{ question_key: string; answer: unknown }>>(
-    `survey_answers?user_id=eq.${encodeURIComponent(subject.userId)}&select=question_key,answer`,
-  )
-  const answers = answersFromRows(surveyRows)
-
-  const griRows = await srGet<Array<Record<string, unknown>>>(
-    `gri_assessments?user_id=eq.${encodeURIComponent(subject.userId)}&is_current=eq.true&select=top_5_limits&limit=1`,
-  )
-  const griTop5 = mapGriTop5(griRows?.[0]?.top_5_limits)
-
-  // Current revenue (metrics layer) + canonical goals (companies.target_*).
-  let currentRevenueYear: number | null = null
-  {
-    const revRows = await srGet<Array<Record<string, unknown>>>(
-      `metrics?company_id=eq.${encodeURIComponent(subject.companyId)}&metric_key=eq.revenue&metric_value=gt.0&select=metric_value,period_year&order=period_year.desc&limit=1`,
-    )
-    currentRevenueYear = num(revRows?.[0]?.metric_value)
-  }
-
-  let goal12mYear: number | null = null
-  let goal3yYear: number | null = null
-  {
-    const compRows = await srGet<Array<Record<string, unknown>>>(
-      `companies?user_id=eq.${encodeURIComponent(subject.userId)}&select=target_revenue_12m_kzt,target_revenue_3y_kzt&limit=1`,
-    )
-    goal12mYear = num(compRows?.[0]?.target_revenue_12m_kzt)
-    goal3yYear = num(compRows?.[0]?.target_revenue_3y_kzt)
-  }
-
-  const pointA = diagToPointA(diag)
-  const pointB = calculatePointBV2(pointA, answers, {
-    diagnosticId: diag.id as string,
-    griTop5,
-    currentRevenueYear,
-    goal12mYear,
-    goal3yYear,
-  })
+  // The same inputs and computation as the client's own page (lib/point-b):
+  // revenue from the metrics registry (with its period), the Point A snapshot, goals.
+  // Service role: the share link has no session; the token already authorised ONE company.
+  const sb = createServiceClient()
+  const inputs = await loadPointBInputs(sb, subject.userId, { companyId: subject.companyId })
+  const pointB = computePointB(inputs)
+  if (!pointB || !inputs.diagnostic) return null
 
   // Overlay any persisted AI strategy bridge (point_b_analysis.ai_strategy).
-  const pbRows = await srGet<Array<Record<string, unknown>>>(
-    `point_b_analysis?diagnostic_id=eq.${encodeURIComponent(diag.id as string)}&is_current=eq.true&select=ai_strategy,ai_status&limit=1`,
-  )
-  const pb = pbRows?.[0]
-  if (pb?.ai_status === 'completed' && pb?.ai_strategy) {
-    pointB.ai_strategy = pb.ai_strategy as Record<string, unknown>
+  const { data: pb } = await sb
+    .from('point_b_analysis')
+    .select('ai_strategy, ai_status')
+    .eq('diagnostic_id', String(inputs.diagnostic.id))
+    .eq('is_current', true)
+    .maybeSingle()
+  const row = pb as { ai_strategy?: unknown; ai_status?: string } | null
+  if (row?.ai_status === 'completed' && row.ai_strategy) {
+    pointB.ai_strategy = row.ai_strategy as Record<string, unknown>
     pointB.ai_status = 'completed'
   }
 

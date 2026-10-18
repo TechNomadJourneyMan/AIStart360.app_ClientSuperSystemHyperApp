@@ -42,12 +42,12 @@ export function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
     .map((item, i) => {
       if (!item || typeof item !== 'object') return null
       const o = item as Record<string, unknown>
-      const title = String(o.title ?? o.label ?? o.name ?? o.criterion ?? '').trim()
+      const title = String(o.title ?? o.label ?? o.name ?? o.criterionText ?? o.criterion ?? '').trim()
       if (!title) return null
       return {
         rank: typeof o.rank === 'number' ? o.rank : i + 1,
         title,
-        block: String(o.block ?? o.section ?? o.sectionId ?? ''),
+        block: String(o.block ?? o.blockId ?? o.section ?? o.sectionId ?? ''),
         severity: String(o.severity ?? o.level ?? 'high'),
       }
     })

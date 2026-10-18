@@ -120,6 +120,8 @@ export interface PointBPdfInput {
     main_pain?: string
   }
   gap: PointBGapInput[]
+  /** Set when the revenue base is out of date, e.g. «Период выручки: 2024 · данные устарели». */
+  baseNote?: string | null
   realism?: {
     level: string
     score: number
@@ -683,6 +685,7 @@ export async function renderPointBPdf(input: PointBPdfInput): Promise<Buffer> {
   // ── Цели ─────────────────────────────────────────────────────────────────
   sectionHeader(doc, 'Цели владельца')
   kvRow(doc, 'Текущая выручка / год', fmtKzt(input.goals.current_revenue_year))
+  if (input.baseNote) paragraph(doc, input.baseNote, { size: 10, color: CRIT, gap: 0.2 })
   kvRow(doc, 'Цель на 12 месяцев / год', fmtKzt(input.goals.goal_12m_revenue_year), POSITIVE)
   kvRow(doc, 'Цель на 3 года / год', fmtKzt(input.goals.goal_3y_revenue_year), POSITIVE)
   if (input.goals.goal_12m_text) paragraph(doc, `Цель на 12 месяцев: ${input.goals.goal_12m_text}`, { size: 10, color: MUTED, gap: 0.2 })

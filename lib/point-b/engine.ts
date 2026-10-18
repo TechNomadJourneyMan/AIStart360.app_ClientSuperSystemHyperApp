@@ -382,7 +382,7 @@ export function buildScenarios(
 // ─── assessRealism ───────────────────────────────────────────────────────
 
 /** «2024», «II кв. 2025», or «прошлый период», when the base has no known period. */
-function basePeriodLabel(period: string | null | undefined): string {
+export function basePeriodLabel(period: string | null | undefined): string {
   if (!period) return 'прошлый период'
   return parsePeriodKey(period) ? periodLabel(period) : period
 }

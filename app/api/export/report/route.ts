@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { requireExpert } from '@/lib/expert-auth'
+import { guardExpertClient, requireExpert } from '@/lib/expert-auth'
 import {
   renderGriPdf,
   renderPointAPdf,
@@ -42,10 +42,12 @@ import {
   type PointBPdfInput,
   type SurveyPdfInput,
 } from '@/lib/reports/pdf'
-import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
-import type { PointA, BlockScore, AIAnalysis } from '@/types/onboarding'
+import { basePeriodLabel } from '@/lib/point-b/engine'
+import { diagToPointA } from '@/lib/point-b/adapters'
+import { loadPointBInputs } from '@/lib/point-b/inputs'
+import { computePointB } from '@/lib/point-b/compute'
+import type { PointA, AIAnalysis } from '@/types/onboarding'
 import type { PointBStrategy } from '@/types/point-b'
-import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 
 type ReportType = 'gri' | 'point-a' | 'point-b' | 'survey'
 const VALID_TYPES = new Set<ReportType>(['gri', 'point-a', 'point-b', 'survey'])
@@ -84,53 +86,10 @@ const GRI_SECTION_ORDER = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const EMPTY_BLOCK: BlockScore = { score: 0, status: 'critical', top_issues: [], recommendations: [] }
-
-function diagToPointA(diag: Record<string, unknown>): PointA {
-  const block = (k: string): BlockScore => {
-    const v = diag[k] as BlockScore | null
-    return v && typeof v === 'object' ? v : EMPTY_BLOCK
-  }
-  return {
-    overall_score: (diag.overall_score as number) ?? 0,
-    health_index: (diag.health_index as number) ?? 0,
-    stage: (diag.stage as PointA['stage']) ?? 'seed',
-    blocks: {
-      finance: block('finance_score'),
-      marketing: block('marketing_score'),
-      operations: block('operations_score'),
-      strategy: block('strategy_score'),
-      sales: block('sales_score'),
-    },
-    risks: (diag.risks as PointA['risks']) ?? [],
-    insights: (diag.insights as PointA['insights']) ?? [],
-    quick_wins: (diag.quick_wins as PointA['quick_wins']) ?? [],
-    data_gaps: (diag.data_gaps as PointA['data_gaps']) ?? [],
-  }
-}
-
 function num(v: unknown): number | null {
   if (v == null) return null
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : null
-}
-
-function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
-  if (!Array.isArray(raw)) return undefined
-  return raw
-    .map((item, i) => {
-      if (!item || typeof item !== 'object') return null
-      const o = item as Record<string, unknown>
-      const title = String(o.title ?? o.label ?? o.name ?? o.criterionText ?? o.criterion ?? '').trim()
-      if (!title) return null
-      return {
-        rank: typeof o.rank === 'number' ? o.rank : i + 1,
-        title,
-        block: String(o.block ?? o.blockId ?? o.section ?? ''),
-        severity: String(o.severity ?? o.level ?? 'high'),
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
 }
 
 /** Build a survey answers map (question_key → unwrapped value) for a user. */
@@ -354,66 +313,11 @@ async function loadPointB(
   sb: ReturnType<typeof createServerClient>,
   subject: Subject,
 ): Promise<PointBPdfInput | null> {
-  // Latest diagnostic (Point A foundation).
-  const { data: diag } = await sb
-    .from('diagnostics')
-    .select('*')
-    .eq('user_id', subject.userId)
-    .eq('is_current', true)
-    .maybeSingle()
-
-  if (!diag) return null
-
-  // Survey answers.
-  const { data: surveyRows } = await sb
-    .from('survey_answers')
-    .select('question_key, answer')
-    .eq('user_id', subject.userId)
-  const answers = answersFromRows(surveyRows)
-
-  // GRI TOP-5.
-  const { data: gri } = await sb
-    .from('gri_assessments')
-    .select('top_5_limits')
-    .eq('user_id', subject.userId)
-    .eq('is_current', true)
-    .maybeSingle()
-  const griTop5 = mapGriTop5(gri?.top_5_limits)
-
-  // Current revenue (metrics layer) + canonical goals (companies.target_*).
-  let currentRevenueYear: number | null = null
-  if (subject.companyId) {
-    const { data: revRows } = await sb
-      .from('metrics')
-      .select('metric_value, period_year')
-      .eq('company_id', subject.companyId)
-      .in('metric_key', [...REVENUE_METRIC_IDS])
-      .gt('metric_value', 0)
-      .order('period_year', { ascending: false })
-      .limit(1)
-    currentRevenueYear = num(revRows?.[0]?.metric_value)
-  }
-
-  let goal12mYear: number | null = null
-  let goal3yYear: number | null = null
-  {
-    const { data: comp } = await sb
-      .from('companies')
-      .select('target_revenue_12m_kzt, target_revenue_3y_kzt')
-      .eq('user_id', subject.userId)
-      .maybeSingle()
-    goal12mYear = num(comp?.target_revenue_12m_kzt)
-    goal3yYear = num(comp?.target_revenue_3y_kzt)
-  }
-
-  const pointA = diagToPointA(diag as Record<string, unknown>)
-  const pointB = calculatePointBV2(pointA, answers, {
-    diagnosticId: (diag as Record<string, unknown>).id as string,
-    griTop5,
-    currentRevenueYear,
-    goal12mYear,
-    goal3yYear,
-  })
+  // The same inputs and computation as the client's own page and the share link (lib/point-b).
+  const inputs = await loadPointBInputs(sb, subject.userId, { companyId: subject.companyId })
+  const pointB = computePointB(inputs)
+  if (!pointB || !inputs.diagnostic) return null
+  const diag = inputs.diagnostic
 
   // Persisted AI strategy bridge (point_b_analysis.ai_strategy), best-effort.
   let aiStrategy: PointBStrategy | null = null
@@ -436,8 +340,10 @@ async function loadPointB(
     generatedAt: pointB.generated_at,
   }
 
+  const base = pointB.data_quality.base
   return {
     meta,
+    baseNote: base.stale ? `Период выручки: ${basePeriodLabel(base.period)} · данные устарели` : null,
     goals: {
       current_revenue_year: pointB.goals.current_revenue_year,
       goal_12m_revenue_year: pointB.goals.goal_12m_revenue_year,
@@ -531,6 +437,14 @@ export async function GET(req: NextRequest) {
   if (!subject) {
     // Either the company doesn't exist or the caller isn't authorized to view it.
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
+  // Point B of someone else's company: an expert reaches only their assigned clients (admins — any).
+  if (type === 'point-b' && subject.userId !== user.id) {
+    const viewer = await requireExpert()
+    if (!viewer) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    const denied = await guardExpertClient(viewer, subject.userId)
+    if (denied) return denied
   }
 
   let pdf: Buffer | null = null
