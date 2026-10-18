@@ -1,11 +1,11 @@
 /**
- * lib/point-b/versions.ts — the ONE path that writes an expert correction of Point B.
+ * lib/point-b/versions.ts — LEGACY writer of `point_b_versions` (an expert correction as a draft,
+ * `is_approved: false`).
  *
- * A correction is always a DRAFT (`is_approved: false`): the client sees it only
- * after an Admin / Super Admin approves it
- * (POST /api/giga-admin/users/:id/review/point-b/approve — the single approval
- * path). Two older routes used to insert `is_approved: true` and published the
- * expert's text straight to the client; every writer now goes through here.
+ * Since plan Phase 1 Task 6 no route calls it: expert corrections are written as PLAN VERSIONS
+ * (lib/point-b/plan/flow.ts → saveNotesAndSubmit) and approved through the plan
+ * (…/point-b/plan/versions/:versionId/approve). The table and this helper stay for the history
+ * already in `point_b_versions` (read as a fallback by lib/point-b/compat.ts) and are not removed.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { POINT_B_VERSION_COLUMNS } from '@/lib/expert-review/point-b'

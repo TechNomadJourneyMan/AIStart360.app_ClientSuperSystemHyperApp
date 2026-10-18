@@ -184,6 +184,20 @@ export async function updateDraft(sb: SupabaseClient, versionId: string, patch: 
   throw planError(cur ? 'not_editable' : 'not_found')
 }
 
+/**
+ * Refreshes the goals SNAPSHOT of an open version (draft or in_review) from the live goals. The
+ * snapshot is derived data (metric_targets + pb_goal_reviews), not content the author wrote, so it
+ * may follow the live statuses until the version is approved — an approver who has just verified
+ * the primary goal must not have to send the version back. An approved / superseded version is
+ * never touched (the condition fails; the immutability trigger would refuse anyway). null when the
+ * version is not open any more.
+ */
+export async function refreshGoals(sb: SupabaseClient, versionId: string, goals: PlanGoalsSnapshot): Promise<PlanVersionRow | null> {
+  const { data, error } = await sb.from('pb_plan_versions').update({ goals }).eq('id', versionId).in('status', [...OPEN_STATUSES]).select('*').maybeSingle()
+  if (error) throw dbError('refresh goals', error)
+  return (data as PlanVersionRow | null) ?? null
+}
+
 /** Conditional status change; the loser of a race (or a wrong state) gets bad_state. */
 async function transition(
   sb: SupabaseClient, versionId: string, from: PlanVersionRow['status'], patch: Record<string, unknown>, op: string,

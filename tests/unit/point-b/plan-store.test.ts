@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  approveVersion, approveVersionDetailed, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, rejectVersion, submitVersion, updateDraft,
+  approveVersion, approveVersionDetailed, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, refreshGoals, rejectVersion, submitVersion, updateDraft,
 } from '@/lib/point-b/plan/store'
 import type { GoalReviewStatus, PlanGoalsSnapshot } from '@/lib/point-b/plan/types'
 import { pbDb } from './_pbdb'
@@ -228,5 +228,15 @@ describe('plan store', () => {
     h.db.pb_plans[0].published_version_id = null // e.g. a crash between the two writes
     expect((await loadPlanBundle(h.sb, COMPANY)).published?.id).toBe(v1.id)
   })
-})
 
+  it('refreshGoals updates the snapshot of a draft and of a version in review, never of an approved or replaced one', async () => {
+    const h = await setup()
+    const v = await createDraft(h.sb, h.plan, draftInput({ goals: goals('owner_draft') }))
+    expect((await refreshGoals(h.sb, v.id, goals('verified')))?.goals.items[0].reviewStatus).toBe('verified')
+    await submitVersion(h.sb, v.id)
+    expect((await refreshGoals(h.sb, v.id, goals('agreed')))?.goals.items[0].reviewStatus).toBe('agreed')
+    await approveVersion(h.sb, v.id, ADMIN)
+    expect(await refreshGoals(h.sb, v.id, goals('disputed'))).toBeNull()
+    expect(h.db.pb_plan_versions[0].goals).toMatchObject({ items: [{ reviewStatus: 'agreed' }] })
+  })
+})

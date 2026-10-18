@@ -2,68 +2,40 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
-import { guardClientAccess } from '@/lib/admin/client-scope'
-import { recordAdminAction } from '@/lib/admin/audit'
-import { createServiceClient } from '@/lib/supabase-service'
-import { UUID_RE } from '@/lib/expert-review/server'
-import { POINT_B_VERSION_COLUMNS, canApprovePointB } from '@/lib/expert-review/point-b'
+import { legacyShape } from '@/lib/point-b/plan/flow'
+import { approveAndAudit, exceptionReasonOf, findVersion, guarded, guardPlanRoute, versionNotFound } from '@/lib/point-b/plan/route-guard'
 
 /**
- * POST /api/giga-admin/users/:id/review/point-b/approve { versionId }
+ * POST /api/giga-admin/users/:id/review/point-b/approve { versionId, exceptionReason? }
  *
  * Одобрить экспертную версию Точки Б — только Admin / Super Admin (рангом выше
- * SuperExpert). После одобрения клиент видит её в своей Точке Б.
+ * SuperExpert). `versionId` — версия ПЛАНА этого клиента; условия и исключение — те же, что в
+ * …/point-b/plan/versions/:versionId/approve (главная цель проверена, причина изменений указана;
+ * иначе 409 с `reasons`). После одобрения клиент видит версию в своей Точке Б.
  */
 
-const bodySchema = z.object({ versionId: z.string().regex(UUID_RE, 'invalid versionId') })
+const bodySchema = z.object({
+  // Looked up in THIS client's plan, so a foreign or malformed id is simply «not found».
+  versionId: z.string().trim().min(1).max(64),
+  exceptionReason: z.string().max(1000).nullable().optional(),
+})
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'clients.review')
-  if (guard.response) return guard.response
-  if (!canApprovePointB(guard.actor.role)) {
-    return NextResponse.json({ ok: false, error: 'Одобрить Точку Б может только Admin или Super Admin' }, { status: 403 })
-  }
-  if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
-  const scopeDenied = await guardClientAccess(guard.actor, params.id)
-  if (scopeDenied) return scopeDenied
-  const denied = await forbidTarget(guard.actor, params.id)
-  if (denied) return denied
+  return guarded('giga/review/point-b/approve POST', async () => {
+    const g = await guardPlanRoute(req, params.id, { write: true, approver: true })
+    if (!g.ok) return g.response
+    const { ctx } = g
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'Не указана версия' }, { status: 400 })
+    const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+    if (!parsed.success) return NextResponse.json({ ok: false, error: 'Не указана версия' }, { status: 400 })
+    const exception = exceptionReasonOf(parsed.data.exceptionReason)
+    if ('response' in exception) return exception.response
 
-  const sb = createServiceClient()
-  // Версия должна принадлежать диагностике ЭТОГО клиента.
-  const { data: version } = await sb
-    .from('point_b_versions')
-    .select('id, diagnostic_id, is_approved')
-    .eq('id', parsed.data.versionId)
-    .maybeSingle()
-  const v = version as { id: string; diagnostic_id: string | null; is_approved: boolean } | null
-  let owned = false
-  if (v?.diagnostic_id) {
-    const { data: diag } = await sb.from('diagnostics').select('user_id').eq('id', v.diagnostic_id).maybeSingle()
-    owned = (diag as { user_id?: string } | null)?.user_id === params.id
-  }
-  if (!v || !owned) return NextResponse.json({ ok: false, error: 'Версия не найдена' }, { status: 404 })
-  if (v.is_approved) return NextResponse.json({ ok: false, error: 'Версия уже одобрена' }, { status: 409 })
+    // The version must belong to THIS client's plan.
+    const found = await findVersion(ctx, parsed.data.versionId)
+    if (!found) return versionNotFound()
 
-  const now = new Date().toISOString()
-  const { data, error } = await sb
-    .from('point_b_versions')
-    .update({ is_approved: true, approved_by: guard.actor.id, approved_at: now })
-    .eq('id', v.id)
-    .eq('is_approved', false)
-    .select(POINT_B_VERSION_COLUMNS)
-    .maybeSingle()
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось одобрить версию' }, { status: 500 })
-  if (!data) return NextResponse.json({ ok: false, error: 'Версия уже одобрена' }, { status: 409 })
-
-  await recordAdminAction(guard.actor, {
-    action: 'expert.point_b_approved', entityType: 'point_b_version', entityId: v.id, targetUserId: params.id,
-    oldValue: { is_approved: false }, newValue: { is_approved: true, approved_at: now },
-  }, req)
-
-  return NextResponse.json({ ok: true, data })
+    const result = await approveAndAudit(req, ctx, found.version, exception.reason, 'legacy-route')
+    return NextResponse.json({ ok: true, data: legacyShape(result.version) })
+  })
 }

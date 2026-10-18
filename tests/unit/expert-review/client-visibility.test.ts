@@ -2,7 +2,7 @@
  * Клиент видит только опубликованное:
  *  - GET /api/v1/expert-review — только status='published', только свои, без email;
  *  - RLS миграции 087: client_read_own и owner-read Точки Б с фильтрами;
- *  - экспертная Точка Б сохраняется неодобренной, одобряет только Admin/Super Admin.
+ *  - (экспертная Точка Б — версии плана: tests/unit/point-b/routes-plan.test.ts).
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -36,8 +36,6 @@ vi.mock('@/lib/admin/giga-actor', async () => {
 vi.mock('@/lib/admin/audit', () => ({ recordAdminAction: async () => true }))
 
 const clientApi = await import('@/app/api/v1/expert-review/route')
-const pointB = await import('@/app/api/giga-admin/users/[id]/review/point-b/route')
-const approve = await import('@/app/api/giga-admin/users/[id]/review/point-b/approve/route')
 
 const c = (id: string, over: Record<string, unknown>) => ({
   id, client_id: UID, author_id: ME, author_title: null, block_key: null, text: id, status: 'published',
@@ -102,35 +100,5 @@ describe('migration 087 RLS', () => {
   })
 })
 
-describe('экспертная Точка Б', () => {
-  const req = (path: string, body: unknown) =>
-    new NextRequest(`http://localhost${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-
-  it('сохраняется неодобренной, автор — отображаемое имя', async () => {
-    const res = await pointB.POST(req(`/api/giga-admin/users/${UID}/review/point-b`, { expert_notes: 'Сместить фокус на удержание' }), { params: { id: UID } })
-    expect(res.status).toBe(200)
-    const row = state.db.tables.point_b_versions[0] as Record<string, unknown>
-    expect(row).toMatchObject({ is_approved: false, diagnostic_id: DIAG, author_name: 'Эксперт AIStart360' })
-  })
-
-  it('SuperExpert одобрить не может, Admin — может', async () => {
-    await pointB.POST(req(`/api/giga-admin/users/${UID}/review/point-b`, { expert_notes: 'Заметки' }), { params: { id: UID } })
-    const versionId = (state.db.tables.point_b_versions[0] as { id: string }).id
-    const call = () => approve.POST(req(`/api/giga-admin/users/${UID}/review/point-b/approve`, { versionId }), { params: { id: UID } })
-
-    expect((await call()).status).toBe(403)
-    expect((state.db.tables.point_b_versions[0] as Record<string, unknown>).is_approved).toBe(false)
-
-    state.role = 'admin'
-    expect((await call()).status).toBe(200)
-    expect(state.db.tables.point_b_versions[0]).toMatchObject({ is_approved: true, approved_by: ME })
-  })
-
-  it('версию чужого клиента одобрить нельзя', async () => {
-    state.role = 'super_admin'
-    state.db.tables.diagnostics.push({ id: 'd-other', user_id: OTHER, is_current: true })
-    state.db.tables.point_b_versions.push({ id: 'aaaaaaaa-0000-4000-8000-00000000000f', diagnostic_id: 'd-other', is_approved: false })
-    const res = await approve.POST(req(`/api/giga-admin/users/${UID}/review/point-b/approve`, { versionId: 'aaaaaaaa-0000-4000-8000-00000000000f' }), { params: { id: UID } })
-    expect(res.status).toBe(404)
-  })
-})
+// Экспертная Точка Б (сохраняется на одобрение, одобряет только Admin / Super Admin, чужую версию
+// одобрить нельзя) теперь пишется версиями ПЛАНА: тесты — tests/unit/point-b/routes-plan.test.ts.

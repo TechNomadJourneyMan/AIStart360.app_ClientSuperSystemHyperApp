@@ -1,6 +1,8 @@
 /**
- * Expert corrections of Point B are drafts until an Admin / Super Admin approves
- * them: one write path (saveExpertVersionDraft), the client sees approved ones only.
+ * Expert corrections of Point B are not visible to the client until an Admin / Super Admin
+ * approves them. The legacy `saveExpertVersionDraft` helper keeps its contract; the three old
+ * write routes now write PLAN VERSIONS (covered by routes-plan.test.ts) — here: their guards
+ * (assignment, authentication, profanity) and the client route's legacy fallback.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -81,22 +83,7 @@ describe('saveExpertVersionDraft', () => {
 })
 
 describe('expert route', () => {
-  it('POST expert point-b-version creates an unapproved version and the client route does not return it', async () => {
-    const res = await expertVersion.POST(post({ expert_notes: 'Цель агрессивная — начните с конверсии' }), idParams(CLIENT))
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.data.is_approved).toBe(false)
-    expect(versions()).toHaveLength(1)
-    expect(versions()[0].is_approved).toBe(false)
-    // the label shown to the client is a name, never the email
-    expect(versions()[0].author_name).toBe('Алия Эксперт')
-
-    const client = await (await clientRoute.GET(get())).json()
-    expect(client.ok).toBe(true)
-    expect(client.expert_version).toBeNull()
-  })
-
-  it('profanity in notes → 400 with field expert_notes', async () => {
+  it('profanity in notes → 400 with field expert_notes, nothing written', async () => {
     const res = await expertVersion.POST(post({ expert_notes: 'Это полная хуйня' }), idParams(CLIENT))
     expect(res.status).toBe(400)
     expect((await res.json()).field).toBe('expert_notes')
@@ -108,6 +95,7 @@ describe('expert route', () => {
     expect((await expertVersion.POST(post({ expert_notes: 'ok' }), idParams(CLIENT))).status).toBe(403)
     expect((await expertVersion.GET(get(), idParams(CLIENT))).status).toBe(403)
     expect(versions()).toHaveLength(0)
+    expect(s.db!.db.pb_plan_versions ?? []).toHaveLength(0)
   })
 
   it('an unauthenticated viewer is refused', async () => {
@@ -119,26 +107,11 @@ describe('expert route', () => {
 describe('GIGA routes', () => {
   beforeEach(() => { s.actor = { role: 'super_expert', scope: 'all', id: ADMIN } })
 
-  it('POST giga point-b creates an unapproved version', async () => {
-    const res = await gigaPointB.POST(post({ expert_notes: 'Нужна корректировка плана' }), idParams(CLIENT))
-    expect(res.status).toBe(200)
-    expect((await res.json()).data.is_approved).toBe(false)
-    expect(versions()[0]).toMatchObject({ is_approved: false, author_name: 'Админ Главный' })
-    const client = await (await clientRoute.GET(get())).json()
-    expect(client.expert_version).toBeNull()
-  })
-
   it('profanity in notes → 400 with field expert_notes (unchanged)', async () => {
     const res = await gigaPointB.POST(post({ expert_notes: 'Это полная хуйня' }), idParams(CLIENT))
     expect(res.status).toBe(400)
     expect((await res.json()).field).toBe('expert_notes')
     expect(versions()).toHaveLength(0)
-  })
-
-  it('the review route saves a draft through the same helper', async () => {
-    const res = await reviewRoute.POST(post({ expert_notes: 'Версия на проверку' }), idParams(CLIENT))
-    expect(res.status).toBe(200)
-    expect(versions()[0].is_approved).toBe(false)
   })
 
   it('an actor limited to assigned clients gets 403 on a foreign client (POST, review GET/POST, approve)', async () => {
@@ -165,21 +138,9 @@ describe('client route', () => {
 })
 
 describe('approval', () => {
-  beforeEach(() => {
-    s.db!.db.point_b_versions.push({ id: VERSION_ID, diagnostic_id: 'diag-1', expert_notes: 'Черновик', author_name: 'Алия Эксперт', is_approved: false, created_at: '2026-10-05T00:00:00Z' })
-  })
-
-  it('only admin or super admin can approve (existing approve route) — expert gets 403', async () => {
+  it('only admin or super admin can approve (legacy approve route) — an expert gets 403', async () => {
     s.actor = { role: 'super_expert', scope: 'all', id: EXPERT }
     const denied = await approveRoute.POST(post({ versionId: VERSION_ID }), idParams(CLIENT))
     expect(denied.status).toBe(403)
-    expect(versions()[0].is_approved).toBe(false)
-
-    s.actor = { role: 'admin', scope: 'all', id: ADMIN }
-    const ok = await approveRoute.POST(post({ versionId: VERSION_ID }), idParams(CLIENT))
-    expect(ok.status).toBe(200)
-    expect(versions()[0]).toMatchObject({ is_approved: true, approved_by: ADMIN })
-    const body = await (await clientRoute.GET(get())).json()
-    expect(body.expert_version.expert_notes).toBe('Черновик')
   })
 })
