@@ -44,6 +44,7 @@ const ACCESS_FEATURES = [
   { key: 'pdf_export', label: 'PDF' },
   { key: 'ai_chat', label: 'AI-чат' },
   { key: 'benchmarks', label: 'Бенчмарки' },
+  { key: 'point_b', label: 'Точка Б' },
 ] as const
 
 export function AccessControls({ userId }: { userId: string }) {

@@ -10,7 +10,7 @@
  */
 
 export type Tier = 'free' | 'pro'
-export type Feature = 'gri_full' | 'pdf_export' | 'ai_chat' | 'benchmarks'
+export type Feature = 'gri_full' | 'pdf_export' | 'ai_chat' | 'benchmarks' | 'point_b'
 
 export interface Entitlements {
   tier: Tier
@@ -21,6 +21,8 @@ export interface Entitlements {
   pdf_export: boolean
   ai_chat: boolean
   benchmarks: boolean
+  /** Точка Б (план и цели) — на Pro вместе с полным GRI и Точкой А. */
+  point_b: boolean
 }
 
 const TIER_BASE: Record<Tier, Omit<Entitlements, 'tier'>> = {
@@ -30,6 +32,7 @@ const TIER_BASE: Record<Tier, Omit<Entitlements, 'tier'>> = {
     pdf_export: false,
     ai_chat: false,
     benchmarks: false,
+    point_b: false,
   },
   pro: {
     gri_full: true,
@@ -37,6 +40,7 @@ const TIER_BASE: Record<Tier, Omit<Entitlements, 'tier'>> = {
     pdf_export: true,
     ai_chat: true,
     benchmarks: true,
+    point_b: true,
   },
 }
 
@@ -49,7 +53,7 @@ export function normalizeOverrides(raw: unknown): Partial<Record<Feature, boolea
   if (!raw || typeof raw !== 'object') return {}
   const src = raw as Record<string, unknown>
   const out: Partial<Record<Feature, boolean>> = {}
-  for (const f of ['gri_full', 'pdf_export', 'ai_chat', 'benchmarks'] as Feature[]) {
+  for (const f of ['gri_full', 'pdf_export', 'ai_chat', 'benchmarks', 'point_b'] as Feature[]) {
     if (typeof src[f] === 'boolean') out[f] = src[f] as boolean
   }
   return out
@@ -73,6 +77,7 @@ export function entitlementsFor(
     pdf_export: o.pdf_export ?? base.pdf_export,
     ai_chat: o.ai_chat ?? base.ai_chat,
     benchmarks: o.benchmarks ?? base.benchmarks,
+    point_b: o.point_b ?? base.point_b,
   }
 }
 

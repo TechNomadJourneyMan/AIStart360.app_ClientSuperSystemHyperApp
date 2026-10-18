@@ -46,7 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 /**
  * PATCH /api/giga-admin/users/:id/access — тариф и per-user фича-флаги (Фаза 6C).
- * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks? } }
+ * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks?, point_b? } }
  *
  * tier больше не пишется в profiles напрямую: смену тарифа делает billing-сервис
  * (lib/payments/billing.ts, миграция 106) — subscriptions + profiles.tier одной

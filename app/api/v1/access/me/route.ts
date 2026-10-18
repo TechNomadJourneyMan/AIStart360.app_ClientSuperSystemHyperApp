@@ -46,6 +46,7 @@ export async function GET() {
         pdf_export: ent.pdf_export,
         ai_chat: ent.ai_chat,
         benchmarks: ent.benchmarks,
+        point_b: ent.point_b,
       },
       griRunsUsed,
       griRunsLimit: Number.isFinite(ent.gri_full_limit) ? ent.gri_full_limit : null,

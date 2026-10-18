@@ -14,6 +14,8 @@ import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
+import { gateFeature } from '@/lib/access/gate'
+import { createServiceClient } from '@/lib/supabase-service'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -48,6 +50,8 @@ export async function POST(req: NextRequest) {
     // The internal token must be bound to exactly this user and diagnostic
     // (lib/internal-auth v2), so a token minted for another call is refused.
     const internal = userId ? hasValidInternalToken(req, { userId, diagnosticId }) : false
+    // Staff acting for a client (not the client's own tariff) are not gated.
+    let staffOnBehalf = false
     if (userId) {
       if (!internal) {
         const caller = await getSessionUser(sb)
@@ -55,6 +59,7 @@ export async function POST(req: NextRequest) {
         if (caller.id !== userId && !isStaffRole(await getSessionRole(sb, caller.id))) {
           return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
         }
+        staffOnBehalf = caller.id !== userId
       }
     } else {
       const caller = await getSessionUser(sb)
@@ -62,6 +67,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
       }
       userId = caller.id
+    }
+
+    // Tariff gate (Pro), for the user whose plan is generated. Read with the service client:
+    // the internal fan-out has no session, and a session cannot read another user's tier.
+    if (!staffOnBehalf) {
+      const upgrade = await gateFeature(createServiceClient(), userId, 'point_b', { exemptStaff: true })
+      if (upgrade) return upgrade
     }
 
     if (!internal && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {

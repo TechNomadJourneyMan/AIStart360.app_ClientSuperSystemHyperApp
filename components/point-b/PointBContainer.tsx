@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import PointBView from './PointBView'
+import PointBPaywall from './PointBPaywall'
+import { isUpgradeRequired } from './pointBAccess'
 import type { PointBV2 } from '@/lib/point-b/engine'
 
 /**
@@ -20,6 +22,7 @@ export default function PointBContainer() {
   const [reason, setReason] = useState<string | null>(null)
   const [expertNote, setExpertNote] = useState<{ expert_notes: string; author_name?: string | null; created_at?: string } | null>(null)
   const [aiStatus, setAiStatus] = useState<PointBV2['ai_status']>('none')
+  const [locked, setLocked] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -33,7 +36,13 @@ export default function PointBContainer() {
         error?: string
         expert_version?: { expert_notes: string; author_name?: string | null; created_at?: string } | null
       }
-      if (!res.ok || !json.ok) {
+      if (isUpgradeRequired(res.status, json)) {
+        // The tariff gate was turned on (or the tab was open before it): Pro placeholder, no data.
+        setLocked(true)
+        setPointB(null)
+        setReason(null)
+        setAiStatus('none')
+      } else if (!res.ok || !json.ok) {
         setError(json.error || `Ошибка загрузки (${res.status})`)
         setPointB(null)
         setReason(null)
@@ -112,6 +121,8 @@ export default function PointBContainer() {
     if (!res.ok || !json.ok) throw new Error(json.error || 'Не удалось сохранить выручку')
     await load()
   }, [load])
+
+  if (locked) return <PointBPaywall />
 
   return (
     <PointBView

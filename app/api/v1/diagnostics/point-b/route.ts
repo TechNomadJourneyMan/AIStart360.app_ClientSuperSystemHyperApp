@@ -8,6 +8,7 @@ import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { expertDisplayName } from '@/lib/expert-review/blocks'
 import { trackUserAction } from '@/lib/events/server'
+import { gateFeature } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -28,6 +29,10 @@ export async function GET(_req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Tariff gate (Pro): off while the `access_gates` master switch is off; staff are exempt.
+  const upgrade = await gateFeature(sb, user.id, 'point_b', { exemptStaff: true })
+  if (upgrade) return upgrade
 
   try {
     // 1–5. Everything Point B reads, once, for the SESSION user (lib/point-b/inputs.ts):

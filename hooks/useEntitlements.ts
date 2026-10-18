@@ -17,6 +17,7 @@ export interface AccessMe {
   pdf_export: boolean
   ai_chat: boolean
   benchmarks: boolean
+  point_b: boolean
   griRunsUsed: number
   canRunFullGri: boolean
 }
@@ -27,6 +28,7 @@ const OPEN: AccessMe = {
   pdf_export: true,
   ai_chat: true,
   benchmarks: true,
+  point_b: true,
   griRunsUsed: 0,
   canRunFullGri: true,
 }
@@ -44,6 +46,7 @@ async function fetchAccessMe(): Promise<AccessMe> {
     pdf_export: Boolean(j.entitlements?.pdf_export),
     ai_chat: Boolean(j.entitlements?.ai_chat),
     benchmarks: Boolean(j.entitlements?.benchmarks),
+    point_b: Boolean(j.entitlements?.point_b),
     griRunsUsed: Number(j.griRunsUsed ?? 0),
     canRunFullGri: Boolean(j.canRunFullGri),
   }
