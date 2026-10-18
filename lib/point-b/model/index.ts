@@ -1,5 +1,6 @@
 /** Public API of the Point B model (lib/point-b/model). The IO helpers are in `history.ts` and `load.ts`. */
 export { computeModel } from './compute'
+export { simulateCash, financeReady, type CashInputs } from './cash'
 export { buildModelInputs, sanitizeHistory, withDerivedActiveBase } from './inputs'
 export { determineLevel, templateKeyFor, FUNNEL_TEMPLATES } from './levels'
 export { defaultProfiles, normalizeProfiles, PROFILE_KEYS, PROFILE_LIMITS } from './profiles'
@@ -9,5 +10,5 @@ export { LEVER_CAPS, solveFunnelScenario, solveGrowthScenario } from './scenario
 export {
   MODEL_VERSION, ModelInputError,
   type DataLevel, type Forecast, type MissingInput, type ModelGoal, type ModelInputs, type ModelKind, type ModelResult,
-  type Origin, type Range, type ScenarioProfile, type ScenarioResult, type Sourced, type TemplateKey, type VerdictKey,
+  type Origin, type Range, type ScenarioFinance, type ScenarioProfile, type ScenarioResult, type Sourced, type TemplateKey, type VerdictKey,
 } from './types'

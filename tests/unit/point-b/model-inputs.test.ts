@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { pbDb } from './_pbdb'
-import { FUNNEL_METRICS, NOW, REVENUE, modelInputs, pointBInputs, src } from './_model'
+import { FUNNEL_METRICS, NOW, REVENUE, finmodelState, modelInputs, modelInputsL2, pointBInputs, src } from './_model'
 import { loadRevenueHistory } from '@/lib/point-b/model/history'
 import { buildModelInputs, sanitizeHistory, withDerivedActiveBase } from '@/lib/point-b/model/inputs'
 import { determineLevel, templateKeyFor } from '@/lib/point-b/model/levels'
@@ -45,6 +45,16 @@ describe('buildModelInputs', () => {
     expect(i.base.revenueYear).toEqual({ value: 60_000_000, origin: 'fact', period: '2026' })
     expect(i.template).toBe('ecommerce')
     expect(i.now).toBe('2026-10-18T09:00:00.000Z')
+  })
+
+  it('the gross margin becomes a fraction and the finmodel is passed through (null when not loaded)', () => {
+    const plain = build({ metrics: { ...FUNNEL_METRICS, 'biz.finansy.valovaya_marzha': 35 } })
+    expect(plain.grossMargin?.value).toBeCloseTo(0.35, 12)
+    expect(plain.finmodel).toBeNull()
+    const fin = finmodelState()
+    const withFin = buildModelInputs({ pb: pointBInputs(), history: [], template: 'ecommerce', goals: goals(), now: NOW, finmodel: fin })
+    expect(withFin.finmodel).toBe(fin)
+    expect(withFin.grossMargin).toEqual({ value: null, origin: null, period: null })
   })
 
   it('a zero, negative or missing metric is not a lever (null, no invented default)', () => {
@@ -157,9 +167,13 @@ describe('determineLevel', () => {
     expect(determineLevel(modelInputs({ template: 'production' })).missing.map((m) => m.key)).toEqual(['headcount'])
   })
 
-  it('level 2 is never issued in this phase', () => {
+  it('level 2 is not issued by the levers alone: it needs a complete finmodel and a margin', () => {
     const levels = [modelInputs(), modelInputs({ goal: null }), modelInputs({ template: 'production' })].map((i) => determineLevel(i).level)
     expect(levels.every((l) => l === 0 || l === 1)).toBe(true)
+    expect(determineLevel(modelInputsL2())).toMatchObject({ level: 2, kind: 'funnel' })
+    expect(determineLevel(modelInputsL2({ template: 'production' }, {}, { template: 'production' }))).toMatchObject({ level: 2, kind: 'growth' })
+    // a goalless client cannot reach level 2 whatever the finmodel says
+    expect(determineLevel(modelInputsL2({ goal: null })).level).toBe(0)
   })
 })
 

@@ -9,11 +9,13 @@
  * RUN-RATES: the goal is an annual revenue at the deadline and it is reached in the first month whose
  * (de-seasonalised) monthly run-rate × 12 is at least the goal.
  */
+import type { FinmodelState } from '../finmodel/store'
 import type { GoalReviewStatus } from '../plan/types'
 
-export const MODEL_VERSION = 'pb-model-1'
+/** pb-model-2: level 2 (profit and cash flow). A result of pb-model-1 is read but has no money: it is recalculated. */
+export const MODEL_VERSION = 'pb-model-2'
 
-/** 0 — only goals; 1 — levers (this phase); 2 — financial model (a later phase). */
+/** 0 — only goals; 1 — levers; 2 — financial model (profit and cash flow, needs a complete finmodel). */
 export type DataLevel = 0 | 1 | 2
 export type ModelKind = 'funnel' | 'growth' | 'none'
 export type TemplateKey = 'default' | 'ecommerce' | 'services' | 'production'
@@ -55,6 +57,10 @@ export interface ModelInputs {
   }
   /** Monthly revenue, ascending. */
   history: Array<{ period: string /* YYYY-MM */; revenue: number }>
+  /** Gross margin, a fraction 0..1 (the registry stores percent points). Level 2 needs it. */
+  grossMargin?: Sourced<number>
+  /** The «Финмодель» of the company (level 2). Absent / null = not loaded: the model stays at level 1 without level-2 hints. */
+  finmodel?: FinmodelState | null
   goal: ModelGoal | null
   /** ISO, passed in from outside. */
   now: string

@@ -8,6 +8,7 @@
  */
 import { REVENUE_GOAL_METRIC } from '@/lib/goals/store'
 import { horizonDeadline, horizonMonths, pickPrimaryRevenueGoal } from '../horizons'
+import type { FinmodelState } from '../finmodel/store'
 import type { PointBInputs } from '../inputs'
 import { POINT_B_ACTIVE_CLIENTS_METRIC, POINT_B_HEADCOUNT_METRIC } from '../metrics'
 import { POINT_B_LEVER_METRICS } from '../engine'
@@ -67,6 +68,8 @@ export function buildModelInputs(input: {
   template: TemplateKey
   goals: PlanGoalsSnapshot | null
   now: Date
+  /** The «Финмодель» (level 2). Omitted = not loaded. */
+  finmodel?: FinmodelState | null
 }): ModelInputs {
   const { pb, now } = input
   const metrics = pb.metricOptions.metrics
@@ -90,6 +93,9 @@ export function buildModelInputs(input: {
     },
     levers: withDerivedActiveBase(levers),
     history: sanitizeHistory(input.history),
+    // The registry stores the margin in percent points («35» = 35%); the model works with fractions.
+    grossMargin: lever(metrics, POINT_B_LEVER_METRICS.margin, 0.01),
+    finmodel: input.finmodel ?? null,
     goal: modelGoal(input.goals, now),
     now: now.toISOString(),
   }

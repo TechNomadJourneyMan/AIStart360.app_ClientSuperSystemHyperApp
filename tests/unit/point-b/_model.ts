@@ -2,6 +2,9 @@
  * Shared builders for the Point B model tests: PointBInputs / ModelInputs with sensible e-commerce
  * numbers (base 60M, goal 120M in 12 months, 300 leads × 12% × 185 000 ₸), overridable per test.
  */
+import { FINMODEL_KEYS, type FinmodelKey } from '@/lib/point-b/finmodel/keys'
+import { mergeFinmodel, type FinmodelRow, type FinmodelState } from '@/lib/point-b/finmodel/store'
+import type { FinmodelFacts } from '@/lib/point-b/finmodel/sources'
 import type { PointBInputs } from '@/lib/point-b/inputs'
 import type { ModelInputs, Sourced } from '@/lib/point-b/model/types'
 
@@ -64,4 +67,53 @@ export function modelInputs(over: Partial<Omit<ModelInputs, 'levers'>> & { lever
     now: NOW.toISOString(),
     ...rest,
   }
+}
+
+// ─── level 2 (finmodel) ─────────────────────────────────────────────────────
+
+/** A complete, round finmodel of the e-commerce golden client (money in ₸, tax as a fraction, days). */
+export const FULL_FINMODEL: Record<FinmodelKey, number> = {
+  cash_balance: 4_000_000,
+  fixed_costs_month: 500_000,
+  payroll_month: 1_000_000,
+  debt_total: 0,
+  debt_service_month: 0,
+  interest_rate_annual: 0,
+  dso_days: 7,
+  dio_days: 30,
+  dpo_days: 14,
+  tax_rate: 0.1,
+  capex_year: 1_200_000,
+}
+
+/**
+ * A FinmodelState built by the REAL merge: every key of `over` that is a number is an owner entry, `null`
+ * removes the key (a missing hard input, or an industry default for tax and the working-capital days).
+ */
+export function finmodelState(
+  over: Partial<Record<FinmodelKey, number | null>> = {},
+  opts: { template?: ModelInputs['template']; facts?: FinmodelFacts } = {},
+): FinmodelState {
+  const all: Partial<Record<FinmodelKey, number | null>> = { ...FULL_FINMODEL, ...over }
+  const rows: FinmodelRow[] = FINMODEL_KEYS.flatMap((key) => {
+    const value = all[key]
+    return typeof value === 'number'
+      ? [{ key, value, period_key: '', as_of: null, origin: 'owner', status: 'entered', note: null, verified_by_name: null, verified_at: null, updated_at: '2026-10-18T08:00:00Z' }]
+      : []
+  })
+  return mergeFinmodel({ rows, survey: {}, template: opts.template ?? 'ecommerce', facts: opts.facts })
+}
+
+/** modelInputs() of the golden e-commerce client with a gross margin of 40% and a complete finmodel. */
+export function modelInputsL2(
+  over: Parameters<typeof modelInputs>[0] = {},
+  fin: Parameters<typeof finmodelState>[0] = {},
+  opts: Parameters<typeof finmodelState>[1] = {},
+): ModelInputs {
+  return modelInputs({
+    grossMargin: src(0.4),
+    finmodel: finmodelState(fin, { template: over.template ?? 'ecommerce', ...opts }),
+    ...over,
+    levers: { avgCheck: src(140_000), cac: src(10_000), headcount: src(10), ...over.levers },
+  })
 }

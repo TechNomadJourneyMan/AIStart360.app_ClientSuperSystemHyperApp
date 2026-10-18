@@ -17,6 +17,9 @@
  * infeasibility. Growth model. A constant yearly growth, limited by the profile's cap.
  */
 import { bandText, volatilityBand } from './bands'
+import {
+  buildScenarioFinance, DEFAULTS_BAND, financeHorizon, financeReady, usesDefaults, withFinance, type FinanceBuild, type ScenarioPath,
+} from './cash'
 import { fmtMoney, fmtMonths, fmtNum, fmtPct, fmtTimes, round, safeRatio } from './format'
 import { simulateFunnel, type FunnelParams, type FunnelPath } from './funnel'
 import { projectGrowth, requiredAnnualGrowth, timeToTarget } from './growth'
@@ -57,7 +60,20 @@ interface Setup {
   months: number
   /** Months of the horizon the model works in (1..60). */
   horizon: number
-  band: { delta: number; source: 'history' | 'default' }
+  /** `widened`: level 2 uses industry assumptions (tax, working capital), so the band is at least ±25%. */
+  band: { delta: number; source: 'history' | 'default'; widened: boolean }
+}
+
+/** The text of the band of a scenario («±25%, source»). */
+function bandLabel(band: Setup['band']): string {
+  return band.widened
+    ? `расширен до ±${Math.round(band.delta * 100)}%: налог и оборотный капитал приняты по отрасли (допущение); ${bandText({ delta: band.delta, source: band.source })}`
+    : bandText(band)
+}
+
+function bandOf(i: ModelInputs): Setup['band'] {
+  const b = volatilityBand(i.history)
+  return usesDefaults(i) && b.delta < DEFAULTS_BAND ? { ...b, delta: DEFAULTS_BAND, widened: true } : { ...b, widened: false }
 }
 
 function setup(i: ModelInputs): Setup {
@@ -68,7 +84,7 @@ function setup(i: ModelInputs): Setup {
   return {
     A, T: i.goal.targetAnnual, months,
     horizon: Math.min(MODEL_HORIZON_MAX, Math.max(1, Math.floor(months))),
-    band: volatilityBand(i.history),
+    band: bandOf(i),
   }
 }
 
@@ -175,18 +191,19 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
   // 2. The trajectory at a pace: levers move linearly from today's level to `reached` in ramp / pace months.
   const ramp = profile.rampMonths
   const horizon = Math.min(MODEL_HORIZON_MAX, Math.max(s.horizon, Math.ceil(ramp / (1 - band.delta)) + 14))
-  const trajectoryAt = (pace: number): number[] => {
+  const pathAt = (pace: number, months: number): FunnelPath => {
     const rampEff = ramp / pace
     const u = (t: number) => Math.min(1, t / rampEff)
     const path: FunnelPath = { leads: [], conversion: [], avgCheck: [], repeat: [] }
-    for (let t = 1; t <= horizon; t++) {
+    for (let t = 1; t <= months; t++) {
       path.leads.push(L0 + (reached.leads - L0) * u(t))
       path.conversion.push(c0 + (reached.conversion - c0) * u(t))
       path.avgCheck.push(p0 + (reached.avgCheck - p0) * u(t))
       path.repeat.push(R0 + (reached.repeat - R0) * u(t))
     }
-    return runRateSeries(simulateFunnel(params, path, horizon).revenue)
+    return path
   }
+  const trajectoryAt = (pace: number): number[] => runRateSeries(simulateFunnel(params, pathAt(pace, horizon), horizon).revenue)
   const slow = trajectoryAt(1 - band.delta)
   const mid = trajectoryAt(1)
   const fast = trajectoryAt(1 + band.delta)
@@ -294,14 +311,14 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
     ...(Math.abs(otherMonthly) > 0 ? [`Выручка вне воронки учтена как постоянная: ${fmtMoney(otherMonthly)} в месяц (остаток калибровки по факту).`] : []),
     `Рычаги растут линейно и выходят на целевой уровень за ${fmtMonths(ramp)}; цель достигнута в первом месяце, когда месячная выручка × 12 (с поправкой на сезон) не ниже цели.`,
     seasonText(season),
-    `Диапазон: темп рычагов ±${delta}%, источник — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
+    `Диапазон: темп рычагов ±${delta}%, источник — ${bandLabel(band)}. Вероятность достижения цели не вычисляется.`,
     `Вклад рычагов в рост: лиды ${fmtPct(w.leads)}, конверсия ${fmtPct(w.conversion)}, средний чек ${fmtPct(w.avgCheck)}, повторные продажи ${fmtPct(w.repeat)}${redistributed ? ' (доля повторных продаж перераспределена: повторные продажи не заданы)' : ''}.`,
     ...(hasRepeat ? [] : ['Повторные продажи не заданы: учтены как 0%.']),
     ...(levers.activeBase.origin === 'derived' ? ['Активная база клиентов выведена: лиды × конверсия × 12.'] : []),
     'Деньги (резерв, нехватка средств, денежный поток) не рассчитаны: нужны данные уровня 2.',
   ]
 
-  return {
+  const result: ScenarioResult = {
     key: profile.key,
     label: profile.label,
     feasible,
@@ -312,6 +329,28 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
     investments: { marketingMonthlyIncrease, totalOverRamp, staffNeed: staff, note: notes.join(' ') },
     constraints, risks, conditions, downside, reviewPoints, signsToChangePace, assumptions,
     trajectory,
+  }
+
+  // Level 2: the money of the scenario at the base pace (profit and cash flow apart).
+  if (financeReady(i)) {
+    const months = financeHorizon(s.months, ramp)
+    const sim = simulateFunnel(params, pathAt(1, months), months)
+    const build = financeOf(i, profile, { revenue: sim.revenue, newCustomers: sim.newCustomers }, { funnel: true, staffNeed: staff, baseMonthlyRevenue: A / 12 })
+    if (build) return withFinance(result, build, profile, totalOverRamp, true)
+  }
+  return result
+}
+
+/** The finance of a scenario, or undefined when the input cannot be used (the scenario then stays at level 1). */
+function financeOf(
+  i: ModelInputs, profile: ScenarioProfile, path: ScenarioPath,
+  ctx: { funnel: boolean; staffNeed: number | null; baseMonthlyRevenue: number },
+): FinanceBuild | undefined {
+  try {
+    return buildScenarioFinance(i, profile, path, ctx)
+  } catch (err) {
+    if (err instanceof ModelInputError) return undefined
+    throw err
   }
 }
 
@@ -352,7 +391,7 @@ export function solveGrowthScenario(i: ModelInputs, profile: ScenarioProfile): S
   const infeasibleReason = feasible ? null
     : sentence(`Цель требует роста ${fmtPct(required)} в год, а потолок этого сценария — ${fmtPct(cap)}: при потолке цель достигается через ${tBase === null ? 'более чем 60 мес.' : fmtMonths(tBase)} (срок цели — ${fmtMonths(s.months)})`)
 
-  return {
+  const result: ScenarioResult = {
     key: profile.key,
     label: profile.label,
     feasible,
@@ -397,9 +436,17 @@ export function solveGrowthScenario(i: ModelInputs, profile: ScenarioProfile): S
     assumptions: [
       'Модель — упрощённая: годовая выручка растёт с постоянным темпом, не больше потолка сценария.',
       'Рычаги воронки не используются: нет лидов, конверсии или среднего чека, либо отрасль не про поток заявок.',
-      `Диапазон: темп роста ±${delta}%, источник — ${bandText(band)}. Вероятность достижения цели не вычисляется.`,
+      `Диапазон: темп роста ±${delta}%, источник — ${bandLabel(band)}. Вероятность достижения цели не вычисляется.`,
       'Деньги (резерв, нехватка средств, денежный поток) не рассчитаны: нужны данные уровня 2.',
     ],
     trajectory,
   }
+
+  if (financeReady(i)) {
+    const months = financeHorizon(s.months, profile.rampMonths)
+    const monthly = (alreadyThere ? Array(months).fill(A) as number[] : projectGrowth({ baseAnnual: A, annualGrowth: g, months })).map((v) => v / 12)
+    const build = financeOf(i, profile, { revenue: monthly, newCustomers: null }, { funnel: false, staffNeed: staff, baseMonthlyRevenue: A / 12 })
+    if (build) return withFinance(result, build, profile, null, false)
+  }
+  return result
 }

@@ -156,7 +156,7 @@ describe('POST …/scenarios', () => {
     const r = await post({})
     expect(r.status, JSON.stringify(r.body)).toBe(200)
     const result = r.body.data.result
-    expect(result).toMatchObject({ modelVersion: 'pb-model-1', level: 1, kind: 'funnel', template: 'ecommerce' })
+    expect(result).toMatchObject({ modelVersion: 'pb-model-2', level: 1, kind: 'funnel', template: 'ecommerce' })
     // the golden of the funnel (base 60M, goal 120M in 12 months, 300 × 12% × 140 000): 18 / 12 / 6
     expect(result.scenarios.map((x: { timeToGoalMonths: { base: number } }) => x.timeToGoalMonths.base)).toEqual([18, 12, 6])
     expect(result.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000, months: 12 })
@@ -168,7 +168,7 @@ describe('POST …/scenarios', () => {
     expect(row.base_snapshot_id).toBe('snap-1')
     const assumptions = row.assumptions as { profiles: unknown[]; model: Record<string, unknown> }
     expect(assumptions.profiles).toHaveLength(3)
-    expect(assumptions.model).toMatchObject({ modelVersion: 'pb-model-1', level: 1, kind: 'funnel', computedAt: NOW.toISOString() })
+    expect(assumptions.model).toMatchObject({ modelVersion: 'pb-model-2', level: 1, kind: 'funnel', computedAt: NOW.toISOString() })
     expect(assumptions.model.scenarios).toBeUndefined() // the scenarios are in their own column
     // only the version was written
     expect(new Set(s.h!.writes.map((w) => w.table))).toEqual(new Set(['pb_plan_versions']))
@@ -349,7 +349,7 @@ describe('GET /api/v1/point-b/state', () => {
     const d = r.body.data
     expect(d.access).toBe('ok')
     expect(d.overview.labelledAutomatic).toBe(true)
-    expect(d.overview.result).toMatchObject({ modelVersion: 'pb-model-1', level: 1, kind: 'funnel', computedAt: NOW.toISOString() })
+    expect(d.overview.result).toMatchObject({ modelVersion: 'pb-model-2', level: 1, kind: 'funnel', computedAt: NOW.toISOString() })
     expect(d.overview.result.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000 })
     // the goal is the owner's draft: the overview says so
     expect(d.overview.result.warnings.some((w: string) => /не проверена экспертом/.test(w))).toBe(true)

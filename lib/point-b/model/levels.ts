@@ -5,9 +5,15 @@
  *   level 0            no goal or no base revenue: only what can be said without a model
  *   level 1 / funnel   base, goal, leads, conversion, check, in an e-commerce / services template
  *   level 1 / growth   base and goal, but no funnel (other template, or no levers)
- *   level 2            not issued in this phase
+ *   level 2            level 1 AND a complete «Финмодель» AND a gross margin: profit and cash flow
+ *
+ * Level 2 is all or nothing: a partly filled finmodel stays level 1, lists the missing keys (level 2) and
+ * never puts zeros in place of numbers that are not there. Without a loaded finmodel (`finmodel` absent)
+ * the result is exactly the level-1 result of the previous phase.
  */
 import { pickTemplate } from '@/lib/point-a/v4/config'
+import { FINMODEL_DEFS, type FinmodelKey } from '../finmodel/keys'
+import { financeReady, grossMarginOf } from './cash'
 import type { DataLevel, MissingInput, ModelInputs, ModelKind, TemplateKey } from './types'
 
 const TEMPLATE_KEYS: readonly TemplateKey[] = ['default', 'ecommerce', 'services', 'production']
@@ -76,6 +82,21 @@ const MISSING: Record<string, Omit<MissingInput, 'key'>> = {
 
 export const missingInput = (key: keyof typeof MISSING): MissingInput => ({ key, ...MISSING[key] })
 
+/** Level 2 needs the gross margin (Point A metric): cost of goods = revenue × (1 − margin). */
+const MARGIN_MISSING: MissingInput = {
+  key: 'margin',
+  label: 'Валовая маржа',
+  unlocks: 'Расчёт прибыли и денежного потока: себестоимость продаж',
+  level: 2,
+  actions: ['survey', 'documents', 'expert'],
+}
+
+/** A key of the finmodel as a missing input (level 2). */
+export function finmodelMissingInput(key: FinmodelKey): MissingInput {
+  const d = FINMODEL_DEFS[key]
+  return { key: `finmodel:${key}`, label: d.label, unlocks: d.unlocks, level: 2, actions: ['expert'] }
+}
+
 export function determineLevel(i: ModelInputs): { level: DataLevel; kind: ModelKind; missing: MissingInput[] } {
   const missing: MissingInput[] = []
   if (!i.goal) missing.push(missingInput('goal'))
@@ -88,12 +109,22 @@ export function determineLevel(i: ModelInputs): { level: DataLevel; kind: ModelK
     if (!has(i.levers.repeat)) missing.push(missingInput('repeat'))
     if (!has(i.levers.cac)) missing.push(missingInput('cac'))
     if (!has(i.levers.headcount)) missing.push(missingInput('headcount'))
-    return { level: 1, kind: 'funnel', missing }
+    return withLevel2(i, 'funnel', missing)
   }
 
   if (!has(i.levers.leads)) missing.push(missingInput('leads'))
   if (!has(i.levers.conversion)) missing.push(missingInput('conversion'))
   if (!has(i.levers.avgCheck)) missing.push(missingInput('avgCheck'))
   if (!has(i.levers.headcount)) missing.push(missingInput('headcount'))
-  return { level: 1, kind: 'growth', missing }
+  return withLevel2(i, 'growth', missing)
+}
+
+/** Level 1 reached: level 2 when the money can be calculated, else level 1 with what the money still needs. */
+function withLevel2(i: ModelInputs, kind: 'funnel' | 'growth', missing: MissingInput[]): { level: DataLevel; kind: ModelKind; missing: MissingInput[] } {
+  if (!i.finmodel) return { level: 1, kind, missing }
+  if (financeReady(i)) return { level: 2, kind, missing }
+  const more: MissingInput[] = []
+  if (grossMarginOf(i) === null) more.push(MARGIN_MISSING)
+  for (const key of i.finmodel.missing) more.push(finmodelMissingInput(key))
+  return { level: 1, kind, missing: [...missing, ...more] }
 }

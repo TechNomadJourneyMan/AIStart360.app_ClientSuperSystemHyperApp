@@ -13,6 +13,7 @@
  * says by how much the funnel missed. A client without enough history gets forecast `insufficient`
  * and the verdict `no_data`.
  */
+import { level2Warnings } from './cash'
 import { fmtMoney, fmtNum } from './format'
 import { calibrate, rotateSeasonality, seasonalityIndex, type FunnelParams } from './funnel'
 import { describeHistory, HISTORY_MAX_LAG_MONTHS, HISTORY_MIN_MONTHS, projectCurrentPace, verdictFor } from './forecast'
@@ -215,7 +216,18 @@ function build(raw: ModelInputs, profilesIn?: ScenarioProfile[]): ModelResult {
   }
   if (kind === 'growth') scenarios = profiles.map((p) => solveGrowthScenario(inputs, p))
 
-  return { modelVersion: MODEL_VERSION, computedAt: raw.now, level: 1, kind, template: raw.template, gap, forecast, verdict, scenarios, missing, warnings }
+  // Level 2 only if every scenario got its money; otherwise the result is honestly level 1.
+  let level: ModelResult['level'] = levelInfo.level === 2 ? 2 : 1
+  if (level === 2) {
+    if (scenarios.length > 0 && scenarios.every((s) => s.finance)) {
+      warnings.push(...level2Warnings(inputs, kind === 'funnel'))
+    } else {
+      level = 1
+      warnings.push('Деньги не рассчитаны: значения финмодели нельзя использовать в расчёте. Проверьте ввод.')
+    }
+  }
+
+  return { modelVersion: MODEL_VERSION, computedAt: raw.now, level, kind, template: raw.template, gap, forecast, verdict, scenarios, missing, warnings }
 }
 
 export function computeModel(inputs: ModelInputs, profiles?: ScenarioProfile[]): ModelResult {

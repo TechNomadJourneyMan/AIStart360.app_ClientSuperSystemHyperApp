@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { expertDisplayName } from '@/lib/expert-review/blocks'
 import { goalStart } from '@/lib/goals/evaluate'
 import { loadGoals } from '@/lib/goals/store'
+import { loadFinmodel, type FinmodelState } from '../finmodel/store'
 import { loadPointBInputs, type PointBInputs } from '../inputs'
 import { companyOfUser } from '../plan/flow'
 import { snapshotGoals } from '../plan/goals'
@@ -65,7 +66,15 @@ export async function loadModelForCompany(
     input.goals && companyId ? withStarts(sb, companyId, input.goals) : Promise.resolve(input.goals),
   ])
   const template: TemplateKey = templateKeyFor(industry)
-  return { inputs: buildModelInputs({ pb, history, template, goals, now }), pb }
+  // Level 2: what the owner and the expert typed, merged with the questionnaire. A failed read means
+  // «no finmodel» (the client stays at level 1), never a failed page.
+  const finmodel: FinmodelState | null = companyId
+    ? await loadFinmodel(sb, { companyId, template, pb }).catch((err) => {
+        console.error('[point-b/model] finmodel not read — the calculation stays at level 1', err instanceof Error ? err.message : err)
+        return null
+      })
+    : null
+  return { inputs: buildModelInputs({ pb, history, template, goals, now, finmodel }), pb }
 }
 
 const EMPTY_BUNDLE: PlanBundle = { plan: null, versions: [], open: null, published: null }

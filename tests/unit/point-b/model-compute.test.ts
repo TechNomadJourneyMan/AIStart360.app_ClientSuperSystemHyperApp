@@ -40,7 +40,7 @@ describe('level 0', () => {
     expect(r.forecast).toEqual({ atCurrentPace: { low: null, base: null, high: null }, trendMonthlyPct: null, basis: 'insufficient' })
     expect(r.verdict.key).toBe('no_data')
     expect(r.modelVersion).toBe(MODEL_VERSION)
-    expect(r.modelVersion).toBe('pb-model-1')
+    expect(r.modelVersion).toBe('pb-model-2')
     expectCleanResult(r)
   })
 
@@ -374,10 +374,10 @@ describe('invariants', () => {
     }
   })
 
-  it('ModelResult is JSON-serialisable and carries modelVersion pb-model-1', () => {
+  it('ModelResult is JSON-serialisable and carries modelVersion pb-model-2', () => {
     for (const i of [ecommerce(), modelInputs({ template: 'production' }), modelInputs({ goal: null }), ecommerce({ levers: { conversion: src(1.2) } })]) {
       const r = computeModel(i)
-      expect(r.modelVersion).toBe('pb-model-1')
+      expect(r.modelVersion).toBe('pb-model-2')
       expectCleanResult(r)
     }
   })
