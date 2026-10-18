@@ -9,6 +9,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { profanityResponse } from '@/lib/moderation/http'
+import { saveExpertVersionDraft } from '@/lib/point-b/versions'
 
 /**
  * GET  /api/giga-admin/users/:id/point-b — Точка Б клиента (тот же расчёт, что
@@ -16,10 +17,10 @@ import { profanityResponse } from '@/lib/moderation/http'
  * POST /api/giga-admin/users/:id/point-b { expert_notes, roadmap? } —
  *      сохранить корректировку (право clients.review, только для клиентов).
  *
- * Расчёт не сохраняется: хранением Точки Б владеет кабинет клиента. Порядок
- * публикации корректировки (черновик → одобрение) — зона пакета 1b; пока
- * поведение прежнее, как в старом портале эксперта: корректировка сразу видна
- * клиенту.
+ * Расчёт не сохраняется: хранением Точки Б владеет кабинет клиента.
+ * Корректировка — всегда ЧЕРНОВИК (is_approved: false): клиент увидит её после
+ * одобрения Admin / Super Admin (…/review/point-b/approve), единственного пути
+ * публикации.
  */
 
 const bodySchema = z.object({
@@ -82,24 +83,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: me } = await sb.from('profiles').select('full_name').eq('id', guard.actor.id).maybeSingle()
   const authorName = (me as { full_name?: string | null } | null)?.full_name?.trim() || 'Эксперт AIStart360'
 
-  const { data, error } = await sb
-    .from('point_b_versions')
-    .insert({
-      diagnostic_id: String(diag.id),
-      authored_by: guard.actor.id,
-      author_name: authorName,
-      expert_notes: parsed.data.expert_notes,
-      roadmap: parsed.data.roadmap ?? null,
-      is_approved: true,
+  // A DRAFT: the client sees it only after Admin / Super Admin approves it (…/review/point-b/approve).
+  let data
+  try {
+    data = await saveExpertVersionDraft(sb, {
+      diagnosticId: String(diag.id),
+      authorId: guard.actor.id,
+      authorName,
+      notes: parsed.data.expert_notes,
+      roadmap: parsed.data.roadmap,
     })
-    .select('id, expert_notes, author_name, is_approved, created_at')
-    .maybeSingle()
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось сохранить корректировку' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Не удалось сохранить корректировку' }, { status: 500 })
+  }
 
   await recordAdminAction(guard.actor, {
     action: 'expert.point_b_version_created',
     entityType: 'user', entityId: params.id, targetUserId: params.id,
-    metadata: { versionId: (data as { id?: string } | null)?.id ?? null, preview: parsed.data.expert_notes.slice(0, 120) },
+    metadata: { versionId: data.id, preview: parsed.data.expert_notes.slice(0, 120), approved: false },
   }, req)
 
   return NextResponse.json({ ok: true, data })

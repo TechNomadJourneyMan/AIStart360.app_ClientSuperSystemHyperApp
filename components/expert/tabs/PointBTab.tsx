@@ -1,13 +1,13 @@
 'use client'
 
 // Expert view of a client's Точка Б — same goal-driven plan the client sees,
-// plus an expert-correction editor (saves a point_b_versions row the client sees).
+// plus an expert-correction editor (saves a DRAFT point_b_versions row; the client sees it after Admin approval).
 
 import { useEffect, useState, useCallback } from 'react'
 import PointBView from '@/components/point-b/PointBView'
 import type { PointBV2 } from '@/lib/point-b/engine'
 
-interface ExpertVersion { expert_notes: string; author_name?: string | null; created_at?: string }
+interface ExpertVersion { expert_notes: string; author_name?: string | null; created_at?: string; is_approved?: boolean }
 
 export function PointBTab({ clientId }: { clientId: string }) {
   const [pointB, setPointB] = useState<PointBV2 | null>(null)
@@ -60,7 +60,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
       })
       const json = (await res.json()) as { ok: boolean; error?: string }
       if (!res.ok || !json.ok) setSaveMsg(json.error || 'Не удалось сохранить')
-      else { setSaveMsg('Сохранено — клиент увидит корректировку'); await loadVersion() }
+      else { setSaveMsg('Корректировка отправлена на одобрение старшим экспертом. Клиент увидит её после одобрения'); await loadVersion() }
     } catch (e) {
       setSaveMsg(e instanceof Error ? e.message : 'Ошибка сети')
     } finally {
@@ -77,7 +77,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
           <p className="text-sm font-semibold text-on-surface">Экспертная корректировка плана</p>
         </div>
         <p className="text-xs text-on-surface-variant mb-3">
-          Усильте/скорректируйте Точку Б клиента. Текст увидит клиент как «Экспертную корректировку».
+          Усильте/скорректируйте Точку Б клиента. После одобрения старшим экспертом текст увидит клиент как «Экспертную корректировку».
         </p>
         <textarea
           value={draft}
@@ -97,7 +97,10 @@ export function PointBTab({ clientId }: { clientId: string }) {
           </button>
           {saveMsg && <span className="text-xs text-on-surface-variant">{saveMsg}</span>}
           {version?.created_at && !saveMsg && (
-            <span className="text-xs text-on-surface-variant/60">Последняя: {new Date(version.created_at).toLocaleDateString('ru-RU')}</span>
+            <span className="text-xs text-on-surface-variant/60">
+              Последняя: {new Date(version.created_at).toLocaleDateString('ru-RU')}
+              {version.is_approved === undefined ? '' : version.is_approved ? ' · одобрена' : ' · ждёт одобрения'}
+            </span>
           )}
         </div>
       </div>

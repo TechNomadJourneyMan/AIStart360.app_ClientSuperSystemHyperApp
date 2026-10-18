@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
+import { guardClientAccess } from '@/lib/admin/client-scope'
+import { saveExpertVersionDraft } from '@/lib/point-b/versions'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { UUID_RE, authorNames, displayNameOf } from '@/lib/expert-review/server'
@@ -40,6 +42,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const guard = await requireGiga(req, 'clients.review')
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
 
   const canApprove = canApprovePointB(guard.actor.role)
   const diagId = await currentDiagId(params.id)
@@ -70,6 +74,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const guard = await requireGiga(req, 'clients.review')
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const denied = await forbidTarget(guard.actor, params.id)
   if (denied) return denied
 
@@ -85,22 +91,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const sb = createServiceClient()
   const authorName = await displayNameOf(sb, guard.actor.id)
-  const { data, error } = await sb
-    .from('point_b_versions')
-    .insert({
-      diagnostic_id: diagId,
-      authored_by: guard.actor.id,
-      author_name: authorName,
-      expert_notes: parsed.data.expert_notes,
-      roadmap: parsed.data.roadmap ?? null,
-      is_approved: false,
+  let data
+  try {
+    data = await saveExpertVersionDraft(sb, {
+      diagnosticId: diagId,
+      authorId: guard.actor.id,
+      authorName,
+      notes: parsed.data.expert_notes,
+      roadmap: parsed.data.roadmap,
     })
-    .select(POINT_B_VERSION_COLUMNS)
-    .single()
-  if (error || !data) return NextResponse.json({ ok: false, error: 'Не удалось сохранить версию Точки Б' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Не удалось сохранить версию Точки Б' }, { status: 500 })
+  }
 
   await recordAdminAction(guard.actor, {
-    action: 'expert.point_b_version_created', entityType: 'point_b_version', entityId: (data as { id: string }).id, targetUserId: params.id,
+    action: 'expert.point_b_version_created', entityType: 'point_b_version', entityId: data.id, targetUserId: params.id,
     metadata: { diagnosticId: diagId, preview: parsed.data.expert_notes.slice(0, 120), approved: false },
   }, req)
 

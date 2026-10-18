@@ -28,7 +28,7 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
     setSaving(true)
     try {
       await gigaFetch(`/api/giga-admin/users/${userId}/point-b`, { method: 'POST', json: { expert_notes: draft.trim() } })
-      toast.success('Корректировка сохранена — клиент её увидит')
+      toast.success('Корректировка отправлена на одобрение старшим экспертом. Клиент увидит её после одобрения')
       reload()
     } catch (e) {
       toast.error(e instanceof GigaApiError ? e.message : 'Не удалось сохранить')
@@ -42,7 +42,7 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
       {canReview && d?.pointB && (
         <Panel
           title="Экспертная корректировка плана"
-          description="Текст увидит клиент на странице Точки Б как «Экспертную корректировку»."
+          description="После одобрения старшим экспертом текст увидит клиент на странице Точки Б как «Экспертную корректировку»."
         >
           <textarea
             value={draft}
@@ -54,7 +54,9 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] text-slate-600">
-              {d.version ? `Последняя: ${fmtDateTime(d.version.created_at)}${d.version.author_name ? ` · ${d.version.author_name}` : ''}` : 'Корректировок ещё не было'}
+              {d.version
+                ? `Последняя: ${fmtDateTime(d.version.created_at)}${d.version.author_name ? ` · ${d.version.author_name}` : ''} · ${d.version.is_approved ? 'одобрена' : 'ждёт одобрения'}`
+                : 'Корректировок ещё не было'}
             </span>
             <Button variant="primary" icon={<Save size={13} />} loading={saving} disabled={!draft.trim() || draft.trim() === d.version?.expert_notes} onClick={() => void save()}>
               Сохранить корректировку
