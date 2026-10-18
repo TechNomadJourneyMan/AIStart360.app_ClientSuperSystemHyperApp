@@ -5,6 +5,7 @@ import { gateFeature } from '@/lib/access/gate'
 import { loadPointBState } from '@/lib/point-b/model/load'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * GET /api/v1/point-b/state — the client page of Point B in one read (spec §16):
@@ -27,7 +28,10 @@ export async function GET() {
   if (upgrade) return upgrade
 
   try {
-    return NextResponse.json({ ok: true, data: await loadPointBState(createServiceClient(), user.id) })
+    const data = await loadPointBState(createServiceClient(), user.id)
+    // The page opens with this read (the details tab loads its own data lazily), so a fetch = a view of Point B.
+    void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'point_b', entityId: user.id, metadata: { level: data.overview.result.level, plan: data.plan.status } })
+    return NextResponse.json({ ok: true, data })
   } catch (err) {
     console.error('[v1/point-b/state]', err instanceof Error ? err.message : err)
     return NextResponse.json({ ok: false, error: 'Не удалось загрузить Точку Б' }, { status: 500 })

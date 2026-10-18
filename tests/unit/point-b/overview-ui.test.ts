@@ -94,7 +94,18 @@ describe('«Обзор»', () => {
     for (const label of ['Сейчас', 'Цель', 'При текущем ходе', 'Разрыв']) expect(html).toContain(label)
     expect(html).toContain('Автоматический расчёт, не проверен экспертом')
     expect(html).toContain('Что делать: смотреть сценарии')
-    expect(html).toContain('<svg') // the chart
+    // No approved plan → no scenarios on the page → no corridor chart, an honest hint instead.
+    expect(html).not.toContain('<svg')
+    expect(html).toContain('Траектория по сценариям появится после того, как эксперт одобрит план')
+    expect(html).not.toMatch(/NaN|undefined/)
+  })
+
+  it('the corridor chart appears from the approved plan scenarios', () => {
+    const full = fixtureModelResult('full')
+    const plan = { ...NO_PLAN, status: 'published' as const, version: 1, scenarios: full.scenarios, selectedScenario: 'moderate' }
+    const html = flat(renderToStaticMarkup(React.createElement(OverviewView, { result: { ...full, scenarios: [] }, plan })))
+    expect(html).toContain('<svg')
+    expect(html).not.toContain('Траектория по сценариям появится')
     expect(html).not.toMatch(/NaN|undefined/)
   })
 

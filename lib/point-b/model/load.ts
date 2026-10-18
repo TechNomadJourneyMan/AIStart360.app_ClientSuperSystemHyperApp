@@ -107,7 +107,8 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
   const preparing = (goals?.items.length ?? 0) > 0 || !!pb.diagnostic || !!bundle.open
   return {
     access: 'ok',
-    overview: { result, labelledAutomatic: true },
+    // The client sees the preliminary calculation WITHOUT its scenarios: scenarios are the experts' plan (approved version only, spec §6).
+    overview: { result: { ...result, scenarios: [] }, labelledAutomatic: true },
     plan: {
       status: published ? 'published' : preparing ? 'preparing' : 'none',
       version: published?.version ?? null,

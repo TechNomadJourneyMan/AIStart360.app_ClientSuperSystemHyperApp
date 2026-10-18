@@ -461,8 +461,18 @@ describe('GET /api/v1/point-b/state', () => {
     await state()
     db().companies.length = 0
     await state()
-    expect(s.h.writes).toEqual([])
+    // Reading the page writes nothing but the analytics event of the view itself — never a plan, goal or review row.
+    const tables = new Set(s.h.writes.map((w: { table?: string }) => w.table))
+    expect([...tables].filter((t) => t && t !== 'user_events' && t !== 'events')).toEqual([])
+    expect(s.h.writes.every((w: { payload?: { event_name?: string } }) => w.payload?.event_name === 'POINT_B_VIEWED')).toBe(true)
     expect(s.audits).toEqual([])
+  })
+
+  it('state: the client never sees the scenarios of the automatic calculation, only those of the approved version', async () => {
+    withPlan([versionRow({ id: 'v-1', status: 'approved', scenarios: [fakeScenario('A')] })], 'v-1')
+    const res = await state()
+    expect(res.body.data.overview.result.scenarios).toEqual([])
+    expect(res.body.data.plan.scenarios).toHaveLength(1)
   })
 
   it('state: plan tables that are not there (migration 125 not applied) mean «no plan», the overview still works', async () => {

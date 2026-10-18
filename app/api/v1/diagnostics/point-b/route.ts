@@ -7,7 +7,6 @@ import type { PointBV2 } from '@/lib/point-b/engine'
 import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { loadExpertVersionForClient } from '@/lib/point-b/compat'
-import { trackUserAction } from '@/lib/events/server'
 import { gateFeature } from '@/lib/access/gate'
 
 /**
@@ -126,8 +125,7 @@ export async function GET(_req: NextRequest) {
     //    approval are never shown — filtered there and by the owner RLS policies.
     const ev = await loadExpertVersionForClient(sb, { companyId, diagnosticId: diag.id as string })
 
-    // PointBContainer is the only caller of this route → a fetch = a view of Point B.
-    void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'diagnostic', entityId: diag.id as string, metadata: { expert_version: !!ev } })
+    // POINT_B_VIEWED is tracked by GET /api/v1/point-b/state (the page opens with that read).
     return NextResponse.json({ ok: true, data: pointB, expert_version: ev ?? null })
   } catch (error) {
     console.error('[point-b] error:', error)

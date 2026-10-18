@@ -58,7 +58,11 @@ export function OverviewView({ result, plan }: { result: ModelResult; plan: Poin
   const tone = TONE_CLASS[verdict.tone]
   const stale = staleWarning(result)
   const warnings = otherWarnings(result)
-  const chart = chartData(result, plan.selectedScenario)
+  // The corridor comes from the APPROVED plan's scenarios (never from the automatic calculation).
+  const chart = chartData({ ...result, scenarios: plan.scenarios }, plan.selectedScenario)
+  const chartHint = plan.scenarios.length === 0 && result.level >= 1
+    ? 'Траектория по сценариям появится после того, как эксперт одобрит план. Прогноз и цель — выше.'
+    : chartPlaceholder(result)
   const computed = fmtLongDate(result.computedAt)
   const suggestScenarios = verdict.key === 'behind' || verdict.key === 'at_risk'
 
@@ -109,12 +113,12 @@ export function OverviewView({ result, plan }: { result: ModelResult; plan: Poin
           {chart && <span className={cn(CHIP, 'bg-white/[0.06] text-on-surface-variant')}>Темп: {chart.scenario.label}</span>}
         </div>
         {chart ? (
-          <CorridorChart data={chart.data} scenarioLabel={chart.scenario.label} placeholder={chartPlaceholder(result)} />
+          <CorridorChart data={chart.data} scenarioLabel={chart.scenario.label} placeholder={chartHint} />
         ) : (
           <div className="rounded-xl border border-dashed border-white/[0.1] p-6 text-center">
             <Icon name="show_chart" className="mb-1 block text-3xl text-on-surface-variant/50" />
             <p className="text-sm font-medium text-on-surface">Графика пока нет</p>
-            <p className="mt-0.5 text-xs text-on-surface-variant">{chartPlaceholder(result)}</p>
+            <p className="mt-0.5 text-xs text-on-surface-variant">{chartHint}</p>
           </div>
         )}
       </section>
