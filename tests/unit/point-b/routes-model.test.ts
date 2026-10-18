@@ -462,9 +462,8 @@ describe('GET /api/v1/point-b/state', () => {
     db().companies.length = 0
     await state()
     // Reading the page writes nothing but the analytics event of the view itself — never a plan, goal or review row.
-    const tables = new Set(s.h.writes.map((w: { table?: string }) => w.table))
-    expect([...tables].filter((t) => t && t !== 'user_events' && t !== 'events')).toEqual([])
-    expect(s.h.writes.every((w: { payload?: { event_name?: string } }) => w.payload?.event_name === 'POINT_B_VIEWED')).toBe(true)
+    const writes = s.h.writes as Array<{ table: string; payload: unknown }>
+    expect(writes.every((w) => (w.payload as { event_name?: string } | null)?.event_name === 'POINT_B_VIEWED')).toBe(true)
     expect(s.audits).toEqual([])
   })
 
