@@ -6,9 +6,8 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
-import { calculatePointBV2 } from '@/lib/point-b/engine'
-import { loadPointBMetricOptions } from '@/lib/point-b/metrics'
-import { diagToPointA, mapGriTop5 } from '@/lib/admin/expert-client-data'
+import { loadPointBInputs } from '@/lib/point-b/inputs'
+import { computePointB } from '@/lib/point-b/compute'
 import { profanityResponse } from '@/lib/moderation/http'
 
 /**
@@ -50,35 +49,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (scopeDenied) return scopeDenied
 
   const sb = createServiceClient()
-  const diag = await currentDiagnostic(sb, params.id)
-  if (!diag) return NextResponse.json({ ok: true, data: { pointB: null, reason: 'no_diagnostic', version: null } })
-
-  const [answersRes, griRes, companyRes] = await Promise.all([
-    sb.from('survey_answers').select('question_key, answer').eq('user_id', params.id),
-    sb.from('gri_assessments').select('top_5_limits').eq('user_id', params.id).eq('is_current', true).limit(1),
-    sb.from('companies').select('id, target_revenue_12m_kzt, target_revenue_3y_kzt').eq('user_id', params.id).maybeSingle(),
-  ])
-
-  const answers: Record<string, unknown> = {}
-  for (const row of (answersRes.data ?? []) as Array<{ question_key: string; answer: unknown }>) {
-    const a = row.answer
-    answers[row.question_key] = a && typeof a === 'object' && 'value' in a ? (a as { value?: unknown }).value : a
+  let inputs
+  try {
+    inputs = await loadPointBInputs(sb, params.id)
+  } catch (err) {
+    console.error('[giga/point-b] inputs not loaded', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: 'Не удалось загрузить данные Точки Б' }, { status: 500 })
   }
+  // The same inputs and computation as the client's own page (lib/point-b).
+  const pointB = computePointB(inputs)
+  if (!pointB || !inputs.diagnostic) return NextResponse.json({ ok: true, data: { pointB: null, reason: 'no_diagnostic', version: null } })
 
-  // Current revenue + lever values from the company's registry metrics (same reader as the client's Точка Б).
-  const metricOptions = await loadPointBMetricOptions(sb, (diag.company_id as string | null) ?? null)
-  const comp = companyRes.data as { target_revenue_12m_kzt?: number | null; target_revenue_3y_kzt?: number | null } | null
-  const goal = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null)
-
-  const pointB = calculatePointBV2(diagToPointA(diag), answers, {
-    diagnosticId: String(diag.id),
-    griTop5: mapGriTop5(((griRes.data ?? [])[0] as { top_5_limits?: unknown } | undefined)?.top_5_limits),
-    ...metricOptions,
-    goal12mYear: goal(comp?.target_revenue_12m_kzt),
-    goal3yYear: goal(comp?.target_revenue_3y_kzt),
-  })
-
-  return NextResponse.json({ ok: true, data: { pointB, reason: null, version: await latestVersion(sb, String(diag.id)) } })
+  return NextResponse.json({ ok: true, data: { pointB, reason: null, version: await latestVersion(sb, String(inputs.diagnostic.id)) } })
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

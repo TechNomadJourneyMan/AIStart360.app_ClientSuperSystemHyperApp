@@ -10,6 +10,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase-server'
 import { staffMfaGate } from '@/lib/admin/giga-actor'
 import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
+import { canAccessClient, isUuid, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
 
 export const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 
@@ -146,6 +147,22 @@ export async function resolveExpertBotUser(): Promise<ExpertAuth> {
 export async function requireExpert(): Promise<ExpertViewer | null> {
   const r = await resolveExpert()
   return r.ok ? r.viewer : null
+}
+
+/**
+ * May this expert/admin work with THIS client's Point B? Admin / Super Admin —
+ * any client. An expert (profile role 'expert') — only clients where they are
+ * the assignee (user_assignments.assignee_id, lib/admin/client-scope.ts):
+ * spec 2026-10-18 §17 «эксперт — только назначенные». Fails closed when the
+ * assignment cannot be read. Returns the refusal response, or null to continue.
+ */
+export async function guardExpertClient(viewer: ExpertViewer, clientId: string): Promise<NextResponse | null> {
+  if (!isUuid(clientId)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
+  if (viewer.role === 'admin' || viewer.role === 'super_admin') return null
+  if (!(await canAccessClient({ id: viewer.id, clientScope: 'assigned' }, clientId))) {
+    return NextResponse.json({ ok: false, error: NOT_ASSIGNED_ERROR }, { status: 403 })
+  }
+  return null
 }
 
 /** JSON answer for a refused expert request; MFA blocks carry the same codes as GIGA. */

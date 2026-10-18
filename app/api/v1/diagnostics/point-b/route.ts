@@ -3,9 +3,9 @@ export const dynamic = 'force-dynamic'
 import { loadGoalsWithEvaluation } from '@/lib/goals/current'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
-import type { PointA, BlockScore } from '@/types/onboarding'
-import { loadPointBMetricOptions } from '@/lib/point-b/metrics'
+import type { PointBV2 } from '@/lib/point-b/engine'
+import { loadPointBInputs } from '@/lib/point-b/inputs'
+import { computePointB } from '@/lib/point-b/compute'
 import { expertDisplayName } from '@/lib/expert-review/blocks'
 import { trackUserAction } from '@/lib/events/server'
 
@@ -22,49 +22,6 @@ import { trackUserAction } from '@/lib/events/server'
  * "insufficient data" state, not a made-up target.
  */
 
-const EMPTY_BLOCK: BlockScore = { score: 0, status: 'critical', top_issues: [], recommendations: [] }
-
-function diagToPointA(diag: Record<string, unknown>): PointA {
-  const block = (k: string): BlockScore => {
-    const v = diag[k] as BlockScore | null
-    return v && typeof v === 'object' ? v : EMPTY_BLOCK
-  }
-  return {
-    overall_score: (diag.overall_score as number) ?? 0,
-    health_index: (diag.health_index as number) ?? 0,
-    stage: ((diag.stage as PointA['stage']) ?? 'seed'),
-    blocks: {
-      finance: block('finance_score'),
-      marketing: block('marketing_score'),
-      operations: block('operations_score'),
-      strategy: block('strategy_score'),
-      sales: block('sales_score'),
-    },
-    risks: (diag.risks as PointA['risks']) ?? [],
-    insights: (diag.insights as PointA['insights']) ?? [],
-    quick_wins: (diag.quick_wins as PointA['quick_wins']) ?? [],
-    data_gaps: (diag.data_gaps as PointA['data_gaps']) ?? [],
-  }
-}
-
-function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
-  if (!Array.isArray(raw)) return undefined
-  return raw
-    .map((item, i) => {
-      if (!item || typeof item !== 'object') return null
-      const o = item as Record<string, unknown>
-      const title = String(o.title ?? o.label ?? o.name ?? o.criterion ?? '').trim()
-      if (!title) return null
-      return {
-        rank: typeof o.rank === 'number' ? o.rank : i + 1,
-        title,
-        block: String(o.block ?? o.section ?? o.sectionId ?? ''),
-        severity: String(o.severity ?? o.level ?? 'high'),
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-}
-
 export async function GET(_req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
@@ -73,72 +30,17 @@ export async function GET(_req: NextRequest) {
   }
 
   try {
-    // 1. Latest diagnostic (Point A). RLS scopes the row; we also filter by user.
-    const { data: diag } = await sb
-      .from('diagnostics')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    if (!diag) {
+    // 1–5. Everything Point B reads, once, for the SESSION user (lib/point-b/inputs.ts):
+    //      the current diagnostic, the Point A v4 snapshot, survey answers, GRI TOP-5,
+    //      registry metrics (revenue with its period), goals. Nothing is fabricated:
+    //      a client without a diagnostic gets «нет данных», not zero blocks.
+    const inputs = await loadPointBInputs(sb, user.id)
+    const pointB = computePointB(inputs)
+    if (!pointB || !inputs.diagnostic) {
       return NextResponse.json({ ok: true, data: null, reason: 'no_diagnostic' })
     }
-
-    // 2. Survey answers → flat { question_key: value } map.
-    const { data: surveyRows } = await sb
-      .from('survey_answers')
-      .select('question_key, answer')
-      .eq('user_id', user.id)
-
-    const answers: Record<string, unknown> = {}
-    for (const row of surveyRows ?? []) {
-      const a = row.answer as { value?: unknown } | unknown
-      answers[row.question_key as string] =
-        a && typeof a === 'object' && 'value' in a ? (a as { value?: unknown }).value : a
-    }
-
-    // 3. GRI TOP-5 limits (optional enrichment; engine falls back to Point A blocks).
-    const { data: gri } = await sb
-      .from('gri_assessments')
-      .select('top_5_limits')
-      .eq('user_id', user.id)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    const griTop5 = mapGriTop5(gri?.top_5_limits)
-
-    // 4. Current revenue + lever values from the single metrics source
-    //    (lib/metrics/company-metrics.ts — what the Metrics page, the dashboard
-    //    and Точка А show). Needs a linked company.
-    const companyId = (diag.company_id as string | null) ?? null
-    const metricOptions = await loadPointBMetricOptions(sb, companyId)
-
-    // 4b. Goals from the Point A goal widget (companies.target_revenue_12m/3y_kzt,
-    //     annual KZT). Canonical source — keeps Точка Б in sync with Точка А.
-    let goal12mYear: number | null = null
-    let goal3yYear: number | null = null
-    {
-      const { data: comp } = await sb
-        .from('companies')
-        .select('target_revenue_12m_kzt, target_revenue_3y_kzt')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      const t12 = comp?.target_revenue_12m_kzt
-      const t3y = comp?.target_revenue_3y_kzt
-      if (t12 != null && Number.isFinite(Number(t12))) goal12mYear = Number(t12)
-      if (t3y != null && Number.isFinite(Number(t3y))) goal3yYear = Number(t3y)
-    }
-
-    // 5. Compute.
-    const pointA = diagToPointA(diag)
-    const pointB = calculatePointBV2(pointA, answers, {
-      diagnosticId: diag.id as string,
-      griTop5,
-      ...metricOptions,
-      goal12mYear,
-      goal3yYear,
-    })
+    const diag = inputs.diagnostic
+    const companyId = inputs.companyId
 
     // 6. Persist the current snapshot. One is_current row per diagnostic — full
     //    PointBV2 lives in `roadmap`; scalar columns mirror it for queryability.

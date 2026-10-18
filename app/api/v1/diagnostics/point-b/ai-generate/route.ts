@@ -7,13 +7,12 @@ export const maxDuration = 300
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { analyzePointBStrategy } from '@/lib/ai/point-b-analyzer'
-import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
-import type { PointA, BlockScore } from '@/types/onboarding'
+import { loadPointBInputs } from '@/lib/point-b/inputs'
+import { computePointB } from '@/lib/point-b/compute'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { loadPointBMetricOptions } from '@/lib/point-b/metrics'
 import { guardAiBudget } from '@/lib/ai/budget'
 
 /**
@@ -27,49 +26,6 @@ import { guardAiBudget } from '@/lib/ai/budget'
  * HONEST DEGRADE: if the recomputed Point B has insufficient data, we set
  * ai_status='none' and return ok WITHOUT calling the LLM (never fabricate a plan).
  */
-
-const EMPTY_BLOCK: BlockScore = { score: 0, status: 'critical', top_issues: [], recommendations: [] }
-
-function diagToPointA(diag: Record<string, unknown>): PointA {
-  const block = (k: string): BlockScore => {
-    const v = diag[k] as BlockScore | null
-    return v && typeof v === 'object' ? v : EMPTY_BLOCK
-  }
-  return {
-    overall_score: (diag.overall_score as number) ?? 0,
-    health_index: (diag.health_index as number) ?? 0,
-    stage: ((diag.stage as PointA['stage']) ?? 'seed'),
-    blocks: {
-      finance: block('finance_score'),
-      marketing: block('marketing_score'),
-      operations: block('operations_score'),
-      strategy: block('strategy_score'),
-      sales: block('sales_score'),
-    },
-    risks: (diag.risks as PointA['risks']) ?? [],
-    insights: (diag.insights as PointA['insights']) ?? [],
-    quick_wins: (diag.quick_wins as PointA['quick_wins']) ?? [],
-    data_gaps: (diag.data_gaps as PointA['data_gaps']) ?? [],
-  }
-}
-
-function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
-  if (!Array.isArray(raw)) return undefined
-  return raw
-    .map((item, i) => {
-      if (!item || typeof item !== 'object') return null
-      const o = item as Record<string, unknown>
-      const title = String(o.title ?? o.label ?? o.name ?? o.criterion ?? '').trim()
-      if (!title) return null
-      return {
-        rank: typeof o.rank === 'number' ? o.rank : i + 1,
-        title,
-        block: String(o.block ?? o.section ?? o.sectionId ?? ''),
-        severity: String(o.severity ?? o.level ?? 'high'),
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -114,70 +70,21 @@ export async function POST(req: NextRequest) {
     const overBudget = await guardAiBudget(userId, 'point_b_strategy')
     if (overBudget) return overBudget
 
-    // 1. Diagnostic (Point A). Resolve current one when not passed.
-    const diagQuery = sb.from('diagnostics').select('*').eq('user_id', userId)
-    const { data: diag } = diagnosticId
-      ? await diagQuery.eq('id', diagnosticId).maybeSingle()
-      : await diagQuery.eq('is_current', true).maybeSingle()
-
-    if (!diag) {
+    // 1–5. Inputs (the diagnostic — the given one or the current one —, the Point A v4
+    //      snapshot, survey answers, GRI TOP-5, registry metrics, goals) from the one loader
+    //      every Point B surface uses, then the same computation.
+    const inputs = await loadPointBInputs(sb, userId, { diagnosticId: diagnosticId ?? null })
+    const pointB = computePointB(inputs)
+    if (!pointB || !inputs.diagnostic) {
       return NextResponse.json({ ok: false, error: 'No diagnostic found' }, { status: 404 })
     }
-    diagnosticId = diag.id as string
+    diagnosticId = String(inputs.diagnostic.id)
 
-    // 2. Survey answers → flat { question_key: value } map.
-    const { data: surveyRows } = await sb
-      .from('survey_answers')
-      .select('question_key, answer')
-      .eq('user_id', userId)
-
-    const answers: Record<string, unknown> = {}
-    for (const row of surveyRows ?? []) {
-      const a = row.answer as { value?: unknown } | unknown
-      answers[row.question_key as string] =
-        a && typeof a === 'object' && 'value' in a ? (a as { value?: unknown }).value : a
-    }
-
-    // 3. GRI TOP-5 limits (optional enrichment; engine falls back to Point A blocks).
-    const { data: gri } = await sb
-      .from('gri_assessments')
-      .select('top_5_limits')
-      .eq('user_id', userId)
-      .eq('is_current', true)
-      .maybeSingle()
-
-    const griTop5 = mapGriTop5(gri?.top_5_limits)
-
-    // 4. Current revenue + lever values from the single metrics source
-    //    (lib/metrics/company-metrics.ts — what the Metrics page, the dashboard
-    //    and Точка А show). Needs a linked company.
-    const companyId = (diag.company_id as string | null) ?? null
-    const metricOptions = await loadPointBMetricOptions(sb, companyId)
-
-    // 4b. Goals from the Point A goal widget (companies.target_revenue_12m/3y_kzt).
-    let goal12mYear: number | null = null
-    let goal3yYear: number | null = null
     const { data: comp } = await sb
       .from('companies')
-      .select('name, industry, stage, target_revenue_12m_kzt, target_revenue_3y_kzt')
+      .select('name, industry, stage')
       .eq('user_id', userId)
       .maybeSingle()
-    {
-      const t12 = comp?.target_revenue_12m_kzt
-      const t3y = comp?.target_revenue_3y_kzt
-      if (t12 != null && Number.isFinite(Number(t12))) goal12mYear = Number(t12)
-      if (t3y != null && Number.isFinite(Number(t3y))) goal3yYear = Number(t3y)
-    }
-
-    // 5. Recompute Point B.
-    const pointA = diagToPointA(diag)
-    const pointB = calculatePointBV2(pointA, answers, {
-      diagnosticId,
-      griTop5,
-      ...metricOptions,
-      goal12mYear,
-      goal3yYear,
-    })
 
     // Service-role client — point_b_analysis RLS has no owner-write policy on
     // prod, so session writes silently no-op. Only ai_strategy + ai_status are
