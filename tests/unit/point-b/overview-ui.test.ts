@@ -79,7 +79,9 @@ describe('overviewModel', () => {
 
   it('tab keyboard model: arrows wrap, Home and End jump, other keys are ignored', () => {
     expect(nextTab('overview', 'ArrowRight')).toBe('scenarios')
-    expect(nextTab('scenarios', 'ArrowRight')).toBe('whatif')
+    expect(nextTab('scenarios', 'ArrowRight')).toBe('strategy')
+    expect(nextTab('strategy', 'ArrowRight')).toBe('roadmap')
+    expect(nextTab('roadmap', 'ArrowRight')).toBe('whatif')
     expect(nextTab('whatif', 'ArrowRight')).toBe('finmodel')
     expect(nextTab('finmodel', 'ArrowRight')).toBe('details')
     expect(nextTab('details', 'ArrowRight')).toBe('overview')
@@ -280,17 +282,19 @@ describe('«Сценарии»', () => {
 })
 
 describe('tab shell', () => {
-  const panels = { overview: React.createElement('p', null, 'ОБЗОР'), scenarios: React.createElement('p', null, 'СЦЕНАРИИ'), whatif: React.createElement('p', null, 'ЧТОЕСЛИ'), finmodel: React.createElement('p', null, 'ФИНМОДЕЛЬ'), details: React.createElement('p', null, 'ПОДРОБНОСТИ') }
+  const panels = { overview: React.createElement('p', null, 'ОБЗОР'), scenarios: React.createElement('p', null, 'СЦЕНАРИИ'), strategy: React.createElement('p', null, 'СТРАТЕГИЯ'), roadmap: React.createElement('p', null, 'КАРТА'), whatif: React.createElement('p', null, 'ЧТОЕСЛИ'), finmodel: React.createElement('p', null, 'ФИНМОДЕЛЬ'), details: React.createElement('p', null, 'ПОДРОБНОСТИ') }
 
   it('is an accessible tablist: roles, aria-selected, roving tabindex, panel linked to its tab', () => {
     const html = renderToStaticMarkup(React.createElement(PointBTabs, { panels }))
     expect(html).toContain('role="tablist"')
-    expect(html.match(/role="tab"/g)).toHaveLength(5)
+    expect(html.match(/role="tab"/g)).toHaveLength(7)
+    expect(html).toContain('Стратегия</button>')
+    expect(html).toContain('Дорожная карта</button>')
     expect(html).toContain('Что если</button>')
     expect(html).toContain('Финмодель</button>')
     expect(html).toMatch(/aria-selected="true"[^>]*>Обзор|Обзор<\/button>/)
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
-    expect(html.match(/tabindex="-1"/g)).toHaveLength(4)
+    expect(html.match(/tabindex="-1"/g)).toHaveLength(6)
     expect(html).toContain('role="tabpanel"')
     expect(html).toContain('ОБЗОР')
     // only the opened tab is mounted: «Подробности» does not load until it is opened

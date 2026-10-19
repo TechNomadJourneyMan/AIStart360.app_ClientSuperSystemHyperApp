@@ -6,15 +6,19 @@ import PointBPaywall from './PointBPaywall'
 import FinmodelTab from './tabs/FinmodelTab'
 import OverviewTab from './tabs/OverviewTab'
 import PointBTabs from './tabs/PointBTabs'
+import RoadmapTab from './tabs/RoadmapTab'
 import ScenariosTab from './tabs/ScenariosTab'
+import StrategyTab from './tabs/StrategyTab'
 import WhatIfTab from './tabs/WhatIfTab'
 import { usePointBState } from './usePointBState'
 
 /**
- * Client container for Point B (plan Phase 2 Task 8, Ф3 Task 5): the plan status above, then five tabs.
+ * Client container for Point B (plan Phase 2 Task 8, Ф3 Task 5, Ф5 Task 5): the plan status above, then seven tabs.
  *   «Обзор»       — verdict, А → Б, trajectory with a corridor, what the data lacks
  *                   (preliminary automatic calculation, GET /api/v1/point-b/state);
  *   «Сценарии»    — three paces of the APPROVED plan version, or «Эксперт готовит сценарии»;
+ *   «Стратегия»   — strategies → initiatives → tasks of the approved plan with progress, and the impact × effort matrix;
+ *   «Дорожная карта» — the same on a timeline by quarters, milestones, dependencies;
  *   «Что если»    — six calculators on the owner's own data (a calculation, not a recommendation, never changes the plan);
  *   «Финмодель»   — the money of the business (level 2): inputs, hints, origin badges;
  *   «Подробности» — the previous page as it was ({@link PointBDetails}), loaded on first open.
@@ -37,6 +41,9 @@ export default function PointBContainer() {
         panels={{
           overview: <OverviewTab snap={snap} onRetry={() => void ctl.load()} />,
           scenarios: <ScenariosTab snap={snap} onRetry={() => void ctl.load()} />,
+          // The tree of the approved plan version with the live progress of its tasks, and the same tree on a timeline.
+          strategy: <StrategyTab snap={snap} onRetry={() => void ctl.load()} />,
+          roadmap: <RoadmapTab snap={snap} onRetry={() => void ctl.load()} />,
           // Calculates only: nothing here changes the plan.
           whatif: <WhatIfTab state={snap} />,
           // A saved finmodel recalculates the overview and the scenarios from the new money.

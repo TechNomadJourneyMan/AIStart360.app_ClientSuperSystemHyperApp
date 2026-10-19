@@ -15,6 +15,10 @@ import type { ModelResult, Range, ScenarioFinance, ScenarioResult } from './mode
 import { WHATIF_LABELS, type WhatIfChange, type WhatIfMetrics, type WhatIfResult } from './model/whatif'
 import { fmtMoney } from '@/components/point-b/overviewModel'
 import type { SavedWhatIf } from '@/components/point-b/whatIfModel'
+import type { PointBStrategyState } from '@/components/point-b/strategyModel'
+import type { MatrixPoint } from './strategy/matrix'
+import type { NodeProgress } from './strategy/progress'
+import type { PlanStrategy, StrategyNode } from './strategy/types'
 
 /** `level2`: the same business as `full`, with the finmodel filled in — profit, cash flow, funding need. */
 export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base', 'level2'] as const
@@ -622,4 +626,87 @@ export function fixtureWhatIfSaved(variant: PointBFixtureVariant): SavedWhatIf[]
     mk('fx-wi-1', 'Рост конверсии на 2 п.п.', 'После запуска нового скрипта продаж', conversion, '2026-10-17T10:00:00.000Z', '2026-10-16T08:00:00.000Z'),
     mk('fx-wi-2', 'Стресс: выручка −40 % на 4 месяца', null, shock, null, '2026-10-17T08:30:00.000Z'),
   ]
+}
+
+
+// ── Strategy and roadmap (plan Ф5): a consistent tree built by hand, no real modules ─────────────────
+
+const SK = {
+  s1: 'a1000001-0000-4000-8000-000000000001', s2: 'a1000002-0000-4000-8000-000000000002',
+  i1: 'b1000001-0000-4000-8000-000000000001', i2: 'b1000002-0000-4000-8000-000000000002',
+  i3: 'b1000003-0000-4000-8000-000000000003', i4: 'b1000004-0000-4000-8000-000000000004',
+  t1: 'c1000001-0000-4000-8000-000000000001', t2: 'c1000002-0000-4000-8000-000000000002', t3: 'c1000003-0000-4000-8000-000000000003',
+  t4: 'c1000004-0000-4000-8000-000000000004', t5: 'c1000005-0000-4000-8000-000000000005', t6: 'c1000006-0000-4000-8000-000000000006',
+  t7: 'c1000007-0000-4000-8000-000000000007', t8: 'c1000008-0000-4000-8000-000000000008',
+  m1: 'd1000001-0000-4000-8000-000000000001', m2: 'd1000002-0000-4000-8000-000000000002', m3: 'd1000003-0000-4000-8000-000000000003',
+} as const
+
+type NodePatch = Partial<StrategyNode> & Pick<StrategyNode, 'key' | 'kind' | 'parentKey' | 'title'>
+const node = (n: NodePatch, order: number): StrategyNode => ({
+  description: null, ownerLabel: null, dueDate: null, impact: null, effort: null, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order, ...n,
+})
+
+/**
+ * The strategy of the preview: 2 strategies, 4 initiatives (one without ratings and without tasks), 8 tasks across three
+ * quarters (IV 2026 – II 2027), 3 milestones, one dependency (CRM waits for the loyalty programme).
+ */
+export function fixtureStrategyTree(): PlanStrategy {
+  return {
+    items: [
+      node({ key: SK.s1, kind: 'strategy', parentKey: null, title: 'Рост выручки за счёт повторных продаж', description: 'Довести долю повторных покупок до трети оборота и перестать терять клиентов после первой сделки.', impact: 5, effort: 3, kpi: { name: 'Доля повторных покупок', target: 30, unit: '%' }, dueDate: '2027-06-30' }, 0),
+      node({ key: SK.i1, kind: 'initiative', parentKey: SK.s1, title: 'Программа лояльности', description: 'Бонусы за повторную покупку и персональные предложения.', ownerLabel: 'Маркетолог', impact: 4, effort: 2, block: 'sales', kpi: { name: 'Участники программы', target: 200, unit: 'чел.' }, dueDate: '2027-03-31', delayRisk: 'Нужна интеграция с кассой — без неё бонусы считаются вручную.' }, 0),
+      node({ key: SK.t1, kind: 'task', parentKey: SK.i1, title: 'Описать условия программы', ownerLabel: 'Маркетолог', dueDate: '2026-11-15' }, 0),
+      node({ key: SK.t2, kind: 'task', parentKey: SK.i1, title: 'Настроить рассылки для участников', ownerLabel: 'Маркетолог', dueDate: '2026-12-20' }, 1),
+      node({ key: SK.t3, kind: 'task', parentKey: SK.i1, title: 'Запустить пилот в двух точках', ownerLabel: 'Управляющий', dueDate: '2027-02-10', description: 'Пилот на 6 недель с еженедельным разбором результатов.' }, 2),
+      node({ key: SK.i2, kind: 'initiative', parentKey: SK.s1, title: 'Автоматизация работы с клиентской базой (CRM)', ownerLabel: 'Руководитель продаж', impact: 4, effort: 4, dependsOn: [SK.i1], dueDate: '2027-04-30', kpi: { name: 'Клиентов в базе с историей покупок', target: 90, unit: '%' } }, 1),
+      node({ key: SK.t4, kind: 'task', parentKey: SK.i2, title: 'Выбрать систему и подрядчика', ownerLabel: 'Руководитель продаж', dueDate: '2026-12-15' }, 0),
+      node({ key: SK.t5, kind: 'task', parentKey: SK.i2, title: 'Перенести клиентскую базу', ownerLabel: 'Руководитель продаж', dueDate: '2027-03-15' }, 1),
+      node({ key: SK.s2, kind: 'strategy', parentKey: null, title: 'Меньше зависимости от одного канала', description: 'Сейчас почти все заявки приходят из одного источника.', impact: 3, effort: 2 }, 1),
+      node({ key: SK.i3, kind: 'initiative', parentKey: SK.s2, title: 'Тест двух новых каналов привлечения', ownerLabel: 'Маркетолог', impact: 3, effort: 3, kpi: { name: 'Стоимость заявки', target: 2500, unit: '₸' }, dueDate: '2027-02-28' }, 0),
+      node({ key: SK.t6, kind: 'task', parentKey: SK.i3, title: 'Подобрать каналы и бюджеты', ownerLabel: 'Маркетолог', dueDate: '2026-11-30' }, 0),
+      node({ key: SK.t7, kind: 'task', parentKey: SK.i3, title: 'Запустить тест на 6 недель', ownerLabel: 'Маркетолог', dueDate: '2027-01-31' }, 1),
+      node({ key: SK.i4, kind: 'initiative', parentKey: SK.s2, title: 'Пересмотр прайса', description: 'Идея на проработку: оценки и задач пока нет.' }, 1),
+      node({ key: SK.t8, kind: 'task', parentKey: SK.i1, title: 'Разобрать итоги пилота и поправить условия', ownerLabel: 'Маркетолог', dueDate: '2027-05-20' }, 3),
+    ],
+    milestones: [
+      { key: SK.m1, title: 'Пилот программы лояльности запущен', date: '2027-01-15', description: 'Первые клиенты получают бонусы.', kpi: 'не менее 200 участников' },
+      { key: SK.m2, title: 'CRM принята в работу', date: '2027-03-31', description: null, kpi: null },
+      { key: SK.m3, title: 'Итог полугодия: повторные покупки', date: '2027-06-30', description: 'Сверка доли повторных покупок с целью.', kpi: '30% оборота' },
+    ],
+  }
+}
+
+/** Statuses of the tasks in the action plan for the preview. */
+const FX_TASK_STATUS: Record<string, 'open' | 'in_progress' | 'done'> = {
+  [SK.t1]: 'done', [SK.t2]: 'in_progress', [SK.t3]: 'open', [SK.t4]: 'open', [SK.t5]: 'open', [SK.t6]: 'done', [SK.t7]: 'in_progress', [SK.t8]: 'open',
+}
+
+/** What `plan.strategy` of the page state looks like for the approved fixture plan (hand-built; the server computes it for real). */
+export function fixtureStrategy(): PointBStrategyState {
+  const { items, milestones } = fixtureStrategyTree()
+  const progress: Record<string, NodeProgress> = {}
+  const tasksUnder = (key: string): StrategyNode[] => {
+    const own = items.filter((n) => n.parentKey === key)
+    return own.flatMap((n) => (n.kind === 'task' ? [n] : tasksUnder(n.key)))
+  }
+  for (const n of items) {
+    const tasks = n.kind === 'task' ? [n] : tasksUnder(n.key)
+    const st = tasks.map((t) => FX_TASK_STATUS[t.key])
+    const done = st.filter((x) => x === 'done').length
+    const inProgress = st.filter((x) => x === 'in_progress').length
+    progress[n.key] = {
+      key: n.key,
+      tasks: tasks.length,
+      done,
+      inProgress,
+      percent: tasks.length === 0 ? null : Math.round((done / tasks.length) * 100),
+      state: tasks.length === 0 ? 'no_tasks' : done === tasks.length ? 'done' : done === 0 && inProgress === 0 ? 'not_started' : 'in_progress',
+    }
+  }
+  const quadrant = (i: number, e: number): MatrixPoint['quadrant'] => (i >= 3 ? (e <= 3 ? 'quick_wins' : 'big_bets') : e <= 3 ? 'fill_ins' : 'avoid')
+  const rated = items.filter((n) => n.kind !== 'task')
+  const points: MatrixPoint[] = rated.flatMap((n) => (n.impact !== null && n.effort !== null
+    ? [{ key: n.key, title: n.title, kind: n.kind as 'strategy' | 'initiative', impact: n.impact, effort: n.effort, quadrant: quadrant(n.impact, n.effort) }]
+    : []))
+  return { items, milestones, progress, matrix: { points, unrated: rated.length - points.length } }
 }
