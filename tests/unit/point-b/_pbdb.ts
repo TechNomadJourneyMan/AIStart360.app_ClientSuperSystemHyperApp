@@ -32,6 +32,7 @@ const DEFAULTS: Record<string, () => Row> = {
   pb_finmodel_inputs: () => ({
     period_key: '', as_of: null, status: 'entered', note: null, verified_by: null, verified_by_name: null, verified_at: null, updated_by: null,
   }),
+  pb_saved_scenarios: () => ({ note: null, summary: {}, proposed_at: null, proposal_message_id: null }),
   metric_targets: () => ({ direction: 'higher_is_better', source: 'owner', note: null, set_by: null, deadline: null, label: null, baseline_value: null, baseline_period: null }),
 }
 
@@ -63,6 +64,9 @@ function immutableViolation(table: string, before: Row, after: Row): boolean {
   return before.status === 'superseded'
 }
 
+/** A v4-shaped uuid from a counter (the saved what-if routes validate ids as uuids). */
+const uuidOf = (n: number): string => `5a5a5a5a-0000-4000-8000-${String(n).padStart(12, '0')}`
+
 function cmp(a: unknown, b: unknown): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b
   const x = String(a ?? ''), y = String(b ?? '')
@@ -72,7 +76,7 @@ function cmp(a: unknown, b: unknown): number {
 export function pbDb(seed: Record<string, Row[]> = {}) {
   let seq = 0
   const db: Record<string, Row[]> = {
-    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
+    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
   }
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()
@@ -98,7 +102,7 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
               const hit = rows.find((r) => conflictCols.every((c) => r[c] === p[c]))
               if (hit) { Object.assign(hit, structuredClone(p), table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}); out.push(hit); writes.push({ table, op, payload: p }); continue }
             }
-            const row: Row = { id: `${table}-${++seq}`, created_at: stamp(), ...(table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
+            const row: Row = { id: table === 'pb_saved_scenarios' ? uuidOf(++seq) : `${table}-${++seq}`, created_at: stamp(), ...(table === 'pb_saved_scenarios' ? { updated_at: stamp() } : {}), ...(table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
             if (uniqueViolation(table, rows, row)) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint (${table})` } }
             rows.push(row)
             out.push(row)
