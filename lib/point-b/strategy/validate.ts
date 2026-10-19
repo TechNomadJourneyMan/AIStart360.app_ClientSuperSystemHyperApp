@@ -278,3 +278,21 @@ export function validateStrategy(raw: unknown, opts: { moderation?: boolean } = 
     throw err
   }
 }
+
+export interface StrategyCounts { strategies: number; initiatives: number; tasks: number; milestones: number }
+
+/** Node counts by level of a stored or submitted strategy (tolerant: anything unexpected counts as nothing) — for the audit. */
+export function strategyCounts(raw: unknown): StrategyCounts {
+  const out: StrategyCounts = { strategies: 0, initiatives: 0, tasks: 0, milestones: 0 }
+  if (!isObject(raw)) return out
+  if (Array.isArray(raw.items)) {
+    for (const n of raw.items) {
+      const kind = isObject(n) ? n.kind : null
+      if (kind === 'strategy') out.strategies++
+      else if (kind === 'initiative') out.initiatives++
+      else if (kind === 'task') out.tasks++
+    }
+  }
+  if (Array.isArray(raw.milestones)) out.milestones = raw.milestones.length
+  return out
+}
