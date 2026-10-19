@@ -16,6 +16,7 @@ import { companyOfUser } from '../plan/flow'
 import { snapshotGoals } from '../plan/goals'
 import { loadPlanBundle, type PlanBundle } from '../plan/store'
 import type { PlanGoalsSnapshot } from '../plan/types'
+import { loadStrategyState } from '../strategy/load'
 import { computeModel } from './compute'
 import { loadRevenueHistory } from './history'
 import { buildModelInputs } from './inputs'
@@ -126,6 +127,8 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       scenarios: published ? storedScenarios(published.scenarios) : [],
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
+      // The strategy of the approved version only, with the live progress of its tasks; a draft's never gets here.
+      strategy: published ? await loadStrategyState(sb, userId, published.strategy) : null,
     },
   }
 }

@@ -21,8 +21,9 @@ import { displayNameOf } from '@/lib/expert-review/server'
 import { PROFANITY_MESSAGE, profaneField } from '@/lib/moderation/http'
 import { ProfanityError } from '@/lib/moderation/profanity'
 import { createServiceClient } from '@/lib/supabase-service'
-import { approvePlanVersion, authorKindOf, companyOfUser, legacyShape, saveNotesAndSubmit, type PlanActor } from './flow'
-import { loadPlanBundle, PlanError, type ApproveResult, type PlanBundle } from './store'
+import { approvePlanVersion, authorKindOf, companyOfUser, legacyShape, saveNotesAndSubmit, type PlanActor, type PublishResult } from './flow'
+import { StrategyError } from '../strategy/validate'
+import { loadPlanBundle, PlanError, type PlanBundle } from './store'
 import { EXCEPTION_REASON_MIN, validExceptionReason } from './status'
 import type { PlanVersionRow } from './types'
 
@@ -35,7 +36,13 @@ export const PLAN_AUDIT = {
   goalReviewed: 'point_b.goal.reviewed',
   scenariosComputed: 'point_b.scenarios.computed',
   scenarioSelected: 'point_b.scenario.selected',
+  strategySaved: 'point_b.strategy.saved',
+  tasksSyncFailed: 'point_b.tasks.sync_failed',
 } as const
+
+/** Shown to the approver when the version is published but its tasks did not reach the client's action plan. */
+export const TASKS_SYNC_WARNING =
+  'План одобрен и виден клиенту, но задачи стратегии пока не попали в его план действий. Сообщите администратору: синхронизация повторится при следующей публикации.'
 
 export interface PlanRouteContext {
   actor: GigaActor
@@ -114,6 +121,9 @@ export function planFailure(err: unknown, opts: { conditionsStatus?: number } = 
   if (err instanceof ProfanityError) {
     return fail(PROFANITY_MESSAGE, 400, { code: 'profanity', field: err.field })
   }
+  if (err instanceof StrategyError) {
+    return fail(err.message, 400, { code: err.profanity ? 'profanity' : 'invalid_strategy', field: err.field })
+  }
   if (err instanceof PlanError) {
     const status = err.code === 'not_found' ? 404 : err.code === 'conditions' ? (opts.conditionsStatus ?? 409) : 409
     return fail(err.message, status, { code: err.code, ...(err.reasons?.length ? { reasons: err.reasons } : {}) })
@@ -184,7 +194,7 @@ export function exceptionReasonOf(raw: string | null | undefined): { reason: str
 /** Approves a version of this client's plan and audits it (both approve routes). */
 export async function approveAndAudit(
   req: Request, ctx: PlanRouteContext, version: PlanVersionRow, exceptionReason: string | null, via?: string,
-): Promise<ApproveResult> {
+): Promise<PublishResult> {
   const result = await approvePlanVersion(ctx.sb, {
     companyId: ctx.company!.id, userId: ctx.userId, version, actor: { id: ctx.actor.id, name: ctx.actorName }, exceptionReason,
   })
@@ -196,9 +206,21 @@ export async function approveAndAudit(
       first: result.previousPublishedId === null,
       supersededVersionId: result.previousPublishedId,
       exception: result.exception,
+      ...(result.tasks.ok ? { tasks: { created: result.tasks.created, updated: result.tasks.updated, skipped: result.tasks.skipped } } : {}),
       ...(result.exception ? { exceptionReason: result.version.approval_exception } : {}),
       ...(via ? { via } : {}),
     },
   })
+  if (!result.tasks.ok) {
+    await auditPlan(ctx, req, {
+      action: PLAN_AUDIT.tasksSyncFailed, entityId: result.version.id,
+      metadata: { version: result.version.version, tasks: result.tasks.tasks, error: result.tasks.error, ...(via ? { via } : {}) },
+    })
+  }
   return result
+}
+
+/** `warnings` for the approve answers: omitted unless the tasks of the strategy were not written. */
+export function publishWarnings(result: PublishResult): { warnings?: string[] } {
+  return result.tasks.ok ? {} : { warnings: [TASKS_SYNC_WARNING] }
 }

@@ -8,6 +8,7 @@
  *
  *   createDraft   one open (draft / in_review) version per plan
  *   updateDraft   only a draft is editable
+ *   saveStrategy  the strategy tree of a draft (validated again here: no writer can skip it)
  *   submitVersion draft → in_review
  *   approveVersion in_review → approved; the previous approved → superseded,
  *                 pb_plans.published_version_id / current_version_id → the new one
@@ -18,6 +19,8 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { assertClean } from '@/lib/moderation/profanity'
+import type { PlanStrategy } from '../strategy/types'
+import { StrategyError, validateStrategy } from '../strategy/validate'
 import { canTransition, checkApprovalConditions, isEditable, validExceptionReason } from './status'
 import type { PlanAuthorKind, PlanGoalsSnapshot, PlanRow, PlanVersionRow } from './types'
 
@@ -162,11 +165,18 @@ export interface DraftPatch {
   changeReason?: string | null
   goals?: PlanGoalsSnapshot
   selectedScenario?: string | null
+  /** The whole strategy tree (replaces the stored one). Refused with StrategyError when it does not validate. */
+  strategy?: PlanStrategy
 }
 
 export async function updateDraft(sb: SupabaseClient, versionId: string, patch: DraftPatch): Promise<PlanVersionRow> {
   assertClean({ expertNotes: patch.expertNotes, changeReason: patch.changeReason })
   const row: Record<string, unknown> = {}
+  if (patch.strategy !== undefined) {
+    const checked = validateStrategy(patch.strategy)
+    if (!checked.ok) throw new StrategyError(checked.error, checked.field, checked.profanity === true)
+    row.strategy = checked.strategy
+  }
   if (patch.expertNotes !== undefined) row.expert_notes = patch.expertNotes?.trim() || null
   if (patch.changeReason !== undefined) row.change_reason = patch.changeReason?.trim() || null
   if (patch.goals !== undefined) row.goals = patch.goals
@@ -182,6 +192,11 @@ export async function updateDraft(sb: SupabaseClient, versionId: string, patch: 
   if (data) return data as PlanVersionRow
   const cur = await fetchVersion(sb, versionId)
   throw planError(cur ? 'not_editable' : 'not_found')
+}
+
+/** Replaces the strategy of a DRAFT; any other status → PlanError('not_editable'). */
+export async function saveStrategy(sb: SupabaseClient, versionId: string, strategy: PlanStrategy): Promise<PlanVersionRow> {
+  return updateDraft(sb, versionId, { strategy })
 }
 
 export interface ScenariosInput {

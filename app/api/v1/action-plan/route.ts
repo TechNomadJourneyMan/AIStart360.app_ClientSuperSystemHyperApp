@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
 
   let items = await fetchItems()
 
-  if (items.length === 0) {
+  // Tasks published by a Point B plan (source 'point_b') are not the client's own 90-day plan:
+  // they must not stop the plan from being generated from the GRI assessment.
+  if (items.every((i) => (i as { source?: string | null }).source === 'point_b')) {
     const { data: gri } = await admin
       .from('gri_assessments')
       .select('id, action_plan_90d, top_5_limits')

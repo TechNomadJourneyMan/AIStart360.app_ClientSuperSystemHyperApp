@@ -353,14 +353,14 @@ describe('GET /api/v1/point-b/state', () => {
     expect(d.overview.result.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000 })
     // the goal is the owner's draft: the overview says so
     expect(d.overview.result.warnings.some((w: string) => /не проверена экспертом/.test(w))).toBe(true)
-    expect(d.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null })
+    expect(d.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
   })
 
   it('state: client sees scenarios only from the approved version (draft and in_review never leak)', async () => {
     // (a) only a draft with scenarios
     withPlan([versionRow({ scenarios: [fakeScenario('DRAFT-MARK')], selected_scenario: 'moderate', expert_notes: 'DRAFT-NOTES' })])
     let r = await state()
-    expect(r.body.data.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null })
+    expect(r.body.data.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
     expect(JSON.stringify(r.body)).not.toContain('DRAFT-MARK')
 
     // (b) a version in review
@@ -381,6 +381,8 @@ describe('GET /api/v1/point-b/state', () => {
     expect(r.body.data.plan).toEqual({
       status: 'published', version: 1, selectedScenario: 'cautious', approvedAt: '2026-10-11T00:00:00Z', authorName: 'Алия Эксперт',
       scenarios: [fakeScenario('APPROVED-MARK')],
+      // an approved version with the stored default `{}` has an empty strategy (not «none»)
+      strategy: { items: [], milestones: [], progress: {}, matrix: { points: [], unrated: 0 } },
     })
     expect(JSON.stringify(r.body)).not.toContain('DRAFT2-MARK')
 
@@ -414,7 +416,7 @@ describe('GET /api/v1/point-b/state', () => {
     expect(r.status).toBe(200)
     expect(r.body.data.overview.result).toMatchObject({ level: 0, kind: 'none', scenarios: [] })
     expect(r.body.data.overview.result.missing.map((m: { key: string }) => m.key)).toEqual(['goal', 'revenue_base'])
-    expect(r.body.data.plan).toEqual({ status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null })
+    expect(r.body.data.plan).toEqual({ status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
   })
 
   it('state: a company without a goal is level 0 and asks for the goal; with a goal but no funnel it is the growth model', async () => {
@@ -449,6 +451,101 @@ describe('GET /api/v1/point-b/state', () => {
     expect(result.forecast.basis).toBe('history')
     expect(result.forecast.trendMonthlyPct).toBeCloseTo(2, 1)
     expect(result.verdict.key).toBe('behind')
+  })
+
+  describe('strategy in the state', () => {
+    const T = {
+      s: 'strat-0000001', i1: 'init-00000001', i2: 'init-00000002', t1: 'task-00000001', t2: 'task-00000002', t3: 'task-00000003',
+    }
+    const node = (kind: string, key: string, parentKey: string | null, over: Record<string, unknown> = {}) => ({
+      key, kind, parentKey, title: key, description: null, ownerLabel: null, dueDate: null,
+      impact: kind === 'task' ? null : 4, effort: kind === 'task' ? null : 2, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order: 0, ...over,
+    })
+    const tree = (title = 'Рост') => ({
+      items: [
+        node('strategy', T.s, null, { title }), node('initiative', T.i1, T.s), node('initiative', T.i2, T.s, { impact: null, effort: null }),
+        node('task', T.t1, T.i1), node('task', T.t2, T.i1), node('task', T.t3, T.i1),
+      ],
+      milestones: [{ key: 'mile-0000001', title: 'Запуск', date: '2026-12-01', description: null, kpi: null }],
+    })
+    const actionRow = (key: string, status: string, userId = CLIENT) => ({ id: `ai-${key}`, user_id: userId, title: key, status, pb_task_key: key, source: 'point_b' })
+
+    it('state: plan.strategy comes only from the approved version, with live progress; none without an approved version; a draft’s strategy never leaks', async () => {
+      // (a) a draft with a strategy and no approved version → null, nothing leaks
+      withPlan([versionRow({ strategy: tree('DRAFT-STRATEGY-MARK') })])
+      let r = await state()
+      expect(r.body.data.plan.strategy).toBeNull()
+      expect(JSON.stringify(r.body)).not.toContain('DRAFT-STRATEGY-MARK')
+      versions()[0].status = 'in_review'
+      r = await state()
+      expect(r.body.data.plan.strategy).toBeNull()
+      expect(JSON.stringify(r.body)).not.toContain('DRAFT-STRATEGY-MARK')
+
+      // (b) approved v1 (strategy A) and a newer draft v2 (strategy B): the client sees A
+      db().pb_plans.length = 0
+      versions().length = 0
+      withPlan([
+        versionRow({ id: 'v-1', version: 1, status: 'approved', strategy: tree('APPROVED-STRATEGY'), approved_at: '2026-10-11T00:00:00Z' }),
+        versionRow({ id: 'v-2', version: 2, status: 'draft', strategy: tree('DRAFT2-STRATEGY-MARK') }),
+      ], 'v-1')
+      db().action_items.push(actionRow(T.t1, 'done'), actionRow(T.t2, 'open'), actionRow(T.t3, 'in_progress'))
+      r = await state()
+      const st = r.body.data.plan.strategy
+      expect(st.items).toHaveLength(6)
+      expect(st.items[0].title).toBe('APPROVED-STRATEGY')
+      expect(st.milestones).toHaveLength(1)
+      expect(st.progress[T.i1]).toMatchObject({ tasks: 3, done: 1, inProgress: 1, percent: 33, state: 'in_progress' })
+      expect(st.progress[T.i2]).toMatchObject({ tasks: 0, percent: null, state: 'no_tasks' })
+      expect(st.progress[T.s]).toMatchObject({ tasks: 3, done: 1, percent: 33 })
+      expect(st.matrix.unrated).toBe(1)
+      expect(st.matrix.points.map((p: { key: string; quadrant: string }) => [p.key, p.quadrant])).toEqual([[T.s, 'quick_wins'], [T.i1, 'quick_wins']])
+      expect(JSON.stringify(r.body)).not.toContain('DRAFT2-STRATEGY-MARK')
+    })
+
+    it('state: progress follows the action_items statuses and ignores deleted tasks and other clients’ rows', async () => {
+      withPlan([versionRow({ id: 'v-1', status: 'approved', strategy: tree(), approved_at: '2026-10-11T00:00:00Z' })], 'v-1')
+      db().action_items.push(actionRow(T.t1, 'open'), actionRow(T.t2, 'open'), actionRow(T.t3, 'open'), actionRow(T.t1, 'done', OTHER_CLIENT))
+      let st = (await state()).body.data.plan.strategy
+      expect(st.progress[T.i1]).toMatchObject({ tasks: 3, done: 0, percent: 0, state: 'not_started' })
+
+      // the client finishes one task in the action plan
+      db().action_items.find((x) => x.pb_task_key === T.t1 && x.user_id === CLIENT)!.status = 'done'
+      st = (await state()).body.data.plan.strategy
+      expect(st.progress[T.i1]).toMatchObject({ tasks: 3, done: 1, percent: 33 })
+      expect(st.progress[T.t1]).toMatchObject({ state: 'done' })
+
+      // the client deletes a task: only the existing ones count (1 of 2)
+      db().action_items.splice(db().action_items.findIndex((x) => x.pb_task_key === T.t3), 1)
+      st = (await state()).body.data.plan.strategy
+      expect(st.progress[T.i1]).toMatchObject({ tasks: 2, done: 1, percent: 50 })
+      expect(st.progress[T.t3]).toMatchObject({ state: 'no_tasks', percent: null })
+
+      // every task deleted: «no tasks», not 0 %
+      db().action_items.length = 0
+      st = (await state()).body.data.plan.strategy
+      expect(st.progress[T.i1]).toMatchObject({ tasks: 0, percent: null, state: 'no_tasks' })
+    })
+
+    it('state: an unreadable action plan (migration 128 not applied) or a broken stored strategy does not fail the page', async () => {
+      withPlan([versionRow({ id: 'v-1', status: 'approved', strategy: tree(), approved_at: '2026-10-11T00:00:00Z' })], 'v-1')
+      const real = s.h!.sb.from.bind(s.h!.sb)
+      ;(s.h!.sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+        if (t !== 'action_items') return real(t)
+        const q: Record<string, unknown> = {}
+        for (const m of ['select', 'eq', 'in']) q[m] = () => q
+        q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { code: '42703' } }).then(res)
+        return q
+      }
+      let r = await state()
+      expect(r.status).toBe(200)
+      expect(r.body.data.plan.strategy.items).toHaveLength(6)
+      expect(r.body.data.plan.strategy.progress[T.i1]).toMatchObject({ tasks: 0, state: 'no_tasks' })
+
+      versions()[0].strategy = { items: [{ key: 'x', kind: 'task' }], milestones: [] }
+      r = await state()
+      expect(r.status).toBe(200)
+      expect(r.body.data.plan.strategy).toEqual({ items: [], milestones: [], progress: {}, matrix: { points: [], unrated: 0 } })
+    })
   })
 
   it('state never writes', async () => {

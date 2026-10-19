@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { legacyShape } from '@/lib/point-b/plan/flow'
-import { approveAndAudit, exceptionReasonOf, findVersion, guarded, guardPlanRoute, versionNotFound } from '@/lib/point-b/plan/route-guard'
+import { approveAndAudit, exceptionReasonOf, publishWarnings, findVersion, guarded, guardPlanRoute, versionNotFound } from '@/lib/point-b/plan/route-guard'
 
 /**
  * POST /api/giga-admin/users/:id/review/point-b/approve { versionId, exceptionReason? }
@@ -36,6 +36,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!found) return versionNotFound()
 
     const result = await approveAndAudit(req, ctx, found.version, exception.reason, 'legacy-route')
-    return NextResponse.json({ ok: true, data: legacyShape(result.version) })
+    return NextResponse.json({ ok: true, data: legacyShape(result.version), ...publishWarnings(result) })
   })
 }

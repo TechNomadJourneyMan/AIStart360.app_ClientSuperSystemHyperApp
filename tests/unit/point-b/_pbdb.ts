@@ -9,6 +9,7 @@
  *     metric_targets (23505, like PostgREST);
  *   - the immutability trigger of pb_plan_versions: an approved row may only
  *     become superseded, a superseded row is frozen (23514);
+ *   - the unique partial index (user_id, pb_task_key) of action_items (migration 128);
  *   - an update is atomic, so two «conditional» updates race exactly like in SQL.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -33,6 +34,10 @@ const DEFAULTS: Record<string, () => Row> = {
     period_key: '', as_of: null, status: 'entered', note: null, verified_by: null, verified_by_name: null, verified_at: null, updated_by: null,
   }),
   pb_saved_scenarios: () => ({ note: null, summary: {}, proposed_at: null, proposal_message_id: null }),
+  action_items: () => ({
+    status: 'open', description: null, owner: null, due_date: null, expected_effect: null, linked_block: null, priority: 3,
+    source: 'plan', pb_task_key: null, pb_version_id: null, completed_at: null,
+  }),
   metric_targets: () => ({ direction: 'higher_is_better', source: 'owner', note: null, set_by: null, deadline: null, label: null, baseline_value: null, baseline_period: null }),
 }
 
@@ -45,6 +50,10 @@ function uniqueViolation(table: string, rows: Row[], row: Row, ignoreId?: unknow
   }
   if (table === 'pb_finmodel_inputs') {
     return others.some((r) => r.company_id === row.company_id && r.key === row.key && r.period_key === row.period_key)
+  }
+  // action_items_pb_task_uidx (migration 128): one row per (user_id, pb_task_key) where the key is set.
+  if (table === 'action_items') {
+    return row.pb_task_key != null && others.some((r) => r.user_id === row.user_id && r.pb_task_key === row.pb_task_key)
   }
   if (table === 'metric_targets') {
     return others.some((r) => r.company_id === row.company_id && r.metric_key === row.metric_key && r.period_label === row.period_label)
@@ -76,7 +85,7 @@ function cmp(a: unknown, b: unknown): number {
 export function pbDb(seed: Record<string, Row[]> = {}) {
   let seq = 0
   const db: Record<string, Row[]> = {
-    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
+    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], action_items: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
   }
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()

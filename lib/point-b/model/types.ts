@@ -12,6 +12,9 @@
 import type { FinmodelKey } from '../finmodel/keys'
 import type { FinmodelState } from '../finmodel/store'
 import type { GoalReviewStatus } from '../plan/types'
+import type { MatrixPoint } from '../strategy/matrix'
+import type { NodeProgress } from '../strategy/progress'
+import type { Milestone, StrategyNode } from '../strategy/types'
 
 /** pb-model-2: level 2 (profit and cash flow). A result of pb-model-1 is read but has no money: it is recalculated. */
 export const MODEL_VERSION = 'pb-model-2'
@@ -157,6 +160,18 @@ export interface ModelResult {
 export type Forecast = ModelResult['forecast']
 
 /**
+ * The strategy of the APPROVED plan version with live progress (Ф5): the tree, the milestones, the progress of
+ * every node (a TASK node's entry carries the status of its action_items row: state `no_tasks` = the row is gone)
+ * and the impact × effort matrix.
+ */
+export interface StrategyState {
+  items: StrategyNode[]
+  milestones: Milestone[]
+  progress: Record<string, NodeProgress>
+  matrix: { points: MatrixPoint[]; unrated: number }
+}
+
+/**
  * GET /api/v1/point-b/state — everything the client page needs in one read.
  * `overview.result` is the automatic preliminary calculation (always, for a PRO client); `plan.scenarios`
  * come from the APPROVED plan version only — a draft or a version in review never reaches the client.
@@ -173,6 +188,8 @@ export interface PointBState {
     scenarios: ScenarioResult[]
     approvedAt: string | null
     authorName: string | null
+    /** Only from the approved version; null = there is none. An approved plan without a strategy has an empty one. */
+    strategy: StrategyState | null
   }
 }
 

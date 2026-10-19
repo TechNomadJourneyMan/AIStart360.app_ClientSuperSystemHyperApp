@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  approveVersion, approveVersionDetailed, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, refreshGoals, rejectVersion, submitVersion, updateDraft,
+  approveVersion, approveVersionDetailed, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, refreshGoals, rejectVersion, saveStrategy, submitVersion, updateDraft,
 } from '@/lib/point-b/plan/store'
+import type { PlanStrategy } from '@/lib/point-b/strategy/types'
+import { StrategyError } from '@/lib/point-b/strategy/validate'
 import type { GoalReviewStatus, PlanGoalsSnapshot } from '@/lib/point-b/plan/types'
 import { pbDb } from './_pbdb'
 
@@ -238,5 +240,68 @@ describe('plan store', () => {
     await approveVersion(h.sb, v.id, ADMIN)
     expect(await refreshGoals(h.sb, v.id, goals('disputed'))).toBeNull()
     expect(h.db.pb_plan_versions[0].goals).toMatchObject({ items: [{ reviewStatus: 'agreed' }] })
+  })
+})
+
+describe('strategy in a plan version', () => {
+  const strategy = (title = 'Рост выручки'): PlanStrategy => ({
+    items: [
+      { key: 'strat-0000001', kind: 'strategy', parentKey: null, title, description: null, ownerLabel: null, dueDate: null, impact: 4, effort: 2, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order: 0 },
+      { key: 'init-00000001', kind: 'initiative', parentKey: 'strat-0000001', title: 'Реклама', description: null, ownerLabel: null, dueDate: '2026-12-01', impact: 3, effort: 3, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order: 0 },
+    ],
+    milestones: [{ key: 'mile-0000001', title: 'Запуск', date: '2026-11-01', description: null, kpi: null }],
+  })
+
+  it('saveStrategy only on a draft; in_review and approved → not_editable', async () => {
+    const h = await setup()
+    const v = await createDraft(h.sb, h.plan, draftInput())
+    const saved = await saveStrategy(h.sb, v.id, strategy())
+    expect(saved.status).toBe('draft')
+    expect(saved.strategy).toEqual(strategy())
+    expect(h.db.pb_plan_versions[0].strategy).toEqual(strategy())
+
+    await submitVersion(h.sb, v.id)
+    await expect(saveStrategy(h.sb, v.id, strategy('Другое'))).rejects.toMatchObject({ code: 'not_editable' })
+    await approveVersion(h.sb, v.id, ADMIN)
+    await expect(saveStrategy(h.sb, v.id, strategy('Другое'))).rejects.toMatchObject({ code: 'not_editable' })
+    expect(h.db.pb_plan_versions[0].strategy).toEqual(strategy())
+    await expect(saveStrategy(h.sb, 'no-such-id', strategy())).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('saveStrategy replaces the whole tree, normalises it, and refuses an invalid or profane one without writing', async () => {
+    const h = await setup()
+    const v = await createDraft(h.sb, h.plan, draftInput())
+    await saveStrategy(h.sb, v.id, strategy())
+    const smaller: PlanStrategy = { items: [strategy().items[0]], milestones: [] }
+    expect((await saveStrategy(h.sb, v.id, smaller)).strategy).toEqual(smaller) // replaced, not merged
+    expect((await saveStrategy(h.sb, v.id, { items: [], milestones: [] })).strategy).toEqual({ items: [], milestones: [] })
+
+    await saveStrategy(h.sb, v.id, strategy())
+    const err = await saveStrategy(h.sb, v.id, { items: [{ ...strategy().items[1], parentKey: null }], milestones: [] }).catch((e) => e)
+    expect(err).toBeInstanceOf(StrategyError)
+    expect(err).toMatchObject({ field: 'items[0].parentKey', profanity: false })
+    const swear = await saveStrategy(h.sb, v.id, strategy('Это хуйня полная')).catch((e) => e)
+    expect(swear).toMatchObject({ name: 'StrategyError', field: 'items[0].title', profanity: true })
+    expect(h.db.pb_plan_versions[0].strategy).toEqual(strategy())
+  })
+
+  it('updateDraft with a strategy changes only the strategy (and still takes the other fields)', async () => {
+    const h = await setup()
+    const v = await createDraft(h.sb, h.plan, draftInput())
+    const upd = await updateDraft(h.sb, v.id, { strategy: strategy(), expertNotes: 'Заметка' })
+    expect(upd).toMatchObject({ expert_notes: 'Заметка', change_reason: 'Первый план', strategy: strategy() })
+  })
+
+  it('createDraft copies the strategy of the previous version (keys stay), and the copy is its own', async () => {
+    const h = await setup()
+    const v1 = await createDraft(h.sb, h.plan, draftInput())
+    await saveStrategy(h.sb, v1.id, strategy())
+    await submitVersion(h.sb, v1.id)
+    await approveVersion(h.sb, v1.id, ADMIN)
+    const v2 = await createDraft(h.sb, h.plan, draftInput({ changeReason: 'Новая цель', fromVersion: { ...h.db.pb_plan_versions[0] } }))
+    expect(v2.strategy).toEqual(strategy())
+    await saveStrategy(h.sb, v2.id, strategy('Новое название'))
+    expect(h.db.pb_plan_versions[0].strategy).toEqual(strategy()) // the approved one is unchanged
+    expect((h.db.pb_plan_versions[1].strategy as PlanStrategy).items[0].title).toBe('Новое название')
   })
 })

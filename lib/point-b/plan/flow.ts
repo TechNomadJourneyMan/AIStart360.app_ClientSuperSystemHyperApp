@@ -4,7 +4,9 @@
  *
  *   createPlanDraft     a new draft with a snapshot of the live goals (the store does not take it)
  *   submitPlanVersion   refresh the goals snapshot → draft → in_review → «ждёт одобрения» to staff
- *   approvePlanVersion  refresh the goals snapshot → in_review → approved → the client is told
+ *   approvePlanVersion  refresh the goals snapshot → in_review → approved → the tasks of the strategy go
+ *                       into the client's action plan (a failure there never undoes the approval) →
+ *                       the client is told
  *   saveNotesAndSubmit  the legacy «save an expert correction» path (three old routes) on top of
  *                       plan versions: create or edit the draft, set the notes, send for approval
  *   legacyShape         a plan version in the shape the old `point_b_versions` consumers know
@@ -18,6 +20,8 @@ import {
 } from './store'
 import { snapshotGoals } from './goals'
 import { notifyPlanApproved, notifyPlanSubmitted } from './notify'
+import { syncPlanTasks } from '../strategy/tasks'
+import { validateStrategy } from '../strategy/validate'
 import type { PlanAuthorKind, PlanRow, PlanVersionRow } from './types'
 
 /** Who writes: a staff member; `kind` is the label stored on the version. */
@@ -98,12 +102,42 @@ export async function submitPlanVersion(
   return submitted
 }
 
+/** What happened to the tasks of the strategy when the version was published. */
+export type TasksSyncOutcome =
+  | { ok: true; created: number; updated: number; skipped: number }
+  | { ok: false; error: string; /** How many tasks the version has. */ tasks: number }
+
+export interface PublishResult extends ApproveResult {
+  tasks: TasksSyncOutcome
+}
+
+/**
+ * Writes the tasks of an APPROVED version into the action plan of the client. Never throws: the version
+ * is already published, a failure (migration 128 not applied, a broken stored strategy) is reported in
+ * the outcome for the caller to audit and show.
+ */
+export async function publishTasks(sb: SupabaseClient, userId: string, version: PlanVersionRow): Promise<TasksSyncOutcome> {
+  try {
+    // The stored strategy is read as it is (the profanity filter is for what people write, not for what is already published).
+    const parsed = validateStrategy(version.strategy ?? {}, { moderation: false })
+    if (!parsed.ok) throw new Error(`stored strategy is not valid (${parsed.field})`)
+    const r = await syncPlanTasks(sb, { userId, versionId: version.id, strategy: parsed.strategy })
+    return { ok: true, ...r }
+  } catch (err) {
+    console.error('[point-b/flow] tasks of the strategy were not written to the action plan', err instanceof Error ? err.message : err)
+    const raw = (version.strategy as { items?: unknown } | null)?.items
+    const tasks = Array.isArray(raw) ? raw.filter((x) => (x as { kind?: unknown } | null)?.kind === 'task').length : 0
+    return { ok: false, error: (err instanceof Error ? err.message : 'unknown').slice(0, 200), tasks }
+  }
+}
+
 export async function approvePlanVersion(
   sb: SupabaseClient,
   input: { companyId: string; userId: string; version: PlanVersionRow; actor: { id: string; name: string }; exceptionReason?: string | null },
-): Promise<ApproveResult> {
+): Promise<PublishResult> {
   await refreshOpenGoals(sb, input.companyId, input.version)
-  const result = await approveVersionDetailed(sb, input.version.id, { id: input.actor.id }, { exceptionReason: input.exceptionReason })
+  const approved = await approveVersionDetailed(sb, input.version.id, { id: input.actor.id }, { exceptionReason: input.exceptionReason })
+  const result: PublishResult = { ...approved, tasks: await publishTasks(sb, input.userId, approved.version) }
   await notifyPlanApproved(sb, {
     userId: input.userId,
     versionId: result.version.id,
