@@ -708,5 +708,5 @@ export function fixtureStrategy(): PointBStrategyState {
   const points: MatrixPoint[] = rated.flatMap((n) => (n.impact !== null && n.effort !== null
     ? [{ key: n.key, title: n.title, kind: n.kind as 'strategy' | 'initiative', impact: n.impact, effort: n.effort, quadrant: quadrant(n.impact, n.effort) }]
     : []))
-  return { items, milestones, progress, matrix: { points, unrated: rated.length - points.length } }
+  return { items, milestones, progress, matrix: { points, unrated: rated.filter((n) => n.kind === 'initiative').length - points.filter((q) => q.kind === 'initiative').length } }
 }

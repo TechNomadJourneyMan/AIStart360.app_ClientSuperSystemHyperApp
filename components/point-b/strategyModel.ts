@@ -174,7 +174,8 @@ function coerceMatrix(raw: unknown, items: StrategyNode[]): PointBStrategyState[
   const points = rated.flatMap((n): MatrixPoint[] => (n.impact !== null && n.effort !== null
     ? [{ key: n.key, title: n.title, kind: n.kind === 'strategy' ? 'strategy' : 'initiative', impact: n.impact, effort: n.effort, quadrant: quadrantOf(n.impact, n.effort) }]
     : []))
-  return { points, unrated: rated.length - points.length }
+  // As the server counts: only initiatives without a rating are «без оценки».
+  return { points, unrated: rated.filter((n) => n.kind === 'initiative').length - points.filter((q) => q.kind === 'initiative').length }
 }
 
 /** `data.plan.strategy` → state; null (no approved version) and anything unreadable → null. */

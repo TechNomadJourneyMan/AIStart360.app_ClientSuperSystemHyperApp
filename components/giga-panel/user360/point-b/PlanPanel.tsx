@@ -17,6 +17,7 @@ import {
   type PlanController, type PlanSnapshot, type UiError,
 } from './planController'
 import { ScenariosPanel } from './ScenariosPanel'
+import { StrategyPanel } from './StrategyPanel'
 import { usePlanController } from './usePlanController'
 
 const INVALID = 'border-red-500/50 focus:border-red-500/60'
@@ -118,6 +119,8 @@ export interface PlanPanelViewProps {
   children?: ReactNode
   /** The scenario calculation of the open version (draft: editable; in review: read-only). */
   scenarios?: ReactNode
+  /** The strategy tree of the open version (draft: editable; in review: read-only). */
+  strategy?: ReactNode
 }
 
 export function PlanPanelView(p: PlanPanelViewProps) {
@@ -197,6 +200,7 @@ export function PlanPanelView(p: PlanPanelViewProps) {
           )}
 
           {open && p.scenarios}
+          {open && p.strategy}
 
           {plan.versions.length === 0 && !draft ? (
             <EmptyState
@@ -330,6 +334,7 @@ export function PlanPanel({ ctl, snap, children }: { ctl: PlanController; snap: 
       onExceptionClose={() => ctl.closeException()}
       onExceptionConfirm={() => { const x = snap.exception; if (x) void ctl.approve(x.versionId, exceptionText) }}
       scenarios={snap.plan?.open ? <ScenariosPanel userId={ctl.userId} version={snap.plan.open} onChanged={() => void ctl.load()} /> : undefined}
+      strategy={snap.plan?.open ? <StrategyPanel userId={ctl.userId} version={snap.plan.open} onSaved={() => void ctl.load()} /> : undefined}
     >
       {children}
     </PlanPanelView>
