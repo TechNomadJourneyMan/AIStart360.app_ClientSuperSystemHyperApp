@@ -20,17 +20,18 @@ export const DASH = '—'
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 
-export type PointBTabKey = 'overview' | 'scenarios' | 'finmodel' | 'details'
+export type PointBTabKey = 'overview' | 'scenarios' | 'whatif' | 'finmodel' | 'details'
 
 export const POINT_B_TABS: ReadonlyArray<{ key: PointBTabKey; label: string }> = [
   { key: 'overview', label: 'Обзор' },
   { key: 'scenarios', label: 'Сценарии' },
+  { key: 'whatif', label: 'Что если' },
   { key: 'finmodel', label: 'Финмодель' },
   { key: 'details', label: 'Подробности' },
 ]
 
 export function isTabKey(v: unknown): v is PointBTabKey {
-  return v === 'overview' || v === 'scenarios' || v === 'finmodel' || v === 'details'
+  return v === 'overview' || v === 'scenarios' || v === 'whatif' || v === 'finmodel' || v === 'details'
 }
 
 /** Keyboard model of a tablist (arrows, Home, End); null = the key is not ours. */

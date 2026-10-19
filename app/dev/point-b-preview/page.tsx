@@ -2,7 +2,7 @@
 // API calls) — for visual audits without signing in. 404 in production, like
 // /dev/point-a-preview.
 //   ?variant=full | no-goal | stale-base | level2   — the data (level2: the finmodel is filled in, money is counted)
-//   ?tab=overview | scenarios | finmodel | details    — the open tab (default overview)
+//   ?tab=overview | scenarios | whatif | finmodel | details    — the open tab (default overview)
 //   ?plan=none | preparing | published     — the state of the expert's plan (default per variant)
 import { notFound } from 'next/navigation'
 import PointBView from '@/components/point-b/PointBView'
@@ -10,9 +10,10 @@ import FinmodelTab from '@/components/point-b/tabs/FinmodelTab'
 import OverviewTab from '@/components/point-b/tabs/OverviewTab'
 import PointBTabs from '@/components/point-b/tabs/PointBTabs'
 import ScenariosTab from '@/components/point-b/tabs/ScenariosTab'
+import WhatIfTab from '@/components/point-b/tabs/WhatIfTab'
 import { isTabKey, type PlanStatus } from '@/components/point-b/overviewModel'
 import type { PointBStateSnapshot } from '@/components/point-b/pointBStateController'
-import { fixtureFinmodel, fixtureFinmodelStatus, fixtureModelResult, fixturePointB, isPointBFixtureVariant, POINT_B_FIXTURE_VARIANTS, type PointBFixtureVariant } from '@/lib/point-b/fixtures'
+import { fixtureFinmodel, fixtureFinmodelStatus, fixtureModelResult, fixturePointB, fixtureWhatIf, fixtureWhatIfChanges, fixtureWhatIfSaved, isPointBFixtureVariant, POINT_B_FIXTURE_VARIANTS, type PointBFixtureVariant } from '@/lib/point-b/fixtures'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,6 +74,9 @@ export default function PointBPreviewPage({ searchParams }: { searchParams?: { v
         panels={{
           overview: <OverviewTab snap={snap} />,
           scenarios: <ScenariosTab snap={snap} />,
+          // «Что если» opens with one pre-computed set of changes (the preview does not run the engine);
+          // saving, deleting and proposing work in memory only.
+          whatif: <WhatIfTab state={snap} preview={{ result: fixtureWhatIf(variant), baseline: fixtureWhatIf(variant, []), saved: fixtureWhatIfSaved(variant), changes: fixtureWhatIfChanges(variant) }} />,
           // The form works on the fixture: a save is applied in memory, nothing leaves the page.
           finmodel: <FinmodelTab preview={fixtureFinmodel(variant)} />,
           details: <PointBView pointB={fixturePointB(variant)} previewMode />,

@@ -12,6 +12,9 @@ import { calculatePointBV2, POINT_B_LEVER_METRICS, type PointBOptions, type Poin
 import type { FinmodelStateView } from '@/components/point-b/finmodelController'
 import type { FinmodelKey } from './finmodel/keys'
 import type { ModelResult, Range, ScenarioFinance, ScenarioResult } from './model/types'
+import { WHATIF_LABELS, type WhatIfChange, type WhatIfMetrics, type WhatIfResult } from './model/whatif'
+import { fmtMoney } from '@/components/point-b/overviewModel'
+import type { SavedWhatIf } from '@/components/point-b/whatIfModel'
 
 /** `level2`: the same business as `full`, with the finmodel filled in — profit, cash flow, funding need. */
 export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base', 'level2'] as const
@@ -452,4 +455,171 @@ export function fixtureFinmodel(variant: PointBFixtureVariant): FinmodelStateVie
     complete: false,
     defaulted: ['tax_rate', 'dso_days', 'dio_days', 'dpo_days'],
   }
+}
+
+
+// ── «Что если» by hand ────────────────────────────────────────────────────
+//
+// NOT the engine: a tiny deterministic model written for the preview so the numbers of one fixed set of changes agree
+// with each other (the deltas are differences, the contributions come from separate runs, the interaction is the rest,
+// the cash loop is one chain). It understands conversion, average check and a revenue shock; other calculators are not
+// simulated (the preview answers with the pre-computed result of the fixed set).
+
+const WI_HORIZON = 24
+const WI_DEADLINE = 12
+const WI_RAMP = 12
+const WI_CONVERSION0 = 0.12
+const WI_MARKETING_SHARE = 0.1
+
+/** The set of changes the preview opens with (and the one the fixture result is computed for). */
+export function fixtureWhatIfChanges(variant: PointBFixtureVariant): WhatIfChange[] {
+  if (variant === 'no-goal') return []
+  if (variant === 'stale-base') return [{ kind: 'revenue_shock', pct: -30, startMonth: 2, durationMonths: 3 }]
+  return [{ kind: 'conversion', pp: 2 }, { kind: 'revenue_shock', pct: -40, startMonth: 2, durationMonths: 4 }]
+}
+
+function wiRun(variant: PointBFixtureVariant, changes: WhatIfChange[]): { rr: number[]; metrics: WhatIfMetrics } {
+  const stale = variant === 'stale-base'
+  const money = variant === 'level2'
+  const start = stale ? BASE_STALE : BASE_NOW
+  const trend = stale ? 0 : 0.021
+  const rr: number[] = []
+  for (let t = 0; t <= WI_HORIZON; t++) {
+    const u = Math.min(1, t / WI_RAMP)
+    let mult = 1
+    for (const c of changes) {
+      if (c.kind === 'conversion') mult *= Math.min(0.6, Math.max(0, WI_CONVERSION0 + (c.pp / 100) * u)) / WI_CONVERSION0
+      else if (c.kind === 'avg_check') mult *= (1 + (c.pct / 100) * u) * Math.max(0, 1 - (c.demandElasticity ?? 0.3) * (c.pct / 100) * u)
+      else if (c.kind === 'revenue_shock' && t >= c.startMonth && t <= c.startMonth + c.durationMonths - 1) mult *= 1 + c.pct / 100
+    }
+    rr.push(Math.round(start * Math.pow(1 + trend, t) * mult))
+  }
+  const months = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
+  const first12 = months(1, WI_DEADLINE)
+  const reached = rr.findIndex((v) => v >= GOAL)
+  const metrics: WhatIfMetrics = {
+    annualRunRateAtDeadline: rr[WI_DEADLINE],
+    revenueFirst12m: first12.reduce((a, t) => a + Math.round(rr[t] / 12), 0),
+    timeToGoalMonths: reached >= 0 ? reached : null,
+    minCash: null, cashGapMonth: null, fundingNeed: null, ebitdaFirst12m: null,
+  }
+  if (money) {
+    let cash: number = FIN.cash0
+    let min = { value: Number.POSITIVE_INFINITY, month: 1 }
+    let gap: number | null = null
+    let ebitdaYear = 0
+    for (let t = 1; t <= WI_HORIZON; t++) {
+      const revenue = rr[t] / 12
+      const ebitda = Math.round(revenue * FIN.margin - revenue * WI_MARKETING_SHARE - FIN.payroll - FIN.fixed)
+      cash += ebitda - FIN.debtService - Math.round(FIN.capexYear / 12)
+      if (cash < min.value) min = { value: Math.round(cash), month: t }
+      if (cash < 0 && gap === null) gap = t
+      if (t <= WI_DEADLINE) ebitdaYear += ebitda
+    }
+    const reserve = 2 * (FIN.payroll + FIN.fixed + Math.round((start / 12) * WI_MARKETING_SHARE))
+    metrics.minCash = min
+    metrics.cashGapMonth = gap
+    metrics.fundingNeed = Math.max(0, Math.round(reserve - min.value))
+    metrics.ebitdaFirst12m = ebitdaYear
+  }
+  return { rr, metrics }
+}
+
+function wiDelta(a: WhatIfMetrics, b: WhatIfMetrics): WhatIfResult['delta'] {
+  const d = (x: number | null, y: number | null): number | null => (x !== null && y !== null ? y - x : null)
+  return {
+    annualRunRateAtDeadline: d(a.annualRunRateAtDeadline, b.annualRunRateAtDeadline),
+    revenueFirst12m: d(a.revenueFirst12m, b.revenueFirst12m),
+    timeToGoalMonths: d(a.timeToGoalMonths, b.timeToGoalMonths),
+    minCash: a.minCash && b.minCash ? b.minCash.value - a.minCash.value : null,
+    cashGapMonth: d(a.cashGapMonth, b.cashGapMonth),
+    fundingNeed: d(a.fundingNeed, b.fundingNeed),
+    ebitdaFirst12m: d(a.ebitdaFirst12m, b.ebitdaFirst12m),
+  }
+}
+
+const WI_APPLICABLE_OK = { ok: true, reason: null } as const
+
+function wiApplicable(variant: PointBFixtureVariant): WhatIfResult['applicable'] {
+  const no = (reason: string) => ({ ok: false, reason })
+  if (variant === 'no-goal') {
+    const reason = 'Нет данных для расчёта: задайте цель и добавьте текущую выручку'
+    return { marketing: no(reason), hire: no(reason), avg_check: no(reason), conversion: no(reason), revenue_shock: no(reason), fixed_costs: no(reason) }
+  }
+  const hire = variant === 'level2' ? WI_APPLICABLE_OK : no('Нужны фонд оплаты труда и число сотрудников — заполните финмодель')
+  if (variant === 'stale-base') {
+    const funnel = no('Нет данных воронки (заявки, конверсия, чек): считается упрощённая модель роста')
+    return { marketing: funnel, hire, avg_check: funnel, conversion: funnel, revenue_shock: WI_APPLICABLE_OK, fixed_costs: WI_APPLICABLE_OK }
+  }
+  return { marketing: WI_APPLICABLE_OK, hire, avg_check: WI_APPLICABLE_OK, conversion: WI_APPLICABLE_OK, revenue_shock: WI_APPLICABLE_OK, fixed_costs: WI_APPLICABLE_OK }
+}
+
+/** A hand-made WhatIfResult consistent in itself; `changes = []` gives the «nothing changed» answer. */
+export function fixtureWhatIf(variant: PointBFixtureVariant, changes: WhatIfChange[] = fixtureWhatIfChanges(variant)): WhatIfResult {
+  const applicable = wiApplicable(variant)
+  if (variant === 'no-goal') {
+    const empty: WhatIfMetrics = { annualRunRateAtDeadline: null, revenueFirst12m: null, timeToGoalMonths: null, minCash: null, cashGapMonth: null, fundingNeed: null, ebitdaFirst12m: null }
+    return {
+      modelVersion: 'pb-model-1', level: 0, computedAt: GENERATED_AT, baseline: empty, changed: empty, delta: {}, contributions: [], interaction: {},
+      series: { months: [], baseline: [], changed: [], target: null }, explanation: [], riskFlags: [], assumptions: [], warnings: [], applicable,
+    }
+  }
+  const level = variant === 'level2' ? 2 : 1
+  const base = wiRun(variant, [])
+  const all = wiRun(variant, changes)
+  const delta = wiDelta(base.metrics, all.metrics)
+  const parts = changes.map((c) => ({ kind: c.kind, label: WHATIF_LABELS[c.kind], delta: wiDelta(base.metrics, wiRun(variant, [c]).metrics) }))
+  const interaction: WhatIfResult['delta'] = {}
+  for (const key of Object.keys(delta) as Array<keyof WhatIfMetrics>) {
+    const sum = parts.reduce<number | null>((a, p) => (a === null || typeof p.delta[key] !== 'number' ? null : a + (p.delta[key] as number)), 0)
+    const whole = delta[key]
+    if (parts.length > 1) interaction[key] = typeof whole === 'number' && sum !== null ? whole - sum : null
+  }
+  if (parts.length <= 1) for (const key of Object.keys(delta) as Array<keyof WhatIfMetrics>) interaction[key] = changes.length ? 0 : null
+
+  const explanation: string[] = []
+  const riskFlags: string[] = []
+  const assumptions: string[] = ['Рычаги меняются линейно за 12 месяцев (профиль «Умеренный»).', `Горизонт расчёта — ${WI_HORIZON} месяца: срок цели плюс 12 месяцев.`]
+  for (const c of changes) {
+    if (c.kind === 'conversion') {
+      explanation.push(`Конверсия ${c.pp > 0 ? '+' : ''}${c.pp} п.п. при текущих 12 % даёт в ${((WI_CONVERSION0 + c.pp / 100) / WI_CONVERSION0).toFixed(2).replace('.', ',')} раза больше оплат на плато; эффект набирается за 12 месяцев.`)
+      assumptions.push('Конверсия сейчас 12 %: она растёт к новому уровню постепенно и не выше 60 %.')
+    } else if (c.kind === 'revenue_shock') {
+      const lost = Math.round(wiRun(variant, []).rr.slice(c.startMonth, c.startMonth + c.durationMonths).reduce((a, v, i) => a + (v - wiRun(variant, [c]).rr[c.startMonth + i]) / 12, 0))
+      explanation.push(`Падение выручки на ${Math.abs(c.pct)} % на ${c.durationMonths} мес. с месяца ${c.startMonth}: за это время недополучено около ${fmtMoney(lost)}, а расходы остаются прежними.`)
+      assumptions.push('При падении выручки затраты не меняются; себестоимость пропорциональна выручке.')
+    }
+  }
+  if (all.metrics.cashGapMonth !== null) riskFlags.push(`Кассовый разрыв в месяце ${all.metrics.cashGapMonth}: денег не хватает на текущие расходы.`)
+  if (all.metrics.fundingNeed !== null && all.metrics.fundingNeed > 0) riskFlags.push(`Нужно финансирование около ${fmtMoney(all.metrics.fundingNeed)}, чтобы удержать резерв.`)
+  const bt = base.metrics.timeToGoalMonths
+  const ct = all.metrics.timeToGoalMonths
+  if (bt !== null && (ct === null || ct > bt)) riskFlags.push('Срок достижения цели сдвигается позже.')
+  if (all.metrics.annualRunRateAtDeadline !== null && all.metrics.annualRunRateAtDeadline < GOAL) riskFlags.push(`К сроку цели годовая выручка (${fmtMoney(all.metrics.annualRunRateAtDeadline)}) ниже цели (${fmtMoney(GOAL)}).`)
+  if (level === 2) assumptions.push('Деньги в предпросмотре считаются упрощённо: расходы постоянные, налог и оборотный капитал не учтены.')
+
+  return {
+    modelVersion: level === 2 ? 'pb-model-2' : 'pb-model-1', level, computedAt: GENERATED_AT,
+    baseline: base.metrics, changed: all.metrics, delta, contributions: parts, interaction,
+    series: { months: Array.from({ length: WI_HORIZON + 1 }, (_, i) => i), baseline: base.rr, changed: all.rr, target: GOAL },
+    explanation, riskFlags, assumptions,
+    warnings: variant === 'stale-base' ? ['Выручка за 2024 год устарела: расчёт идёт от неё.'] : [],
+    applicable,
+  }
+}
+
+/** The saved list of the preview: one proposed to the expert, one not. */
+export function fixtureWhatIfSaved(variant: PointBFixtureVariant): SavedWhatIf[] {
+  const mk = (id: string, name: string, note: string | null, changes: WhatIfChange[], proposedAt: string | null, createdAt: string): SavedWhatIf => {
+    const r = fixtureWhatIf(variant, changes)
+    return { id, name, note, changes, summary: { level: r.level, delta: r.delta }, modelVersion: r.modelVersion, proposedAt, createdAt }
+  }
+  if (variant === 'no-goal') return []
+  const conversion: WhatIfChange[] = [{ kind: 'conversion', pp: 2 }]
+  const shock: WhatIfChange[] = variant === 'stale-base' ? fixtureWhatIfChanges(variant) : [{ kind: 'revenue_shock', pct: -40, startMonth: 2, durationMonths: 4 }]
+  if (variant === 'stale-base') return [mk('fx-wi-1', 'Стресс: просадка на 3 месяца', null, shock, null, '2026-10-16T08:00:00.000Z')]
+  return [
+    mk('fx-wi-1', 'Рост конверсии на 2 п.п.', 'После запуска нового скрипта продаж', conversion, '2026-10-17T10:00:00.000Z', '2026-10-16T08:00:00.000Z'),
+    mk('fx-wi-2', 'Стресс: выручка −40 % на 4 месяца', null, shock, null, '2026-10-17T08:30:00.000Z'),
+  ]
 }
