@@ -7,6 +7,7 @@ import { ErrorState, useGigaQuery } from '../kit'
 import { FinmodelPanel } from './point-b/FinmodelPanel'
 import { GoalReviewPanel } from './point-b/GoalReviewPanel'
 import { PlanPanel } from './point-b/PlanPanel'
+import { WhatIfSavedPanel } from './point-b/WhatIfSavedPanel'
 import { usePlanController } from './point-b/usePlanController'
 
 /**
@@ -15,7 +16,7 @@ import { usePlanController } from './point-b/usePlanController'
  * «корректировки» больше нет: любой текст эксперта — это версия плана, и клиент видит
  * его только после одобрения Admin / Super Admin. Работать с планом может только тот,
  * у кого есть clients.review. Там же — «Финмодель» клиента: проверка допущений (деньги, расходы,
- * долги) и подтверждение значений.
+ * долги) и подтверждение значений, и сохранённые клиентом «что если» (только чтение).
  */
 
 interface Version { id: string; expert_notes: string; author_name: string | null; is_approved: boolean; created_at: string }
@@ -43,6 +44,8 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
       {canReview && <PlanWorkspace userId={userId} onChanged={reload} />}
       {/* The money of the client (level 2): the expert checks the assumptions and verifies them. */}
       {canReview && <FinmodelPanel userId={userId} />}
+      {/* What the client calculated and saved in «Что если», read-only; a proposal arrives as a message. */}
+      {canReview && <WhatIfSavedPanel userId={userId} />}
       <ErrorState error={error} onRetry={reload} />
       {!error && (
         <PointBView
