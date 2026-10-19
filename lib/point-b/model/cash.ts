@@ -60,6 +60,15 @@ export interface CashInputs {
   taxRate: number
   capexYear: number
   reserveMonths: number
+  /**
+   * What-if overrides (plan Ф4). Optional and per month 1..H; a month beyond an array keeps the Ф3 rule.
+   * marketingPath replaces `marketingOf` (marketing no longer follows the customers / revenue of the run),
+   * fixedCostsPath replaces `fixedCostsMonthly`, oneOff is a one-time expense inside EBITDA (so the
+   * identities Σ CF = Δcash and Σ CF = Σ NetProfit − … keep holding). Without them nothing changes.
+   */
+  marketingPath?: number[]
+  fixedCostsPath?: number[]
+  oneOff?: number[]
 }
 
 /** What `simulateCash` returns: the contract plus the lines needed to check the identities. */
@@ -104,6 +113,9 @@ function validate(c: CashInputs): void {
   nonNeg('Капитальные затраты', c.capexYear)
   nonNeg('Резерв ликвидности', c.reserveMonths)
   if (c.payrollGrowth.some((v) => !finite(v) || v < -1)) throw new ModelInputError('Рост фонда оплаты труда задан неверно')
+  for (const [what, path] of [['Маркетинг по месяцам', c.marketingPath], ['Постоянные расходы по месяцам', c.fixedCostsPath], ['Разовые расходы по месяцам', c.oneOff]] as const) {
+    if (path !== undefined && (!Array.isArray(path) || path.some((v) => !finite(v) || v < 0))) throw new ModelInputError(`${what}: нужны числа не меньше нуля`)
+  }
 }
 
 function marketingOf(c: CashInputs, t: number): number {
@@ -134,9 +146,11 @@ export function simulateCash(c: CashInputs): CashSimulation {
   for (let t = 0; t < H; t++) {
     const revenue = c.revenue[t]
     const cogs = revenue * (1 - c.margin)
-    const marketing = marketingOf(c, t)
+    const marketing = c.marketingPath && t < c.marketingPath.length ? c.marketingPath[t] : marketingOf(c, t)
     const payroll = c.payrollMonthly * (1 + (c.payrollGrowth[t] ?? 0))
-    const ebitda = revenue - cogs - marketing - payroll - c.fixedCostsMonthly
+    const fixed = c.fixedCostsPath && t < c.fixedCostsPath.length ? c.fixedCostsPath[t] : c.fixedCostsMonthly
+    const oneOff = c.oneOff?.[t] ?? 0
+    const ebitda = revenue - cogs - marketing - payroll - fixed - oneOff
 
     const interest = (debt * c.interestRateAnnual) / 12
     const principal = Math.min(debt, Math.max(0, c.debtServiceMonthly - interest))
@@ -271,11 +285,16 @@ function scenarioNotes(i: ModelInputs, hiring: { staffNeed: number | null; headc
   return notes
 }
 
-/** Level 2 of one scenario: the money by month for the revenue path of the scenario. Throws ModelInputError on unusable input. */
-export function buildScenarioFinance(
+/**
+ * The inputs of the cash model for a revenue path: the finmodel, the gross margin and the levers put into
+ * `CashInputs` (used by the scenarios and by the what-if lab). Throws ModelInputError on unusable input.
+ * `extra` overrides fields afterwards (the what-if paths); without it the result is what Ф3 always built.
+ */
+export function cashInputsOf(
   i: ModelInputs, profile: ScenarioProfile, path: ScenarioPath,
   ctx: { funnel: boolean; staffNeed: number | null; baseMonthlyRevenue: number },
-): FinanceBuild {
+  extra: Partial<CashInputs> = {},
+): CashInputs {
   const f = i.finmodel
   const margin = grossMarginOf(i)
   if (!f || !f.complete || margin === null) throw new ModelInputError('Для расчёта денег нужна полная финмодель и валовая маржа')
@@ -288,7 +307,7 @@ export function buildScenarioFinance(
   const payrollGrowth = Array.from({ length: H }, (_, k) => growthFull * Math.min(1, (k + 1) / ramp))
 
   const cac = ctx.funnel && finite(i.levers.cac.value) && i.levers.cac.value > 0 ? i.levers.cac.value : null
-  const sim = simulateCash({
+  return {
     revenue: path.revenue,
     newCustomers: path.newCustomers,
     margin,
@@ -309,7 +328,23 @@ export function buildScenarioFinance(
     taxRate: val(f, 'tax') ?? 0,
     capexYear: val(f, 'capex') ?? 0,
     reserveMonths: profile.reserveMonths,
-  })
+    ...extra,
+  }
+}
+
+/** A number of the finmodel (a money value, tax as a fraction, days) or null when it is not there. */
+export const finmodelNumber = (f: FinmodelState | null | undefined, key: keyof typeof KEYS): number | null => (f ? val(f, key) : null)
+
+/** Level 2 of one scenario: the money by month for the revenue path of the scenario. Throws ModelInputError on unusable input. */
+export function buildScenarioFinance(
+  i: ModelInputs, profile: ScenarioProfile, path: ScenarioPath,
+  ctx: { funnel: boolean; staffNeed: number | null; baseMonthlyRevenue: number },
+): FinanceBuild {
+  const sim = simulateCash(cashInputsOf(i, profile, path, ctx))
+  const headcount0 = finite(i.levers.headcount.value) && i.levers.headcount.value > 0 ? i.levers.headcount.value : null
+  const staff = ctx.staffNeed && headcount0 !== null ? ctx.staffNeed : 0
+  const ramp = Math.max(1, profile.rampMonths)
+  const payroll = val(i.finmodel as FinmodelState, 'payroll') as number
 
   const perEmployee = headcount0 !== null ? payroll / headcount0 : null
   const hiringCost = perEmployee !== null && staff > 0 ? staff * perEmployee * (ramp / 2) : perEmployee !== null ? 0 : null
