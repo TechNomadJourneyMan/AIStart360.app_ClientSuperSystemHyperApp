@@ -206,7 +206,8 @@ describe('POST /api/v1/onboarding/survey', () => {
     const storedSteps = new Set(db.answers.map((r) => r.step))
     expect(storedSteps.size, 'до фикса все строки получали step=1').toBe(12)
     expect(data.completed_steps).toBe(12)
-    expect(data.percent).toBe(100)
+    // percent = «глубина» (answered fields), not started steps / 12: one answer per step is shallow.
+    expect(data.percent).toBe(Math.round((12 / 171) * 100))
   })
 
   it('заполняет цели компании из шага 1 («Снимок Точки А ещё не построен»)', async () => {
