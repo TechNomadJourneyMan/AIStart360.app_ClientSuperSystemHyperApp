@@ -29,6 +29,7 @@ export const AI_FEATURES = {
   point_a_insights: 'Точка А: инсайты',
   point_a_hypothesis: 'Точка А: гипотезы по блокам без данных',
   point_b_strategy: 'Точка Б: стратегия',
+  point_b_recs: 'Точка Б: рекомендации ИИ (на проверку эксперту)',
   expert_review_draft: 'Черновик разбора эксперта',
   market_analysis: 'Анализ рынка',
   journey: 'AI Journey',
