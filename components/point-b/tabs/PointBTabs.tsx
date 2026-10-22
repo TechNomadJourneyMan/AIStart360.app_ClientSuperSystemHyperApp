@@ -2,7 +2,8 @@
 
 /**
  * components/point-b/tabs/PointBTabs.tsx — the tab shell of the Point B page (plan Phase 2
- * Task 8): «Обзор» · «Сценарии» · «Подробности». The panels are passed in as nodes; a panel is
+ * Task 8, extended in Ф3–Ф6a): «Обзор» · «Сценарии» · «Стратегия» · «Дорожная карта» · «Рекомендации» · «Что если» ·
+ * «Финмодель» · «Подробности». The panels are passed in as nodes; a panel is
  * mounted the first time its tab is opened and then kept (hidden), so the legacy «Подробности»
  * view loads only when it is wanted and keeps its state afterwards.
  *

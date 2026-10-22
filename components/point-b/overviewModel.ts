@@ -20,13 +20,14 @@ export const DASH = '—'
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 
-export type PointBTabKey = 'overview' | 'scenarios' | 'strategy' | 'roadmap' | 'whatif' | 'finmodel' | 'details'
+export type PointBTabKey = 'overview' | 'scenarios' | 'strategy' | 'roadmap' | 'recs' | 'whatif' | 'finmodel' | 'details'
 
 export const POINT_B_TABS: ReadonlyArray<{ key: PointBTabKey; label: string }> = [
   { key: 'overview', label: 'Обзор' },
   { key: 'scenarios', label: 'Сценарии' },
   { key: 'strategy', label: 'Стратегия' },
   { key: 'roadmap', label: 'Дорожная карта' },
+  { key: 'recs', label: 'Рекомендации' },
   { key: 'whatif', label: 'Что если' },
   { key: 'finmodel', label: 'Финмодель' },
   { key: 'details', label: 'Подробности' },

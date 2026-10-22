@@ -14,11 +14,13 @@
  *     opens after blur — it is not lost), nor on suppressed routes;
  *   - one window on screen at a time; a card on screen stays until the user
  *     acts, except that an important message (modal) takes its place;
- *   - an error or an empty answer = silence: nothing is shown, nothing written.
+ *   - an error or an empty answer = silence: nothing is shown, nothing written;
+ *   - a write about an insight or a recommendation (a Point B invite, plan Ф6a Task 7) carries its `kind`, so the
+ *     server changes the invite and not a message; an expert message is written as before (no `kind`).
  */
 import { isPopupSuppressedRoute } from '@/lib/popups/select'
 import { candidateFromMessage } from '@/lib/popups/store'
-import { POPUP_SNOOZE_DAYS, type PopupCandidate, type PopupSnoozeDays } from '@/lib/popups/types'
+import { POPUP_SNOOZE_DAYS, type PopupCandidate, type PopupKind, type PopupSnoozeDays } from '@/lib/popups/types'
 
 export const POPUP_QUIET_MS = 5_000
 export const POPUP_RELOAD_MIN_MS = 60_000
@@ -62,6 +64,8 @@ export class PopupController {
   private readonly dismissed = new Set<string>()
   private readonly shown = new Set<string>()
   private readonly seenSent = new Set<string>()
+  /** Kind of every candidate ever queued: a write after the card left the queue still knows what it was about. */
+  private readonly kinds = new Map<string, PopupKind>()
   private modalsShown = 0
   private started = false
 
@@ -155,6 +159,7 @@ export class PopupController {
         const body = (await res.json().catch(() => null)) as { ok?: boolean; data?: { threadId?: string | null; popups?: unknown } } | null
         if (!body?.ok || !Array.isArray(body.data?.popups)) return
         const list = (body.data!.popups as PopupCandidate[]).filter((p) => p && typeof p.id === 'string' && !this.dismissed.has(p.id))
+        list.forEach((p) => this.kinds.set(p.id, p.kind))
         this.queue = list.sort(byImportance)
         this.bindThread(body.data!.threadId ?? null)
       } catch {
@@ -189,6 +194,7 @@ export class PopupController {
     if (!c || this.dismissed.has(c.id) || this.queue.some((p) => p.id === c.id)) return
     // One modal per day is the server's rule; a second one in the same visit is shown as a card.
     const candidate = c.display === 'modal' && this.modalsShown > 0 ? { ...c, display: 'card' as const } : c
+    this.kinds.set(candidate.id, candidate.kind)
     this.queue = [...this.queue, candidate].sort(byImportance)
     this.refresh()
   }
@@ -202,8 +208,10 @@ export class PopupController {
   }
 
   private async patch(id: string, body: Record<string, unknown>): Promise<void> {
+    const kind = this.kinds.get(id)
+    const payload = kind === 'insight' || kind === 'recommendation' ? { ...body, kind } : body
     try {
-      await this.deps.fetchFn(`/api/v1/popups/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) })
+      await this.deps.fetchFn(`/api/v1/popups/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(payload) })
     } catch {
       /* a lost write only means the window may come back after a reload */
     }
@@ -224,6 +232,12 @@ export class PopupController {
     if (!(POPUP_SNOOZE_DAYS as readonly number[]).includes(days)) return
     this.remove(id)
     await this.patch(id, { action: 'snooze', days })
+  }
+
+  /** «Открыть» on an insight / a recommendation: the user went to it — the card leaves and the invite is «acted». */
+  async act(id: string): Promise<void> {
+    this.remove(id)
+    await this.patch(id, { action: 'acted' })
   }
 
   /** Quick reply from the window: an inbound message in the user's conversation, then the window closes. */

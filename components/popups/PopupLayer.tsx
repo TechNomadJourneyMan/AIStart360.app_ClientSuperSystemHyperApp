@@ -17,7 +17,9 @@ import { PopupModal } from './PopupModal'
 import { usePopups } from './usePopups'
 
 export function PopupLayer() {
-  const { current, dismiss, snooze, reply } = usePopups()
+  const { current, dismiss, snooze, reply, act } = usePopups()
+  // An expert message closes when its conversation opens; an insight / a recommendation is «acted».
+  const onOpen = (id: string) => (current?.kind === 'expert_message' ? dismiss(id) : act(id))
 
   if (current?.display === 'modal') {
     return (
@@ -27,6 +29,7 @@ export function PopupLayer() {
         onDismiss={() => dismiss(current.id)}
         onSnooze={(days) => snooze(current.id, days)}
         onReply={(text) => reply(current.id, text)}
+        onOpen={() => onOpen(current.id)}
       />
     )
   }
@@ -44,6 +47,7 @@ export function PopupLayer() {
           onDismiss={() => dismiss(current.id)}
           onSnooze={(days) => snooze(current.id, days)}
           onReply={(text) => reply(current.id, text)}
+          onOpen={() => onOpen(current.id)}
         />
       )}
     </div>

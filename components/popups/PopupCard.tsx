@@ -3,8 +3,10 @@
 /**
  * components/popups/PopupCard.tsx — a pop-up card in the corner of the cabinet:
  * badge «Эксперт · имя», title, a short preview, quick reply, «Открыть диалог»,
- * «Позже» (3 / 7 / 30 days) and «Закрыть». Built on the project tokens only —
- * the look is to be replaced by the PO's design (spec §12.2).
+ * «Позже» (3 / 7 / 30 days) and «Закрыть». An insight or a recommendation of Point B
+ * (plan Ф6a Task 7) carries its own badge — «Подсказка платформы · не проверена
+ * экспертом» or «Проверено экспертом · имя» —, «Открыть» and «Почему я это вижу».
+ * Built on the project tokens only — the look is to be replaced by the PO's design (spec §12.2).
  */
 import { useEffect, useId, useState } from 'react'
 import Link from 'next/link'
@@ -18,12 +20,53 @@ export interface PopupViewProps {
   onDismiss: () => void | Promise<void>
   onSnooze: (days: PopupSnoozeDays) => void | Promise<void>
   onReply: (text: string) => Promise<void>
+  /** «Открыть» / «Открыть диалог» was followed; without it the window is dismissed. */
+  onOpen?: () => void | Promise<void>
 }
 
 const SNOOZE_LABEL: Record<PopupSnoozeDays, string> = { 3: '3 дня', 7: '7 дней', 30: '30 дней' }
 
+export const INSIGHT_BADGE_TEXT = 'Подсказка платформы · не проверена экспертом'
+
 export const BADGE_TEXT = (p: PopupCandidate) =>
-  p.kind === 'expert_message' ? `Эксперт${p.authorName ? ` · ${p.authorName}` : ''}` : p.kind === 'recommendation' ? 'Проверено экспертом' : 'Подсказка платформы'
+  p.kind === 'expert_message'
+    ? `Эксперт${p.authorName ? ` · ${p.authorName}` : ''}`
+    : p.kind === 'recommendation'
+      ? `Проверено экспертом${p.authorName ? ` · ${p.authorName}` : ''}`
+      : INSIGHT_BADGE_TEXT
+
+/** The link of the window: a conversation for a message, the place in the cabinet for an insight / a recommendation. */
+export const OPEN_LABEL = (p: PopupCandidate) => (p.kind === 'expert_message' ? 'Открыть диалог' : 'Открыть')
+
+/** The badge colour: an expert's word (a message, a verified recommendation) in the accent, a platform hint neutral. */
+export const BADGE_CLASS = (p: PopupCandidate) => (p.kind === 'insight' ? 'bg-white/[0.06] text-on-surface-variant' : 'bg-primary/10 text-primary')
+
+/**
+ * «Почему я это вижу» of an insight / a recommendation: the server's reason when it sends one (`why`, Point B invites),
+ * otherwise an honest generic one. An expert message needs none.
+ */
+export function popupWhy(p: PopupCandidate): string | null {
+  if (p.kind === 'expert_message') return null
+  const why = (p as PopupCandidate & { why?: unknown }).why
+  if (typeof why === 'string' && why.trim()) return why
+  return p.kind === 'recommendation'
+    ? 'Эксперт проверил эту рекомендацию для вашего плана Точки Б.'
+    : 'Платформа заметила это по правилам в расчёте вашей Точки Б. Числа — из расчёта, эксперт эту подсказку не проверял.'
+}
+
+export function PopupWhy({ popup }: { popup: PopupCandidate }) {
+  const why = popupWhy(popup)
+  if (!why) return null
+  return (
+    <details className="group">
+      <summary className="inline-flex min-h-[32px] cursor-pointer list-none items-center gap-1 rounded-lg text-xs font-medium text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 [&::-webkit-details-marker]:hidden">
+        <Icon name="help" className="text-base" />
+        Почему я это вижу
+      </summary>
+      <p className="mt-1 break-words text-xs text-on-surface-variant">{why}</p>
+    </details>
+  )
+}
 
 /** Quick reply: a button that opens a text field; sends to the user's own conversation. */
 export function PopupReply({ onReply, autoFocus = false }: { onReply: (text: string) => Promise<void>; autoFocus?: boolean }) {
@@ -85,7 +128,7 @@ export function PopupSnooze({ onSnooze }: { onSnooze: (days: PopupSnoozeDays) =>
   )
 }
 
-export function PopupCard({ popup, onDismiss, onSnooze, onReply }: PopupViewProps) {
+export function PopupCard({ popup, onDismiss, onSnooze, onReply, onOpen }: PopupViewProps) {
   const titleId = useId()
   const [replying, setReplying] = useState(false)
   const [entered, setEntered] = useState(false)
@@ -102,7 +145,7 @@ export function PopupCard({ popup, onDismiss, onSnooze, onReply }: PopupViewProp
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className={cn(CHIP, 'bg-primary/10 text-primary')}>{BADGE_TEXT(popup)}</span>
+        <span className={cn(CHIP, BADGE_CLASS(popup))}>{BADGE_TEXT(popup)}</span>
         <button type="button" onClick={() => void onDismiss()} aria-label="Закрыть" className="-mr-1 -mt-1 rounded-lg p-1 text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
           <Icon name="close" className="text-base" />
         </button>
@@ -111,6 +154,7 @@ export function PopupCard({ popup, onDismiss, onSnooze, onReply }: PopupViewProp
         <h2 id={titleId} className="text-sm font-semibold text-on-surface">{popup.title}</h2>
         <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-on-surface-variant">{popup.body}</p>
       </div>
+      <PopupWhy popup={popup} />
       {replying && popup.canReply && <PopupReply onReply={onReply} autoFocus />}
       <div className="flex flex-wrap items-start gap-1.5">
         {popup.canReply && !replying && (
@@ -120,7 +164,7 @@ export function PopupCard({ popup, onDismiss, onSnooze, onReply }: PopupViewProp
           </button>
         )}
         {popup.href && (
-          <Link href={popup.href} onClick={() => void onDismiss()} className={BTN_GHOST}>Открыть диалог</Link>
+          <Link href={popup.href} onClick={() => void (onOpen ?? onDismiss)()} className={popup.kind === 'expert_message' ? BTN_GHOST : BTN_PRIMARY}>{OPEN_LABEL(popup)}</Link>
         )}
         <PopupSnooze onSnooze={onSnooze} />
       </div>

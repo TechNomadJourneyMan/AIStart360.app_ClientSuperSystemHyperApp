@@ -256,6 +256,55 @@ describe('PopupController', () => {
     }
   })
 
+  it('popup controller sends kind and shows the right badge for insight and recommendation', async () => {
+    const insight = cand({ id: 'ins', kind: 'insight', priority: 3, authorName: null, canReply: false, title: 'Кассовый разрыв в месяце 4', href: '/client/point-b?tab=whatif' })
+    const rec = cand({ id: 'rec', kind: 'recommendation', priority: 4, authorName: 'Анна Ким', canReply: false, title: 'Поднять конверсию', href: '/client/point-b?tab=recs' })
+    const msg = cand({ id: 'msg', priority: 1 })
+    const t = setup({ list: [insight, rec, msg] })
+    t.ctrl.start()
+    await t.ctrl.setRoute('/client/home')
+    await vi.advanceTimersByTimeAsync(5000)
+    // an expert message: written as before, without a kind
+    expect(t.writes()).toEqual([{ url: '/api/v1/popups/msg', method: 'PATCH', body: { action: 'seen' } }])
+    await t.ctrl.dismiss('msg')
+    expect(t.acts().at(-1)).toEqual({ url: '/api/v1/popups/msg', method: 'PATCH', body: { action: 'dismiss' } })
+    // an insight: seen / snooze carry the kind
+    expect(t.ctrl.getSnapshot().current?.id).toBe('ins')
+    expect(t.writes()).toContainEqual({ url: '/api/v1/popups/ins', method: 'PATCH', body: { action: 'seen', kind: 'insight' } })
+    await t.ctrl.snooze('ins', 3)
+    expect(t.acts().at(-1)).toEqual({ url: '/api/v1/popups/ins', method: 'PATCH', body: { action: 'snooze', days: 3, kind: 'insight' } })
+    // a recommendation: «Открыть» = acted, with the kind
+    expect(t.ctrl.getSnapshot().current?.id).toBe('rec')
+    await t.ctrl.act('rec')
+    expect(t.acts().at(-1)).toEqual({ url: '/api/v1/popups/rec', method: 'PATCH', body: { action: 'acted', kind: 'recommendation' } })
+    expect(t.ctrl.getSnapshot()).toMatchObject({ popups: [], current: null })
+    t.ctrl.stop()
+
+    const noop = () => {}
+    const html = (p: PopupCandidate) => renderToStaticMarkup(React.createElement(PopupCard, { popup: p, onDismiss: noop, onSnooze: noop, onReply: async () => {} }))
+    const ins = html(insight)
+    expect(ins).toContain('Подсказка платформы · не проверена экспертом')
+    expect(ins).toContain('Почему я это вижу')
+    expect(ins).toContain('>Открыть</a>')
+    expect(ins).not.toContain('Открыть диалог')
+    expect(ins).not.toContain('<textarea')
+    const r = html(rec)
+    expect(r).toContain('Проверено экспертом · Анна Ким')
+    expect(r).toContain('Почему я это вижу')
+    expect(r).not.toContain('не проверена')
+    // the server's own reason wins when it sends one
+    expect(html({ ...insight, why: 'Разрыв в первые 6 месяцев выбранного темпа' } as PopupCandidate)).toContain('Разрыв в первые 6 месяцев выбранного темпа')
+    // an expert message keeps its badge and its link, and has no «why»
+    const m = html(cand({ id: 'm' }))
+    expect(m).toContain('Эксперт · Анна Ким')
+    expect(m).toContain('Открыть диалог')
+    expect(m).not.toContain('Почему я это вижу')
+    // a critical insight as a modal: the same badge in a dialog
+    const modal = renderToStaticMarkup(React.createElement(PopupModal, { popup: { ...insight, display: 'modal' }, onDismiss: noop, onSnooze: noop, onReply: async () => {} }))
+    expect(modal).toContain('role="dialog"')
+    expect(modal).toContain('Подсказка платформы · не проверена экспертом')
+  })
+
   it('a failed reload keeps what is already known', async () => {
     const t = setup({ list: [cand({ id: 'a' })] })
     t.ctrl.start()
@@ -315,7 +364,7 @@ describe('markup', () => {
   })
 
   it('the layer renders a polite live region with the current card, a dialog for a modal, and nothing visible when empty', () => {
-    const actions = { dismiss: async () => {}, snooze: async () => {}, markSeen: async () => {}, reply: async () => {} }
+    const actions = { dismiss: async () => {}, snooze: async () => {}, markSeen: async () => {}, reply: async () => {}, act: async () => {} }
     state.hook = { popups: [], current: null, ...actions }
     const empty = renderToStaticMarkup(React.createElement(PopupLayer))
     expect(empty).not.toContain('<button')

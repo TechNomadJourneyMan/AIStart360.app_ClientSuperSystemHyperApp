@@ -2,21 +2,27 @@
 // API calls) — for visual audits without signing in. 404 in production, like
 // /dev/point-a-preview.
 //   ?variant=full | no-goal | stale-base | level2   — the data (level2: the finmodel is filled in, money is counted)
-//   ?tab=overview | scenarios | strategy | roadmap | whatif | finmodel | details    — the open tab (default overview)
+//   ?tab=overview | scenarios | strategy | roadmap | recs | whatif | finmodel | details    — the open tab (default overview)
 //   ?plan=none | preparing | published     — the state of the expert's plan (default per variant)
 //   ?strategy=empty    — with a published plan: an approved version without a strategy (default: the fixture tree with progress)
+//   ?recs=empty | pending  — «Рекомендации» without any (empty) or with only pending ones (default with a published plan:
+//                      one verified, one stale, two pending; invites and the next step on the overview)
 import { notFound } from 'next/navigation'
 import PointBView from '@/components/point-b/PointBView'
 import FinmodelTab from '@/components/point-b/tabs/FinmodelTab'
 import OverviewTab from '@/components/point-b/tabs/OverviewTab'
 import PointBTabs from '@/components/point-b/tabs/PointBTabs'
+import RecommendationsTab from '@/components/point-b/tabs/RecommendationsTab'
 import RoadmapTab from '@/components/point-b/tabs/RoadmapTab'
 import ScenariosTab from '@/components/point-b/tabs/ScenariosTab'
 import StrategyTab from '@/components/point-b/tabs/StrategyTab'
 import WhatIfTab from '@/components/point-b/tabs/WhatIfTab'
 import { isTabKey, type PlanStatus } from '@/components/point-b/overviewModel'
 import type { PointBStateSnapshot } from '@/components/point-b/pointBStateController'
-import { fixtureFinmodel, fixtureFinmodelStatus, fixtureModelResult, fixturePointB, fixtureStrategy, fixtureWhatIf, fixtureWhatIfChanges, fixtureWhatIfSaved, isPointBFixtureVariant, POINT_B_FIXTURE_VARIANTS, type PointBFixtureVariant } from '@/lib/point-b/fixtures'
+import {
+  fixtureFinmodel, fixtureFinmodelStatus, fixtureInvites, fixtureModelResult, fixtureNextStep, fixturePointB, fixtureRecommendations, fixtureStrategy,
+  fixtureWhatIf, fixtureWhatIfChanges, fixtureWhatIfSaved, isPointBFixtureVariant, POINT_B_FIXTURE_VARIANTS, type PointBFixtureVariant,
+} from '@/lib/point-b/fixtures'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +36,19 @@ const VARIANT_LABEL: Record<PointBFixtureVariant, string> = {
 /** What the owner's plan looks like in each variant, unless `?plan=` overrides it. */
 const DEFAULT_PLAN: Record<PointBFixtureVariant, PlanStatus> = { full: 'published', 'no-goal': 'none', 'stale-base': 'preparing', level2: 'published' }
 
-function fixtureState(variant: PointBFixtureVariant, plan: PlanStatus, emptyStrategy = false): PointBStateSnapshot {
+type RecsMode = 'default' | 'empty' | 'pending'
+
+function fixtureRecs(plan: PlanStatus, mode: RecsMode): Pick<PointBStateSnapshot, 'recommendations' | 'nextStep'> {
+  if (mode === 'empty' || plan === 'none') return { recommendations: { verified: [], pendingCount: 0 }, nextStep: null }
+  if (mode === 'pending' || plan !== 'published') return { recommendations: { verified: [], pendingCount: 2 }, nextStep: null }
+  return { recommendations: fixtureRecommendations(), nextStep: fixtureNextStep() }
+}
+
+function fixtureState(variant: PointBFixtureVariant, plan: PlanStatus, emptyStrategy = false, recs: RecsMode = 'default'): PointBStateSnapshot {
   const result = fixtureModelResult(variant)
   return {
+    ...fixtureRecs(plan, recs),
+    invites: plan === 'published' && recs !== 'empty' ? fixtureInvites(variant) : [],
     phase: 'ready',
     error: null,
     result,
@@ -50,14 +66,15 @@ function fixtureState(variant: PointBFixtureVariant, plan: PlanStatus, emptyStra
   }
 }
 
-export default function PointBPreviewPage({ searchParams }: { searchParams?: { variant?: string; tab?: string; plan?: string; strategy?: string } }) {
+export default function PointBPreviewPage({ searchParams }: { searchParams?: { variant?: string; tab?: string; plan?: string; strategy?: string; recs?: string } }) {
   if (process.env.NODE_ENV === 'production') notFound()
   const variant = isPointBFixtureVariant(searchParams?.variant) ? searchParams.variant : 'full'
   const tab = isTabKey(searchParams?.tab) ? searchParams.tab : 'overview'
   const plan: PlanStatus = searchParams?.plan === 'none' || searchParams?.plan === 'preparing' || searchParams?.plan === 'published'
     ? searchParams.plan
     : DEFAULT_PLAN[variant]
-  const snap = fixtureState(variant, plan, searchParams?.strategy === 'empty')
+  const recs: RecsMode = searchParams?.recs === 'empty' || searchParams?.recs === 'pending' ? searchParams.recs : 'default'
+  const snap = fixtureState(variant, plan, searchParams?.strategy === 'empty', recs)
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
       <nav aria-label="Варианты фикстуры" className="flex flex-wrap gap-2 text-sm">
@@ -74,13 +91,15 @@ export default function PointBPreviewPage({ searchParams }: { searchParams?: { v
       </nav>
       <PointBTabs
         // A new key per variant / plan: the tab state and the visited panels start over.
-        key={`${variant}-${plan}-${tab}`}
+        key={`${variant}-${plan}-${tab}-${recs}`}
         initialTab={tab}
         panels={{
-          overview: <OverviewTab snap={snap} />,
+          // The invite actions stay in memory: nothing leaves the page.
+          overview: <OverviewTab snap={snap} preview />,
           scenarios: <ScenariosTab snap={snap} />,
           strategy: <StrategyTab snap={snap} />,
           roadmap: <RoadmapTab snap={snap} />,
+          recs: <RecommendationsTab snap={snap} />,
           // «Что если» opens with one pre-computed set of changes (the preview does not run the engine);
           // saving, deleting and proposing work in memory only.
           whatif: <WhatIfTab state={snap} preview={{ result: fixtureWhatIf(variant), baseline: fixtureWhatIf(variant, []), saved: fixtureWhatIfSaved(variant), changes: fixtureWhatIfChanges(variant) }} />,

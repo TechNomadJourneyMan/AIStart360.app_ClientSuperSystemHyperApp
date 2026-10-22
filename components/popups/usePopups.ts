@@ -20,6 +20,8 @@ export interface UsePopups {
   snooze: (id: string, days: PopupSnoozeDays) => Promise<void>
   markSeen: (id: string) => Promise<void>
   reply: (id: string, body: string) => Promise<void>
+  /** «Открыть» on an insight / a recommendation. */
+  act: (id: string) => Promise<void>
 }
 
 function userIsTyping(): boolean {
@@ -74,5 +76,6 @@ export function usePopups(): UsePopups {
   const snooze = useCallback((id: string, days: PopupSnoozeDays) => ctrl.snooze(id, days), [ctrl])
   const markSeen = useCallback((id: string) => ctrl.markSeen(id), [ctrl])
   const reply = useCallback((id: string, body: string) => ctrl.reply(id, body), [ctrl])
-  return { popups: snap.popups, current: snap.current, dismiss, snooze, markSeen, reply }
+  const act = useCallback((id: string) => ctrl.act(id), [ctrl])
+  return { popups: snap.popups, current: snap.current, dismiss, snooze, markSeen, reply, act }
 }

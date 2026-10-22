@@ -12,15 +12,19 @@
 import { BTN_GHOST, BTN_PRIMARY, CARD, CARD_TITLE, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import type { ModelResult } from '@/lib/point-b/model/types'
+import type { InviteView } from '@/lib/point-b/invites/types'
 import CorridorChart from '../CorridorChart'
 import CostOfGoalCard from '../CostOfGoalCard'
 import DataGapBanner from '../DataGapBanner'
+import InviteCards from '../InviteCards'
+import NextStepCard from '../NextStepCard'
 import StaleBaseBanner from '../StaleBaseBanner'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
   TONE_CLASS, chartData, chartPlaceholder, costOfGoalView, fmtLongDate, otherWarnings, pathCells, staleWarning, verdictView,
   type PointBFinmodelStatus, type PointBPlanState,
 } from '../overviewModel'
+import type { PointBNextStep } from '../recsModel'
 import { useGoToTab } from './PointBTabs'
 
 export const AUTOMATIC_LABEL = 'Автоматический расчёт, не проверен экспертом'
@@ -53,7 +57,20 @@ export function SectionError({ message, onRetry }: { message: string; onRetry?: 
   )
 }
 
-export function OverviewView({ result, plan, finmodel = null }: { result: ModelResult; plan: PointBPlanState; finmodel?: PointBFinmodelStatus | null }) {
+const NO_INVITES: InviteView[] = []
+
+export interface OverviewViewProps {
+  result: ModelResult
+  plan: PointBPlanState
+  finmodel?: PointBFinmodelStatus | null
+  /** Active invite cards (at most 3 are drawn). */
+  invites?: InviteView[]
+  nextStep?: PointBNextStep | null
+  /** Dev preview: the invite actions stay in memory. */
+  preview?: boolean
+}
+
+export function OverviewView({ result, plan, finmodel = null, invites = NO_INVITES, nextStep = null, preview = false }: OverviewViewProps) {
   const go = useGoToTab()
   const verdict = verdictView(result)
   const tone = TONE_CLASS[verdict.tone]
@@ -109,6 +126,10 @@ export function OverviewView({ result, plan, finmodel = null }: { result: ModelR
         </p>
       </section>
 
+      {/* What to do now, then up to three personal invites (spec §15.1 C: on the first screen). */}
+      <NextStepCard step={nextStep} />
+      <InviteCards invites={invites} preview={preview} />
+
       <section aria-labelledby="pb-overview-chart" className={CARD}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 id="pb-overview-chart" className="font-headline text-base font-bold text-on-surface">Траектория выручки</h3>
@@ -143,8 +164,17 @@ export function OverviewView({ result, plan, finmodel = null }: { result: ModelR
   )
 }
 
-export default function OverviewTab({ snap, onRetry }: { snap: PointBStateSnapshot; onRetry?: () => void }) {
+export default function OverviewTab({ snap, onRetry, preview = false }: { snap: PointBStateSnapshot; onRetry?: () => void; preview?: boolean }) {
   if (snap.phase === 'loading') return <SectionSkeleton label="Загружаем обзор" />
   if (!snap.result) return <SectionError message={snap.error ?? 'Нет данных расчёта'} onRetry={onRetry} />
-  return <OverviewView result={snap.result} plan={snap.plan} finmodel={snap.finmodel ?? null} />
+  return (
+    <OverviewView
+      result={snap.result}
+      plan={snap.plan}
+      finmodel={snap.finmodel ?? null}
+      invites={snap.invites ?? NO_INVITES}
+      nextStep={snap.nextStep ?? null}
+      preview={preview}
+    />
+  )
 }

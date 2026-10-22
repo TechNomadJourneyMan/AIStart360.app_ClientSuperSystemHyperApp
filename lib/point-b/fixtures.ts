@@ -19,6 +19,8 @@ import type { PointBStrategyState } from '@/components/point-b/strategyModel'
 import type { MatrixPoint } from './strategy/matrix'
 import type { NodeProgress } from './strategy/progress'
 import type { PlanStrategy, StrategyNode } from './strategy/types'
+import type { ClientRecommendationView } from './recs/types'
+import type { InviteView } from './invites/types'
 
 /** `level2`: the same business as `full`, with the finmodel filled in — profit, cash flow, funding need. */
 export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base', 'level2'] as const
@@ -709,4 +711,127 @@ export function fixtureStrategy(): PointBStrategyState {
     ? [{ key: n.key, title: n.title, kind: n.kind as 'strategy' | 'initiative', impact: n.impact, effort: n.effort, quadrant: quadrant(n.impact, n.effort) }]
     : []))
   return { items, milestones, progress, matrix: { points, unrated: rated.filter((n) => n.kind === 'initiative').length - points.filter((q) => q.kind === 'initiative').length } }
+}
+
+// ── Recommendations, invites and the next step (plan Ф6a): hand-built, no real modules ─────────────
+//
+// The texts quote only numbers of the fixture model (`fixtureModelResult('full' | 'level2')`): conversion 12% → 14,4%
+// in the «Умеренный» pace, about 2 new people, the forecast at the current pace against the goal of 120 млн ₸.
+
+const RK = {
+  r1: 'e1000001-0000-4000-8000-000000000001',
+  r2: 'e1000002-0000-4000-8000-000000000002',
+  n1: 'f1000001-0000-4000-8000-000000000001',
+  n2: 'f1000002-0000-4000-8000-000000000002',
+  n3: 'f1000003-0000-4000-8000-000000000003',
+} as const
+
+/**
+ * What `PointBState.recommendations` looks like for the approved fixture plan: one verified recommendation, one verified
+ * earlier and now stale (the data changed), and two waiting for the expert — counted only, their texts never sent.
+ */
+export function fixtureRecommendations(): { verified: ClientRecommendationView[]; pendingCount: number } {
+  return {
+    verified: [
+      {
+        id: RK.r1,
+        kind: 'lever',
+        title: 'Поднять конверсию в оплату через единый скрипт продаж',
+        essence: 'Самый слабый рычаг плана — конверсия в оплату. Единый скрипт и еженедельный разбор звонков дают рост без новых расходов на рекламу.',
+        reason: 'Темп «Умеренный» требует конверсии 14,4% вместо 12% сейчас (+20%) — это главный разрыв среди рычагов.',
+        expectedEffect: 'Конверсия 14,4% — одно из условий, при которых темп «Умеренный» выводит на цель.',
+        resources: 'Руководитель продаж; разбор звонков раз в неделю; без дополнительного бюджета.',
+        confidence: 'medium',
+        confidenceReason: 'Конверсия известна из анкеты, истории по месяцам пока нет.',
+        risks: 'При росте потока заявок конверсия может просесть — следите за ней каждый месяц.',
+        nextAction: 'Разобрать последние звонки отдела продаж и собрать единый скрипт',
+        sourceRefs: [
+          { type: 'metric', ref: 'conversion', label: 'Конверсия в оплату — 12%' },
+          { type: 'scenario', ref: 'moderate', label: 'Сценарий «Умеренный»: конверсия 14,4%' },
+          { type: 'snapshot', ref: 'point-a-2026-10-14', label: 'Снимок Точки А от 14 октября 2026' },
+        ],
+        state: 'verified',
+        reviewerName: 'Анна Ким',
+        reviewerSpecialty: 'Эксперт по продажам',
+        reviewedAt: '2026-10-16T12:00:00.000Z',
+        scopeNote: 'Для плана v2, данные на 14 октября 2026',
+      },
+      {
+        id: RK.r2,
+        kind: 'risk',
+        title: 'Найм в отдел продаж — заранее, а не по факту роста',
+        essence: 'Темпу «Умеренный» нужно около 2 новых сотрудников. Если нанимать после роста заявок, конверсия просядет.',
+        reason: 'Расчёт сценария «Умеренный» показывает потребность в 2 сотрудниках.',
+        expectedEffect: null,
+        resources: 'Бюджет на найм и адаптацию.',
+        confidence: 'low',
+        confidenceReason: 'Численность команды указана приблизительно.',
+        risks: 'Новые сотрудники выходят на полную нагрузку не сразу.',
+        nextAction: 'Описать роль менеджера и начать подбор',
+        sourceRefs: [{ type: 'scenario', ref: 'moderate', label: 'Сценарий «Умеренный»: около 2 новых сотрудников' }],
+        state: 'stale',
+        reviewerName: 'Анна Ким',
+        reviewerSpecialty: 'Эксперт по продажам',
+        reviewedAt: '2026-10-10T09:30:00.000Z',
+        scopeNote: 'Для плана v1, данные на 1 октября 2026',
+      },
+    ],
+    pendingCount: 2,
+  }
+}
+
+/**
+ * Active invites of the fixture: the plan publication (a modal — spec §12.2 allows one for the first publication of an
+ * approved plan), the pace that lags behind the goal and the conversion the goal requires. Nothing at level 0.
+ */
+export function fixtureInvites(variant: PointBFixtureVariant = 'level2'): InviteView[] {
+  const r = fixtureModelResult(variant)
+  if (r.level === 0 || r.kind !== 'funnel') return []
+  const pace = r.forecast.atCurrentPace.base
+  return [
+    {
+      id: RK.n1,
+      kind: 'insight',
+      title: 'План роста одобрен',
+      body: 'Эксперт Анна Ким одобрил план v2. Посмотрите стратегию и с чего начать.',
+      href: '/client/point-b?tab=strategy',
+      why: 'План опубликован впервые — о таком событии сообщаем один раз.',
+      sourceRefs: [{ type: 'check', ref: 'plan-v2', label: 'План v2, одобрен 14 октября 2026' }],
+      display: 'modal',
+      createdAt: '2026-10-14T10:05:00.000Z',
+    },
+    {
+      id: RK.n2,
+      kind: 'insight',
+      title: 'Текущий ход отстаёт от цели',
+      body: `Прогноз ${fmtMoney(pace)} при цели ${fmtMoney(r.gap.targetAnnual)}. Пересмотреть стратегию?`,
+      href: '/client/point-b?tab=strategy',
+      why: 'Вердикт расчёта — «Отстаём»: прогноз при текущем ходе ниже цели к сроку.',
+      sourceRefs: [
+        { type: 'model', ref: 'forecast.atCurrentPace', label: `Прогноз при текущем ходе — ${fmtMoney(pace)}` },
+        { type: 'goal', ref: 'revenue', label: `Цель — ${fmtMoney(r.gap.targetAnnual)}` },
+      ],
+      display: 'card',
+      createdAt: '2026-10-18T09:00:00.000Z',
+    },
+    {
+      id: RK.n3,
+      kind: 'insight',
+      title: 'Цель требует роста конверсии с 12% до 14,4%',
+      body: 'Построить план улучшения продаж?',
+      href: '/client/point-b?tab=strategy',
+      why: 'Для темпа «Умеренный» конверсию нужно поднять на 20% — подсказка появляется от 20% и выше.',
+      sourceRefs: [
+        { type: 'metric', ref: 'conversion', label: 'Конверсия в оплату — 12%' },
+        { type: 'scenario', ref: 'moderate', label: 'Сценарий «Умеренный»' },
+      ],
+      display: 'card',
+      createdAt: '2026-10-18T09:00:00.000Z',
+    },
+  ]
+}
+
+/** «Следующий шаг» of the fixture: the next action of the verified recommendation. */
+export function fixtureNextStep(): { title: string; action: string | null; recId: string | null } {
+  return { title: 'Собрать единый скрипт продаж', action: 'Разобрать последние звонки отдела продаж и собрать единый скрипт', recId: RK.r1 }
 }

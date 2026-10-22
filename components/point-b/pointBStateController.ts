@@ -7,7 +7,9 @@
  * keeps working. A 402 (the tariff gate) locks the page, like in the legacy loader.
  */
 import type { ModelResult } from '@/lib/point-b/model/types'
+import type { InviteView } from '@/lib/point-b/invites/types'
 import { isUpgradeRequired } from './pointBAccess'
+import { parseRecsFromBody, type PointBNextStep, type PointBRecsState } from './recsModel'
 import { parseStrategyFromBody, type PointBStrategyState } from './strategyModel'
 import { EMPTY_PLAN_STATE, parsePointBState, type PointBFinmodelStatus, type PointBPlanState } from './overviewModel'
 
@@ -23,6 +25,12 @@ export interface PointBStateSnapshot {
   finmodel?: PointBFinmodelStatus | null
   /** `plan.strategy` of the APPROVED version with live progress; null = none (or the server did not say). */
   strategy?: PointBStrategyState | null
+  /** Verified (and previously verified, now stale) recommendations + the count of the pending ones — never their texts. */
+  recommendations?: PointBRecsState | null
+  /** Active invite cards (at most 3). */
+  invites?: InviteView[]
+  /** «Следующий шаг» of the overview; null = nothing to show. */
+  nextStep?: PointBNextStep | null
 }
 
 export const INITIAL_STATE_SNAPSHOT: PointBStateSnapshot = { phase: 'loading', error: null, result: null, plan: EMPTY_PLAN_STATE }
@@ -57,7 +65,7 @@ export class PointBStateController {
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null
       if (my !== this.seq) return
       if (isUpgradeRequired(res.status, body)) {
-        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE, finmodel: null, strategy: null })
+        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE, finmodel: null, strategy: null, recommendations: null, invites: [], nextStep: null })
         return
       }
       const parsed = res.ok ? parsePointBState(body) : null
@@ -69,7 +77,10 @@ export class PointBStateController {
         })
         return
       }
-      this.set({ phase: 'ready', error: null, result: parsed.result, plan: parsed.plan, finmodel: parsed.finmodel, strategy: parseStrategyFromBody(body) })
+      this.set({
+        phase: 'ready', error: null, result: parsed.result, plan: parsed.plan, finmodel: parsed.finmodel, strategy: parseStrategyFromBody(body),
+        ...parseRecsFromBody(body),
+      })
     } catch {
       if (my !== this.seq) return
       this.set({ phase: 'error', error: ERROR_TEXT[0] })

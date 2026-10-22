@@ -1,21 +1,22 @@
 'use client'
 
 /**
- * components/popups/PopupModal.tsx — the modal window, only for an important
- * expert message («важное / требует ответа»). Focus moves into the dialog and
+ * components/popups/PopupModal.tsx — the modal window, only for what is important:
+ * an expert message «важное / требует ответа», or a critical Point B insight
+ * (e.g. a cash gap in the first months — the server decides `display`). Focus moves into the dialog and
  * is trapped there, Esc closes it, focus returns to where it was; on a phone
  * it fills the screen. Built on the project tokens (spec §12.2).
  */
 import { useEffect, useId, useRef } from 'react'
 import Link from 'next/link'
-import { BTN_GHOST, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
+import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import { nextTrapIndex } from './popupController'
-import { BADGE_TEXT, PopupReply, PopupSnooze, type PopupViewProps } from './PopupCard'
+import { BADGE_CLASS, BADGE_TEXT, OPEN_LABEL, PopupReply, PopupSnooze, PopupWhy, type PopupViewProps } from './PopupCard'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
 
-export function PopupModal({ popup, onDismiss, onSnooze, onReply }: PopupViewProps) {
+export function PopupModal({ popup, onDismiss, onSnooze, onReply, onOpen }: PopupViewProps) {
   const titleId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -54,7 +55,7 @@ export function PopupModal({ popup, onDismiss, onSnooze, onReply }: PopupViewPro
         className={cn(CARD, 'flex h-full w-full flex-col gap-4 overflow-y-auto rounded-none shadow-2xl shadow-black/50 sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl')}
       >
         <div className="flex items-start justify-between gap-2">
-          <span className={cn(CHIP, 'bg-primary/10 text-primary')}>{BADGE_TEXT(popup)}</span>
+          <span className={cn(CHIP, BADGE_CLASS(popup))}>{BADGE_TEXT(popup)}</span>
           <button type="button" onClick={() => void onDismiss()} aria-label="Закрыть" className="-mr-1 -mt-1 rounded-lg p-1 text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
             <Icon name="close" className="text-base" />
           </button>
@@ -63,9 +64,10 @@ export function PopupModal({ popup, onDismiss, onSnooze, onReply }: PopupViewPro
           <h2 id={titleId} className="font-headline text-lg font-bold text-on-surface">{popup.title}</h2>
           <p className="mt-2 whitespace-pre-wrap break-words text-sm text-on-surface-variant">{popup.body}</p>
         </div>
+        <PopupWhy popup={popup} />
         {popup.canReply && <PopupReply onReply={onReply} />}
         <div className="mt-auto flex flex-wrap items-start gap-1.5">
-          {popup.href && <Link href={popup.href} onClick={() => void onDismiss()} className={BTN_GHOST}>Открыть диалог</Link>}
+          {popup.href && <Link href={popup.href} onClick={() => void (onOpen ?? onDismiss)()} className={popup.kind === 'expert_message' ? BTN_GHOST : BTN_PRIMARY}>{OPEN_LABEL(popup)}</Link>}
           <PopupSnooze onSnooze={onSnooze} />
         </div>
       </div>
