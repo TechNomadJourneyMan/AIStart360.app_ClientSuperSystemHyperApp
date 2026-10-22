@@ -6,7 +6,7 @@
  * One `profiles` query for all expert / admin names (no N+1). Rows read with
  * `select('*')` before migration 131 simply have no author columns: every
  * answer then shows the legacy rule (`source` in the answer → «ИИ (из
- * документов)», otherwise «Автор не записан»).
+ * документов)», otherwise no author line).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AnswerAttribution } from './attribution-label'

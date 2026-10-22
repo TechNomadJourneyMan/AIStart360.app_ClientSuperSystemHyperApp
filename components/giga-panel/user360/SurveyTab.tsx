@@ -153,9 +153,9 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
                   <div key={a.key} className="group grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] sm:gap-3">
                     <dt className="text-[11px] text-slate-500">
                       {a.label}
-                      {d.attribution?.[a.key] ? (
+                      {formatAttribution(d.attribution?.[a.key]) ? (
                         <span className="block text-[10px] text-slate-600" title={d.answeredAt[a.key] ? fmtDateTime(d.answeredAt[a.key]) : undefined}>
-                          {formatAttribution(d.attribution[a.key])}
+                          {formatAttribution(d.attribution?.[a.key])}
                         </span>
                       ) : d.answeredAt[a.key] && <span className="block text-[10px] text-slate-700">{fmtDateTime(d.answeredAt[a.key])}</span>}
                     </dt>

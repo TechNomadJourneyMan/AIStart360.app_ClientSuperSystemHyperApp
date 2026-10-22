@@ -3,6 +3,7 @@
 import { NumberField, type NumberFieldProps } from '@/components/onboarding/shared/NumberField'
 import { FieldNote } from '@/components/onboarding/shared/FieldNote'
 import { FIELD_NOTES } from '@/components/onboarding/constants/step-config'
+import { yearLabel, yearOfKey, yearPhrase } from '@/lib/survey/year-labels'
 
 interface Props { data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }
 
@@ -57,10 +58,10 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
     <div className="space-y-6">
       {section('Основные показатели', 'payments', (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {money('s9n_revenue_2024', 'Годовая выручка 2024')}
-          {field('s9n_change_vs_2023', 'Изменение выручки vs 2023', 'text', '+15% или -10%')}
-          {money('s9n_net_profit', 'Чистая прибыль/убыток 2024', { allowNegative: true })}
-          {num('s9n_net_margin', 'Чистая маржа', { unit: '%', allowNegative: true, max: 100 })}
+          {money('s9n_revenue_2024', yearLabel('Годовая выручка', 's9n_revenue_2024'))}
+          {field('s9n_change_vs_2023', `Изменение выручки: ${yearPhrase(2024)} к 2023`, 'text', '+15% или -10%')}
+          {money('s9n_net_profit', yearLabel('Чистая прибыль/убыток', 's9n_net_profit'), { allowNegative: true })}
+          {num('s9n_net_margin', yearLabel('Чистая маржа', 's9n_net_margin'), { unit: '%', allowNegative: true, max: 100 })}
           {field('s9n_revenue_sources', 'Основные источники дохода', 'textarea', '1-3 пункта')}
           {field('s9n_seasonality', 'Сезонность: пики и провалы', 'textarea')}
           {field('s9n_breakeven_point', 'Точка безубыточности', 'text')}
@@ -68,7 +69,7 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
         </div>
       ))}
 
-      {section('Структура расходов', 'receipt_long', (
+      {section(`Структура расходов — ${yearPhrase(yearOfKey('s9n_expense_cogs') ?? 2024)}`, 'receipt_long', (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* ₸ PER YEAR: every reader treats these answers as yearly (finmodel/sources.ts, metrics/formulas.ts). */}
           {money('s9n_expense_cogs', 'Себестоимость продукции/услуг', { unit: '₸/год' })}

@@ -258,9 +258,9 @@ export default function MyDataSection({ userId }: Props) {
                         {f.label}
                       </span>
                       <span className="text-sm text-on-surface mt-0.5">{f.value}</span>
-                      {survey?.attribution?.[f.key] && (
+                      {formatAttribution(survey?.attribution?.[f.key], { viewerIsOwner: true }) && (
                         <span className="mt-0.5 text-[10px] text-on-surface-variant/70">
-                          {formatAttribution(survey.attribution[f.key], { viewerIsOwner: true })}
+                          {formatAttribution(survey?.attribution?.[f.key], { viewerIsOwner: true })}
                         </span>
                       )}
                     </div>

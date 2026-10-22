@@ -14,7 +14,7 @@ import { isWritableSurveyKey } from '@/lib/survey/steps'
  *    (PO item 4.1). Keyboard users tabbing into the field still type inline;
  *    Alt+Enter in it opens the editor too;
  *  • under every answered field: the author line «Заполнил: вы · 22.10.2026»
- *    (PO item 4.2). The line is a small element the layer keeps next to the
+ *    (PO item 4.2); none when the author is unknown. The line is a small element the layer keeps next to the
  *    field after every render; it never touches the forms' own markup.
  */
 const LINE_ATTR = 'data-survey-attribution'
@@ -49,7 +49,9 @@ function syncLines(root: HTMLElement, attribution: Record<string, AnswerAttribut
   const seen = new Set<string>()
   for (const [key, a] of Object.entries(attribution)) {
     const field = root.querySelector<HTMLElement>(`#${cssEscape(key)}`)
-    if (!field) continue
+    const text = formatAttribution(a, viewer)
+    // Unknown author (old answers): no line rather than «Автор не записан».
+    if (!field || text === null) continue
     seen.add(key)
     let line = root.querySelector<HTMLElement>(`[${LINE_ATTR}="${cssEscape(key)}"]`)
     if (!line) {
@@ -62,7 +64,6 @@ function syncLines(root: HTMLElement, attribution: Record<string, AnswerAttribut
       const text = document.createElement('span')
       line.append(icon, text)
     }
-    const text = formatAttribution(a, viewer)
     const iconName = ICON[a.updatedByRole ?? ''] ?? 'history'
     const [icon, label] = [line.children[0] as HTMLElement, line.children[1] as HTMLElement]
     if (icon.textContent !== iconName) icon.textContent = iconName

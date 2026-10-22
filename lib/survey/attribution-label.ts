@@ -1,7 +1,9 @@
 /**
  * lib/survey/attribution-label.ts — the line under a questionnaire field:
  * «Заполнил: вы · 22.10.2026», «Изменил эксперт Иван Петров · 22.10.2026»,
- * «Заполнил ИИ (из документов) · …», «Автор не записан» (PO item 4.2).
+ * «Заполнил ИИ (из документов) · …» (PO item 4.2). No author → no line at all
+ * (survey audit 2026-10-22, MVP item 9: 100 % of the old answers have no author,
+ * and «Автор не записан» under every field was noise).
  *
  * Pure and browser-safe. The server sends one `AnswerAttribution` per answer
  * (GET /api/v1/onboarding/survey, GIGA survey tab); old answers without an
@@ -40,9 +42,9 @@ export function formatAttributionDate(iso: string | null | undefined): string | 
 
 const withName = (base: string, name: string | null) => (name && name.trim() ? `${base} ${name.trim()}` : base)
 
-/** The text of the author line, or null when there is no answer to describe. */
-export function formatAttribution(a: AnswerAttribution | null | undefined, viewer: AttributionViewer = {}): string {
-  if (!a || !a.updatedByRole) return 'Автор не записан'
+/** The text of the author line, or null when the author is unknown (then no line is shown). */
+export function formatAttribution(a: AnswerAttribution | null | undefined, viewer: AttributionViewer = {}): string | null {
+  if (!a || !a.updatedByRole) return null
   const isViewer = !!viewer.viewerId && a.updatedBy === viewer.viewerId
   let who: string
   switch (a.updatedByRole) {
@@ -62,7 +64,7 @@ export function formatAttribution(a: AnswerAttribution | null | undefined, viewe
       who = 'Заполнено системой'
       break
     default:
-      return 'Автор не записан'
+      return null
   }
   const date = formatAttributionDate(a.updatedAt)
   return date ? `${who} · ${date}` : who

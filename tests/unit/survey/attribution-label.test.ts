@@ -33,9 +33,9 @@ describe('formatAttribution — the line under a field', () => {
     expect(formatAttribution(a({ updatedByRole: 'system' }))).toBe('Заполнено системой · 22.10.2026')
   })
 
-  it('no author: «Автор не записан» (no date); a broken date is dropped', () => {
-    expect(formatAttribution(a({}))).toBe('Автор не записан')
-    expect(formatAttribution(null)).toBe('Автор не записан')
+  it('no author: no line at all (null); a broken date is dropped', () => {
+    expect(formatAttribution(a({}))).toBeNull()
+    expect(formatAttribution(null)).toBeNull()
     expect(formatAttribution(a({ updatedByRole: 'ai', updatedAt: 'nonsense' }))).toBe('Заполнил ИИ (из документов)')
     expect(formatAttributionDate(null)).toBeNull()
   })
