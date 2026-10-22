@@ -6,8 +6,9 @@
  * query that waits for another one lands in the next wave. `waves()` is the number of sequential round
  * trips the loader needed; `reads` counts the queries per table.
  *
- * `memoryDb(tables)` is a tiny read-only double (select / eq / is / not / in / or / order / limit /
- * maybeSingle / single): `or` is accepted and ignored, which is enough for loaders that only read.
+ * `memoryDb(tables)` is a tiny double for loaders (select with { count, head } / eq / gt / is / not / in /
+ * contains / or / order / limit / maybeSingle / single, and upsert that only records the write in
+ * `tables.__writes`): `or` is accepted and ignored.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -61,15 +62,29 @@ export function memoryDb(tables: Record<string, Row[]>): SupabaseClient {
       const filters: Array<(r: Row) => boolean> = []
       const sorts: Array<{ col: string; asc: boolean }> = []
       let cap: number | null = null
+      let counted: { head: boolean } | null = null
+      let write: Row | null = null
       const run = (single: boolean) => {
+        if (write) {
+          ;(tables.__writes ??= []).push({ table, ...write })
+          return { data: null, error: null }
+        }
         let rows = (tables[table] ?? []).filter((r) => filters.every((f) => f(r)))
         for (const { col, asc } of [...sorts].reverse()) rows = [...rows].sort((a, b) => (String(a[col] ?? '') < String(b[col] ?? '') ? -1 : String(a[col] ?? '') > String(b[col] ?? '') ? 1 : 0) * (asc ? 1 : -1))
+        const count = rows.length
         if (cap !== null) rows = rows.slice(0, cap)
         const copy = rows.map((r) => ({ ...r }))
+        if (counted) return { data: counted.head ? null : copy, count, error: null }
         return { data: single ? copy[0] ?? null : copy, error: null }
       }
       const b: Record<string, unknown> = {
-        select: () => b,
+        select: (_cols?: string, o?: { count?: string; head?: boolean }) => { if (o?.count) counted = { head: !!o.head }; return b },
+        upsert: (row: Row) => { write = row; return b },
+        contains: (c: string, v: Record<string, unknown>) => {
+          filters.push((r) => Object.entries(v).every(([k, x]) => (r[c] as Record<string, unknown> | null)?.[k] === x))
+          return b
+        },
+        gt: (c: string, v: unknown) => { filters.push((r) => String(r[c] ?? '') > String(v)); return b },
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
         is: (c: string, v: unknown) => { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return b },
         not: (c: string, o: string, v: unknown) => { filters.push((r) => (o === 'is' && v === null ? r[c] != null : r[c] !== v)); return b },

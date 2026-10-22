@@ -39,7 +39,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const sensitive = hasPermission(role, 'users.sensitive')
 
   const sb = createServiceClient()
-  const [profileRes, companyRes, answersRes, diagRes, griRes, draftRes, docsRes, contentRes, eventsCountRes, impRes, target] = await Promise.all([
+  // Every read keyed by the user in one round trip (the survey completion markers included).
+  const [profileRes, companyRes, answersRes, diagRes, griRes, draftRes, docsRes, contentRes, eventsCountRes, impRes, target, surveyMarkers] = await Promise.all([
     sb.from('profiles').select('id, email, full_name, role, status, organization, position, phone, tier, feature_flags, vertical, widget_config, created_at, approved_at, last_seen_at, avatar_url').eq('id', userId).maybeSingle(),
     sb.from('companies').select('id, name, industry, business_model, employee_count, regions').eq('user_id', userId).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', userId),
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     sb.from('user_events').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     sb.from('impersonation_sessions').select('id').eq('target_user_id', userId).is('ended_at', null).gt('expires_at', new Date().toISOString()).limit(1),
     staffRoleOfUser(userId),
+    loadSurveyCompletionMarkers(sb, userId),
   ])
   const profile = profileRes.data
   if (!profile) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
@@ -66,14 +68,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (at && (!surveyLast || at > surveyLast)) surveyLast = at
   }
   const summary = buildUserProfileSummary(answers)
-  const surveyMarkers = await loadSurveyCompletionMarkers(sb, userId)
   const surveyFacts = { ...surveyMarkers, filledSteps: summary.startedSteps, lastAnswerAt: surveyLast }
 
   const diags = diagRes.data ?? []
   const diagIds = diags.map((d) => d.id)
-  const { data: pointB } = diagIds.length
-    ? await sb.from('point_b_analysis').select('calculated_at').in('diagnostic_id', diagIds).order('calculated_at', { ascending: true }).limit(1)
-    : { data: [] as Array<{ calculated_at: string }> }
+  // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
+  // последний раз открывал его карточку. Сбой записи карточку не ломает.
+  // The mark is written together with the last read (one round trip).
+  const [{ data: pointB }] = await Promise.all([
+    diagIds.length
+      ? sb.from('point_b_analysis').select('calculated_at').in('diagnostic_id', diagIds).order('calculated_at', { ascending: true }).limit(1)
+      : Promise.resolve({ data: [] as Array<{ calculated_at: string }> }),
+    markClientViewed(sb, guard.actor.id, userId),
+  ])
 
   const gri = griRes.data ?? []
   const griFirst = gri.length ? gri[gri.length - 1].created_at : null
@@ -92,10 +99,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     point_b: pointB?.[0]?.calculated_at ?? null,
     content: contentRes.data?.[0]?.created_at ?? null,
   })
-
-  // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
-  // последний раз открывал его карточку. Сбой записи карточку не ломает.
-  await markClientViewed(sb, guard.actor.id, userId)
 
   return NextResponse.json({
     ok: true,
