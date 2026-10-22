@@ -65,6 +65,13 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
   isJourneyPublicDemoEnabled()
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
+/**
+ * Steps of a sign-in / recovery flow that run WITH a session: the recovery link
+ * signs the user in and lands on /auth/reset-password; /auth/callback must
+ * exchange its code. Unlike /login they must not bounce a signed-in user to
+ * the cabinet — that made the new-password form unreachable.
+ */
+const AUTH_FLOW_PATHS = ['/auth/callback', '/auth/reset-password']
 
 const VALID_ROLES = ['admin', 'expert', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
@@ -409,7 +416,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   }
 
   // Authenticated user visiting auth page → redirect to correct panel
-  if (isPublic && role) {
+  if (isPublic && role && !AUTH_FLOW_PATHS.some((p) => matchesRoute(pathname, p))) {
     // Сотрудник приземляется в СВОЁМ кабинете: profiles.role у персонала часто
     // обычный 'client' (SuperExpert, super_admin только в staff_roles), поэтому
     // без этой проверки его уводило бы в клиентский дашборд.
@@ -459,10 +466,15 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   }
 
   // ── Maintenance mode (platform settings): client cabinets are closed ──
-  // Staff, experts and an admin driving a cabinet keep working.
+  // Staff, experts and an admin driving a cabinet keep working. Staff whose
+  // profiles.role is 'client' (the role lives only in staff_roles) are staff
+  // too — otherwise they could not even reach /settings (password, 2FA).
   if (user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
     if ((await settings()).maintenance.enabled) {
-      return redirectKeepingCookies(response, new URL('/maintenance', request.url))
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      if (!isStaffRole(staffRow?.role)) {
+        return redirectKeepingCookies(response, new URL('/maintenance', request.url))
+      }
     }
   }
 
