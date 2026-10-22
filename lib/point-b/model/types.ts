@@ -11,7 +11,9 @@
  */
 import type { FinmodelKey } from '../finmodel/keys'
 import type { FinmodelState } from '../finmodel/store'
+import type { InviteView } from '../invites/types'
 import type { GoalReviewStatus } from '../plan/types'
+import type { ClientRecommendationView } from '../recs/types'
 import type { MatrixPoint } from '../strategy/matrix'
 import type { NodeProgress } from '../strategy/progress'
 import type { Milestone, StrategyNode } from '../strategy/types'
@@ -191,6 +193,18 @@ export interface PointBState {
     /** Only from the approved version; null = there is none. An approved plan without a strategy has an empty one. */
     strategy: StrategyState | null
   }
+  /**
+   * Recommendations (plan Ф6a): ONLY expert-verified ones (and previously verified, now stale) with who / when /
+   * for what they were checked; the ones waiting for the check are only counted — never their texts.
+   */
+  recommendations: { verified: ClientRecommendationView[]; pendingCount: number }
+  /** Active invite cards of the page (at most 3). */
+  invites: InviteView[]
+  /**
+   * «Следующий шаг»: the next action of the most important verified recommendation (`recId` set, `action` 'recs'),
+   * else the nearest unfinished task of the published strategy (`action` 'strategy'); null = nothing to show.
+   */
+  nextStep: { title: string; action: string | null; recId: string | null } | null
 }
 
 /** An input the model cannot work with (a zero check, a conversion above 100%…). The text is for the user. */

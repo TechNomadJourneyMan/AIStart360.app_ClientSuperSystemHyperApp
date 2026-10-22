@@ -145,7 +145,22 @@ export async function approvePlanVersion(
     first: result.previousPublishedId === null,
     actor: input.actor,
   })
+  await inviteRulesAfterApproval(sb, input.userId, input.companyId)
   return result
+}
+
+/**
+ * The published plan is what the personal invites speak about (plan Ф6a): the rules run right after the approval.
+ * Best effort — the version is already published, a failure is logged and never undoes it. Imported lazily:
+ * invites/run reads the model, whose loader imports this module.
+ */
+async function inviteRulesAfterApproval(sb: SupabaseClient, userId: string, companyId: string): Promise<void> {
+  try {
+    const { runInviteRules } = await import('../invites/run')
+    await runInviteRules(sb, { userId, companyId, now: new Date() })
+  } catch (err) {
+    console.error('[point-b/flow] invite rules after the approval failed', err instanceof Error ? err.message : err)
+  }
 }
 
 /**

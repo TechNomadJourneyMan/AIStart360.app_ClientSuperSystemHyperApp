@@ -17,11 +17,15 @@ import { snapshotGoals } from '../plan/goals'
 import { loadPlanBundle, type PlanBundle } from '../plan/store'
 import type { PlanGoalsSnapshot } from '../plan/types'
 import { loadStrategyState } from '../strategy/load'
+import { listActiveInvites } from '../invites/store'
+import type { InviteView } from '../invites/types'
+import { clientView, listRecommendations, topVerifiedWithAction } from '../recs/store'
+import type { Recommendation } from '../recs/types'
 import { computeModel } from './compute'
 import { loadRevenueHistory } from './history'
 import { buildModelInputs } from './inputs'
 import { templateKeyFor } from './levels'
-import type { ModelInputs, PointBState, ScenarioResult, TemplateKey } from './types'
+import type { ModelInputs, PointBState, ScenarioResult, StrategyState, TemplateKey } from './types'
 
 const isMissingTable = (message: string): boolean => /\((42P01|PGRST205)\)/.test(message)
 
@@ -115,6 +119,12 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
 
   const published = bundle.published
   const preparing = (goals?.items.length ?? 0) > 0 || !!pb.diagnostic || !!bundle.open
+  // The strategy of the approved version only, with the live progress of its tasks; a draft's never gets here.
+  const strategy = published ? await loadStrategyState(sb, userId, published.strategy) : null
+  const [recs, invites] = await Promise.all([
+    company ? quietly('recommendations', () => listRecommendations(sb, company.id, { statuses: CLIENT_REC_STATUSES }), [] as Recommendation[]) : Promise.resolve([] as Recommendation[]),
+    company ? quietly('invites', () => listActiveInvites(sb, userId, now), [] as InviteView[]) : Promise.resolve([] as InviteView[]),
+  ])
   return {
     access: 'ok',
     // The client sees the preliminary calculation WITHOUT its scenarios: scenarios are the experts' plan (approved version only, spec §6).
@@ -127,10 +137,40 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       scenarios: published ? storedScenarios(published.scenarios) : [],
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
-      // The strategy of the approved version only, with the live progress of its tasks; a draft's never gets here.
-      strategy: published ? await loadStrategyState(sb, userId, published.strategy) : null,
+      strategy,
     },
+    recommendations: clientView(recs),
+    invites,
+    nextStep: nextStepOf(recs, strategy),
   }
+}
+
+/** The client never reads rejected recommendations; pending ones are only counted by clientView. */
+const CLIENT_REC_STATUSES: Recommendation['status'][] = ['expert_verified', 'stale', 'pending_review']
+
+/**
+ * A part of the page that must not fail it: migration 129 not applied (the tables are not there) or a failed read
+ * gives the empty value (logged unless it is the missing table).
+ */
+async function quietly<T>(what: string, run: () => Promise<T>, empty: T): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (!isMissingTable(message)) console.error(`[point-b/model] ${what} not read — shown empty`, message)
+    return empty
+  }
+}
+
+/** «Следующий шаг»: a verified recommendation's next action, else the nearest unfinished task of the strategy. */
+export function nextStepOf(recs: Recommendation[], strategy: StrategyState | null): PointBState['nextStep'] {
+  const rec = topVerifiedWithAction(recs)
+  if (rec) return { title: (rec.nextAction as string).trim(), action: 'recs', recId: rec.id }
+  if (!strategy) return null
+  const task = strategy.items
+    .filter((n) => n.kind === 'task' && ['not_started', 'in_progress'].includes(strategy.progress[n.key]?.state ?? ''))
+    .sort((a, b) => (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') || a.order - b.order)[0]
+  return task ? { title: task.title, action: 'strategy', recId: null } : null
 }
 
 /** The warnings of the calculation that are about the finmodel (the expert panel shows them next to the values). */

@@ -25,12 +25,14 @@ const s = vi.hoisted(() => ({
   gateCalls: [] as Array<{ userId: string; feature: string; opts: unknown }>,
   audits: [] as Array<{ action: string; entityId?: string | null; metadata?: Record<string, unknown>; oldValue?: unknown; newValue?: unknown }>,
   breakPlanTables: false,
+  /** Migration 129 not applied: pb_recommendations / pb_invites answer «relation does not exist». */
+  break129: false,
 }))
 
 /** The same DB; with `breakPlanTables` the plan tables answer «relation does not exist» (migration 125 not applied). */
 const dbProxy = () => ({
   from: (t: string) => {
-    if (s.breakPlanTables && (t === 'pb_plans' || t === 'pb_plan_versions')) {
+    if ((s.breakPlanTables && (t === 'pb_plans' || t === 'pb_plan_versions')) || (s.break129 && (t === 'pb_recommendations' || t === 'pb_invites'))) {
       const q: Record<string, unknown> = {}
       for (const m of ['select', 'eq', 'in', 'order', 'limit', 'neq']) q[m] = () => q
       q.maybeSingle = async () => ({ data: null, error: { code: '42P01' } })
@@ -141,6 +143,7 @@ beforeEach(() => {
   s.gateCalls.length = 0
   s.audits.length = 0
   s.breakPlanTables = false
+  s.break129 = false
   as('admin')
 })
 afterEach(() => { vi.useRealTimers() })
@@ -588,6 +591,98 @@ describe('GET /api/v1/point-b/state', () => {
     expect(r.status).toBe(500)
     expect(JSON.stringify(r.body)).not.toContain('secret')
     spy.mockRestore()
+  })
+})
+
+describe('recommendations, invites and the next step in the state (Ф6a)', () => {
+  const rec = (over: Record<string, unknown>) => ({
+    company_id: COMPANY, version_id: 'v-1', kind: 'lever', title: 'R', essence: 'Суть', reason: 'Причина', expected_effect: null, resources: null,
+    confidence: 'medium', confidence_reason: null, risks: null, next_action: null, source_refs: [], status: 'pending_review', generated_by: 'ai',
+    inputs_hash: 'h', rec_version: 1, supersedes_id: null, reviewer_id: null, reviewer_name: null, reviewer_specialty: null, reviewed_at: null,
+    scope_note: null, review_comment: 'внутренний комментарий', created_at: '2026-10-15T00:00:00Z', updated_at: '2026-10-15T00:00:00Z', ...over,
+  })
+  const verified = (title: string, over: Record<string, unknown> = {}) =>
+    rec({ title, status: 'expert_verified', reviewer_id: EXPERT, reviewer_name: 'Алия Эксперт', reviewer_specialty: 'Продажи', reviewed_at: '2026-10-16T00:00:00Z', scope_note: 'Для плана v1', ...over })
+  const invite = (id: string, over: Record<string, unknown> = {}) => ({
+    id, company_id: COMPANY, user_id: CLIENT, rule_key: 'cash_gap', dedupe_key: `k-${id}`, kind: 'insight', title: `Инвайт ${id}`, body: 'Текст', href: '/client/point-b?tab=whatif',
+    why: 'Почему', source_refs: [], priority: 3, display: 'card', status: 'new', snoozed_until: null, expires_at: '2026-11-01T00:00:00Z', delivered: {}, source_rec_id: null,
+    created_at: '2026-10-17T00:00:00Z', updated_at: '2026-10-17T00:00:00Z', ...over,
+  })
+
+  it('state: client sees verified (and previously verified stale), the pending count, never pending/rejected texts', async () => {
+    db().pb_recommendations.push(
+      verified('ПРОВЕРЕНО', { id: 'r-1', next_action: 'Разобрать воронку' }),
+      rec({ id: 'r-2', title: 'СТАРАЯ-ПРОВЕРЕННАЯ', status: 'stale', reviewer_name: 'Алия Эксперт', reviewed_at: '2026-10-10T00:00:00Z' }),
+      rec({ id: 'r-3', title: 'НЕПРОВЕРЕННЫЙ-ЧЕРНОВИК-ИИ' }),
+      rec({ id: 'r-4', title: 'ЕЩЁ-НА-ПРОВЕРКЕ', generated_by: 'rule' }),
+      rec({ id: 'r-5', title: 'ОТКЛОНЕНО', status: 'expert_rejected', reviewed_at: '2026-10-16T00:00:00Z' }),
+      rec({ id: 'r-6', title: 'УСТАРЕВШИЙ-НЕПРОВЕРЕННЫЙ', status: 'stale' }),
+      verified('ЧУЖАЯ-КОМПАНИЯ', { id: 'r-7', company_id: OTHER_COMPANY }),
+    )
+    const r = await state()
+    expect(r.status).toBe(200)
+    expect(r.body.data.recommendations.pendingCount).toBe(2)
+    expect(r.body.data.recommendations.verified.map((v: { title: string; state: string }) => [v.title, v.state])).toEqual([['ПРОВЕРЕНО', 'verified'], ['СТАРАЯ-ПРОВЕРЕННАЯ', 'stale']])
+    expect(r.body.data.recommendations.verified[0]).toMatchObject({ reviewerName: 'Алия Эксперт', reviewerSpecialty: 'Продажи', reviewedAt: '2026-10-16T00:00:00Z', scopeNote: 'Для плана v1' })
+    const raw = JSON.stringify(r.body)
+    for (const hidden of ['НЕПРОВЕРЕННЫЙ-ЧЕРНОВИК-ИИ', 'ЕЩЁ-НА-ПРОВЕРКЕ', 'ОТКЛОНЕНО', 'УСТАРЕВШИЙ-НЕПРОВЕРЕННЫЙ', 'ЧУЖАЯ-КОМПАНИЯ', 'внутренний комментарий', 'pending_review', 'generatedBy']) {
+      expect(raw, hidden).not.toContain(hidden)
+    }
+  })
+
+  it('state: invites and nextStep from verified recommendations; empty without migration 129', async () => {
+    db().pb_recommendations.push(
+      verified('Рычаг', { id: 'r-low', kind: 'lever', next_action: 'Запустить рекламу' }),
+      verified('Ограничение', { id: 'r-top', kind: 'constraint', next_action: '  Разобрать воронку продаж  ' }),
+      verified('Без действия', { id: 'r-none', kind: 'constraint', next_action: null }),
+    )
+    db().pb_invites.push(
+      invite('i-1', { priority: 2 }), invite('i-2', { priority: 1 }), invite('i-3', { priority: 4 }), invite('i-4', { priority: 5 }),
+      invite('i-snoozed', { status: 'snoozed', snoozed_until: '2026-10-25T00:00:00Z' }),
+      invite('i-expired', { expires_at: '2026-10-17T00:00:00Z' }),
+      invite('i-closed', { status: 'dismissed' }),
+      invite('i-other', { user_id: OTHER_CLIENT }),
+    )
+    const r = await state()
+    expect(r.body.data.invites.map((i: { id: string }) => i.id)).toEqual(['i-2', 'i-1', 'i-3'])
+    expect(r.body.data.invites[0]).toEqual({
+      id: 'i-2', kind: 'insight', title: 'Инвайт i-2', body: 'Текст', href: '/client/point-b?tab=whatif', why: 'Почему', sourceRefs: [], display: 'card', createdAt: '2026-10-17T00:00:00Z',
+    })
+    // the constraint with a next action is the most important verified one
+    expect(r.body.data.nextStep).toEqual({ title: 'Разобрать воронку продаж', action: 'recs', recId: 'r-top' })
+
+    // no verified recommendation with an action → the nearest unfinished task of the published strategy
+    db().pb_recommendations.length = 0
+    const task = (key: string, dueDate: string | null, order: number) => ({
+      key, kind: 'task', parentKey: 'init-00000001', title: `Задача ${key}`, description: null, ownerLabel: null, dueDate, impact: null, effort: null,
+      metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order,
+    })
+    const strategy = {
+      items: [
+        { key: 'strat-0000001', kind: 'strategy', parentKey: null, title: 'Рост', description: null, ownerLabel: null, dueDate: null, impact: 4, effort: 2, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order: 0 },
+        { key: 'init-00000001', kind: 'initiative', parentKey: 'strat-0000001', title: 'Продажи', description: null, ownerLabel: null, dueDate: null, impact: 4, effort: 2, metricId: null, block: null, kpi: null, dependsOn: [], delayRisk: null, order: 0 },
+        task('task-00000001', '2026-11-01', 0), task('task-00000002', '2026-10-25', 1), task('task-00000003', '2026-10-20', 2),
+      ],
+      milestones: [],
+    }
+    withPlan([versionRow({ id: 'v-1', status: 'approved', strategy })], 'v-1')
+    db().action_items.push(
+      { id: 'a1', user_id: CLIENT, title: 't1', status: 'open', pb_task_key: 'task-00000001', source: 'point_b' },
+      { id: 'a2', user_id: CLIENT, title: 't2', status: 'in_progress', pb_task_key: 'task-00000002', source: 'point_b' },
+      { id: 'a3', user_id: CLIENT, title: 't3', status: 'done', pb_task_key: 'task-00000003', source: 'point_b' },
+    )
+    expect((await state()).body.data.nextStep).toEqual({ title: 'Задача task-00000002', action: 'strategy', recId: null })
+
+    // migration 129 not applied → empty values, the page still works
+    s.break129 = true
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const empty = await state()
+    expect(empty.status).toBe(200)
+    expect(empty.body.data.recommendations).toEqual({ verified: [], pendingCount: 0 })
+    expect(empty.body.data.invites).toEqual([])
+    expect(empty.body.data.nextStep).toEqual({ title: 'Задача task-00000002', action: 'strategy', recId: null })
+    expect(errors.mock.calls.filter((c) => String(c[0]).includes('not read'))).toEqual([])
+    errors.mockRestore()
   })
 })
 

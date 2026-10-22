@@ -5,6 +5,8 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { activeImpersonation } from '@/lib/impersonation/server'
 import { getSetting } from '@/lib/settings/store'
+import { hasPointB } from '@/lib/point-b/invites/access'
+import { loadInviteCandidates, type InviteCandidates } from '@/lib/popups/invites'
 import { selectPopups } from '@/lib/popups/select'
 import { loadExpertMessageCandidates } from '@/lib/popups/store'
 import { DEFAULT_POPUP_RULES } from '@/lib/popups/types'
@@ -12,8 +14,11 @@ import { DEFAULT_POPUP_RULES } from '@/lib/popups/types'
 /**
  * GET /api/v1/popups?route=/client/home — the pop-ups to show the signed-in
  * user right now (cabinet pop-up layer, spec §12.2): staff messages of HIS
- * conversation, already selected and ordered (lib/popups/select.ts). The user
- * comes from the session only.
+ * conversation and — for a client with Point B (PRO, or the access gates
+ * off) — his Point B invites as `insight` / `recommendation` (lib/popups/
+ * invites.ts), already selected and ordered (lib/popups/select.ts). The user
+ * comes from the session only. A failure of the invites (migration 129 not
+ * applied, a read error) leaves the expert messages working.
  *
  * Empty list (never an error the page has to handle) when there is no
  * conversation yet, an admin is driving the cabinet «от имени», or the layer
@@ -40,15 +45,24 @@ export async function GET(req: NextRequest) {
 
     const now = new Date()
     const rules = { ...DEFAULT_POPUP_RULES, cardsPerDay }
-    const loaded = await loadExpertMessageCandidates(createServiceClient(), user.id, now, rules.messageWindowDays)
-    const popups = selectPopups(loaded.candidates, loaded.states, {
+    const sb = createServiceClient()
+    const loaded = await loadExpertMessageCandidates(sb, user.id, now, rules.messageWindowDays)
+    const pro = await hasPointB(sb, user.id)
+    let invites: InviteCandidates = { candidates: [], shownToday: { cards: 0, modals: 0 } }
+    if (pro) {
+      try {
+        invites = await loadInviteCandidates(sb, user.id, now)
+      } catch (err) {
+        console.error('[v1/popups] invites not read', err instanceof Error ? err.message : err)
+      }
+    }
+    const popups = selectPopups([...loaded.candidates, ...invites.candidates], loaded.states, {
       now,
-      // Recommendations and insights have no source yet (Point B phase 1+); only expert messages pass today.
-      pro: false,
+      pro,
       impersonating: false,
       doNotDisturbUntil: null,
       route,
-      shownToday: { cards: 0, modals: loaded.modalsShown24h },
+      shownToday: { cards: invites.shownToday.cards, modals: loaded.modalsShown24h + invites.shownToday.modals },
     }, rules)
     return NextResponse.json({ ok: true, data: { threadId: loaded.threadId, popups } })
   } catch (err) {

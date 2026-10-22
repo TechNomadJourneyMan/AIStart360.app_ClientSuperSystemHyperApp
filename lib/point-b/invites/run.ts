@@ -14,10 +14,7 @@
  * Batches: one plan read, one model, one read and at most a few inserts per user.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { can } from '@/lib/access/entitlements'
-import { readEntitlements } from '@/lib/access/server'
 import { activeImpersonation } from '@/lib/impersonation/server'
-import { getAccessGatesEnabled } from '@/lib/settings/system-settings'
 import { evaluateInsightRules, type InsightCandidate } from '../insights/rules'
 import { tabHref } from '../insights/scenario'
 import { computeModel } from '../model/compute'
@@ -27,6 +24,7 @@ import type { ScenarioProfile } from '../model/types'
 import { snapshotGoals } from '../plan/goals'
 import { loadPlanBundle } from '../plan/store'
 import type { Recommendation } from '../recs/types'
+import { hasPointB } from './access'
 import { deliverInvite } from './deliver'
 import { createInvites } from './store'
 
@@ -34,15 +32,7 @@ const NONE = { created: 0, skipped: 0 }
 const isMissingTable = (message: string): boolean => /\((42P01|PGRST205)\)/.test(message)
 const msg = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
-/** Point B is open to the user: PRO, or the access gates are off (the same rule as the page). */
-export async function hasPointB(sb: SupabaseClient, userId: string): Promise<boolean> {
-  try {
-    if (!(await getAccessGatesEnabled())) return true
-    return can(await readEntitlements(sb, userId), 'point_b')
-  } catch {
-    return false
-  }
-}
+export { hasPointB }
 
 async function impersonated(userId: string, given?: boolean): Promise<boolean> {
   if (given !== undefined) return given

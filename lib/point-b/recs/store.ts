@@ -126,7 +126,7 @@ const confidenceOf = (v: unknown): Recommendation['confidence'] => (CONFIDENCE.i
 const dupKey = (title: string, inputsHash: string | null, kind: string): string => `${kind}|${inputsHash ?? ''}|${title.trim().toLowerCase().replace(/\s+/g, ' ')}`
 
 /** The profanity fields an expert can fill (ProfanityError names the first dirty one). */
-function assertCleanDraft(d: Partial<RecDraft>): void {
+function assertCleanDraft(d: { [K in keyof RecDraft]?: RecDraft[K] | null }): void {
   assertClean({
     title: d.title, essence: d.essence, reason: d.reason, expectedEffect: d.expectedEffect, resources: d.resources,
     confidenceReason: d.confidenceReason, risks: d.risks, nextAction: d.nextAction,
@@ -210,7 +210,9 @@ export async function createRecommendations(
 
 export interface RecReviewer { id: string; name: string; specialty: string | null }
 
-export type ExpertDraft = Pick<RecDraft, 'kind' | 'title'> & Partial<Omit<RecDraft, 'kind' | 'title' | 'generatedBy'>>
+export type ExpertDraft = Pick<RecDraft, 'kind' | 'title'> & {
+  [K in Exclude<keyof RecDraft, 'kind' | 'title' | 'generatedBy'>]?: RecDraft[K] | null
+}
 
 /** An expert's own recommendation: verified at once, the expert is the reviewer. */
 export async function createExpertRecommendation(

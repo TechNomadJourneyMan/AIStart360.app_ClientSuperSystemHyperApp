@@ -2,15 +2,15 @@
  * lib/popups/types.ts — vocabulary of the cabinet pop-up layer
  * (docs/superpowers/specs/2026-10-18-point-b-design.md §12.2).
  *
- * Only expert messages exist as a source today (comm_messages with
- * author_kind = 'staff'); recommendations and insights arrive with Point B
- * phase 1+ and use the same candidate shape.
+ * Sources: expert messages (comm_messages with author_kind = 'staff') and,
+ * since Point B Ф6a, the client's invites (pb_invites) as `insight` (a rule of
+ * the platform) or `recommendation` (an expert verified it) — same shape.
  */
 
 export type PopupKind = 'expert_message' | 'recommendation' | 'insight'
 
 export interface PopupCandidate {
-  /** comm_messages.id for an expert message. */
+  /** comm_messages.id for an expert message; pb_invites.id for an insight / a recommendation. */
   id: string
   kind: PopupKind
   display: 'card' | 'modal'
@@ -26,6 +26,12 @@ export interface PopupCandidate {
   /** The expert marked the message «важное / требует ответа». */
   important: boolean
   canReply: boolean
+  /** «Почему я это вижу» of an insight / a recommendation (Point B invites). */
+  why?: string
+  /** Sources of an insight / a recommendation (metrics, scenario, checks). */
+  sourceRefs?: Array<{ type: string; ref: string; label: string }>
+  /** When the expert verified the recommendation (ISO). */
+  reviewedAt?: string | null
 }
 
 /** Per-pop-up state kept in comm_messages.metadata.popup. */

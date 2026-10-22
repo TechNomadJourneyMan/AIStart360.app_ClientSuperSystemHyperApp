@@ -9,9 +9,10 @@
  *     switch them off, «не беспокоить» does not hide them;
  *   - recommendations and insights: PRO only, hidden by «не беспокоить»,
  *     at most `cardsPerDay` cards a day;
- *   - modal: only an important expert message, `modalPerDay` a day; when the
- *     modal budget is spent an important message is shown as a card, never
- *     dropped;
+ *   - modal: an important expert message, or a critical Point B insight (an
+ *     invite with display 'modal', e.g. a cash gap in the first months) —
+ *     `modalPerDay` a day together; when the modal budget is spent an important
+ *     message (or a critical insight) is shown as a card, never dropped;
  *   - dismissed / snoozed are hidden; a card already seen is not repeated.
  *
  * The result is ordered by `priority`, then newest first.
@@ -71,6 +72,10 @@ export function selectPopups(
     } else {
       if (cardsLeft <= 0) continue
       cardsLeft -= 1
+      if (c.display === 'modal' && modalsLeft > 0) {
+        display = 'modal'
+        modalsLeft -= 1
+      }
     }
     out.push(display === c.display ? c : { ...c, display })
   }
