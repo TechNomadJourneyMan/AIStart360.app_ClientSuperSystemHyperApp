@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, DynamicTable, MultiSelect } from '@/components/onboarding/shared'
+import { FieldLabel, DynamicTable, MultiSelect, NumberField } from '@/components/onboarding/shared'
 import { MARKETING_CHANNELS } from '@/components/onboarding/constants/options'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -13,12 +13,11 @@ interface Step7MarketingFormProps {
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : [])
 const rows = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v)
     ? (v as Record<string, unknown>[])
-    : [{ channel: '', budget_monthly: 0, effectiveness_pct: 0, sales_monthly: 0, roi: 0 }]
+    : [{ channel: '', budget_monthly: null, effectiveness_pct: null, sales_monthly: null, roi: null }]
 const bool = (v: unknown): boolean => (typeof v === 'boolean' ? v : false)
 
 /* ─── Table columns ───────────────────────────────────────────────────────── */
@@ -91,13 +90,7 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
               onChange={(v) => onChange('s5_marketing_channels', v)}
             />
           </div>
-          <div>
-            <FieldLabel htmlFor="s5_marketing_budget_pct">Бюджет на маркетинг (% от выручки)</FieldLabel>
-            <div className="relative">
-              <input id="s5_marketing_budget_pct" type="number" min={0} max={100} value={num(data.s5_marketing_budget_pct) || ''} onChange={(e) => onChange('s5_marketing_budget_pct', Number(e.target.value) || 0)} placeholder="10" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
-            </div>
-          </div>
+          <NumberField id="s5_marketing_budget_pct" label="Бюджет на маркетинг (% от выручки)" value={data.s5_marketing_budget_pct} onChange={(v) => onChange('s5_marketing_budget_pct', v)} unit="%" max={100} placeholder="10" />
           <div className="flex items-end">
             <div className="flex items-center justify-between bg-surface-container rounded-xl border border-white/[0.08] px-4 py-3 w-full">
               <span className="text-sm text-on-surface">Есть конкурентный анализ</span>
@@ -136,36 +129,12 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
           Воронка и AI-коммуникации
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <FieldLabel htmlFor="s7_leads_per_month">Лидов в месяц (входящие)</FieldLabel>
-            <input id="s7_leads_per_month" type="number" min={0} value={num(data.s7_leads_per_month) || ''} onChange={(e) => onChange('s7_leads_per_month', Number(e.target.value) || 0)} placeholder="200" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s7_no_show_rate">Доля no-show (%)</FieldLabel>
-            <div className="relative">
-              <input id="s7_no_show_rate" type="number" min={0} max={100} step={0.1} value={num(data.s7_no_show_rate) || ''} onChange={(e) => onChange('s7_no_show_rate', Number(e.target.value) || 0)} placeholder="15" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
-            </div>
-          </div>
-          <div>
-            <FieldLabel htmlFor="s7_missed_calls_rate">Пропущенных звонков (%)</FieldLabel>
-            <div className="relative">
-              <input id="s7_missed_calls_rate" type="number" min={0} max={100} step={0.1} value={num(data.s7_missed_calls_rate) || ''} onChange={(e) => onChange('s7_missed_calls_rate', Number(e.target.value) || 0)} placeholder="8" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
-            </div>
-          </div>
-          <div>
-            <FieldLabel htmlFor="s7_avg_check_target_kzt">Целевой средний чек (₸)</FieldLabel>
-            <input id="s7_avg_check_target_kzt" type="number" min={0} value={num(data.s7_avg_check_target_kzt) || ''} onChange={(e) => onChange('s7_avg_check_target_kzt', Number(e.target.value) || 0)} placeholder="100000" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s7_repeat_freq_days">Частота повторной покупки (дни)</FieldLabel>
-            <input id="s7_repeat_freq_days" type="number" min={0} value={num(data.s7_repeat_freq_days) || ''} onChange={(e) => onChange('s7_repeat_freq_days', Number(e.target.value) || 0)} placeholder="90" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s7_nps_score">Текущий NPS</FieldLabel>
-            <input id="s7_nps_score" type="number" min={-100} max={100} step={1} value={num(data.s7_nps_score) || ''} onChange={(e) => onChange('s7_nps_score', Number(e.target.value) || 0)} placeholder="35" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
+          <NumberField id="s7_leads_per_month" label="Лидов в месяц (входящие)" value={data.s7_leads_per_month} onChange={(v) => onChange('s7_leads_per_month', v)} unit="в мес" integer placeholder="200" />
+          <NumberField id="s7_no_show_rate" label="Доля no-show" value={data.s7_no_show_rate} onChange={(v) => onChange('s7_no_show_rate', v)} unit="%" max={100} />
+          <NumberField id="s7_missed_calls_rate" label="Пропущенных звонков" value={data.s7_missed_calls_rate} onChange={(v) => onChange('s7_missed_calls_rate', v)} unit="%" max={100} />
+          <NumberField id="s7_avg_check_target_kzt" label="Целевой средний чек" value={data.s7_avg_check_target_kzt} onChange={(v) => onChange('s7_avg_check_target_kzt', v)} unit="₸" integer allowApprox placeholder="100 000" />
+          <NumberField id="s7_repeat_freq_days" label="Частота повторной покупки" value={data.s7_repeat_freq_days} onChange={(v) => onChange('s7_repeat_freq_days', v)} unit="дней" integer placeholder="90" />
+          <NumberField id="s7_nps_score" label="Текущий NPS" value={data.s7_nps_score} onChange={(v) => onChange('s7_nps_score', v)} integer allowNegative max={100} placeholder="35" />
         </div>
       </section>
 

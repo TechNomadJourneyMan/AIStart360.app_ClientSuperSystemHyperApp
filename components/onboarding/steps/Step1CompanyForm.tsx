@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Paperclip, FileCheck2, Loader2, X } from 'lucide-react'
-import { FieldLabel } from '@/components/onboarding/shared'
+import { FieldLabel, NumberField, PhoneField } from '@/components/onboarding/shared'
+import { useAutoYear } from '@/components/onboarding/shared/useAutoYear'
+import { answerNumber } from '@/lib/survey/answer-value'
 import {
   INDUSTRIES,
   REGIONS,
@@ -30,12 +32,13 @@ const BUCKET = 'client-documents'
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : [])
 const files = (v: unknown): StoredFile[] =>
   Array.isArray(v) ? (v as StoredFile[]) : []
-const fmtMoney = (n: number): string =>
-  n > 0 ? new Intl.NumberFormat('ru-RU').format(n) : ''
+const fmtMoney = (v: unknown): string => {
+  const n = answerNumber(v)
+  return n !== null && n > 0 ? new Intl.NumberFormat('ru-RU').format(n) : ''
+}
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 export default function Step1CompanyForm({
@@ -51,39 +54,13 @@ export default function Step1CompanyForm({
     )
   }
 
-  // ── Revenue auto-calc: month × 12 → year (on change of month field) ──────
-  useEffect(() => {
-    const m = num(data.s1_goal_12m_revenue_month)
-    const expected = m * 12
-    // A year set from the goal elsewhere (dashboard, Point A — month = round(year / 12),
-    // lib/goals/survey-sync.ts) is consistent: don't rewrite 3 400 000 000 as 3 399 999 996.
-    if (Math.round(num(data.s1_goal_12m_revenue_year) / 12) !== m) {
-      onChange('s1_goal_12m_revenue_year', expected)
-    }
-    // Intentional: only track month changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.s1_goal_12m_revenue_month])
-
-  useEffect(() => {
-    const m = num(data.s1_goal_3y_revenue_month)
-    const expected = m * 12
-    // A year set from the goal elsewhere (dashboard, Point A — month = round(year / 12),
-    // lib/goals/survey-sync.ts) is consistent: don't rewrite 3 400 000 000 as 3 399 999 996.
-    if (Math.round(num(data.s1_goal_3y_revenue_year) / 12) !== m) {
-      onChange('s1_goal_3y_revenue_year', expected)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.s1_goal_3y_revenue_month])
-
-  // Current revenue: month × 12 → year. Feeds Point A/Point B gap analysis.
-  useEffect(() => {
-    const m = num(data.s1_current_revenue_month)
-    const expected = m * 12
-    if (num(data.s1_current_revenue_year) !== expected) {
-      onChange('s1_current_revenue_year', expected)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.s1_current_revenue_month])
+  // ── Revenue auto-calc: month × 12 → year. A year set from the goal elsewhere
+  // (dashboard, Point A — month = round(year / 12), lib/goals/survey-sync.ts)
+  // is kept; a cleared / «не знаю» month clears the year (it used to become 0).
+  useAutoYear(data, onChange, 's1_goal_12m_revenue_month', 's1_goal_12m_revenue_year')
+  useAutoYear(data, onChange, 's1_goal_3y_revenue_month', 's1_goal_3y_revenue_year')
+  // Current revenue feeds Point A / Point B gap analysis.
+  useAutoYear(data, onChange, 's1_current_revenue_month', 's1_current_revenue_year')
 
   // ── File uploads (to Supabase Storage 'client-documents' bucket) ─────────
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
@@ -179,18 +156,16 @@ export default function Step1CompanyForm({
             </select>
           </div>
 
-          <div>
-            <FieldLabel htmlFor="s1_employee_count">Кол-во сотрудников</FieldLabel>
-            <input
-              id="s1_employee_count"
-              type="number"
-              min={0}
-              value={num(data.s1_employee_count) || ''}
-              onChange={(e) => onChange('s1_employee_count', Number(e.target.value) || 0)}
-              placeholder="10"
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <NumberField
+            id="s1_employee_count"
+            label="Кол-во сотрудников"
+            value={data.s1_employee_count}
+            onChange={(v) => onChange('s1_employee_count', v)}
+            unit="чел."
+            integer
+            allowUnknown={false}
+            placeholder="10"
+          />
           <div>
             <FieldLabel htmlFor="s1_business_model">Бизнес-модель</FieldLabel>
             <select
@@ -207,18 +182,16 @@ export default function Step1CompanyForm({
               ))}
             </select>
           </div>
-          <div>
-            <FieldLabel htmlFor="s1_years_on_market">Лет на рынке</FieldLabel>
-            <input
-              id="s1_years_on_market"
-              type="number"
-              min={0}
-              value={num(data.s1_years_on_market) || ''}
-              onChange={(e) => onChange('s1_years_on_market', Number(e.target.value) || 0)}
-              placeholder="5"
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <NumberField
+            id="s1_years_on_market"
+            label="Лет на рынке"
+            value={data.s1_years_on_market}
+            onChange={(v) => onChange('s1_years_on_market', v)}
+            unit="лет"
+            integer
+            allowUnknown={false}
+            placeholder="5"
+          />
           <div>
             <FieldLabel htmlFor="s1_website">Веб-сайт</FieldLabel>
             <input
@@ -321,25 +294,23 @@ export default function Step1CompanyForm({
             Нужна, чтобы рассчитать разрыв до цели и план роста в Точке Б.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <FieldLabel htmlFor="s1_current_revenue_month">Выручка / месяц, ₸</FieldLabel>
-              <input
-                id="s1_current_revenue_month"
-                type="number"
-                min={0}
-                value={num(data.s1_current_revenue_month) || ''}
-                onChange={(e) => onChange('s1_current_revenue_month', Number(e.target.value) || 0)}
-                placeholder="800 000"
-                className="w-full bg-surface-container-high border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50"
-              />
-            </div>
+            <NumberField
+              id="s1_current_revenue_month"
+              label="Выручка в месяц"
+              value={data.s1_current_revenue_month}
+              onChange={(v) => onChange('s1_current_revenue_month', v)}
+              unit="₸/мес"
+              integer
+              allowApprox
+              placeholder="800 000"
+            />
             <div>
               <FieldLabel htmlFor="s1_current_revenue_year">Выручка / год, ₸ (автоматически)</FieldLabel>
               <input
                 id="s1_current_revenue_year"
                 type="text"
                 readOnly
-                value={fmtMoney(num(data.s1_current_revenue_year))}
+                value={fmtMoney(data.s1_current_revenue_year)}
                 placeholder="—"
                 className="w-full bg-black/20 border border-white/[0.04] rounded-lg px-3 py-2.5 text-sm text-on-surface-variant cursor-not-allowed"
               />
@@ -354,18 +325,17 @@ export default function Step1CompanyForm({
               Цель на 12 месяцев
             </p>
             <div className="space-y-3">
-              <div>
-                <FieldLabel htmlFor="s1_goal_12m_revenue_month">Выручка / месяц, ₸</FieldLabel>
-                <input
-                  id="s1_goal_12m_revenue_month"
-                  type="number"
-                  min={0}
-                  value={num(data.s1_goal_12m_revenue_month) || ''}
-                  onChange={(e) => onChange('s1_goal_12m_revenue_month', Number(e.target.value) || 0)}
-                  placeholder="1 500 000"
-                  className="w-full bg-surface-container-high border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50"
-                />
-              </div>
+              <NumberField
+                id="s1_goal_12m_revenue_month"
+                label="Выручка в месяц"
+                value={data.s1_goal_12m_revenue_month}
+                onChange={(v) => onChange('s1_goal_12m_revenue_month', v)}
+                unit="₸/мес"
+                integer
+                allowUnknown={false}
+                allowApprox
+                placeholder="1 500 000"
+              />
               <div>
                 <FieldLabel htmlFor="s1_goal_12m_revenue_year">
                   Выручка / год, ₸ (автоматически)
@@ -374,7 +344,7 @@ export default function Step1CompanyForm({
                   id="s1_goal_12m_revenue_year"
                   type="text"
                   readOnly
-                  value={fmtMoney(num(data.s1_goal_12m_revenue_year))}
+                  value={fmtMoney(data.s1_goal_12m_revenue_year)}
                   placeholder="—"
                   className="w-full bg-black/20 border border-white/[0.04] rounded-lg px-3 py-2.5 text-sm text-on-surface-variant cursor-not-allowed"
                 />
@@ -388,18 +358,17 @@ export default function Step1CompanyForm({
               Цель через 3 года
             </p>
             <div className="space-y-3">
-              <div>
-                <FieldLabel htmlFor="s1_goal_3y_revenue_month">Выручка / месяц, ₸</FieldLabel>
-                <input
-                  id="s1_goal_3y_revenue_month"
-                  type="number"
-                  min={0}
-                  value={num(data.s1_goal_3y_revenue_month) || ''}
-                  onChange={(e) => onChange('s1_goal_3y_revenue_month', Number(e.target.value) || 0)}
-                  placeholder="5 000 000"
-                  className="w-full bg-surface-container-high border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50"
-                />
-              </div>
+              <NumberField
+                id="s1_goal_3y_revenue_month"
+                label="Выручка в месяц"
+                value={data.s1_goal_3y_revenue_month}
+                onChange={(v) => onChange('s1_goal_3y_revenue_month', v)}
+                unit="₸/мес"
+                integer
+                allowUnknown={false}
+                allowApprox
+                placeholder="5 000 000"
+              />
               <div>
                 <FieldLabel htmlFor="s1_goal_3y_revenue_year">
                   Выручка / год, ₸ (автоматически)
@@ -408,7 +377,7 @@ export default function Step1CompanyForm({
                   id="s1_goal_3y_revenue_year"
                   type="text"
                   readOnly
-                  value={fmtMoney(num(data.s1_goal_3y_revenue_year))}
+                  value={fmtMoney(data.s1_goal_3y_revenue_year)}
                   placeholder="—"
                   className="w-full bg-black/20 border border-white/[0.04] rounded-lg px-3 py-2.5 text-sm text-on-surface-variant cursor-not-allowed"
                 />
@@ -479,17 +448,13 @@ export default function Step1CompanyForm({
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
             />
           </div>
-          <div>
-            <FieldLabel htmlFor="s1_contact_phone">Телефон</FieldLabel>
-            <input
-              id="s1_contact_phone"
-              type="text"
-              value={str(data.s1_contact_phone)}
-              onChange={(e) => onChange('s1_contact_phone', e.target.value)}
-              placeholder="+7 (777) 123-45-67"
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <PhoneField
+            id="s1_contact_phone"
+            label="Телефон"
+            value={data.s1_contact_phone}
+            onChange={(v) => onChange('s1_contact_phone', v)}
+            placeholder="+7 (777) 123-45-67"
+          />
           <div>
             <FieldLabel htmlFor="s1_contact_email">Email</FieldLabel>
             <input

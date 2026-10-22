@@ -9,21 +9,22 @@ interface Step8MetricsFormProps {
   userId?: string
 }
 
+// An empty cell is null (never 0): «0» and «не заполнено» must stay different.
 type MetricRow = {
   metric_name: string
-  y2023: number
-  y2024: number
-  y2025: number
-  plan_2026: number
-  fact_2026: number
-  completion_pct: number
+  y2023: number | null
+  y2024: number | null
+  y2025: number | null
+  plan_2026: number | null
+  fact_2026: number | null
+  completion_pct: number | null
 }
 
 const DEFAULT_METRICS: MetricRow[] = [
   'Количество продаж', 'Сумма продаж', 'Средний чек', 'Кол-во новых продаж',
   'Сумма новых продаж', 'Ср. чек новых', 'Кол-во повторных', 'Сумма повторных',
   'CPL', 'CAC', 'LTV', 'LTV:CAC',
-].map((metric_name) => ({ metric_name, y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 }))
+].map((metric_name) => ({ metric_name, y2023: null, y2024: null, y2025: null, plan_2026: null, fact_2026: null, completion_pct: null }))
 
 const VALUE_COLUMNS = [
   { key: 'y2023', label: '2023' },
@@ -40,20 +41,29 @@ const getRows = (v: unknown): MetricRow[] => {
 }
 
 /** Parse a clipboard/cell value into a number, tolerating spaces, currency
- * symbols, NBSP thousands separators and comma decimals (Excel/RU locale). */
-function parseNum(raw: string): number {
+ * symbols, NBSP thousands separators and comma decimals (Excel/RU locale).
+ * An empty cell is null. */
+function parseNum(raw: string): number | null {
   const cleaned = String(raw)
     .replace(/ /g, '')            // NBSP thousands sep
     .replace(/\s/g, '')
     .replace(/[^0-9.,-]/g, '')         // strip currency etc.
     .replace(/(\d),(\d)/g, '$1.$2')    // comma decimal → dot
     .replace(/,/g, '')                 // remaining commas = thousands
+  if (!/\d/.test(cleaned)) return null
   const n = Number(cleaned)
-  return Number.isFinite(n) ? n : 0
+  return Number.isFinite(n) ? n : null
+}
+
+/** A stored cell → number or null (old rows hold 0 for «empty»; strings from a paste). */
+const cellValue = (v: unknown): number | null => {
+  if (typeof v === 'number') return Number.isFinite(v) && v !== 0 ? v : null
+  if (typeof v === 'string') return parseNum(v)
+  return null
 }
 
 const emptyRow = (): MetricRow => ({
-  metric_name: '', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0,
+  metric_name: '', y2023: null, y2024: null, y2025: null, plan_2026: null, fact_2026: null, completion_pct: null,
 })
 
 /**
@@ -67,12 +77,12 @@ function NumericCellInput({
   onPaste,
   className,
 }: {
-  value: number
-  onCommit: (n: number) => void
+  value: number | null
+  onCommit: (n: number | null) => void
   onPaste?: React.ClipboardEventHandler<HTMLInputElement>
   className?: string
 }) {
-  const canonical = value ? String(value) : ''
+  const canonical = typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
   const [text, setText] = useState(canonical)
   const [focused, setFocused] = useState(false)
   useEffect(() => {
@@ -99,7 +109,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
   const commit = useCallback((rows: MetricRow[]) => onChange('s8n_metrics_table', rows), [onChange])
 
   const updateCell = useCallback(
-    (rowIdx: number, key: string, value: number) => {
+    (rowIdx: number, key: string, value: number | null) => {
       commit(metricsRows.map((row, i) => (i === rowIdx ? { ...row, [key]: value } : row)))
     },
     [metricsRows, commit],
@@ -136,7 +146,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
         cells.forEach((cell, dc) => {
           const colIdx = startColIdx + dc
           if (colIdx >= VALUE_COLUMNS.length) return
-          ;(rows[targetRow] as unknown as Record<string, number>)[VALUE_COLUMNS[colIdx].key] = parseNum(cell)
+          ;(rows[targetRow] as unknown as Record<string, number | null>)[VALUE_COLUMNS[colIdx].key] = parseNum(cell)
         })
       })
       commit(rows)
@@ -189,7 +199,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                   {VALUE_COLUMNS.map((col, colIdx) => (
                     <td key={col.key} className="py-1.5 px-1">
                       <NumericCellInput
-                        value={Number((row as Record<string, unknown>)[col.key]) || 0}
+                        value={cellValue((row as Record<string, unknown>)[col.key])}
                         onCommit={(num) => updateCell(rowIdx, col.key, num)}
                         onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                         className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
@@ -240,7 +250,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                       {col.label}
                     </span>
                     <NumericCellInput
-                        value={Number((row as Record<string, unknown>)[col.key]) || 0}
+                        value={cellValue((row as Record<string, unknown>)[col.key])}
                         onCommit={(num) => updateCell(rowIdx, col.key, num)}
                         onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                         className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"

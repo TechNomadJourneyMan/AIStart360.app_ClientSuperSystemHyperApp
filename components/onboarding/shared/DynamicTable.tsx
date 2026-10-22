@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { formatNumberDraft, numberDraftFromValue, parseNumberDraft } from '@/lib/survey/number-input'
 
 interface Column {
   key: string
@@ -16,6 +17,40 @@ interface DynamicTableProps {
   minRows?: number
 }
 
+const CELL_CLASS =
+  'w-full bg-surface-container border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all'
+
+/** Number cell: «1 500 000» while typing, the decimal keyboard, empty → null (never 0). */
+function NumberCell({ value, onCommit, className, ...aria }: {
+  value: unknown
+  onCommit: (v: number | null) => void
+  className?: string
+  'aria-label'?: string
+}) {
+  const canonical = numberDraftFromValue(value)
+  const [text, setText] = useState(canonical)
+  const [focused, setFocused] = useState(false)
+  useEffect(() => {
+    if (!focused) setText(canonical)
+  }, [canonical, focused])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => {
+        const next = formatNumberDraft(e.target.value, e.target.value.length).text
+        setText(next)
+        onCommit(parseNumberDraft(next))
+      }}
+      className={className}
+      {...aria}
+    />
+  )
+}
+
 export function DynamicTable({
   columns,
   rows,
@@ -25,7 +60,8 @@ export function DynamicTable({
   const addRow = useCallback(() => {
     const empty: Record<string, unknown> = {}
     columns.forEach((col) => {
-      empty[col.key] = col.type === 'number' ? 0 : ''
+      // An empty number cell is null, never 0 (survey audit: «тихий ноль»).
+      empty[col.key] = col.type === 'number' ? null : ''
     })
     onChange([...rows, empty])
   }, [columns, rows, onChange])
@@ -90,20 +126,18 @@ export function DynamicTable({
                     </option>
                   ))}
                 </select>
+              ) : col.type === 'number' ? (
+                <NumberCell
+                  value={row[col.key]}
+                  onCommit={(v) => updateCell(rowIdx, col.key, v)}
+                  className={CELL_CLASS}
+                />
               ) : (
                 <input
-                  type={col.type}
+                  type="text"
                   value={(row[col.key] as string | number) ?? ''}
-                  onChange={(e) =>
-                    updateCell(
-                      rowIdx,
-                      col.key,
-                      col.type === 'number'
-                        ? Number(e.target.value) || 0
-                        : e.target.value
-                    )
-                  }
-                  className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                  onChange={(e) => updateCell(rowIdx, col.key, e.target.value)}
+                  className={CELL_CLASS}
                 />
               )}
             </div>

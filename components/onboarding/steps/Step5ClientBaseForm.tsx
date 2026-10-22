@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel } from '@/components/onboarding/shared'
+import { FieldLabel, NumberField } from '@/components/onboarding/shared'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step5ClientBaseFormProps {
@@ -12,7 +12,6 @@ interface Step5ClientBaseFormProps {
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 
 /* ─── Funnel fields ───────────────────────────────────────────────────────── */
 const FUNNEL_FIELDS = [
@@ -41,42 +40,18 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
             <FieldLabel htmlFor="s3_has_crm">Наличие CRM</FieldLabel>
             <input id="s3_has_crm" type="text" value={str(data.s3_has_crm)} onChange={(e) => onChange('s3_has_crm', e.target.value)} placeholder="amoCRM, Bitrix24..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
           </div>
-          <div>
-            <FieldLabel htmlFor="s3_deal_cycle_days">Цикл сделки (дней)</FieldLabel>
-            <input id="s3_deal_cycle_days" type="number" min={0} value={num(data.s3_deal_cycle_days) || ''} onChange={(e) => onChange('s3_deal_cycle_days', Number(e.target.value) || 0)} placeholder="30" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_deals_2023">Сделок 2023</FieldLabel>
-            <input id="s3_deals_2023" type="number" min={0} value={num(data.s3_deals_2023) || ''} onChange={(e) => onChange('s3_deals_2023', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_deals_2024">Сделок 2024</FieldLabel>
-            <input id="s3_deals_2024" type="number" min={0} value={num(data.s3_deals_2024) || ''} onChange={(e) => onChange('s3_deals_2024', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_deals_2025">Сделок 2025</FieldLabel>
-            <input id="s3_deals_2025" type="number" min={0} value={num(data.s3_deals_2025) || ''} onChange={(e) => onChange('s3_deals_2025', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_rejections_2023">Отказов 2023</FieldLabel>
-            <input id="s3_rejections_2023" type="number" min={0} value={num(data.s3_rejections_2023) || ''} onChange={(e) => onChange('s3_rejections_2023', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_rejections_2024">Отказов 2024</FieldLabel>
-            <input id="s3_rejections_2024" type="number" min={0} value={num(data.s3_rejections_2024) || ''} onChange={(e) => onChange('s3_rejections_2024', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s3_rejections_2025">Отказов 2025</FieldLabel>
-            <input id="s3_rejections_2025" type="number" min={0} value={num(data.s3_rejections_2025) || ''} onChange={(e) => onChange('s3_rejections_2025', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
+          <NumberField id="s3_deal_cycle_days" label="Цикл сделки (дней)" value={data.s3_deal_cycle_days} onChange={(v) => onChange('s3_deal_cycle_days', v)} unit="дней" integer placeholder="30" />
+          <NumberField id="s3_deals_2023" label="Сделок 2023" value={data.s3_deals_2023} onChange={(v) => onChange('s3_deals_2023', v)} unit="шт." integer />
+          <NumberField id="s3_deals_2024" label="Сделок 2024" value={data.s3_deals_2024} onChange={(v) => onChange('s3_deals_2024', v)} unit="шт." integer />
+          <NumberField id="s3_deals_2025" label="Сделок 2025" value={data.s3_deals_2025} onChange={(v) => onChange('s3_deals_2025', v)} unit="шт." integer />
+          <NumberField id="s3_rejections_2023" label="Отказов 2023" value={data.s3_rejections_2023} onChange={(v) => onChange('s3_rejections_2023', v)} unit="шт." integer />
+          <NumberField id="s3_rejections_2024" label="Отказов 2024" value={data.s3_rejections_2024} onChange={(v) => onChange('s3_rejections_2024', v)} unit="шт." integer />
+          <NumberField id="s3_rejections_2025" label="Отказов 2025" value={data.s3_rejections_2025} onChange={(v) => onChange('s3_rejections_2025', v)} unit="шт." integer />
           <div>
             <FieldLabel htmlFor="s3_promo_channels">Каналы привлечения</FieldLabel>
             <input id="s3_promo_channels" type="text" value={str(data.s3_promo_channels)} onChange={(e) => onChange('s3_promo_channels', e.target.value)} placeholder="Instagram, Google Ads..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
           </div>
-          <div>
-            <FieldLabel htmlFor="s3_product_count">Кол-во продуктов</FieldLabel>
-            <input id="s3_product_count" type="number" min={0} value={num(data.s3_product_count) || ''} onChange={(e) => onChange('s3_product_count', Number(e.target.value) || 0)} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
+          <NumberField id="s3_product_count" label="Кол-во продуктов" value={data.s3_product_count} onChange={(v) => onChange('s3_product_count', v)} unit="шт." integer allowUnknown={false} />
           <div className="md:col-span-2">
             <FieldLabel htmlFor="s3_flagship_product">Флагманский продукт</FieldLabel>
             <input id="s3_flagship_product" type="text" value={str(data.s3_flagship_product)} onChange={(e) => onChange('s3_flagship_product', e.target.value)} placeholder="Название основного продукта" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
@@ -92,13 +67,7 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {FUNNEL_FIELDS.map((f) => (
-            <div key={f.key}>
-              <FieldLabel htmlFor={f.key}>{f.label}</FieldLabel>
-              <div className="relative">
-                <input id={f.key} type="number" min={0} max={100} step={0.1} value={num(data[f.key]) || ''} onChange={(e) => onChange(f.key, Number(e.target.value) || 0)} placeholder="0" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
-              </div>
-            </div>
+            <NumberField key={f.key} id={f.key} label={f.label} value={data[f.key]} onChange={(v) => onChange(f.key, v)} unit="%" max={100} />
           ))}
         </div>
       </section>

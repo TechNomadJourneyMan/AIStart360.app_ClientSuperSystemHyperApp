@@ -1,31 +1,28 @@
 'use client'
 
+import { NumberField, type NumberFieldProps } from '@/components/onboarding/shared/NumberField'
+
 interface Props { data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }
 
 export function Step9FinanceForm({ data, onChange, userId }: Props) {
-  const v = (key: string) => (data[key] as string) ?? ''
-  // Empty stays EMPTY. It used to render 0: the field looked answered, users
-  // skipped it, nothing was saved («Выручка 2024» missing in the QA run), and a
-  // loss («−») or clearing the field snapped back to 0.
-  const n = (key: string) => {
-    const x = data[key]
-    return typeof x === 'number' && Number.isFinite(x) ? x : ''
-  }
-  const toNumberOrNull = (raw: string): number | null => {
-    if (raw.trim() === '') return null
-    const x = Number(raw.replace(',', '.'))
-    return Number.isFinite(x) ? x : null
-  }
+  const v = (key: string) => (typeof data[key] === 'string' ? (data[key] as string) : '')
+  // Numbers: one NumberField (empty stays EMPTY — it used to render 0, users
+  // skipped it and a loss «−» snapped back to 0; «Не знаю» / «примерно» chips).
+  const num = (key: string, label: string, props: Omit<NumberFieldProps, 'id' | 'label' | 'value' | 'onChange'> = {}) => (
+    <NumberField id={key} label={label} value={data[key]} onChange={(x) => onChange(key, x)} {...props} />
+  )
+  const money = (key: string, label: string, props: Omit<NumberFieldProps, 'id' | 'label' | 'value' | 'onChange'> = {}) =>
+    num(key, label, { unit: '₸', integer: true, allowApprox: true, ...props })
 
-  const field = (key: string, label: string, type: 'text' | 'number' | 'textarea' = 'text', placeholder?: string) => (
+  const field = (key: string, label: string, type: 'text' | 'textarea' = 'text', placeholder?: string) => (
     <div>
       <label htmlFor={key} className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
       {type === 'textarea' ? (
         <textarea id={key} value={v(key)} onChange={e => onChange(key, e.target.value)} placeholder={placeholder}
           rows={3} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all resize-none" />
       ) : (
-        <input id={key} type={type} value={type === 'number' ? n(key) : v(key)}
-          onChange={e => onChange(key, type === 'number' ? toNumberOrNull(e.target.value) : e.target.value)}
+        <input id={key} type="text" value={v(key)}
+          onChange={e => onChange(key, e.target.value)}
           placeholder={placeholder}
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all" />
       )}
@@ -57,10 +54,10 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
     <div className="space-y-6">
       {section('Основные показатели', 'payments', (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {field('s9n_revenue_2024', 'Годовая выручка 2024 (₸)', 'number')}
+          {money('s9n_revenue_2024', 'Годовая выручка 2024')}
           {field('s9n_change_vs_2023', 'Изменение выручки vs 2023', 'text', '+15% или -10%')}
-          {field('s9n_net_profit', 'Чистая прибыль/убыток 2024 (₸)', 'number')}
-          {field('s9n_net_margin', 'Чистая маржа (%)', 'number')}
+          {money('s9n_net_profit', 'Чистая прибыль/убыток 2024', { allowNegative: true })}
+          {num('s9n_net_margin', 'Чистая маржа', { unit: '%', allowNegative: true, max: 100 })}
           {field('s9n_revenue_sources', 'Основные источники дохода', 'textarea', '1-3 пункта')}
           {field('s9n_seasonality', 'Сезонность: пики и провалы', 'textarea')}
           {field('s9n_breakeven_point', 'Точка безубыточности', 'text')}
@@ -70,10 +67,11 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
 
       {section('Структура расходов', 'receipt_long', (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {field('s9n_expense_cogs', 'Себестоимость продукции/услуг', 'text')}
-          {field('s9n_expense_marketing', 'Маркетинг и реклама', 'text')}
-          {field('s9n_expense_rent', 'Аренда, коммунальные', 'text')}
-          {field('s9n_expense_other', 'Прочие расходы', 'text')}
+          {/* ₸ PER YEAR: every reader treats these answers as yearly (finmodel/sources.ts, metrics/formulas.ts). */}
+          {money('s9n_expense_cogs', 'Себестоимость продукции/услуг', { unit: '₸/год' })}
+          {money('s9n_expense_marketing', 'Маркетинг и реклама', { unit: '₸/год' })}
+          {money('s9n_expense_rent', 'Аренда, коммунальные', { unit: '₸/год' })}
+          {money('s9n_expense_other', 'Прочие расходы', { unit: '₸/год' })}
         </div>
       ))}
 
@@ -90,10 +88,10 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
           ])}
           {field('s9n_responsible_person', 'Ответственный за финансы', 'text', 'Должность')}
           {field('s9n_tracked_kpis', 'Какие ключевые показатели ведутся', 'textarea')}
-          {field('s9n_debtor_days', 'Средний срок оплаты (дебиторка, дней)', 'number')}
-          {field('s9n_debts_amount', 'Текущие кредиты/долги (₸)', 'number')}
+          {num('s9n_debtor_days', 'Средний срок оплаты (дебиторка)', { unit: 'дней', integer: true })}
+          {money('s9n_debts_amount', 'Текущие кредиты/долги')}
           {field('s9n_tax_system', 'Система налогообложения', 'text')}
-          {field('s9n_transparency_pct', 'Прозрачность (% белой выручки)', 'number')}
+          {num('s9n_transparency_pct', 'Прозрачность (% белой выручки)', { unit: '%', max: 100 })}
           {field('s9n_tax_audits', 'Были ли налоговые проверки за 2 года', 'text')}
           {field('s9n_audit_preparedness', 'Подготовленность к проверкам', 'text')}
           {field('s9n_financial_blockers', 'Что мешает улучшить финансы', 'textarea')}

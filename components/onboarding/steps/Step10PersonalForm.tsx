@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { NumberField } from '@/components/onboarding/shared'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step10PersonalFormProps {
@@ -279,21 +280,15 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* hours_on_ops — number */}
-          <div>
-            <label htmlFor="s10_hours_on_ops" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Часов в день на операционку
-            </label>
-            <input
-              id="s10_hours_on_ops"
-              type="number"
-              min={0}
-              max={24}
-              value={num(data.s10_hours_on_ops)}
-              onChange={(e) => onChange('s10_hours_on_ops', Number(e.target.value) || 0)}
-              placeholder="0"
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-            />
-          </div>
+          <NumberField
+            id="s10_hours_on_ops"
+            label="Часов в день на операционку"
+            value={data.s10_hours_on_ops}
+            onChange={(v) => onChange('s10_hours_on_ops', v)}
+            unit="ч/день"
+            max={24}
+            placeholder="4"
+          />
 
           {/* delegation_ready — 1-10 slider/number */}
           <div>

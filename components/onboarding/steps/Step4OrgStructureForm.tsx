@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, BoolToggle, DynamicTable } from '@/components/onboarding/shared'
+import { FieldLabel, BoolToggle, DynamicTable, NumberField } from '@/components/onboarding/shared'
 import { REPORTING_TOOLS } from '@/components/onboarding/constants/options'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -16,7 +16,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 const bool = (v: unknown): boolean => (typeof v === 'boolean' ? v : false)
 const rows = (v: unknown): Record<string, unknown>[] =>
-  Array.isArray(v) ? (v as Record<string, unknown>[]) : [{ department: '', head: '', manager_count: 0, dept_goals: '', kpi: '' }]
+  Array.isArray(v) ? (v as Record<string, unknown>[]) : [{ department: '', head: '', manager_count: null, dept_goals: '', kpi: '' }]
 
 /* ─── Table columns ───────────────────────────────────────────────────────── */
 const STAFFING_COLUMNS = [
@@ -56,10 +56,7 @@ export default function Step4OrgStructureForm({ data, onChange }: Step4OrgStruct
           Структура
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <FieldLabel htmlFor="s4_dept_count">Кол-во отделов</FieldLabel>
-            <input id="s4_dept_count" type="number" min={0} value={num(data.s4_dept_count) || ''} onChange={(e) => onChange('s4_dept_count', Number(e.target.value) || 0)} placeholder="5" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
+          <NumberField id="s4_dept_count" label="Кол-во отделов" value={data.s4_dept_count} onChange={(v) => onChange('s4_dept_count', v)} unit="отд." integer allowUnknown={false} placeholder="5" />
           <div className="flex items-end">
             <BoolToggle label="Есть орг. структура" value={bool(data.s4_has_org_chart)} onChange={(v) => onChange('s4_has_org_chart', v)} />
           </div>
@@ -142,10 +139,7 @@ export default function Step4OrgStructureForm({ data, onChange }: Step4OrgStruct
               {FREQ_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
             </select>
           </div>
-          <div>
-            <FieldLabel htmlFor="s4m_hours_on_ops">Часов/день на операционку</FieldLabel>
-            <input id="s4m_hours_on_ops" type="number" min={0} max={24} value={num(data.s4m_hours_on_ops) || ''} onChange={(e) => onChange('s4m_hours_on_ops', Number(e.target.value) || 0)} placeholder="4" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-          </div>
+          <NumberField id="s4m_hours_on_ops" label="Часов/день на операционку" value={data.s4m_hours_on_ops} onChange={(v) => onChange('s4m_hours_on_ops', v)} unit="ч/день" max={24} placeholder="4" />
           <div className="md:col-span-2">
             <FieldLabel htmlFor="s4m_delegation_readiness">Готовность делегировать (1-10)</FieldLabel>
             <div className="flex items-center gap-3">
