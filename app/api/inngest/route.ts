@@ -4,6 +4,7 @@ import { assistantEventsRetention } from '@/lib/functions/assistant-events-reten
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
 import { pointANightly, pointARecalc } from '@/lib/functions/point-a'
+import { pbMonthlyCheckpoint, pbRecompute, pbRecomputeCompany } from '@/lib/functions/point-b'
 import { commCampaignRun, commCampaignWatchdog } from '@/lib/functions/comm-campaigns'
 import { commBotReply, commEscalations } from '@/lib/functions/comm'
 import { processOmnichannelMessage } from '@/lib/functions/process-omnichannel-message'
@@ -39,5 +40,10 @@ export const { GET, POST, PUT } = serve({
     // «Сообщения»: the 30-minute rule (cron */5, cheap) and the client bot in auto mode (one reply at a time).
     commEscalations,
     commBotReply,
+    // Point B: the plan-fact recompute (hourly wake-up, runs on the pb_recompute_cron hours; ≤ 10 companies a run,
+    // one short step each), the button's single-company run and the monthly reconciliation on the 1st.
+    pbRecompute,
+    pbRecomputeCompany,
+    pbMonthlyCheckpoint,
   ],
 })
