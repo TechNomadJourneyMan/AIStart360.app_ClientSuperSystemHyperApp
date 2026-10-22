@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { TermHint } from '@/components/onboarding/shared/TermHint'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step3PositioningFormProps {
@@ -119,7 +120,7 @@ export default function Step3PositioningForm({ data, onChange }: Step3Positionin
           {/* s5_usp (reused) */}
           <div className="md:col-span-2">
             <label htmlFor="s5_usp" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              УТП (уникальное торговое предложение)
+              Чем вы лучше конкурентов?<TermHint term="УТП" />
             </label>
             <textarea
               id="s5_usp"

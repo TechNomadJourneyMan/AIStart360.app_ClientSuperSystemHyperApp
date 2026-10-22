@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, DynamicTable, FileUploadField } from '@/components/onboarding/shared'
+import { FieldLabel, DynamicTable, FileUploadField, TermHint } from '@/components/onboarding/shared'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step6CJMFormProps {
@@ -34,7 +34,7 @@ export default function Step6CJMForm({ data, onChange, userId }: Step6CJMFormPro
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">route</span>
-          Карта пути клиента (CJM)
+          Путь клиента: от первого контакта до покупки<TermHint term="CJM" />
         </h3>
         <DynamicTable
           columns={CJM_COLUMNS}

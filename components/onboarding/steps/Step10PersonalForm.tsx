@@ -174,7 +174,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* who_to_blame */}
           <div>
             <label htmlFor="s10_who_to_blame" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Кто виноват
+              Из-за чего, по-вашему, возникли эти проблемы?
             </label>
             <FieldNote fieldKey="s10_who_to_blame" />
             <textarea
@@ -182,7 +182,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
               rows={3}
               value={str(data.s10_who_to_blame)}
               onChange={(e) => onChange('s10_who_to_blame', e.target.value)}
-              placeholder="Кто, по вашему мнению, ответственен за проблемы..."
+              placeholder="Обстоятельства, решения, процессы — что к этому привело..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>

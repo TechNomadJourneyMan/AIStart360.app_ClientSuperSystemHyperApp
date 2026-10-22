@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, DynamicTable, MultiSelect, NumberField } from '@/components/onboarding/shared'
+import { FieldLabel, DynamicTable, MultiSelect, NumberField, TermHint } from '@/components/onboarding/shared'
 import { MARKETING_CHANNELS } from '@/components/onboarding/constants/options'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -26,7 +26,7 @@ const CHANNELS_TABLE_COLUMNS = [
   { key: 'budget_monthly', label: 'Бюджет/мес', type: 'number' as const },
   { key: 'effectiveness_pct', label: 'Эффективность %', type: 'number' as const },
   { key: 'sales_monthly', label: 'Продаж/мес', type: 'number' as const },
-  { key: 'roi', label: 'ROI', type: 'number' as const },
+  { key: 'roi', label: 'Окупаемость, раз (ROI)', type: 'number' as const },
 ]
 
 /* ─── Competitor block ────────────────────────────────────────────────────── */
@@ -130,11 +130,11 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <NumberField id="s7_leads_per_month" label="Лидов в месяц (входящие)" value={data.s7_leads_per_month} onChange={(v) => onChange('s7_leads_per_month', v)} unit="в мес" integer placeholder="200" />
-          <NumberField id="s7_no_show_rate" label="Доля no-show" value={data.s7_no_show_rate} onChange={(v) => onChange('s7_no_show_rate', v)} unit="%" max={100} />
+          <NumberField id="s7_no_show_rate" label={<>Сколько клиентов записались и не пришли<TermHint term="no-show" /></>} value={data.s7_no_show_rate} onChange={(v) => onChange('s7_no_show_rate', v)} unit="%" max={100} />
           <NumberField id="s7_missed_calls_rate" label="Пропущенных звонков" value={data.s7_missed_calls_rate} onChange={(v) => onChange('s7_missed_calls_rate', v)} unit="%" max={100} />
           <NumberField id="s7_avg_check_target_kzt" label="Целевой средний чек" value={data.s7_avg_check_target_kzt} onChange={(v) => onChange('s7_avg_check_target_kzt', v)} unit="₸" integer allowApprox placeholder="100 000" />
           <NumberField id="s7_repeat_freq_days" label="Частота повторной покупки" value={data.s7_repeat_freq_days} onChange={(v) => onChange('s7_repeat_freq_days', v)} unit="дней" integer placeholder="90" />
-          <NumberField id="s7_nps_score" label="Текущий NPS" value={data.s7_nps_score} onChange={(v) => onChange('s7_nps_score', v)} integer allowNegative max={100} placeholder="35" />
+          <NumberField id="s7_nps_score" label={<>Как клиенты оценивают вас по 10-балльной шкале?<TermHint term="NPS" /></>} note="Индекс от −100 до 100. Если не измеряли — «Не знаю»." value={data.s7_nps_score} onChange={(v) => onChange('s7_nps_score', v)} integer allowNegative max={100} placeholder="35" />
         </div>
       </section>
 

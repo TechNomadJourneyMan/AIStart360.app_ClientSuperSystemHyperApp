@@ -26,9 +26,13 @@ function cssEscape(v: string): string {
   return typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(v) : v.replace(/[^a-zA-Z0-9_-]/g, '\\$&')
 }
 
-/** The field's question text: its <label for>, without the «*» of required fields. */
+/** The field's question text: its <label for>, without the «*» of required fields and the term-hint button / note. */
 function labelOf(root: HTMLElement, key: string): string | null {
-  const text = root.querySelector(`label[for="${cssEscape(key)}"]`)?.textContent?.replace(/\s*\*\s*$/, '').trim()
+  const label = root.querySelector(`label[for="${cssEscape(key)}"]`)
+  if (!label) return null
+  const copy = label.cloneNode(true) as HTMLElement
+  copy.querySelectorAll('[data-term-hint]').forEach((n) => n.remove())
+  const text = copy.textContent?.replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim()
   return text || null
 }
 

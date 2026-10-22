@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, NumberField } from '@/components/onboarding/shared'
+import { FieldLabel, NumberField, TermHint } from '@/components/onboarding/shared'
 import { yearLabel } from '@/lib/survey/year-labels'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -77,16 +77,16 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">analytics</span>
-          ABC/RFM анализ
+          Какие клиенты и продукты приносят больше денег
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <FieldLabel htmlFor="s5n_abc_analysis">ABC-анализ</FieldLabel>
-            <textarea id="s5n_abc_analysis" rows={3} value={str(data.s5n_abc_analysis)} onChange={(e) => onChange('s5n_abc_analysis', e.target.value)} placeholder="Распределение клиентов по ABC-категориям..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
+            <FieldLabel htmlFor="s5n_abc_analysis">Кто из клиентов даёт основную выручку?<TermHint term="ABC-анализ" /></FieldLabel>
+            <textarea id="s5n_abc_analysis" rows={3} value={str(data.s5n_abc_analysis)} onChange={(e) => onChange('s5n_abc_analysis', e.target.value)} placeholder="Например: 12 клиентов дают 60 % выручки..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
           <div>
-            <FieldLabel htmlFor="s5n_rfm_analysis">RFM-анализ</FieldLabel>
-            <textarea id="s5n_rfm_analysis" rows={3} value={str(data.s5n_rfm_analysis)} onChange={(e) => onChange('s5n_rfm_analysis', e.target.value)} placeholder="Recency, Frequency, Monetary анализ..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
+            <FieldLabel htmlFor="s5n_rfm_analysis">Как давно, как часто и на сколько покупают клиенты?<TermHint term="RFM-анализ" /></FieldLabel>
+            <textarea id="s5n_rfm_analysis" rows={3} value={str(data.s5n_rfm_analysis)} onChange={(e) => onChange('s5n_rfm_analysis', e.target.value)} placeholder="Например: 30 % клиентов не покупали больше полугода, 10 % покупают каждый месяц..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
           <div>
             <FieldLabel htmlFor="s5n_product_locomotive">Продукт-локомотив</FieldLabel>
@@ -131,7 +131,7 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
             <textarea id="s5n_how_found_us" rows={3} value={str(data.s5n_how_found_us)} onChange={(e) => onChange('s5n_how_found_us', e.target.value)} placeholder="Каналы, через которые приходят клиенты..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
           <div>
-            <FieldLabel htmlFor="s5n_will_return_nps">Вернётся ли клиент (NPS)</FieldLabel>
+            <FieldLabel htmlFor="s5n_will_return_nps">Вернутся ли клиенты и посоветуют ли вас?<TermHint term="NPS" /></FieldLabel>
             <textarea id="s5n_will_return_nps" rows={3} value={str(data.s5n_will_return_nps)} onChange={(e) => onChange('s5n_will_return_nps', e.target.value)} placeholder="Оценка лояльности и готовности рекомендовать..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
           <div>
@@ -139,7 +139,7 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
             <textarea id="s5n_improve_suggestions" rows={3} value={str(data.s5n_improve_suggestions)} onChange={(e) => onChange('s5n_improve_suggestions', e.target.value)} placeholder="Предложения клиентов по улучшению..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
           <div>
-            <FieldLabel htmlFor="s5n_upsell_crosssell">Upsell / Cross-sell</FieldLabel>
+            <FieldLabel htmlFor="s5n_upsell_crosssell">Что ещё можно продать тем же клиентам?<TermHint term="Upsell / Cross-sell" /></FieldLabel>
             <textarea id="s5n_upsell_crosssell" rows={3} value={str(data.s5n_upsell_crosssell)} onChange={(e) => onChange('s5n_upsell_crosssell', e.target.value)} placeholder="Возможности для допродаж и перекрёстных продаж..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none" />
           </div>
         </div>

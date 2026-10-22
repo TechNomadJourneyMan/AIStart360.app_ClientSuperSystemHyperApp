@@ -14,7 +14,7 @@ export const SURVEY_STEP_LABELS: Record<number, string> = {
   3: 'Позиционирование',
   4: 'Орг. структура',
   5: 'Работа с базой',
-  6: 'CJM',
+  6: 'Путь клиента',
   7: 'Маркетинг',
   8: 'Ключевые метрики',
   9: 'Финансы',
@@ -143,7 +143,7 @@ export const SURVEY_LABELS: Record<string, string> = {
   s5_competitor_1: 'Конкурент 1',
   s5_competitor_2: 'Конкурент 2',
   s5_competitor_3: 'Конкурент 3',
-  s5_usp: 'УТП (уникальное предложение)',
+  s5_usp: 'Чем вы лучше конкурентов (УТП)',
 
   // ── Step 5 new — Работа с базой ────────────────────────────────────────
   s5n_funnel_lead_to_call: 'Конверсия лид → звонок',
@@ -154,8 +154,8 @@ export const SURVEY_LABELS: Record<string, string> = {
   s5n_funnel_meeting_to_sale: 'Конверсия встреча → продажа',
   s5n_funnel_kp_to_sale: 'Конверсия КП → продажа',
   s5n_funnel_lead_to_sale: 'Конверсия лид → продажа',
-  s5n_abc_analysis: 'ABC-анализ клиентов',
-  s5n_rfm_analysis: 'RFM-анализ',
+  s5n_abc_analysis: 'Кто из клиентов даёт основную выручку (ABC-анализ)',
+  s5n_rfm_analysis: 'Давность, частота и сумма покупок (RFM-анализ)',
   s5n_product_locomotive: 'Продукт-локомотив',
   s5n_most_marginal: 'Самый маржинальный продукт',
   s5n_entry_product: 'Входной продукт',
@@ -166,7 +166,7 @@ export const SURVEY_LABELS: Record<string, string> = {
   s5n_barriers: 'Барьеры покупки',
   s5n_how_found_us: 'Как нашли нас',
   s5n_intermediate_steps: 'Промежуточные шаги',
-  s5n_will_return_nps: 'Вернутся ли (NPS)',
+  s5n_will_return_nps: 'Вернутся ли клиенты и посоветуют ли вас (NPS)',
   s5n_improve_suggestions: 'Предложения по улучшению',
   s5n_top_questions: 'Топ-вопросы клиентов',
   s5n_upsell_crosssell: 'Допродажи (upsell / cross-sell)',
@@ -195,11 +195,11 @@ export const SURVEY_LABELS: Record<string, string> = {
 
   // ── Step 7 — Funnel & AI-comms signals (loss-map inputs) ───────────────
   s7_leads_per_month: 'Лидов в месяц (входящие)',
-  s7_no_show_rate: 'Доля no-show (%)',
+  s7_no_show_rate: 'Записались и не пришли, % (no-show)',
   s7_missed_calls_rate: 'Доля пропущенных звонков (%)',
   s7_avg_check_target_kzt: 'Целевой средний чек (₸)',
   s7_repeat_freq_days: 'Частота повторной покупки (дни)',
-  s7_nps_score: 'Текущий NPS',
+  s7_nps_score: 'Оценка клиентов по 10-балльной шкале (NPS)',
 
   // ── Step 8 — Ключевые метрики ──────────────────────────────────────────
   s8n_metrics_table: 'Таблица ключевых метрик',
@@ -239,7 +239,7 @@ export const SURVEY_LABELS: Record<string, string> = {
   s10_company_vision_5y: 'Видение компании на 5 лет',
   s10_company_vision_10y: 'Видение компании на 10 лет',
   s10_problems_faced: 'С какими проблемами столкнулись',
-  s10_who_to_blame: 'Кто виноват',
+  s10_who_to_blame: 'Из-за чего возникли проблемы',
   s10_dept_assessment: 'Оценка отделов',
   s10_what_depts_lack: 'Чего не хватает отделам',
   s10_competitor_comparison: 'Сравнение с конкурентами',
@@ -269,9 +269,9 @@ export const SURVEY_LABELS: Record<string, string> = {
 
   // ── Step 12 — Системы и инструменты ────────────────────────────────────
   s12_crm_tool: 'CRM-система',
-  s12_edm: 'EDM (электронный документооборот)',
-  s12_erp: 'ERP-система',
-  s12_bi_tool: 'BI-инструмент',
+  s12_edm: 'Электронный документооборот (EDM)',
+  s12_erp: 'Учётная система предприятия (ERP)',
+  s12_bi_tool: 'Аналитика и отчёты (BI)',
   s12_messengers: 'Мессенджеры',
   s12_telephony: 'Телефония',
   s12_project_mgmt: 'Управление проектами',

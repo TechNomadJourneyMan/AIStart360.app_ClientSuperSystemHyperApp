@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { TermHint } from '@/components/onboarding/shared/TermHint'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step12ToolsFormProps {
@@ -100,7 +101,7 @@ function ToolSelect({
   onChange,
 }: {
   id: string
-  label: string
+  label: React.ReactNode
   value: string
   options: { value: string; label: string }[]
   onChange: (v: string) => void
@@ -144,21 +145,21 @@ export default function Step12ToolsForm({ data, onChange }: Step12ToolsFormProps
           />
           <ToolSelect
             id="s12_edm"
-            label="Электронный документооборот (EDM)"
+            label={<>Электронный документооборот<TermHint term="EDM" /></>}
             value={str(data.s12_edm)}
             options={EDM_OPTIONS}
             onChange={(v) => onChange('s12_edm', v)}
           />
           <ToolSelect
             id="s12_erp"
-            label="ERP-система"
+            label={<>Учётная система предприятия<TermHint term="ERP" /></>}
             value={str(data.s12_erp)}
             options={ERP_OPTIONS}
             onChange={(v) => onChange('s12_erp', v)}
           />
           <ToolSelect
             id="s12_bi_tool"
-            label="BI-инструмент"
+            label={<>Аналитика и отчёты<TermHint term="BI" /></>}
             value={str(data.s12_bi_tool)}
             options={BI_OPTIONS}
             onChange={(v) => onChange('s12_bi_tool', v)}

@@ -161,7 +161,7 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
   // ── Step 6 — Уточняющий опрос / CJM ───────────────────────────────────────
   {
     id: 'cjm',
-    label: 'CJM',
+    label: 'Путь клиента',
     step: 6,
     required: [],
     recommended: [
