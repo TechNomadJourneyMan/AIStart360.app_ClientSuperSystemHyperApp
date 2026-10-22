@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { opensAnswerEditor } from '@/lib/survey/answer-editor'
 import { formatAttribution, type AnswerAttribution, type AttributionViewer } from '@/lib/survey/attribution-label'
 import { isWritableSurveyKey } from '@/lib/survey/steps'
@@ -18,6 +18,8 @@ import { isWritableSurveyKey } from '@/lib/survey/steps'
  *    field after every render; it never touches the forms' own markup.
  */
 const LINE_ATTR = 'data-survey-attribution'
+// The lines are DOM-only: no layout effect (and no React warning) while server-rendering.
+const useDomEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const ICON: Record<string, string> = { user: 'person', expert: 'support_agent', admin: 'admin_panel_settings', ai: 'smart_toy', system: 'settings' }
 
 export interface EditorRequest { key: string; title: string; hint: string | null }
@@ -88,7 +90,7 @@ export default function SurveyFieldLayer({ children, attribution, viewer, onOpen
   const ref = useRef<HTMLDivElement>(null)
 
   // After every render: the step form may have mounted / moved fields.
-  useLayoutEffect(() => {
+  useDomEffect(() => {
     if (ref.current) syncLines(ref.current, attribution, viewer)
   })
 

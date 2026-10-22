@@ -4,8 +4,9 @@
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import type { ValidationIssue } from '@/lib/assistant/types'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
+import { approxAnswer, unknownAnswer } from '@/lib/survey/answer-value'
 
-export const SURVEY_PREVIEW_VARIANTS = ['empty', 'half', 'filled', 'ai', 'authors'] as const
+export const SURVEY_PREVIEW_VARIANTS = ['empty', 'half', 'filled', 'ai', 'authors', 'unknown'] as const
 export type SurveyPreviewVariant = (typeof SURVEY_PREVIEW_VARIANTS)[number]
 
 export const SURVEY_PREVIEW_VARIANT_LABEL: Record<SurveyPreviewVariant, string> = {
@@ -14,6 +15,7 @@ export const SURVEY_PREVIEW_VARIANT_LABEL: Record<SurveyPreviewVariant, string> 
   filled: 'Заполнена',
   ai: 'С подсказками ИИ',
   authors: 'С авторами ответов',
+  unknown: '«Не знаю» и «примерно»',
 }
 
 export function isSurveyPreviewVariant(v: unknown): v is SurveyPreviewVariant {
@@ -236,6 +238,27 @@ const HALF_KEYS = [
   's5_marketing_channels', 's5_marketing_budget_pct',
 ]
 
+/**
+ * The owner who does not know several numbers: «Не знаю» (stored as
+ * { value: null, unknown: true }) and «примерно» ranges (lib/survey/answer-value.ts).
+ */
+const UNKNOWN_MARKS: Record<string, unknown> = {
+  s1_current_revenue_month: approxAnswer(5_000_000, 6_000_000),
+  s1_current_revenue_year: 66_000_000,
+  s3_deals_2025: unknownAnswer(),
+  s3_rejections_2025: unknownAnswer(),
+  s5n_funnel_lead_to_call: unknownAnswer(),
+  s5n_funnel_lead_to_sale: approxAnswer(8, 12),
+  s5_marketing_budget_pct: unknownAnswer(),
+  s7_no_show_rate: unknownAnswer(),
+  s7_nps_score: unknownAnswer(),
+  s9n_revenue_2024: approxAnswer(50_000_000, 55_000_000),
+  s9n_net_profit: unknownAnswer(),
+  s9n_net_margin: unknownAnswer(),
+  s9n_debtor_days: unknownAnswer(),
+  s9n_expense_rent: approxAnswer(4_500_000, 5_000_000),
+}
+
 function pick(keys: readonly string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const k of keys) if (k in FILLED) out[k] = FILLED[k]
@@ -245,6 +268,7 @@ function pick(keys: readonly string[]): Record<string, unknown> {
 export function previewAnswers(variant: SurveyPreviewVariant): Record<string, unknown> {
   if (variant === 'empty') return {}
   if (variant === 'half' || variant === 'ai') return pick(HALF_KEYS)
+  if (variant === 'unknown') return { ...pick(HALF_KEYS), ...UNKNOWN_MARKS }
   return { ...FILLED }
 }
 
