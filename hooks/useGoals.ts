@@ -14,6 +14,13 @@ export interface GoalItem {
 }
 
 export const GOALS_QUERY_KEY = ['goals'] as const
+/** = POINT_A_STATE_KEY (hooks/usePointAState imports this module — no import back). */
+const POINT_A_STATE_KEY = ['point-a-state'] as const
+
+/** A goal change shows everywhere at once: the goals list and the Point A state (its goals, key metrics). */
+function invalidateGoalViews(qc: ReturnType<typeof useQueryClient>) {
+  return Promise.all([qc.invalidateQueries({ queryKey: GOALS_QUERY_KEY }), qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY })])
+}
 
 async function json<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null)
@@ -43,7 +50,7 @@ export function useSaveGoal() {
   return useMutation({
     mutationFn: async (draft: GoalDraft) =>
       json<GoalItem>(await fetch('/api/v1/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: GOALS_QUERY_KEY }),
+    onSuccess: () => invalidateGoalViews(qc),
   })
 }
 
@@ -51,6 +58,6 @@ export function useDeleteGoal() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => json<unknown>(await fetch(`/api/v1/goals/${encodeURIComponent(id)}`, { method: 'DELETE' })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: GOALS_QUERY_KEY }),
+    onSuccess: () => invalidateGoalViews(qc),
   })
 }
