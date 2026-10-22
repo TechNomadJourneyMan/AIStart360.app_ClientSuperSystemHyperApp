@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { profanityResponse } from '@/lib/moderation/http'
+import { staffAuthorRole, writeWithAttribution } from '@/lib/survey/attribution'
 
 const GRI_BLOCKS = ['product', 'trust', 'bizmodel', 'cash', 'ops', 'team', 'founder'] as const
 type GriBlock = typeof GRI_BLOCKS[number]
@@ -17,11 +18,16 @@ function isValidBlock(block: string): block is GriBlock {
 // write "expert notes" for an arbitrary user_id. Require an authenticated staff
 // (expert/admin) session before touching another user's notes.
 async function requireStaff(sb: ReturnType<typeof createServerClient>): Promise<NextResponse | null> {
+  const staff = await sessionStaff(sb)
+  return 'response' in staff ? staff.response : null
+}
+
+async function sessionStaff(sb: ReturnType<typeof createServerClient>): Promise<{ response: NextResponse } | { id: string; role: string }> {
   const user = await getSessionUser(sb)
-  if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  if (!user) return { response: NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 }) }
   const role = await getSessionRole(sb, user.id)
-  if (!isStaffRole(role)) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-  return null
+  if (!isStaffRole(role)) return { response: NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 }) }
+  return { id: user.id, role: role as string }
 }
 
 // GET /api/v1/gri/expert-notes?user_id=xxx
@@ -87,23 +93,24 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = createServerClient()
-    const denied = await requireStaff(sb)
-    if (denied) return denied
+    const staff = await sessionStaff(sb)
+    if ('response' in staff) return staff.response
 
     const question_key = `gri_expert_${block}`
 
-    const { error } = await sb
-      .from('survey_answers')
-      .upsert(
-        {
-          user_id,
-          company_id: null,
-          step: 0,
-          question_key,
-          answer: { value: note },
-        },
-        { onConflict: 'user_id,question_key' }
-      )
+    // Staff-authored note: «Изменил эксперт / админ» (migration 131).
+    const { error } = await writeWithAttribution(
+      [{
+        user_id,
+        company_id: null,
+        step: 0,
+        question_key,
+        answer: { value: note },
+      }],
+      { id: staff.id, role: staffAuthorRole(staff.role) },
+      (rows) => sb.from('survey_answers').upsert(rows, { onConflict: 'user_id,question_key' }),
+      { label: 'gri/expert-notes' },
+    )
 
     if (error) {
       return NextResponse.json({ ok: false, error: 'Failed to save note' }, { status: 500 })

@@ -27,6 +27,11 @@ import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { answersProfanityResponse } from '@/lib/moderation/http'
+import {
+  attributionColumns, authorFor, groupByAuthor, loadStaffRoles, staffAuthorRole, writeWithAttribution, type AnswerAuthor,
+} from '@/lib/survey/attribution'
+import { loadAttribution, type AttributionSourceRow, type ProfilesReader } from '@/lib/survey/attribution-read'
+import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 
 // GET /api/v1/onboarding/survey — the caller's own survey answers (session user).
 // SECURITY (audit 2026-07-02): identity is derived from the Supabase session,
@@ -60,15 +65,27 @@ export async function GET(req: NextRequest) {
     answers[row.question_key] = (row.answer as { value: unknown } | null)?.value
   }
   const completedSteps = completedStepsFromRows(rows)
+  // Who filled each answer (line under the field). Expert / admin names come
+  // from profiles, which the client's own session cannot read → service role.
+  const attribution = await loadAttribution(nameReader(sb), rows as AttributionSourceRow[])
 
   return NextResponse.json({
     ok: true,
     data: {
       answers,
+      attribution,
       completed_steps: completedSteps,
       current_step: Math.max(0, ...completedSteps) + 1,
     }
   })
+}
+
+function nameReader(fallback: ProfilesReader): ProfilesReader {
+  try {
+    return createServiceClient()
+  } catch {
+    return fallback
+  }
 }
 
 // POST /api/v1/onboarding/survey
@@ -86,7 +103,7 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseSurveySaveBody(raw)
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
-  const { user_id, step: bodyStep, answers, autosave } = parsed.data
+  const { user_id, step: bodyStep, answers, autosave, origins } = parsed.data
   const finalSubmitted = parsed.data.final
 
   // Свободные текстовые ответы с матом не сохраняем: 400 с ключом вопроса,
@@ -144,9 +161,13 @@ export async function POST(req: NextRequest) {
   // with the admin so history and audit show who really changed the answers.
   const { data: { user: sessionUser } } = await sb.auth.getUser()
   const imp = sessionUser?.id === targetUserId ? await activeImpersonation(sessionUser.id) : null
+  const savedAt = new Date()
+  const authors = new Map<string, AnswerAuthor>()
 
   if (rows.length) {
     if (imp) {
+      const impAuthor: AnswerAuthor = { id: imp.aid, role: staffAuthorRole(imp.arole ?? 'admin') }
+      for (const r of rows) authors.set(r.question_key, impAuthor)
       try {
         await adminEditSurvey(
           { id: imp.aid, kind: 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
@@ -161,10 +182,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Не удалось сохранить ответы' }, { status: 500 })
       }
     } else {
-      const { error } = await sb
-        .from('survey_answers')
-        .upsert(rows, { onConflict: 'user_id,question_key' })
-      if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+      // Who wrote it (migration 131): the owner → «вы» (or «ИИ (из документов)»
+      // for a value accepted from a document), staff → expert / admin.
+      const staffRoles = sessionUser && sessionUser.id !== targetUserId ? await loadStaffRoles(sb, sessionUser.id) : []
+      const groups = groupByAuthor(rows, (r) => authorFor({
+        actorId: sessionUser?.id ?? targetUserId,
+        ownerId: targetUserId,
+        staffRoles,
+        origin: origins?.[r.question_key] ?? null,
+      }))
+      for (const g of groups) {
+        const { error } = await writeWithAttribution(
+          g.rows, g.author,
+          (list) => sb.from('survey_answers').upsert(list, { onConflict: 'user_id,question_key' }),
+          { at: savedAt, label: 'onboarding/survey' },
+        )
+        if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+        for (const r of g.rows) authors.set(r.question_key, g.author)
+      }
     }
   }
 
@@ -255,8 +290,15 @@ export async function POST(req: NextRequest) {
       total_steps: progress.total_steps,
       percent: progress.percent,
       is_complete: progress.is_complete,
+      // The author line of the saved fields (the client shows it at once).
+      attribution: Object.fromEntries(Array.from(authors, ([key, a]) => [key, savedAttribution(a, savedAt)])),
     },
   })
+}
+
+function savedAttribution(a: AnswerAuthor, at: Date): AnswerAttribution {
+  const cols = attributionColumns(a, at)
+  return { updatedBy: cols.updated_by, updatedByRole: cols.updated_by_role, updatedAt: cols.updated_at, updatedByName: null }
 }
 
 // ─── background: Google Sheets mirror + completion alert ─────────────────────

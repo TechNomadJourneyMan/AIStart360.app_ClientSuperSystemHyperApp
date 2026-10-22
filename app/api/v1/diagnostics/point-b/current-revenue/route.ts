@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
+import { writeWithAttribution } from '@/lib/survey/attribution'
 
 /**
  * POST /api/v1/diagnostics/point-b/current-revenue
@@ -39,9 +40,12 @@ export async function POST(req: NextRequest) {
     { user_id: user.id, company_id: companyId, step: 1, question_key: 's1_current_revenue_month', answer: { value: month } },
   ]
 
-  const { error } = await sb
-    .from('survey_answers')
-    .upsert(rows, { onConflict: 'user_id,question_key' })
+  // The owner typed it on the Point B page: «Заполнил: вы» (migration 131).
+  const { error } = await writeWithAttribution(
+    rows, { id: user.id, role: 'user' },
+    (list) => sb.from('survey_answers').upsert(list, { onConflict: 'user_id,question_key' }),
+    { label: 'point-b/current-revenue' },
+  )
 
   if (error) {
     return dbError('v1/diagnostics/point-b/current-revenue', error)

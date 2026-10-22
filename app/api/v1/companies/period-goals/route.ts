@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
+import { writeWithAttribution } from '@/lib/survey/attribution'
 
 // Short-cycle goals (week / month) live in survey_answers under
 // well-known synthetic step=99 so we don't need a new column on
@@ -99,9 +100,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'No fields to update' }, { status: 400 })
   }
 
-  const { error } = await sb
-    .from('survey_answers')
-    .upsert(rows, { onConflict: 'user_id,question_key' })
+  // The owner's own dashboard goals: «Заполнил: вы» (migration 131).
+  const { error } = await writeWithAttribution(
+    rows, { id: userId, role: 'user' },
+    (list) => sb.from('survey_answers').upsert(list, { onConflict: 'user_id,question_key' }),
+    { label: 'companies/period-goals' },
+  )
 
   if (error) {
     return dbError('v1/companies/period-goals', error)

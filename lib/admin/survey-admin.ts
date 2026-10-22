@@ -2,6 +2,7 @@ import { createActorServiceClient, createServiceClient } from '@/lib/supabase-se
 import { isWritableSurveyKey, stepForQuestionKey } from '@/lib/survey/steps'
 import { recordAdminAction } from '@/lib/admin/audit'
 import type { GigaActor } from '@/lib/admin/giga-actor'
+import { staffAuthorRole, writeWithAttribution } from '@/lib/survey/attribution'
 
 /**
  * Staff edit of one user's questionnaire (CRUD on survey_answers).
@@ -90,7 +91,13 @@ export async function adminEditSurvey(
 
   const writer = createActorServiceClient({ id: actor.id, source, impersonationSessionId: opts.impersonationSessionId })
   if (upserts.length) {
-    const { error } = await writer.from('survey_answers').upsert(upserts, { onConflict: 'user_id,question_key' })
+    // The line under the field (migration 131): «Изменил эксперт / админ …».
+    const author = { id: actor.id, role: staffAuthorRole(actor.role ?? 'admin') }
+    const { error } = await writeWithAttribution(
+      upserts, author,
+      (rows) => writer.from('survey_answers').upsert(rows, { onConflict: 'user_id,question_key' }),
+      { label: 'admin/survey-edit' },
+    )
     if (error) throw new SurveyEditError('Не удалось сохранить анкету', 500)
   }
   if (deletes.length) {

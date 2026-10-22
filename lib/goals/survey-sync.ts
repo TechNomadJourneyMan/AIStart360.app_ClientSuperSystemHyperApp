@@ -21,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseAmount } from '@/lib/format/kzt'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { positiveNumber } from '@/lib/survey/targets'
+import { authorFromGoalActor, writeWithAttribution } from '@/lib/survey/attribution'
 import { createActorServiceClient, createServiceClient } from '@/lib/supabase-service'
 import { REVENUE_GOAL_METRIC, syncRevenueColumn, syncRevenueGoal } from './store'
 
@@ -177,7 +178,12 @@ export async function writeGoalToSurvey(service: SupabaseClient, input: WriteGoa
         answered_at: now,
       }))
     if (!rows.length) return { written: [], removed: [] }
-    const up = await writer.from('survey_answers').upsert(rows, { onConflict: 'user_id,question_key' })
+    // Author line under the field (migration 131): owner → «вы», staff → expert / admin.
+    const up = await writeWithAttribution(
+      rows, authorFromGoalActor(input.actor),
+      (list) => writer.from('survey_answers').upsert(list, { onConflict: 'user_id,question_key' }),
+      { label: 'goals/survey-sync' },
+    )
     if (up.error) throw new Error(`answers write failed (${up.error.code ?? 'unknown'})`)
     return { written: rows.map((r) => r.question_key), removed: [] }
   } catch (err) {

@@ -35,6 +35,14 @@ export const surveySaveBodySchema = z
     autosave: z.boolean().optional().default(false),
     /** The user pressed «Отправить анкету». */
     final: z.boolean().optional().default(false),
+    /**
+     * Keys whose value the owner accepted from a document suggestion: the
+     * answer is attributed to «ИИ (из документов)» (lib/survey/attribution.ts).
+     */
+    origins: z
+      .record(z.string().regex(KEY_RE, 'invalid question key'), z.literal('document'))
+      .refine((o) => Object.keys(o).length <= SURVEY_MAX_ANSWERS, 'too many origins')
+      .optional(),
   })
   .refine((b) => !(b.autosave && b.final), 'autosave cannot be final')
 
