@@ -64,7 +64,7 @@ export function createServiceClient(): SupabaseClient {
  */
 export function createActorServiceClient(actor: {
   id: string
-  source: 'admin' | 'impersonation'
+  source: 'admin' | 'impersonation' | 'user'
   impersonationSessionId?: string | null
 }): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

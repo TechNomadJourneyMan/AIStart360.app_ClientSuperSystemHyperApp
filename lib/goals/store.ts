@@ -134,19 +134,20 @@ export async function upsertGoal(
   return goalFromRow(res.data as Record<string, unknown>)
 }
 
-export async function deleteGoal(service: SupabaseClient, companyId: string, goalId: string): Promise<boolean> {
+/** Removes a goal; returns what was removed (metric and period), null when there was no such goal. */
+export async function deleteGoal(service: SupabaseClient, companyId: string, goalId: string): Promise<{ metricId: string; periodLabel: string } | null> {
   if (goalId.startsWith('company-')) {
     const period = goalId.slice('company-'.length)
-    if (!REVENUE_COLUMN[period]) return false
+    if (!REVENUE_COLUMN[period]) return null
     await syncRevenueColumn(service, companyId, REVENUE_GOAL_METRIC, period, null)
-    return true
+    return { metricId: REVENUE_GOAL_METRIC, periodLabel: period }
   }
   const { data, error } = await service.from('metric_targets').delete().eq('company_id', companyId).eq('id', goalId).select('metric_key, period_label')
   if (error) throw new Error(`goals: delete failed (${error.code ?? 'unknown'})`)
   const row = ((data ?? []) as Array<{ metric_key: string; period_label: string }>)[0]
-  if (!row) return false
+  if (!row) return null
   await syncRevenueColumn(service, companyId, row.metric_key, row.period_label, null)
-  return true
+  return { metricId: row.metric_key, periodLabel: row.period_label }
 }
 
 /** Mirror a revenue goal into companies.target_revenue_*. */
@@ -157,18 +158,27 @@ export async function syncRevenueColumn(service: SupabaseClient, companyId: stri
   if (error) throw new Error(`goals: company revenue target not synced (${error.code ?? 'unknown'})`)
 }
 
-/** Mirror the other way: a revenue column written by PATCH /companies/targets becomes the goal. */
-export async function syncRevenueGoal(service: SupabaseClient, companyId: string, periodLabel: '12m' | '3y', value: number | null, actorId: string): Promise<void> {
+/**
+ * Mirror the other way: a revenue column written by PATCH /companies/targets
+ * (or a goal answer of the questionnaire, lib/goals/survey-sync.ts) becomes
+ * the goal. `source` — who stated it (owner / expert); updated_by = the actor.
+ */
+export async function syncRevenueGoal(
+  service: SupabaseClient, companyId: string, periodLabel: '12m' | '3y', value: number | null, actorId: string,
+  opts: { source?: Goal['source'] } = {},
+): Promise<void> {
   if (value === null || value <= 0) {
     const { error } = await service.from('metric_targets').delete().eq('company_id', companyId).eq('metric_key', REVENUE_GOAL_METRIC).eq('period_label', periodLabel)
     if (error && !missingTable(error)) throw new Error(`goals: revenue goal not removed (${error.code ?? 'unknown'})`)
     return
   }
   // A changed revenue goal starts a new horizon (baseline_at, migration 115).
-  const base = { company_id: companyId, metric_key: REVENUE_GOAL_METRIC, target_value: value, direction: 'higher_is_better', period_label: periodLabel, source: 'owner', set_by: actorId, updated_at: new Date().toISOString() }
+  const base = { company_id: companyId, metric_key: REVENUE_GOAL_METRIC, target_value: value, direction: 'higher_is_better', period_label: periodLabel, source: opts.source ?? 'owner', set_by: actorId, updated_at: new Date().toISOString() }
   const existing = await service.from('metric_targets').select('target_value').eq('company_id', companyId).eq('metric_key', REVENUE_GOAL_METRIC).eq('period_label', periodLabel).maybeSingle()
   const changed = existing.error || !existing.data || Number((existing.data as { target_value: unknown }).target_value) !== value
-  const row = changed ? { ...base, baseline_at: new Date().toISOString(), baseline_value: null, baseline_period: null } : base
+  // updated_by (112) tells a goal a person set from one the system wrote (migration 130).
+  const v112 = { ...base, updated_by: actorId }
+  const row = changed ? { ...v112, baseline_at: new Date().toISOString(), baseline_value: null, baseline_period: null } : v112
   let { error } = await service.from('metric_targets').upsert(row, { onConflict: 'company_id,metric_key,period_label' })
   if (error && missingColumn(error)) ({ error } = await service.from('metric_targets').upsert(base, { onConflict: 'company_id,metric_key,period_label' }))
   if (error && !missingTable(error)) throw new Error(`goals: revenue goal not synced (${error.code ?? 'unknown'})`)
