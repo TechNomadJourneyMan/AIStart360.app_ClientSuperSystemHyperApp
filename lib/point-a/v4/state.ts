@@ -136,33 +136,53 @@ export function snapshotView(row: Record<string, unknown>): PointASnapshotView {
   }
 }
 
+/** The top strip: the company's chosen key metrics (the default set until chosen), with their values. */
+async function keyMetricsOf(client: SupabaseClient, companyId: string, cfg: Awaited<ReturnType<typeof loadBlockConfig>>): Promise<{ chosen: string[]; keyMetrics: MetricView[] }> {
+  const chosen = (cfg.company.clientView?.keyMetrics ?? []).filter((id) => getMetricById(id))
+  const keyMetricIds = (chosen.length ? chosen : DEFAULT_KEY_METRICS).slice(0, MAX_KEY_METRICS)
+  const keyMetrics = await loadMetricViews(client, companyId, keyMetricIds).catch((err) => {
+    console.error('[point-a/state] key metrics not loaded', err instanceof Error ? err.message : err)
+    return [] as MetricView[]
+  })
+  return { chosen, keyMetrics }
+}
+
 export async function loadPointAState(client: SupabaseClient, service: SupabaseClient, companyId: string): Promise<PointAState> {
-  const company = await client.from('companies').select('id, user_id, industry').eq('id', companyId).maybeSingle()
-  if (company.error) throw new Error(`point-a state: company read failed (${company.error.code ?? 'unknown'})`)
-  const ownerId = (company.data as { user_id?: string } | null)?.user_id ?? null
-  // GRI taken before the company existed carries only the owner's user_id.
-  const griQuery = client.from('gri_assessments').select('gri_index, created_at').eq('is_current', true)
-  const industry = (company.data as { industry?: string | null } | null)?.industry ?? null
-  // Everything independent in one wave (each await is a round trip to the DB).
-  const [latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg] = await Promise.all([
+  // Every read keyed by the company starts at once with the company row; only the GRI, the
+  // questionnaire (owner's user_id) and the block config (industry) wait for it, and the key metrics
+  // wait only for the config — not for the slowest read of the page.
+  const companyP = Promise.resolve(client.from('companies').select('id, user_id, industry').eq('id', companyId).maybeSingle()).then((company) => {
+    if (company.error) throw new Error(`point-a state: company read failed (${company.error.code ?? 'unknown'})`)
+    const row = company.data as { user_id?: string | null; industry?: string | null } | null
+    return { ownerId: row?.user_id ?? null, industry: row?.industry ?? null }
+  })
+  const cfgP = companyP.then(({ industry }) => loadBlockConfig(client, companyId, industry))
+  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead] = await Promise.all([
+    companyP,
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
     client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
     client.from('data_discrepancies').select('id, metric_key, period_key, kind, detail, chosen_value, candidates').eq('company_id', companyId).eq('status', 'open').order('created_at', { ascending: false }).limit(50),
-    // The owner's assessment counts only when it is not tied to another company.
-    (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},and(user_id.eq.${ownerId},company_id.is.null)`) : griQuery.eq('company_id', companyId))
-      .order('created_at', { ascending: false }).limit(1),
+    companyP.then(({ ownerId }) => {
+      // GRI taken before the company existed carries only the owner's user_id.
+      const griQuery = client.from('gri_assessments').select('gri_index, created_at').eq('is_current', true)
+      // The owner's assessment counts only when it is not tied to another company.
+      return (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},and(user_id.eq.${ownerId},company_id.is.null)`) : griQuery.eq('company_id', companyId))
+        .order('created_at', { ascending: false }).limit(1)
+    }),
     client.from('documents').select('parse_status').eq('company_id', companyId),
     client.from('metrics').select('metric_key').eq('company_id', companyId).not('metric_value', 'is', null),
     service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
     client.from('point_a_comments').select('id, target_kind, target_key, body, author_name, author_role, created_at').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }).limit(100),
     client.from('point_a_snapshots').select('reviewed_at, reviewed_by_name').eq('company_id', companyId).not('reviewed_at', 'is', null).order('reviewed_at', { ascending: false }).limit(1),
-    ownerId ? client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId) : Promise.resolve({ data: [], error: null }),
+    companyP.then(async ({ ownerId }): Promise<{ data: unknown[] | null }> => (ownerId ? await client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId) : { data: [] })),
     loadGoalsWithEvaluation(client, companyId).catch((err) => {
       console.error('[point-a/state] goals not loaded', err instanceof Error ? err.message : err)
       return [] as GoalWithEvaluation[]
     }),
-    loadBlockConfig(client, companyId, industry),
+    cfgP,
+    // A failed config fails the page above; then the key metrics are not read at all.
+    cfgP.then((c) => keyMetricsOf(client, companyId, c), () => null),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
@@ -170,13 +190,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
   const latestRow = ((latest.error ? [] : latest.data ?? []) as Array<Record<string, unknown>>)[0]
   const snapshot = latestRow ? snapshotView(latestRow) : null
   const progress = surveyProgressFromRows(((survey.data ?? []) as Array<{ question_key: string; step: number | null; answer: unknown }>))
-
-  const chosen = (cfg.company.clientView?.keyMetrics ?? []).filter((id) => getMetricById(id))
-  const keyMetricIds = (chosen.length ? chosen : DEFAULT_KEY_METRICS).slice(0, MAX_KEY_METRICS)
-  const keyMetrics = await loadMetricViews(client, companyId, keyMetricIds).catch((err) => {
-    console.error('[point-a/state] key metrics not loaded', err instanceof Error ? err.message : err)
-    return []
-  })
+  const { chosen, keyMetrics } = keyMetricsRead ?? { chosen: [], keyMetrics: [] }
 
   const bench = findBenchmark(industry, snapshot?.stage ?? null)
   const benchmarks = bench && snapshot

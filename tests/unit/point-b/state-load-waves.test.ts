@@ -7,8 +7,8 @@
  * read lands in the next wave. No real network, no timers that depend on speed.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { pbDb, type Row } from './_pbdb'
+import { roundTrips as network } from '../_round-trips'
 
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))
 
@@ -59,44 +59,6 @@ const withPlan = () => ({
   pb_plans: [{ id: 'plan-1', company_id: COMPANY, user_id: CLIENT, current_version_id: 'v-1', published_version_id: 'v-1', settings: {}, created_at: '2026-10-01T00:00:00Z' }],
   pb_plan_versions: [APPROVED],
 })
-
-/** The DB behind a «network»: every query answers when the wave is flushed; counts waves and reads per table. */
-function network(sb: SupabaseClient, opts: { fail?: Record<string, { code: string; message: string }> } = {}) {
-  let waves = 0
-  let pending: Array<() => void> = []
-  let timer: ReturnType<typeof setTimeout> | null = null
-  const reads: Record<string, number> = {}
-  const flush = () => {
-    timer = null
-    waves++
-    const batch = pending
-    pending = []
-    for (const run of batch) run()
-  }
-  const later = <T,>(run: () => PromiseLike<T>): Promise<T> =>
-    new Promise<T>((resolve, reject) => {
-      pending.push(() => { run().then(resolve, reject) })
-      timer ??= setTimeout(flush, 0)
-    })
-  const client = {
-    from(table: string) {
-      reads[table] = (reads[table] ?? 0) + 1
-      const failure = opts.fail?.[table]
-      const target = (sb as unknown as { from: (t: string) => Record<string, unknown> }).from(table)
-      const answer = <T,>(real: () => PromiseLike<T>) => later(failure ? () => Promise.resolve({ data: null, error: failure } as T) : real)
-      const proxy: Record<string, unknown> = new Proxy(target, {
-        get(t, prop: string) {
-          if (prop === 'then') return (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => answer(() => ({ then: (a: (v: unknown) => unknown, b?: (e: unknown) => unknown) => (t.then as (a: unknown, b: unknown) => Promise<unknown>)(a, b) })).then(res, rej)
-          if (prop === 'maybeSingle' || prop === 'single') return () => answer(() => (t[prop] as () => Promise<unknown>)())
-          const v = t[prop]
-          return typeof v === 'function' ? (...args: unknown[]) => { const r = (v as (...a: unknown[]) => unknown)(...args); return r === t ? proxy : r } : v
-        },
-      })
-      return proxy
-    },
-  }
-  return { sb: client as unknown as SupabaseClient, reads, waves: () => waves }
-}
 
 describe('Point B state: reads in parallel (W4)', () => {
   it('the same state as on the plain DB, in three round trips without a plan, the goals read once', async () => {
