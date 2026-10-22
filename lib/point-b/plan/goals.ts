@@ -87,6 +87,16 @@ export async function snapshotGoals(
   sb: SupabaseClient, companyId: string, primary?: { metricKey: string; periodLabel: string } | null,
 ): Promise<PlanGoalsSnapshot> {
   const [reviews, goals] = await Promise.all([loadLatestReviews(sb, companyId), loadGoals(sb, companyId)])
+  return goalsSnapshotFrom(goals, reviews, primary)
+}
+
+/**
+ * The plan snapshot from goals and review rows already read (pure): what snapshotGoals returns, for a
+ * caller that reads the goals and the reviews together with its other reads (the Point B page state).
+ */
+export function goalsSnapshotFrom(
+  goals: Goal[], reviews: Map<string, GoalReviewRow>, primary?: { metricKey: string; periodLabel: string } | null,
+): PlanGoalsSnapshot {
   const items: PlanGoalItem[] = goals.map((g) => {
     const row = reviews.get(goalKey(g.metricId, g.periodLabel))
     const item: PlanGoalItem = {

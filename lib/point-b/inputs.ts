@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PointA } from '@/types/onboarding'
+import type { Goal } from '@/lib/goals/evaluate'
 import { loadGoals, REVENUE_GOAL_METRIC } from '@/lib/goals/store'
 import { parsePeriodKey, periodOrdinal } from '@/lib/data-layer/period-key'
 import { diagToPointA, mapGriTop5 } from './adapters'
@@ -45,6 +46,11 @@ export interface LoadPointBInputsOptions {
   diagnosticId?: string | null
   /** For tests. */
   now?: Date
+  /**
+   * The company's goals, when the caller reads them anyway (the Point B page reads them once for the plan
+   * snapshot, the model and here). Without it the goals are read here.
+   */
+  goals?: () => Promise<Goal[]>
 }
 
 const ENGINE_BLOCK_COLUMNS: ReadonlyArray<readonly [string, string]> = [
@@ -117,19 +123,31 @@ export async function loadPointBInputs(
   // 1. Point A row the numbers on screen come from.
   let diagQuery = client.from('diagnostics').select('*').eq('user_id', userId)
   diagQuery = opts.diagnosticId ? diagQuery.eq('id', opts.diagnosticId) : diagQuery.eq('is_current', true)
-  const diagRes = await diagQuery.order('calculated_at', { ascending: false }).limit(1)
-  if (diagRes.error && !isMissingTable(diagRes.error)) throw new Error(`point-b inputs: diagnostics read failed (${diagRes.error.code ?? 'unknown'})`)
-  const diagnostic = ((diagRes.data ?? []) as Array<Record<string, unknown>>)[0] ?? null
+  const readDiagnostic = async (): Promise<Record<string, unknown> | null> => {
+    const diagRes = await diagQuery.order('calculated_at', { ascending: false }).limit(1)
+    if (diagRes.error && !isMissingTable(diagRes.error)) throw new Error(`point-b inputs: diagnostics read failed (${diagRes.error.code ?? 'unknown'})`)
+    return ((diagRes.data ?? []) as Array<Record<string, unknown>>)[0] ?? null
+  }
 
-  // 2. Company: the caller's, the diagnostic's, or the user's own.
-  let companyId = opts.companyId ?? (diagnostic?.company_id as string | null | undefined) ?? null
-  if (!companyId) {
-    const { data } = await client.from('companies').select('id').eq('user_id', userId).maybeSingle()
-    companyId = (data as { id?: string } | null)?.id ?? null
+  // 2. Company: the caller's, the diagnostic's, or the user's own. A caller that names the company does
+  //    not wait for the diagnostic: it is read in the wave below (one round trip less).
+  let companyId = opts.companyId ?? null
+  let diagnosticP: Promise<Record<string, unknown> | null>
+  if (companyId) {
+    diagnosticP = readDiagnostic()
+  } else {
+    const diagnostic = await readDiagnostic()
+    diagnosticP = Promise.resolve(diagnostic)
+    companyId = (diagnostic?.company_id as string | null | undefined) ?? null
+    if (!companyId) {
+      const { data } = await client.from('companies').select('id').eq('user_id', userId).maybeSingle()
+      companyId = (data as { id?: string } | null)?.id ?? null
+    }
   }
 
   // 3. Everything else is independent: one wave.
-  const [surveyRes, griRes, metrics, snapRes, goals] = await Promise.all([
+  const [diagnostic, surveyRes, griRes, metrics, snapRes, goals] = await Promise.all([
+    diagnosticP,
     client.from('survey_answers').select('question_key, answer').eq('user_id', userId),
     client.from('gri_assessments').select('top_5_limits').eq('user_id', userId).eq('is_current', true).limit(1),
     loadPointBMetrics(client, companyId),
@@ -137,11 +155,11 @@ export async function loadPointBInputs(
       ? client.from('point_a_snapshots').select('id, engine, confidence, coverage, created_at, blocks, inputs').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
       : Promise.resolve({ data: [], error: null }),
     companyId
-      ? loadGoals(client, companyId).catch((err) => {
+      ? (opts.goals ? opts.goals() : loadGoals(client, companyId)).catch((err) => {
           console.error('[point-b] goals not loaded — Point B falls back to the questionnaire', err instanceof Error ? err.message : err)
-          return []
+          return [] as Goal[]
         })
-      : Promise.resolve([]),
+      : Promise.resolve([] as Goal[]),
   ])
 
   const answers: Record<string, unknown> = {}
