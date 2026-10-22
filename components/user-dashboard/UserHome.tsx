@@ -5,6 +5,7 @@ import type { UserProfileSummary } from '@/lib/user-dashboard/summary'
 import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
 import ExpertMessages from '@/components/client/ExpertMessages'
+import PointADashboardSummary from '@/components/dashboard/PointADashboardSummary'
 
 export interface UserHomeData {
   fullName: string
@@ -138,6 +139,11 @@ export default function UserHome({ data }: { data: UserHomeData }) {
             hint={data.gri ? `оценка ${fmtDate(data.gri.assessedAt)}` : 'диагностика не пройдена'}
           />
         </section>
+
+        {/* Point A v4 — score, key metrics, what needs attention, risks and the
+            goals (synced with the questionnaire) — once Point A exists and the
+            section is switched on for the account. */}
+        {data.diagnostics !== null && data.sections.some((x) => x.key === 'point_a') && <PointADashboardSummary />}
 
         <ProfileSections summary={summary} />
 

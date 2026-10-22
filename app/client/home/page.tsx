@@ -20,7 +20,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   const user = await getRequestUser()
   if (!user) redirect('/login?from=/client/home')
 
-  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages] = await Promise.all([
+  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, companyRes] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', user.id),
     sb.from('diagnostics').select('overall_score, health_index, stage, calculated_at').eq('user_id', user.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -28,7 +28,15 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     sb.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
     visibleSectionsFor(user.id),
     visiblePagesFor(user.id),
+    sb.from('companies').select('id').eq('user_id', user.id).maybeSingle(),
   ])
+  // Point A today is the v4 snapshot (the same score as the Point A page and the
+  // dashboard); the v1 diagnostics row is only the fallback for older accounts.
+  const companyId = (companyRes.data as { id?: unknown } | null)?.id
+  const snapshotRes = companyId != null
+    ? await sb.from('point_a_snapshots').select('overall, stage, created_at').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    : null
+  const snapshot = snapshotRes && !snapshotRes.error ? (snapshotRes.data as { overall: unknown; stage: string | null; created_at: string } | null) : null
 
   const rows = (answersRes.data ?? []).filter((r) => isWizardVisibleKey(String(r.question_key)))
   const answers: Record<string, unknown> = {}
@@ -49,7 +57,9 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     surveyStartedAt: firstAnswerAt,
     surveyUpdatedAt: lastAnswerAt,
     summary: buildUserProfileSummary(answers),
-    diagnostics: diagnosticsRes.data
+    diagnostics: snapshot
+      ? { overallScore: snapshot.overall == null ? null : Number(snapshot.overall), stage: snapshot.stage ?? null, calculatedAt: snapshot.created_at ?? null }
+      : diagnosticsRes.data
       ? {
           overallScore: diagnosticsRes.data.overall_score == null ? null : Number(diagnosticsRes.data.overall_score),
           stage: diagnosticsRes.data.stage ?? null,

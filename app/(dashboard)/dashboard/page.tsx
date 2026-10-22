@@ -29,7 +29,7 @@ import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
-import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
+import PointADashboardSummary from '@/components/dashboard/PointADashboardSummary'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import {
@@ -392,16 +392,15 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            {/* Level 1 — Point A executive overview (score, maturity, status,
-                completeness, problem zones, risks, gaps, strengths). */}
-            <div className="mb-6">
-              <ExecutiveOverview userId={user.id} />
-            </div>
+            {/* Point A v4 — the important data (plan 2026-10-22, W1): score,
+                confidence, completeness, key metrics, «Требует внимания»,
+                risks / quick wins / strengths and the ONE goals block (synced
+                with the questionnaire). Replaces the v1 ExecutiveOverview. */}
+            <PointADashboardSummary className="mb-6" />
 
-            {/* New Growth Snapshot Hero — owns goal capture, plan/fact gap,
-                GRI CTA, consultation link, and onboarding-progress shortcuts.
-                Replaces the previous AI-insights carousel + CTA stack. */}
-            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} />
+            {/* «AI · Карта роста» (shows the synced goals) + the GRI next step.
+                The snapshot column is not repeated: the goals are above. */}
+            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot />
 
             {pointA || (surveyStepsDone === 0 && docsCount === 0) ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
@@ -420,46 +419,8 @@ export default async function DashboardPage() {
             )}
           </section>
 
-          {/* Risks / Quick Wins from Point A engine (insights moved to right-rail carousel) */}
-          {pointA && (
-            <>
-              {pointA.risks.length > 0 && (
-                <section>
-                  <h2 className="text-xs font-mono text-error/80 uppercase tracking-[0.2em] mb-3">Риски</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {pointA.risks.slice(0, 6).map((r, i) => (
-                      <div key={i} className={`rounded-2xl border p-4 ${
-                        r.level === 'critical' ? 'border-error/40 bg-error/[0.06]' :
-                        r.level === 'important' ? 'border-error/25 bg-error/[0.03]' :
-                        'border-amber-400/25 bg-amber-400/[0.03]'
-                      }`}>
-                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">{r.area}</p>
-                        <p className="text-sm text-on-surface font-medium mb-1">{r.text}</p>
-                        <p className="text-xs text-on-surface-variant">{r.impact}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {pointA.quick_wins.length > 0 && (
-                <section>
-                  <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Quick Wins</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {pointA.quick_wins.slice(0, 6).map((qw, i) => (
-                      <div key={i} className="bg-primary/[0.04] border border-primary/30 rounded-2xl p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest">{qw.area}</p>
-                          <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-high rounded px-2 py-0.5">{qw.timeline}</span>
-                        </div>
-                        <p className="text-sm text-on-surface font-medium">{qw.action}</p>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </>
-          )}
+          {/* The v1 risks / quick wins (diagnostics row) are not shown any more:
+              Point A v4 risks and quick wins are in the block above. */}
 
           {/* Metrics blocks belong to the «Метрики» section: hidden there —
               hidden here, together with the filters that drive them. */}

@@ -34,6 +34,9 @@ import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 import { GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
 import { usePlatformSections } from '@/hooks/usePlatformSections'
 import { metricsFromEnvelope, type MetricsEnvelope } from '@/hooks/useMetrics'
+import { GOALS_QUERY_KEY, useGoals } from '@/hooks/useGoals'
+import { POINT_A_STATE_KEY } from '@/hooks/usePointAState'
+import { REVENUE_GOAL_METRIC, revenueGoalDraft, type RevenuePeriod } from './point-a-summary-model'
 
 /**
  * Annual-revenue metric ids of the registry (lib/metrics/registry.ts), in
@@ -84,7 +87,12 @@ function progressColor(p: number): string {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function GrowthSnapshotHero({ visibleSections }: { visibleSections?: string[] } = {}) {
+/**
+ * `hideSnapshot` — the page shows the goals elsewhere (the dashboard's «Мои
+ * цели» in <PointADashboardSummary/>): the left «Точка А · Снимок» column is
+ * not rendered, so there is ONE goals block on the page.
+ */
+export default function GrowthSnapshotHero({ visibleSections, hideSnapshot = false }: { visibleSections?: string[]; hideSnapshot?: boolean } = {}) {
   // Cabinet sections switched off in GIGA-CRM hide their CTAs here too.
   // The server page passes the list so nothing flashes before the fetch.
   const fetchedSections = usePlatformSections().sections
@@ -97,7 +105,19 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
   const documentsOn = sectionOn('documents')
   const router = useRouter()
 
-  const [targets, setTargets] = useState<TargetsData | null>(null)
+  // Revenue goals: the one goal source (metric_targets via /api/v1/goals), the
+  // same as Point A / Point B and the questionnaire (lib/goals/survey-sync.ts).
+  const goalsQuery = useGoals()
+  const revenueGoal = (period: RevenuePeriod) =>
+    goalsQuery.data?.find((i) => i.goal.metricId === REVENUE_GOAL_METRIC && i.goal.periodLabel === period)
+  const targets: TargetsData | null = goalsQuery.data
+    ? {
+        target_revenue_12m_kzt: revenueGoal('12m')?.goal.targetValue ?? null,
+        target_revenue_3y_kzt: revenueGoal('3y')?.goal.targetValue ?? null,
+      }
+    : null
+  // «Карта роста» shows the goals once they exist; «Изменить цели» opens the inputs again.
+  const [editingMap, setEditingMap] = useState(false)
   const [periodGoals, setPeriodGoals] = useState<PeriodGoals>({
     goal_week: null,
     goal_month: null,
@@ -130,8 +150,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
     try {
       // Onboarding status and the GRI assessment are shared with the quick
       // pills / status badges on the same page (one request each).
-      const [tRes, gRes, onboardingData, griJ, mRes] = await Promise.all([
-        fetch('/api/v1/companies/targets', { credentials: 'include' }),
+      const [gRes, onboardingData, griJ, mRes] = await Promise.all([
         fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
         getOnboardingStatus(queryClient),
         getGriAssessmentEnvelope(queryClient),
@@ -140,7 +159,6 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
         }),
       ])
 
-      const tJ = await tRes.json().catch(() => ({}))
       const gJ = await gRes.json().catch(() => ({}))
       const mJ = (mRes.ok ? await mRes.json().catch(() => null) : null) as MetricsEnvelope | null
 
@@ -155,7 +173,6 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
         }
       }
 
-      if (tJ?.ok) setTargets(tJ.data)
       if (gJ?.ok) setPeriodGoals(gJ.data)
       if (onboardingData) setOnboarding(onboardingData)
       if (griJ?.ok && griJ.data?.current) {
@@ -234,8 +251,34 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
   const hasAnyTarget = Boolean(target12m || target3y)
   const hasAnyPeriodGoal = Boolean(periodGoals.goal_week || periodGoals.goal_month)
   const hasGoalsSet = hasAnyTarget || hasAnyPeriodGoal
+  const showMapForm = !hasAnyTarget || editingMap
+
+  // ── Goals: saved through the goals API (→ metric_targets, companies,
+  //    the questionnaire's step-1 answers), then every goal view refreshes.
+  const writeRevenueGoal = async (period: RevenuePeriod, annual: number | null) => {
+    if (annual === null || annual <= 0) {
+      const g = revenueGoal(period)
+      if (!g) return
+      const r = await fetch(`/api/v1/goals/${encodeURIComponent(g.goal.id)}`, { method: 'DELETE', credentials: 'include' })
+      if (!r.ok) throw new Error('Не удалось удалить цель')
+      return
+    }
+    const r = await fetch('/api/v1/goals', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(revenueGoalDraft(period, annual)),
+    })
+    const j = await r.json().catch(() => null)
+    if (!r.ok || !j?.ok) throw new Error(j?.error ?? 'Не удалось сохранить цель')
+  }
+  const refreshGoals = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: GOALS_QUERY_KEY }),
+    queryClient.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
+  ])
 
   // ── Card A — submit Карта роста ───────────────────────────────────────────
+  // The inputs are per month (₸ / мес): the goal is the year, month × 12.
   const submitMap = async () => {
     setSavingMap(true)
     setSaveErr(null)
@@ -247,58 +290,33 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
         setSavingMap(false)
         return
       }
-      const tasks: Promise<unknown>[] = []
-      if (parsed1y !== null) {
-        // Store as period-goals.goal_month (1-year monthly hand-typed value)
-        // AND as target_revenue_12m_kzt (so dashboards see the annual plan).
-        tasks.push(
-          fetch('/api/v1/companies/period-goals', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              goal_month: `${formatKzt(parsed1y)} / мес`,
-            }),
-          }),
-          fetch('/api/v1/companies/targets', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_revenue_12m_kzt: parsed1y * 12,
-            }),
-          }),
-        )
-      }
-      if (parsed3y !== null) {
-        tasks.push(
-          fetch('/api/v1/companies/targets', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_revenue_3y_kzt: parsed3y * 12,
-            }),
-          }),
-        )
-      }
-      await Promise.all(tasks)
-      router.push('/point-b')
+      if (parsed1y) await writeRevenueGoal('12m', parsed1y * 12)
+      if (parsed3y) await writeRevenueGoal('3y', parsed3y * 12)
+      await refreshGoals()
+      setEditingMap(false)
+      if (pointBOn) router.push('/client/point-b')
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : 'Ошибка сохранения')
     } finally {
       setSavingMap(false)
     }
   }
+  const openMapEdit = () => {
+    // Exact numbers: «283 млн ₸» typed back would lose 333 333 ₸ a month.
+    setDraft1y(monthlyPlan12 ? String(monthlyPlan12) : '')
+    setDraft3y(monthlyPlan3y ? String(monthlyPlan3y) : '')
+    setSaveErr(null)
+    setEditingMap(true)
+  }
 
   // ── Tile edit popovers (left column) ──────────────────────────────────────
   const openEdit12 = () => {
-    setDraft12mEdit(target12m ? formatKzt(target12m) : '')
+    setDraft12mEdit(target12m ? String(target12m) : '')
     setEditing12(true)
     setEditing3y(false)
   }
   const openEdit3y = () => {
-    setDraft3yEdit(target3y ? formatKzt(target3y) : '')
+    setDraft3yEdit(target3y ? String(target3y) : '')
     setEditing3y(true)
     setEditing12(false)
   }
@@ -308,29 +326,12 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
       const value = which === '12'
         ? parseAmount(draft12mEdit)
         : parseAmount(draft3yEdit)
-      const body = which === '12'
-        ? { target_revenue_12m_kzt: value }
-        : { target_revenue_3y_kzt: value }
-      const r = await fetch('/api/v1/companies/targets', {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const j = await r.json()
-      if (j?.ok) {
-        setTargets((prev) => prev
-          ? {
-              ...prev,
-              ...(which === '12'
-                ? { target_revenue_12m_kzt: value }
-                : { target_revenue_3y_kzt: value }),
-            }
-          : { target_revenue_12m_kzt: which === '12' ? value : null, target_revenue_3y_kzt: which === '3y' ? value : null }
-        )
-        setEditing12(false)
-        setEditing3y(false)
-      }
+      await writeRevenueGoal(which === '12' ? '12m' : '3y', value)
+      await refreshGoals()
+      setEditing12(false)
+      setEditing3y(false)
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : 'Ошибка сохранения')
     } finally {
       setSavingTile(false)
     }
@@ -356,6 +357,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* ── LEFT: Снимок ─────────────────────────────────────────────── */}
+        {!hideSnapshot && (
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">
@@ -631,18 +633,19 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
             </div>
           )}
         </div>
+        )}
 
-        {/* ── RIGHT: AI карта роста + GRI ─────────────────────────────────── */}
-        <div className="flex flex-col gap-3">
+        {/* ── RIGHT: AI карта роста + GRI (side by side without the snapshot) ── */}
+        <div className={hideSnapshot ? 'contents' : 'flex flex-col gap-3'}>
           {/* Card A — AI карта роста */}
           <div
             className={`relative rounded-2xl border bg-surface-container-low p-4 transition-all ${
-              hasGoalsSet
+              hasAnyTarget
                 ? 'border-primary/40 shadow-[0_0_40px_-15px_rgba(110,255,192,0.4)]'
                 : 'border-primary/60 pulse-slow'
             }`}
           >
-            {!hasGoalsSet && (
+            {!hasAnyTarget && (
               <span className="badge-pulse absolute top-3 right-3 text-[9px] font-mono font-bold uppercase tracking-widest text-amber-300 bg-amber-400/15 border border-amber-300/40 rounded-full px-2 py-0.5">
                 Выберите цель
               </span>
@@ -651,6 +654,8 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
             <p className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em] mb-1">
               AI · Карта роста
             </p>
+            {showMapForm ? (
+              <>
             <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-3 pr-24 tracking-tight">
               Укажите цели — получите карту роста на 1-3 года
             </h2>
@@ -705,6 +710,54 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
               <span className="material-symbols-outlined text-lg">auto_awesome</span>
               {savingMap ? 'Сохраняем…' : 'Получить карту роста'}
             </button>
+            {editingMap && (
+              <button
+                type="button"
+                onClick={() => setEditingMap(false)}
+                className="mt-2 w-full text-[11px] font-mono text-on-surface-variant hover:text-on-surface"
+              >
+                Отмена
+              </button>
+            )}
+              </>
+            ) : (
+              <>
+            {/* Goals exist (questionnaire / dashboard / Point A — one source): show them, no «укажите цели». */}
+            <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-3 tracking-tight">
+              Карта роста на 1–3 года по вашим целям
+            </h2>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3" aria-label="Цели по выручке">
+              {([['Цель · 12 месяцев', target12m, monthlyPlan12], ['Цель · 3 года', target3y, monthlyPlan3y]] as const).map(([label, year, month]) => (
+                <li key={label} className="rounded-lg border border-white/[0.06] bg-surface-container px-3 py-2">
+                  <p className="text-[9px] font-mono text-primary/70 uppercase tracking-widest">{label}</p>
+                  <p className="font-mono text-sm font-bold text-on-surface">{year ? `${formatKzt(year)} / год` : '—'}</p>
+                  <p className="text-[10px] font-mono text-on-surface-variant">{month ? `${formatKzt(month)} / мес` : 'не задана'}</p>
+                </li>
+              ))}
+            </ul>
+            {pointBOn && (
+              <Link
+                href="/client/point-b"
+                className="w-full inline-flex items-center justify-center gap-2 text-white font-bold text-base rounded-xl py-3.5 hover:brightness-110 transition-all focus:ring-2"
+                style={{
+                  background: 'linear-gradient(90deg, #e87a35, #dc524b)',
+                  boxShadow: '0 0 30px -10px rgba(232,122,53,0.55)',
+                }}
+              >
+                <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                Открыть карту роста
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={openMapEdit}
+              className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-mono text-on-surface-variant hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[14px]">edit</span>
+              Изменить цели
+            </button>
+              </>
+            )}
 
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
               <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
