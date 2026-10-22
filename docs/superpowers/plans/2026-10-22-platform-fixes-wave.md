@@ -60,7 +60,7 @@
 | `/client/point-a` | 386 kB | 323 kB | то же |
 | `/dashboard` | 362 kB | 321 kB | виджеты режима персонала грузятся только для персонала |
 | User 360 (`/admin-giga-panel/users/[id]`, `/super-expert/users/[id]`) | 384 kB | 210 kB | вкладки грузятся при открытии (кроме «Профиль») |
-| `/client/home`, `/client/point-b`, `/settings` | 280 / 289 / 188 kB | 282 / 291 / 189 kB | не трогали (рост — общий код других потоков) |
+| `/client/home`, `/client/point-b`, `/settings` | 280 / 289 / 188 kB | 282 / 304 / 190 kB | не трогали (рост — новый код других потоков: план-факт Точки Б Ф6b, общий код) |
 
 `recharts` уже грузился лениво (жадно — только на `/admin-giga-panel/agents/costs`). Важно: `next/dynamic` в серверной странице не выносит клиентский компонент из первой загрузки — нужны клиентские модули-обёртки (`components/point-a/legacy/lazy.tsx`, `components/dashboard/staff-widgets-lazy.tsx`).
 
