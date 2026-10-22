@@ -13,6 +13,7 @@ import { foreignAnalysisKeys, mergeAiAnalysis, readAiAnalysis } from '@/lib/poin
 import type { AIAnalysis } from '@/types/onboarding'
 import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
+import { plainAnswer } from '@/lib/survey/plain'
 import type { Company } from '@/types/onboarding'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
@@ -119,7 +120,8 @@ export async function POST(req: NextRequest) {
 
     const answers: Record<string, unknown> = {}
     for (const row of (rows ?? [])) {
-      answers[row.question_key] = (row.answer as { value: unknown } | null)?.value
+      // The engines and the model read the words, not the answer editor's Markdown.
+      answers[row.question_key] = plainAnswer((row.answer as { value: unknown } | null)?.value)
     }
     if (Object.keys(answers).length === 0) {
       return fail(422, 'Анкета не заполнена — анализировать нечего')

@@ -7,6 +7,7 @@
 
 import { SURVEY_KEY_STEP, SURVEY_TOTAL_STEPS, surveyProgressFromRows, type SurveyStepRow } from '@/lib/survey/steps'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue } from '@/lib/survey-labels'
+import { stripMarkdown } from '@/lib/survey/markdown'
 import { upsertRowByKey, googleSheetsConfigured, spreadsheetUrl } from '@/lib/integrations/google-sheets'
 
 export interface SurveyExportMeta {
@@ -56,7 +57,7 @@ export function answersFromRows(rows: ReadonlyArray<SurveyStepRow>): Record<stri
 function text(answers: Record<string, unknown>, keys: string[]): string {
   for (const k of keys) {
     const v = answers[k]
-    if (typeof v === 'string' && v.trim()) return v.trim()
+    if (typeof v === 'string' && v.trim()) return stripMarkdown(v).trim()
     if (typeof v === 'number' && Number.isFinite(v)) return String(v)
   }
   return ''

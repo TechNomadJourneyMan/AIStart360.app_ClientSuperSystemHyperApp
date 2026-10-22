@@ -23,6 +23,7 @@ import {
   type MarketGenContext,
 } from '@/lib/market-analysis/generator'
 import { dbError } from '@/lib/api-error'
+import { plainAnswer } from '@/lib/survey/plain'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth — verify the HMAC-signed giga super-admin cookie (Node runtime).
@@ -358,7 +359,7 @@ async function buildContext(
       .eq('user_id', userId)
     for (const row of data ?? []) {
       const r = row as { question_key: string; answer: unknown }
-      survey[r.question_key] = unwrap(r.answer)
+      survey[r.question_key] = plainAnswer(unwrap(r.answer)) // the words, not the editor's Markdown
     }
   } catch {
     // tolerate — generation still proceeds with empty survey context

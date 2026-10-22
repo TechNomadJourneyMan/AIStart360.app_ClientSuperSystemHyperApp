@@ -10,6 +10,7 @@
  */
 
 import { answersFromRows } from '@/lib/survey/export'
+import { plainAnswers } from '@/lib/survey/plain'
 import type { SurveyStepRow } from '@/lib/survey/steps'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { runAnswerValidation } from '@/lib/ai/validation'
@@ -71,7 +72,8 @@ export function buildReviewContext(input: ReviewContextInput): ReviewContext {
   const missing: string[] = []
 
   // ── Анкета ────────────────────────────────────────────────────────────────
-  const answers = answersFromRows(input.surveyRows)
+  // The words of the answers, not the editor's Markdown.
+  const answers = plainAnswers(answersFromRows(input.surveyRows))
   const lines: string[] = []
   let used = 0
   for (const [k, v] of Object.entries(answers).sort(([a], [b]) => a.localeCompare(b))) {

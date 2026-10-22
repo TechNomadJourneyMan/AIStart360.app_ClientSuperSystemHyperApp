@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { SURVEY_LABELS } from '@/lib/survey-labels'
 import { NO_ID, scopedClientIds } from '@/lib/admin/client-scope'
+import { plainAnswer } from '@/lib/survey/plain'
 
 /**
  * GET /api/giga-admin/surveys/search?q=найм[&key=s2_revenue_2024&min=&max=]
@@ -61,7 +62,8 @@ export async function GET(req: NextRequest) {
   for (const row of (data ?? []) as Array<{ user_id: string; question_key: string; answer: { value?: unknown } | null }>) {
     if (!isWizardVisibleKey(row.question_key)) continue
     const value = row.answer?.value
-    const text = asText(value)
+    // Search and show the words, not the answer editor's Markdown.
+    const text = asText(plainAnswer(value))
     if (!text) continue
 
     if (q && !text.toLowerCase().includes(needle)) continue

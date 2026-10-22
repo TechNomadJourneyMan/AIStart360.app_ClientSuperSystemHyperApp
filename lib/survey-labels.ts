@@ -3,6 +3,7 @@
  * Used in Giga Panel (admin view) and client "My Data" page.
  */
 
+import { stripMarkdown } from '@/lib/survey/markdown'
 import { stepForQuestionKey } from '@/lib/survey/steps'
 
 export const SURVEY_STEP_LABELS: Record<number, string> = {
@@ -402,5 +403,6 @@ export function formatSurveyValue(key: string, value: unknown): string {
     const map: Record<string, string> = { none: 'Нет', other: 'Другое' }
     return map[String(value)] || String(value)
   }
-  return String(value)
+  // Free text: the answer editor stores Markdown (W5) — a plain view shows the words without the markup.
+  return typeof value === 'string' ? stripMarkdown(value) : String(value)
 }

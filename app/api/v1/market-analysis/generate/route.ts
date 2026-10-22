@@ -10,6 +10,7 @@ import {
 import { getQuestion } from '@/lib/market-analysis/questions'
 import { loadAnswers, rebuildSnapshot } from '@/lib/market-analysis/persist'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { plainAnswer } from '@/lib/survey/plain'
 import { dbError, safeErrorMessage } from '@/lib/api-error'
 import { guardAiBudget } from '@/lib/ai/budget'
 
@@ -154,7 +155,7 @@ async function buildContext(
       .eq('user_id', userId)
     for (const row of data ?? []) {
       const r = row as { question_key: string; answer: unknown }
-      survey[r.question_key] = unwrap(r.answer)
+      survey[r.question_key] = plainAnswer(unwrap(r.answer)) // the words, not the editor's Markdown
     }
   } catch {
     // tolerate — generation still proceeds with empty survey context

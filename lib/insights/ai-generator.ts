@@ -20,6 +20,7 @@ import {
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { withoutPersonalData } from '@/lib/ai/pii'
+import { plainAnswer } from '@/lib/survey/plain'
 
 export const INSIGHTS_PROMPT_VERSION = 'point-a-insights-v1'
 export const INSIGHTS_MODEL = OPENROUTER_MODELS.sonnet
@@ -169,10 +170,12 @@ function buildUserPrompt(snapshot: Snapshot): string {
     // Cap to keep token budget sane — first 40 are usually the most informative.
     const slice = snapshot.surveyAnswers.slice(0, 40)
     for (const row of slice) {
-      const ans =
-        typeof row.answer === 'string'
-          ? row.answer
-          : JSON.stringify(row.answer)
+      // {value} unwrapped, the editor's Markdown dropped — the model gets the words.
+      const raw = row.answer && typeof row.answer === 'object' && !Array.isArray(row.answer) && 'value' in row.answer
+        ? (row.answer as { value: unknown }).value
+        : row.answer
+      const value = plainAnswer(raw)
+      const ans = typeof value === 'string' ? value : JSON.stringify(value)
       lines.push(`- ${row.question_key}: ${ans}`)
     }
     lines.push('')
