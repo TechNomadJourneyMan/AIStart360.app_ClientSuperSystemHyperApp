@@ -21,6 +21,7 @@ import { loadStrategyState } from '../strategy/load'
 import { listActiveInvites } from '../invites/store'
 import type { InviteView } from '../invites/types'
 import { clientView, listRecommendations, topVerifiedWithAction } from '../recs/store'
+import { loadPlanFactState } from '../planfact/load'
 import type { Recommendation } from '../recs/types'
 import { computeModel } from './compute'
 import { loadRevenueHistory } from './history'
@@ -157,7 +158,7 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       ]).then(([read, bundle]) => (read ? goalsSnapshotFrom(read[1], read[0], bundle.published?.goals?.primary ?? undefined) : null))
     : Promise.resolve(null)
 
-  const [bundle, goals, { inputs, pb }, strategy, recs, invites] = await Promise.all([
+  const [bundle, goals, { inputs, pb }, strategy, recs, invites, planFact] = await Promise.all([
     bundleP,
     goalsP,
     loadModelForCompany(sb, { userId, companyId: company?.id ?? null, goals: goalsP, now, readGoals: readGoals ?? undefined }),
@@ -165,6 +166,10 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
     bundleP.then((b) => (b.published ? loadStrategyState(sb, userId, b.published.strategy) : null)),
     company ? quietly('recommendations', () => listRecommendations(sb, company.id, { statuses: CLIENT_REC_STATUSES }), [] as Recommendation[]) : Promise.resolve([] as Recommendation[]),
     company ? quietly('invites', () => listActiveInvites(sb, userId, now), [] as InviteView[]) : Promise.resolve([] as InviteView[]),
+    // Plan-fact (Ф6b): checkpoints, goal progress, versions of the APPROVED plan — stored reads, no recalculation.
+    company
+      ? bundleP.then((b) => (b.published ? quietly('plan-fact', () => loadPlanFactState(sb, { companyId: company.id, published: b.published, versions: b.versions, audience: 'client', now }), null) : null))
+      : Promise.resolve(null),
   ])
   const result = computeModel(inputs)
 
@@ -187,6 +192,7 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
     recommendations: clientView(recs),
     invites,
     nextStep: nextStepOf(recs, strategy),
+    planFact,
   }
 }
 

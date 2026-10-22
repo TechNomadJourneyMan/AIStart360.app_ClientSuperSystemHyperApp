@@ -99,6 +99,11 @@ export interface VersionSummary {
   /** Totals of the selected scenario's trajectory. */
   totals: { timeToGoalMonths: number | null; revenueAtDeadline: number | null; revenueTotal: number | null; netProfitTotal: number | null; fundingNeed: number | null }
   strategy: Array<{ key: string; kind: string; title: string }>
+  /**
+   * The client sees only the content of the APPROVED version (RLS of migration 125, spec §6); of a superseded version
+   * he gets the metadata (number, dates, who approved, the reason of the change) — the content is empty here.
+   */
+  contentHidden?: boolean
 }
 
 export interface VersionDiffEntry { field: string; label: string; before: string; after: string }

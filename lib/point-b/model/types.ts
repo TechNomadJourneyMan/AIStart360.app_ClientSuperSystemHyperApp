@@ -14,6 +14,7 @@ import type { FinmodelState } from '../finmodel/store'
 import type { InviteView } from '../invites/types'
 import type { GoalReviewStatus } from '../plan/types'
 import type { ClientRecommendationView } from '../recs/types'
+import type { PlanFactState } from '../planfact/types'
 import type { MatrixPoint } from '../strategy/matrix'
 import type { NodeProgress } from '../strategy/progress'
 import type { Milestone, StrategyNode } from '../strategy/types'
@@ -205,6 +206,11 @@ export interface PointBState {
    * else the nearest unfinished task of the published strategy (`action` 'strategy'); null = nothing to show.
    */
   nextStep: { title: string; action: string | null; recId: string | null } | null
+  /**
+   * Plan-fact of the APPROVED version (Ф6b): monthly checkpoints plan · fact · forecast with the verdict and its reason,
+   * the progress of every goal, the KPIs of the «Факт за месяц» form, the approved versions. null = no approved plan.
+   */
+  planFact?: PlanFactState | null
 }
 
 /** An input the model cannot work with (a zero check, a conversion above 100%…). The text is for the user. */
