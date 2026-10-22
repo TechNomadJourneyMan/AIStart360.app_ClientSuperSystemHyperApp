@@ -4,7 +4,7 @@ import { assistantEventsRetention } from '@/lib/functions/assistant-events-reten
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
 import { pointANightly, pointARecalc } from '@/lib/functions/point-a'
-import { pbMonthlyCheckpoint, pbRecompute, pbRecomputeCompany } from '@/lib/functions/point-b'
+import { pbInviteExternal, pbMonthlyCheckpoint, pbRecompute, pbRecomputeCompany } from '@/lib/functions/point-b'
 import { commCampaignRun, commCampaignWatchdog } from '@/lib/functions/comm-campaigns'
 import { commBotReply, commEscalations } from '@/lib/functions/comm'
 import { processOmnichannelMessage } from '@/lib/functions/process-omnichannel-message'
@@ -45,5 +45,7 @@ export const { GET, POST, PUT } = serve({
     pbRecompute,
     pbRecomputeCompany,
     pbMonthlyCheckpoint,
+    // Point B invites created outside the working hours: email / Telegram in the next window (*/15, ≤ 10 per step).
+    pbInviteExternal,
   ],
 })

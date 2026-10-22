@@ -123,6 +123,12 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()
 
+  const jsonText = (r: Row, c: string): unknown => {
+    const [col, key] = c.split('->>')
+    const obj = r[col] as Record<string, unknown> | null | undefined
+    const v = obj && typeof obj === 'object' ? obj[key] : undefined
+    return v == null ? null : String(v)
+  }
   const client = {
     from(table: string) {
       let op: 'select' | 'insert' | 'update' | 'delete' | 'upsert' = 'select'
@@ -181,7 +187,8 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
         update: (p: Row) => { op = 'update'; payload = p; return b },
         upsert: (p: Row | Row[], o?: { onConflict?: string }) => { op = 'upsert'; payload = p; conflictCols = (o?.onConflict ?? '').split(',').map((s) => s.trim()).filter(Boolean); return b },
         delete: () => { op = 'delete'; return b },
-        eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
+        // `col->>key` reads a text field of a jsonb column (PostgREST)
+        eq: (c: string, v: unknown) => { filters.push((r) => (c.includes('->>') ? jsonText(r, c) : r[c]) === v); return b },
         neq: (c: string, v: unknown) => { filters.push((r) => r[c] !== v); return b },
         is: (c: string, v: unknown) => { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return b },
         in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b },

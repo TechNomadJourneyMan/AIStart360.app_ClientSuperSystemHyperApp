@@ -1,4 +1,6 @@
 import { inngest } from '@/lib/inngest'
+import { isWithinWindow } from '@/lib/comm/schedule'
+import { deliverPendingExternal, loadInviteWindow, type PendingSweepResult } from '@/lib/point-b/invites/deliver'
 import { getSetting } from '@/lib/settings/store'
 import { createServiceClient } from '@/lib/supabase-service'
 import { listPlanCompanies, monthlyReconciliation, type PlanCompany, type ReconciliationOutcome } from '@/lib/point-b/planfact/batch'
@@ -178,4 +180,45 @@ export const pbMonthlyCheckpoint = inngest.createFunction(
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
   async ({ event, step }: { event: PbEvent; step: PbStep }) => runMonthlyReconciliation({ event, step }),
+)
+
+// ─── Deferred external invites (spec §12.1: messengers only in the working hours) ───────────────────────────────
+
+/** Batches (≤ 10 invites each, one short step) per sweep run; the next run comes in 15 minutes. */
+export const INVITE_SWEEP_BATCHES = 5
+export const INVITE_BATCH_PAUSE = '5s'
+
+export interface InviteSweepDeps {
+  now?: () => Date
+  inWindow?: (now: Date) => Promise<boolean>
+  sweep?: (now: Date) => Promise<PendingSweepResult>
+}
+
+/**
+ * Invites created outside the working hours wait as `delivered.external = 'pending'`; every 15 minutes inside the
+ * window this sends them in batches of ten, one short step each, a step.sleep between. Outside the window it
+ * does not read the invites at all (only the cached settings).
+ */
+export async function runInviteSweep({ step }: { step: PbStep }, deps: InviteSweepDeps = {}) {
+  const now = deps.now ?? (() => new Date())
+  const inWindow = deps.inWindow ?? (async (at: Date) => isWithinWindow(at, await loadInviteWindow()))
+  const sweep = deps.sweep ?? ((at: Date) => deliverPendingExternal(createServiceClient(), at))
+  const open = await step.run('window', () => inWindow(now()))
+  if (!open) return { skipped: 'outside_window' }
+  let sent = 0
+  let processed = 0
+  for (let i = 0; i < INVITE_SWEEP_BATCHES; i++) {
+    const r = await step.run(`batch-${i}`, () => sweep(now()))
+    processed += r.processed
+    sent += r.sent
+    if (!r.more || r.skipped) break
+    if (i < INVITE_SWEEP_BATCHES - 1) await step.sleep(`pause-${i}`, INVITE_BATCH_PAUSE)
+  }
+  return { processed, sent }
+}
+
+export const pbInviteExternal = inngest.createFunction(
+  { id: 'pb-invite-external', retries: 1, concurrency: { limit: 1 }, triggers: [{ cron: '*/15 * * * *' }] },
+  // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
+  async ({ step }: { step: PbStep }) => runInviteSweep({ step }),
 )

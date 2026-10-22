@@ -17,6 +17,7 @@ const n = vi.hoisted(() => ({
   gates: false,
   tier: 'pro' as 'pro' | 'free',
   impersonating: false,
+  comm: [] as Array<{ userId: string; channels: string[]; subject?: string | null; body: string; authorKind: string }>,
 }))
 
 vi.mock('@/lib/notifications/notify', () => ({
@@ -25,6 +26,13 @@ vi.mock('@/lib/notifications/notify', () => ({
     const ch = input.channels ?? {}
     const ext = !n.externalFails
     return { ok: true, delivered: { inApp: ch.inApp !== false, email: ext && ch.email === true, telegram: ext && ch.telegram === true } }
+  }),
+}))
+// The external channel goes through lib/comm (the client's conversation + email / Telegram).
+vi.mock('@/lib/comm/send', () => ({
+  sendToUser: vi.fn(async (input: { userId: string; channels: string[]; subject?: string | null; body: string; authorKind: string }) => {
+    n.comm.push(input)
+    return { ok: !n.externalFails, threadId: 't', groupId: 'g', messages: [] }
   }),
 }))
 vi.mock('@/lib/notifications/store', () => ({
@@ -38,6 +46,11 @@ vi.mock('@/lib/notifications/store', () => ({
   }),
   releaseSend: vi.fn(async (id: string) => { n.sends = n.sends.filter((s) => s.id !== id) }),
 }))
+// The settings table is never read in tests: the registry defaults (working hours Mon–Fri 09:00–19:00 Almaty).
+vi.mock('@/lib/settings/store', async () => {
+  const { SETTINGS } = await import('@/lib/settings/registry')
+  return { getSetting: async (k: keyof typeof SETTINGS) => structuredClone(SETTINGS[k].default) }
+})
 vi.mock('@/lib/settings/system-settings', () => ({ getAccessGatesEnabled: async () => n.gates }))
 vi.mock('@/lib/access/server', async () => {
   const { entitlementsFor } = await import('@/lib/access/entitlements')
@@ -112,6 +125,7 @@ beforeEach(() => {
   n.gates = false
   n.tier = 'pro'
   n.impersonating = false
+  n.comm = []
 })
 
 describe('createInvites / listActiveInvites / patchInvite', () => {
@@ -200,16 +214,21 @@ describe('deliverInvite', () => {
     expect(isoWeek(new Date('2026-10-26T00:00:00Z'))).toBe('2026-W44')
     expect(isoWeek(new Date('2027-01-01T12:00:00Z'))).toBe('2026-W53')
 
-    // reminders: email ON by default → the first invite of the week goes out
+    // reminders: email ON by default → the first invite of the week goes out (Thursday 14:00 Almaty — working hours)
     const first = await deliverInvite(h.sb, { invite: invite('i-1'), userId: CLIENT, now: NOW, pro: true, impersonating: false })
     expect(first).toEqual({ bell: true, external: 'sent' })
+    expect(n.notify).toHaveLength(1)
     expect(n.notify[0]).toMatchObject({ category: 'reminders', dedupeKey: 'pb_invite:i-1:app', channels: { email: false, telegram: false } })
-    expect(n.notify[1]).toMatchObject({ category: 'reminders', dedupeKey: 'pb_invite:i-1:ext', channels: { inApp: false, email: true, telegram: false } })
+    // through lib/comm as «system», to the channels the client chose, with the link to the invite
+    expect(n.comm).toHaveLength(1)
+    expect(n.comm[0]).toMatchObject({ userId: CLIENT, channels: ['email'], authorKind: 'system', subject: 'Кассовый разрыв в месяце 5' })
+    expect(n.comm[0].body).toContain('Кассовый разрыв в месяце 5\n\nТекст\n\nОткрыть: ')
+    expect(n.comm[0].body).toContain('/client/point-b?tab=whatif')
     expect(n.sends.map((s) => s.dedupe_key)).toEqual([`pb_invite_ext:${CLIENT}:2026-W43`])
 
-    // the second invite of the same week: bell only
-    expect(await deliverInvite(h.sb, { invite: invite('i-2'), userId: CLIENT, now: at(3), pro: true, impersonating: false })).toEqual({ bell: true, external: 'capped' })
-    expect(n.notify.filter((x) => x.dedupeKey?.endsWith(':ext'))).toHaveLength(1)
+    // the second invite of the same week (Friday, working hours): bell only
+    expect(await deliverInvite(h.sb, { invite: invite('i-2'), userId: CLIENT, now: at(1), pro: true, impersonating: false })).toEqual({ bell: true, external: 'capped' })
+    expect(n.comm).toHaveLength(1)
     // next week: again one
     expect((await deliverInvite(h.sb, { invite: invite('i-3'), userId: CLIENT, now: at(5), pro: true, impersonating: false })).external).toBe('sent')
 
@@ -219,10 +238,12 @@ describe('deliverInvite', () => {
     expect(await deliverInvite(h.sb, { invite: invite('i-4'), userId: CLIENT, now: NOW, pro: true, impersonating: false })).toEqual({ bell: true, external: 'off' })
     expect(n.sends).toEqual([])
 
-    // a recommendation invite uses the «Эксперт» category
-    n.recipient = { ...n.recipient, preferences: {} }
+    // a recommendation invite uses the «Эксперт» category; Telegram linked and on → both channels
+    n.recipient = { ...n.recipient, telegramChatId: '42', preferences: { notifications: { expert: { telegram: true } } } }
     await deliverInvite(h.sb, { invite: { ...invite('i-5'), kind: 'recommendation' }, userId: CLIENT, now: NOW, pro: true, impersonating: false })
     expect(n.notify.at(-1)).toMatchObject({ category: 'expert' })
+    expect(n.comm.at(-1)?.channels).toEqual(['email', 'telegram'])
+    n.recipient = { ...n.recipient, telegramChatId: null, preferences: {} }
 
     // not PRO → bell only
     n.sends = []
@@ -255,7 +276,7 @@ describe('runInviteRules', () => {
     expect(invites()[0]).toMatchObject({ title: 'Цель требует роста конверсии с 12,0% до 15,1%', href: '/client/point-b?tab=strategy', kind: 'insight' })
     // every new invite was delivered: a bell each, one external for the week
     expect(n.notify.filter((x) => x.dedupeKey?.endsWith(':app'))).toHaveLength(3)
-    expect(n.notify.filter((x) => x.dedupeKey?.endsWith(':ext'))).toHaveLength(1)
+    expect(n.comm).toHaveLength(1)
     expect(invites()[0].delivered).toMatchObject({ external: 'sent' })
     // a second run creates nothing new (dedupe)
     expect(await runInviteRules(h.sb, { userId: CLIENT, companyId: COMPANY, now: at(1) })).toEqual({ created: 0, skipped: 3 })
