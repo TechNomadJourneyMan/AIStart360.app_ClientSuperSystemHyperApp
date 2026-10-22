@@ -15,11 +15,14 @@ import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { trackEvent } from '@/lib/events/track'
 import { notifyAdmins } from '@/lib/notifications'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { resolveTenant, tenantErrorMessage } from '@/lib/tenancy'
 import { DOCUMENT_TYPES } from './doc-types'
 import { finalizeUpload, type FinalizeOutcome } from './finalize'
 import { findDuplicate, insertDocument } from './repository'
+import { linkDocumentToQuestion, QUESTION_KEY_RE } from './question-link'
 import { documentStorage, LEGACY_UPLOAD_BUCKETS, parseStorageUrl, UPLOAD_BUCKET } from './storage'
 
 const quarter = z.enum(['Q1', 'Q2', 'Q3', 'Q4'])
@@ -34,6 +37,8 @@ const storagePathBody = z.object({
   period: z.object({ quarter: quarter.nullish(), year: year.nullish() }).nullish(),
   period_quarter: quarter.nullish().or(z.literal('')),
   period_year: year.nullish(),
+  /** Questionnaire question the file is attached to (answer editor; migration 131). */
+  question_key: z.string().regex(QUESTION_KEY_RE).nullish(),
 })
 
 const legacyBody = z.object({
@@ -43,6 +48,7 @@ const legacyBody = z.object({
   company_id: z.string().min(1).max(100).nullish(),
   period_quarter: quarter.nullish().or(z.literal('')),
   period_year: year.nullish(),
+  question_key: z.string().regex(QUESTION_KEY_RE).nullish(),
 })
 
 const json = (status: number, body: Record<string, unknown>) => NextResponse.json(body, { status })
@@ -74,6 +80,7 @@ export async function handleDocumentFinalize(req: Request, mode: FinalizeMode): 
   let periodQuarter: string | null
   let periodYear: number | null
   let allowedBuckets: readonly string[]
+  let questionKey: string | null
 
   if (mode === 'storage_path' || hasPath) {
     const parsed = storagePathBody.safeParse(raw)
@@ -87,6 +94,7 @@ export async function handleDocumentFinalize(req: Request, mode: FinalizeMode): 
     periodQuarter = b.period?.quarter ?? (b.period_quarter || null)
     periodYear = b.period?.year ?? b.period_year ?? null
     allowedBuckets = mode === 'legacy' ? LEGACY_UPLOAD_BUCKETS : [UPLOAD_BUCKET]
+    questionKey = b.question_key ?? null
   } else {
     const parsed = legacyBody.safeParse(raw)
     if (!parsed.success) return json(400, { ok: false, code: 'BAD_REQUEST', error: badRequestMessage(parsed.error) })
@@ -103,6 +111,7 @@ export async function handleDocumentFinalize(req: Request, mode: FinalizeMode): 
     periodQuarter = b.period_quarter || null
     periodYear = b.period_year ?? null
     allowedBuckets = LEGACY_UPLOAD_BUCKETS
+    questionKey = b.question_key ?? null
   }
 
   const tenant = await resolveTenant({ companyId, access: 'read' })
@@ -136,6 +145,18 @@ export async function handleDocumentFinalize(req: Request, mode: FinalizeMode): 
     },
   )
 
+  // Attached from the answer editor: the row remembers the question. A file
+  // the user had already uploaded is attached only when it is not on another
+  // question. Best-effort — the upload itself has succeeded.
+  if (questionKey && (outcome.kind === 'created' || outcome.kind === 'duplicate')) {
+    await linkDocumentToQuestion(linkClient(), {
+      documentId: outcome.document.id,
+      userId: user.id,
+      questionKey,
+      onlyIfUnlinked: outcome.kind === 'duplicate',
+    })
+  }
+
   if (outcome.kind === 'created') {
     const doc = outcome.document
     void trackEvent({
@@ -147,6 +168,14 @@ export async function handleDocumentFinalize(req: Request, mode: FinalizeMode): 
     }, user.id)
   }
   return finalizeResponse(outcome)
+}
+
+function linkClient(): Pick<SupabaseClient, 'from'> {
+  try {
+    return createServiceClient()
+  } catch {
+    return createServerClient()
+  }
 }
 
 export function finalizeResponse(outcome: FinalizeOutcome): NextResponse {

@@ -19,12 +19,12 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
 
   const field = (key: string, label: string, type: 'text' | 'number' | 'textarea' = 'text', placeholder?: string) => (
     <div>
-      <label className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
+      <label htmlFor={key} className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
       {type === 'textarea' ? (
-        <textarea value={v(key)} onChange={e => onChange(key, e.target.value)} placeholder={placeholder}
+        <textarea id={key} value={v(key)} onChange={e => onChange(key, e.target.value)} placeholder={placeholder}
           rows={3} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all resize-none" />
       ) : (
-        <input type={type} value={type === 'number' ? n(key) : v(key)}
+        <input id={key} type={type} value={type === 'number' ? n(key) : v(key)}
           onChange={e => onChange(key, type === 'number' ? toNumberOrNull(e.target.value) : e.target.value)}
           placeholder={placeholder}
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all" />
@@ -34,8 +34,8 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
 
   const select = (key: string, label: string, options: {value:string,label:string}[]) => (
     <div>
-      <label className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
-      <select value={v(key)} onChange={e => onChange(key, e.target.value)}
+      <label htmlFor={key} className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
+      <select id={key} value={v(key)} onChange={e => onChange(key, e.target.value)}
         className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface focus:border-primary/50 focus:outline-none transition-all">
         <option value="">-- Выберите --</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

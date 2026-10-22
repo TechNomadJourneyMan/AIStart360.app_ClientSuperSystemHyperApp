@@ -87,7 +87,7 @@ export default function Step4OrgStructureForm({ data, onChange }: Step4OrgStruct
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <FieldLabel htmlFor="s4m_strategic_planning">Стратегическое планирование</FieldLabel>
-            <input id="s4m_strategic_planning" type="text" value={str(data.s4m_strategic_planning)} onChange={(e) => onChange('s4m_strategic_planning', e.target.value)} placeholder="Опишите процесс планирования..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+            <input id="s4m_strategic_planning" data-rich-editor type="text" value={str(data.s4m_strategic_planning)} onChange={(e) => onChange('s4m_strategic_planning', e.target.value)} placeholder="Опишите процесс планирования..." className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
           </div>
           <div>
             <FieldLabel htmlFor="s4m_planning_team_or_solo">Планирование</FieldLabel>

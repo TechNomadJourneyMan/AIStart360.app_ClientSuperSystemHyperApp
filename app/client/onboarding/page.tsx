@@ -14,6 +14,9 @@ import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
 import FieldIssueNote, { questionLabel } from '@/components/onboarding/FieldIssueNote'
+import SurveyFieldLayer, { type EditorRequest } from '@/components/onboarding/SurveyFieldLayer'
+import AnswerEditorModal, { type AnswerEditorTarget } from '@/components/onboarding/AnswerEditorModal'
+import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { profanityRejection } from '@/lib/moderation/client'
 
 // Step form components
@@ -89,6 +92,9 @@ function OnboardingPageInner() {
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Who filled each answer (line under the field) and the open answer editor.
+  const [attribution, setAttribution] = useState<Record<string, AnswerAttribution>>({})
+  const [editor, setEditor] = useState<AnswerEditorTarget | null>(null)
   const retryAttemptRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const submittedRef = useRef(false)
@@ -96,6 +102,10 @@ function OnboardingPageInner() {
   // Refs mirror state for async save logic (no stale closures).
   const stepDataRef = useRef<Record<string, unknown>>({})
   const dirtyRef = useRef<Set<string>>(new Set())
+  // Keys whose value was accepted from a document (→ «ИИ (из документов)»).
+  const originRef = useRef<Map<string, 'document'>>(new Map())
+  // The last save failure, for the answer editor's own error line.
+  const lastSaveErrorRef = useRef<string | null>(null)
   const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true))
   const userIdRef = useRef<string | null>(null)
   const companyIdRef = useRef<string | null>(null)
@@ -142,7 +152,10 @@ function OnboardingPageInner() {
           fetch('/api/v1/onboarding/company', { credentials: 'include' }),
         ])
         const surveyJson = await surveyRes.json().catch(() => null)
-        if (surveyRes.ok && surveyJson?.ok) server = surveyJson.data?.answers ?? {}
+        if (surveyRes.ok && surveyJson?.ok) {
+          server = surveyJson.data?.answers ?? {}
+          setAttribution(surveyJson.data?.attribution ?? {})
+        }
         else setSaveError('Не удалось загрузить сохранённые ответы. Обновите страницу, прежде чем продолжать.')
         const companyJson = await companyRes.json().catch(() => null)
         if (companyRes.ok && companyJson?.ok && companyJson.data?.id) setCompanyId(String(companyJson.data.id))
@@ -232,10 +245,16 @@ function OnboardingPageInner() {
 
         const formatted: Record<string, { value: unknown }> = {}
         for (const k of keys) formatted[k] = { value: snapshot[k] }
+        const origins: Record<string, 'document'> = {}
+        for (const k of keys) if (originRef.current.get(k) === 'document') origins[k] = 'document'
+        lastSaveErrorRef.current = null
         const res = await fetch('/api/v1/onboarding/survey', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: Math.min(step, TOTAL_STEPS), answers: formatted, final: opts.final === true, autosave: quiet }),
+          body: JSON.stringify({
+            step: Math.min(step, TOTAL_STEPS), answers: formatted, final: opts.final === true, autosave: quiet,
+            ...(Object.keys(origins).length ? { origins } : {}),
+          }),
         })
         const json = await res.json().catch(() => null)
         if (res.status === 401) throw new Error('Сессия истекла — войдите заново. Ответы сохранены на этом устройстве.')
@@ -245,8 +264,13 @@ function OnboardingPageInner() {
 
         // Clear only the keys that did not change again while the request was in flight.
         for (const k of keys) {
-          if (Object.is(stepDataRef.current[k], snapshot[k])) dirtyRef.current.delete(k)
+          if (Object.is(stepDataRef.current[k], snapshot[k])) {
+            dirtyRef.current.delete(k)
+            originRef.current.delete(k)
+          }
         }
+        const saved = json.data?.attribution as Record<string, AnswerAttribution> | undefined
+        if (saved && Object.keys(saved).length) setAttribution((prev) => ({ ...prev, ...saved }))
         persistDraft()
         setSaveError(null)
         setFieldIssue(null)
@@ -255,6 +279,7 @@ function OnboardingPageInner() {
         setSaveState(dirtyRef.current.size ? 'dirty' : 'saved')
         return true
       } catch (e) {
+        lastSaveErrorRef.current = e instanceof Error ? e.message : String(e)
         if (e instanceof FieldRejectedError) {
           // Not a network problem: no retry. Shown even for a background save —
           // the answer stays in the form and in the local draft until fixed.
@@ -321,9 +346,34 @@ function OnboardingPageInner() {
       setFieldIssue(null)
       setSaveError(null)
     }
+    originRef.current.delete(key)
     dirtyRef.current.add(key)
     setSaveState((s) => (s === 'saving' ? s : 'dirty'))
     setStepData(prev => ({ ...prev, [key]: value }))
+  }
+
+  // A value accepted from a document: saved like a typed answer, attributed to the AI.
+  const applySuggestion = (key: string, value: unknown) => {
+    handleFieldChange(key, value)
+    originRef.current.set(key, 'document')
+  }
+
+  // The answer editor (modal): a click on a text field opens it; «Сохранить»
+  // goes through the same save path as the inline field.
+  const openEditor = useCallback((req: EditorRequest) => {
+    setEditor({ ...req, value: stepDataRef.current[req.key] ?? '' })
+  }, [])
+  const closeEditor = useCallback(() => setEditor(null), [])
+  const saveFromEditor = async (key: string, value: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    handleFieldChange(key, value)
+    stepDataRef.current = { ...stepDataRef.current, [key]: value }
+    const ok = await saveToServer(currentStepRef.current)
+    if (ok) return { ok: true }
+    const msg = lastSaveErrorRef.current
+    return {
+      ok: false,
+      error: msg && /[а-яё]/i.test(msg) ? msg : 'Не удалось сохранить ответ. Проверьте соединение и попробуйте ещё раз — текст не потерян.',
+    }
   }
 
   const goToStep = async (target: number) => {
@@ -529,8 +579,12 @@ function OnboardingPageInner() {
           ) : (
             <>
               {/* F-076: answers found in the user's documents — accept = normal field change + autosave */}
-              {hasDocs && <DocumentSuggestions step={currentStep} answers={stepData} onApply={handleFieldChange} />}
-              {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
+              {hasDocs && <DocumentSuggestions step={currentStep} answers={stepData} onApply={applySuggestion} />}
+              {StepForm && (
+                <SurveyFieldLayer attribution={attribution} viewer={{ viewerId: userId, viewerIsOwner: true }} onOpenEditor={openEditor}>
+                  <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
+                </SurveyFieldLayer>
+              )}
             </>
           )}
 
@@ -580,6 +634,8 @@ function OnboardingPageInner() {
             </p>
           </div>
         )}
+
+        <AnswerEditorModal target={editor} onSave={saveFromEditor} onClose={closeEditor} companyId={companyId} />
 
         {/* Consent */}
         <p className="text-[10px] text-on-surface-variant/40 text-center px-4">

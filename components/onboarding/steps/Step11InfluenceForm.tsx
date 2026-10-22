@@ -37,12 +37,14 @@ export function Step11InfluenceForm({ data, onChange }: Props) {
       <p className="text-xs text-on-surface-variant">
         Внесите данные людей и организаций, способных оказать влияние на ваш бизнес
       </p>
-      <DynamicTable
-        columns={COLUMNS}
-        rows={rows}
-        onChange={(newRows) => onChange('s11_influence_map', newRows)}
-        minRows={15}
-      />
+      <div id="s11_influence_map">
+        <DynamicTable
+          columns={COLUMNS}
+          rows={rows}
+          onChange={(newRows) => onChange('s11_influence_map', newRows)}
+          minRows={15}
+        />
+      </div>
     </div>
   )
 }

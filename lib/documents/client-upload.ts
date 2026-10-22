@@ -170,6 +170,8 @@ export interface UploadOptions {
   docType: DocumentTypeValue | string
   period?: { quarter?: 'Q1' | 'Q2' | 'Q3' | 'Q4' | null; year?: number | null } | null
   companyId?: string | null
+  /** Attach the file to this questionnaire question (answer editor). */
+  questionKey?: string | null
   /** Real phases of the flow (for the UI line, not a percentage). */
   onPhase?: (phase: 'storage' | 'register') => void
 }
@@ -253,6 +255,7 @@ export async function uploadClientDocument(
     doc_type: opts.docType,
     ...(period ? { period } : {}),
     ...(opts.companyId ? { company_id: opts.companyId } : {}),
+    ...(opts.questionKey ? { question_key: opts.questionKey } : {}),
   }
 
   let res: Response

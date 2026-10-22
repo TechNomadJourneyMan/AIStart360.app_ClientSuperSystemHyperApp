@@ -146,7 +146,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
 
   return (
     <div className="space-y-6">
-      <section>
+      <section id="s8n_metrics_table">
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface">
             <span className="material-symbols-outlined text-primary text-lg">monitoring</span>
