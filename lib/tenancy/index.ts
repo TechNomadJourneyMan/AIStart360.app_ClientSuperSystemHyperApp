@@ -97,12 +97,26 @@ async function defaultCompany(client: SupabaseClient, userId: string): Promise<{
   return { id: await legacyOwnedCompany(client, userId), legacy: false }
 }
 
+/** A read started ahead of need: its failure matters only if (and when) its result is used. */
+function ahead<T>(p: Promise<T>): Promise<T> {
+  p.catch(() => {})
+  return p
+}
+
+/**
+ * The caller's role in the company. The three helpers are asked at once (one round trip instead of up
+ * to three); the answer is taken in the same order as before — member, partner, staff — and a failure
+ * of a helper counts only when its answer is needed.
+ */
 async function roleFor(client: SupabaseClient, companyId: string): Promise<TenantRole | null> {
-  const member = await rpcValue<string>(client, 'company_member_role', { p_company_id: companyId })
+  const memberP = ahead(rpcValue<string>(client, 'company_member_role', { p_company_id: companyId }))
+  const partnerP = ahead(rpcValue<string>(client, 'partner_role_for_company', { p_company_id: companyId }))
+  const staffP = ahead(rpcValue<boolean>(client, 'is_platform_staff', {}))
+  const member = await memberP
   if (member.value && MEMBER_ROLES.has(member.value)) return member.value as TenantRole
-  const partner = await rpcValue<string>(client, 'partner_role_for_company', { p_company_id: companyId })
+  const partner = await partnerP
   if (partner.value && PARTNER_ROLES.has(partner.value)) return partner.value as TenantRole
-  const staff = await rpcValue<boolean>(client, 'is_platform_staff', {})
+  const staff = await staffP
   if (staff.value) return 'staff'
   return null
 }
@@ -128,11 +142,16 @@ export async function resolveTenantWith(
     if (!companyId) return { ok: false, status: 404, error: 'no_company' }
   }
 
-  const check = await rpcValue<boolean>(
+  // The access check, the role and the manage right are independent reads of the same session: they
+  // go out together (the role and the right are used only when the check lets the caller in).
+  const checkP = rpcValue<boolean>(
     client,
     access === 'manage' ? 'can_manage_company' : 'can_read_company',
     { p_company_id: companyId },
   )
+  const roleP = ahead(roleFor(client, companyId))
+  const manageP = access === 'manage' ? null : ahead(rpcValue<boolean>(client, 'can_manage_company', { p_company_id: companyId }))
+  const check = await checkP
 
   if (check.missing) {
     // 084 not applied: only the primary owner has access.
@@ -144,10 +163,8 @@ export async function resolveTenantWith(
   // 404 rather than 403: do not confirm that someone else's company exists.
   if (!check.value) return { ok: false, status: opts.companyId ? 404 : 403, error: opts.companyId ? 'no_company' : 'forbidden' }
 
-  const role = (await roleFor(client, companyId)) ?? 'owner'
-  const canManage = access === 'manage'
-    ? true
-    : Boolean((await rpcValue<boolean>(client, 'can_manage_company', { p_company_id: companyId })).value)
+  const role = (await roleP) ?? 'owner'
+  const canManage = manageP ? Boolean((await manageP).value) : true
 
   return { ok: true, tenant: { userId, companyId, role, canManage, legacy } }
 }
