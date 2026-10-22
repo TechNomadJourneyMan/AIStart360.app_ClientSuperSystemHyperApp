@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
+import { RouteProgress } from '@/components/navigation/RouteProgress'
 import { Providers } from './providers'
 import { getSiteUrl } from '@/lib/site-url'
 import './globals.css'
@@ -71,6 +72,9 @@ export default function RootLayout({
       <body className="font-body antialiased">
         {/* Top navigation progress bar — instant feedback on every click/route change */}
         <NextTopLoader color="#6effc0" height={2} showSpinner={false} shadow="0 0 8px #6effc0,0 0 4px #6effc0" />
+        {/* …and its safety net: finishes on every committed route change and
+            closes a bar that never finished (lib/route-progress.ts). */}
+        <RouteProgress />
         <Providers>{children}</Providers>
         {/* Single global sonner Toaster (PERF-09: the only toast system).
             mobileOffset clears the mobile bottom-nav (UX-07). */}

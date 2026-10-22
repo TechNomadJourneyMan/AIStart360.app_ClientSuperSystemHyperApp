@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useProgressRouter } from '@/hooks/useProgressRouter'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ClipboardList, Clock, CornerDownLeft, Loader2, Search, User, X } from 'lucide-react'
 import { useStaff } from './StaffContext'
@@ -47,7 +47,8 @@ type Item =
   | { kind: 'user'; key: string; label: string; hint: string; id: string }
 
 export function CommandPalette() {
-  const router = useRouter()
+  // Programmatic navigation also starts the global loading bar.
+  const router = useProgressRouter()
   const { can, me } = useStaff()
   const { base, nav: workspaceNav } = useWorkspace()
   const [open, setOpen] = useState(false)
