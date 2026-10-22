@@ -5,7 +5,7 @@ import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
 import { clearAllDrafts } from '@/lib/survey/draft'
-import { safeInternalPath } from '@/lib/safe-redirect'
+import { oauthCallbackUrl } from '@/lib/auth/login-links'
 import type { UserRole } from '@/types'
 
 /**
@@ -51,7 +51,7 @@ interface AuthState {
     organization?: string
     position?: string
   }) => Promise<void>
-  loginWithGoogle: (redirectPath?: string) => Promise<void>
+  loginWithGoogle: (redirectPath?: string | null) => Promise<void>
   logout: () => Promise<void>
   init: () => Promise<void>
   clearError: () => void
@@ -219,13 +219,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const supabase = createClient()
-      const next = safeInternalPath(redirectPath, '/dashboard')
-      const callbackUrl = new URL('/auth/callback', window.location.origin)
-      callbackUrl.searchParams.set('next', next)
+      // No `next` unless the caller had an explicit return path: the callback
+      // then lands by role (staff → GIGA panel), like the password login.
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: callbackUrl.toString(),
+          redirectTo: oauthCallbackUrl(window.location.origin, redirectPath),
         },
       })
       if (error) throw new Error(error.message)

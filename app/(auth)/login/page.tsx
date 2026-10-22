@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { postLoginPath } from '@/lib/role-landing'
+import { loginNotice } from '@/lib/auth/login-links'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -23,6 +24,8 @@ function LoginContent() {
   // Only honour internal `from` targets — never redirect off-origin.
   const rawFrom = searchParams.get('from')
   const from = safeInternalPath(rawFrom, '/dashboard')
+  // Why the user was sent back here (expired email link, blocked account).
+  const notice = loginNotice(searchParams)
 
   useEffect(() => {
     if (user) {
@@ -235,6 +238,18 @@ function LoginContent() {
           )}
           <div className="mb-6" />
 
+          {notice && !error && (
+            <div role="status" className="mb-4 p-3 bg-surface-container/60 border border-white/[0.08] rounded-xl flex items-start gap-2">
+              <span className="material-symbols-outlined text-primary text-lg mt-0.5">info</span>
+              <p className="text-[13px] text-on-surface-variant flex-1">
+                {notice}{' '}
+                {searchParams.get('error') && (
+                  <Link href="/forgot-password" className="text-primary hover:underline">Запросить новую ссылку</Link>
+                )}
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
               <span className="material-symbols-outlined text-error text-lg mt-0.5">error</span>
@@ -322,7 +337,7 @@ function LoginContent() {
 
           {/* Social buttons */}
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => loginWithGoogle(from)} disabled={isLoading}
+            <button onClick={() => loginWithGoogle(rawFrom)} disabled={isLoading}
               className="h-11 bg-surface-container/50 border border-white/[0.06] rounded-xl flex items-center justify-center gap-2 text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all">
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
