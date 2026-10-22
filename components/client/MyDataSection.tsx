@@ -12,10 +12,13 @@ import { DocumentStageSteps, DocumentStatusChip, toneTextClass } from '@/compone
 import { useClientDocuments } from '@/hooks/useClientDocuments'
 import { documentTypeLabel } from '@/lib/documents/doc-type-labels'
 import { documentSize, documentStatusView, formatDocumentSize } from '@/lib/documents/status-view'
+import { formatAttribution, type AnswerAttribution } from '@/lib/survey/attribution-label'
 
 interface SurveyData {
   answers: Record<string, unknown>
   completed_steps: number[]
+  /** Who filled each answer (migration 131). */
+  attribution?: Record<string, AnswerAttribution>
 }
 
 interface CompanyData {
@@ -255,6 +258,11 @@ export default function MyDataSection({ userId }: Props) {
                         {f.label}
                       </span>
                       <span className="text-sm text-on-surface mt-0.5">{f.value}</span>
+                      {survey?.attribution?.[f.key] && (
+                        <span className="mt-0.5 text-[10px] text-on-surface-variant/70">
+                          {formatAttribution(survey.attribution[f.key], { viewerIsOwner: true })}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

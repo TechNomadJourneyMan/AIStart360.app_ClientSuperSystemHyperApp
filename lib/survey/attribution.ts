@@ -30,7 +30,7 @@ export interface AnswerAuthor {
   role: AnswerAuthorRole
 }
 
-export interface AttributionColumns {
+export type AttributionColumns = {
   updated_by: string | null
   updated_by_role: AnswerAuthorRole
   updated_at: string

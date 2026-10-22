@@ -11,6 +11,7 @@ import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { answersProfanityResponse } from '@/lib/moderation/http'
 import { syncGoalsFromSurvey, surveyWriterFor, touchesGoalKeys } from '@/lib/goals/survey-sync'
+import { loadAttribution, type AttributionSourceRow } from '@/lib/survey/attribution-read'
 
 // GET   /api/giga-admin/users/:id/survey?historyPage=1 — all answers grouped by
 //       theme + change history (who / when / old → new).
@@ -36,19 +37,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .range((page - 1) * HISTORY_PAGE, page * HISTORY_PAGE - 1)
   if (key && /^[a-z0-9_]{2,80}$/.test(key)) hq = hq.eq('question_key', key)
   const [answersRes, historyRes] = await Promise.all([
-    sb.from('survey_answers').select('question_key, answer, answered_at, step').eq('user_id', params.id),
+    // '*': the author columns of migration 131 are read when present.
+    sb.from('survey_answers').select('*').eq('user_id', params.id),
     hq,
   ])
   if (answersRes.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить анкету' }, { status: 500 })
 
   const answers: Record<string, unknown> = {}
   const answeredAt: Record<string, string> = {}
-  for (const r of answersRes.data ?? []) {
-    if (!isWizardVisibleKey(String(r.question_key))) continue
+  const visible = ((answersRes.data ?? []) as AttributionSourceRow[]).filter((r) => isWizardVisibleKey(String(r.question_key)))
+  for (const r of visible) {
     answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value
     if (r.answered_at) answeredAt[r.question_key] = String(r.answered_at)
   }
   const summary = buildUserProfileSummary(answers)
+  // Who filled each answer: «Заполнил пользователь», «Изменил эксперт Иван Петров» …
+  const attribution = await loadAttribution(sb, visible)
 
   // Resolve who changed what: people ids → emails.
   const history = historyRes.data ?? []
@@ -63,6 +67,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     data: {
       raw: answers,
       answeredAt,
+      attribution,
       sections: summary.sections,
       fill: summary.fill,
       percent: summary.percent,

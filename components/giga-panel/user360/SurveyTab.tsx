@@ -10,6 +10,7 @@ import {
 import { SURVEY_LABELS } from '@/lib/survey-labels'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { STEPS } from '@/components/onboarding/constants/step-config'
+import { formatAttribution, type AnswerAttribution } from '@/lib/survey/attribution-label'
 
 interface Section {
   id: string; title: string; description: string; steps: number[]; filled: number; total: number
@@ -23,6 +24,8 @@ interface HistoryRow {
 interface SurveyPayload {
   data: {
     raw: Record<string, unknown>; answeredAt: Record<string, string>; sections: Section[]; percent: number
+    /** Author of each answer (migration 131); absent on an older server. */
+    attribution?: Record<string, AnswerAttribution>
     history: HistoryRow[]; historyTotal: number; historyPage: number; historyPageSize: number
   }
 }
@@ -138,7 +141,11 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
                   <div key={a.key} className="group grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] sm:gap-3">
                     <dt className="text-[11px] text-slate-500">
                       {a.label}
-                      {d.answeredAt[a.key] && <span className="block text-[10px] text-slate-700">{fmtDateTime(d.answeredAt[a.key])}</span>}
+                      {d.attribution?.[a.key] ? (
+                        <span className="block text-[10px] text-slate-600" title={d.answeredAt[a.key] ? fmtDateTime(d.answeredAt[a.key]) : undefined}>
+                          {formatAttribution(d.attribution[a.key])}
+                        </span>
+                      ) : d.answeredAt[a.key] && <span className="block text-[10px] text-slate-700">{fmtDateTime(d.answeredAt[a.key])}</span>}
                     </dt>
                     <dd className="whitespace-pre-line break-words text-xs text-slate-200">{a.value}</dd>
                     <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
