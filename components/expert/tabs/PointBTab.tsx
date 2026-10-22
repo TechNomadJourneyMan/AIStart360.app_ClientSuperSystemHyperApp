@@ -7,6 +7,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import PointBView from '@/components/point-b/PointBView'
+import { PlanFactPanel } from '@/components/giga-panel/user360/point-b/PlanFactPanel'
 import type { PointBV2 } from '@/lib/point-b/engine'
 
 interface ExpertVersion { expert_notes: string; author_name?: string | null; created_at?: string; is_approved?: boolean }
@@ -106,6 +107,9 @@ export function PointBTab({ clientId }: { clientId: string }) {
           )}
         </div>
       </div>
+
+      {/* Plan-fact of the approved plan, «Факт за месяц» and the button «Пересчитать» (the server checks the assignment). */}
+      <PlanFactPanel userId={clientId} portal="expert" />
 
       <PointBView pointB={pointB} loading={loading} error={error} reason={reason} onRecalculate={load} actionPlanUserId={clientId} expertNote={version} />
     </div>

@@ -7,6 +7,7 @@ import type { PlanVersionRow } from '@/lib/point-b/plan/types'
 import { ErrorState, useGigaQuery } from '../kit'
 import { FinmodelPanel } from './point-b/FinmodelPanel'
 import { GoalReviewPanel } from './point-b/GoalReviewPanel'
+import { PlanFactPanel } from './point-b/PlanFactPanel'
 import { PlanPanel } from './point-b/PlanPanel'
 import { RecommendationsPanel } from './point-b/RecommendationsPanel'
 import { WhatIfSavedPanel } from './point-b/WhatIfSavedPanel'
@@ -20,6 +21,7 @@ import { usePlanController } from './point-b/usePlanController'
  * у кого есть clients.review. Там же — «Финмодель» клиента: проверка допущений (деньги, расходы,
  * долги) и подтверждение значений, и сохранённые клиентом «что если» (только чтение).
  * И «Рекомендации клиента»: очередь проверки рекомендаций правил и ИИ — клиент видит только подтверждённые.
+ * И «План-факт и пересчёт»: сверка «план — факт» по месяцам, «Факт за месяц» от эксперта, версии и кнопка «Пересчитать».
  */
 
 const NO_VERSIONS: PlanVersionRow[] = []
@@ -49,6 +51,8 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
   return (
     <div className="space-y-4">
       {canReview && <PlanWorkspace userId={userId} onChanged={reload} />}
+      {/* Plan-fact of the approved version and the button «Пересчитать» (staff only, checked on the server). */}
+      {canReview && <PlanFactPanel userId={userId} />}
       {/* The money of the client (level 2): the expert checks the assumptions and verifies them. */}
       {canReview && <FinmodelPanel userId={userId} />}
       {/* What the client calculated and saved in «Что если», read-only; a proposal arrives as a message. */}
