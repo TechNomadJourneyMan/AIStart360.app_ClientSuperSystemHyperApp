@@ -11,9 +11,25 @@ export const SURVEY_MAX_ANSWERS = 400
 const MAX_VALUE_BYTES = 64 * 1024
 const KEY_RE = /^[a-z][a-z0-9_]{1,79}$/
 
+// `{ value }`, or a mark (lib/survey/answer-value.ts): «не знаю»
+// `{ value: null, unknown: true }`, «примерно» `{ value, approx: true, range: [min, max] }`.
 const answerEnvelope = z
-  .object({ value: z.unknown() })
+  .object({
+    value: z.unknown(),
+    unknown: z.literal(true).optional(),
+    approx: z.literal(true).optional(),
+    range: z.tuple([z.number().finite(), z.number().finite()]).optional(),
+  })
   .strict()
+  .refine((a) => {
+    if (a.unknown) return a.value === null && !a.approx && a.range === undefined
+    if (a.approx) {
+      if (!a.range || typeof a.value !== 'number' || !Number.isFinite(a.value)) return false
+      const [min, max] = a.range
+      return min <= max && a.value >= min && a.value <= max
+    }
+    return a.range === undefined
+  }, 'inconsistent «не знаю» / «примерно» answer')
   .refine((a) => {
     try {
       return JSON.stringify(a.value ?? null).length <= MAX_VALUE_BYTES
