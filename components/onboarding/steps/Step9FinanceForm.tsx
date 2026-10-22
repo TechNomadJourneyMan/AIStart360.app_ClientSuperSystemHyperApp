@@ -1,6 +1,8 @@
 'use client'
 
 import { NumberField, type NumberFieldProps } from '@/components/onboarding/shared/NumberField'
+import { FieldNote } from '@/components/onboarding/shared/FieldNote'
+import { FIELD_NOTES } from '@/components/onboarding/constants/step-config'
 
 interface Props { data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }
 
@@ -9,7 +11,7 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
   // Numbers: one NumberField (empty stays EMPTY — it used to render 0, users
   // skipped it and a loss «−» snapped back to 0; «Не знаю» / «примерно» chips).
   const num = (key: string, label: string, props: Omit<NumberFieldProps, 'id' | 'label' | 'value' | 'onChange'> = {}) => (
-    <NumberField id={key} label={label} value={data[key]} onChange={(x) => onChange(key, x)} {...props} />
+    <NumberField id={key} label={label} value={data[key]} onChange={(x) => onChange(key, x)} note={FIELD_NOTES[key]} {...props} />
   )
   const money = (key: string, label: string, props: Omit<NumberFieldProps, 'id' | 'label' | 'value' | 'onChange'> = {}) =>
     num(key, label, { unit: '₸', integer: true, allowApprox: true, ...props })
@@ -17,6 +19,7 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
   const field = (key: string, label: string, type: 'text' | 'textarea' = 'text', placeholder?: string) => (
     <div>
       <label htmlFor={key} className="block text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1.5">{label}</label>
+      <FieldNote fieldKey={key} />
       {type === 'textarea' ? (
         <textarea id={key} value={v(key)} onChange={e => onChange(key, e.target.value)} placeholder={placeholder}
           rows={3} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all resize-none" />

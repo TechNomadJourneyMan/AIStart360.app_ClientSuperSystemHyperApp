@@ -11,6 +11,7 @@ import { getSectionByStep } from '@/lib/assistant/sections'
 import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, writeDraft } from '@/lib/survey/draft'
 import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@/lib/survey/progress'
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
+import StepHeader from '@/components/onboarding/StepHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
@@ -527,28 +528,8 @@ function OnboardingPageInner() {
           })}
         </div>
 
-        {!isReview && (<>
-        {/* Step header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <span className="material-symbols-outlined text-lg text-primary">{stepConfig?.icon ?? 'description'}</span>
-            </div>
-            <div>
-              <p className="text-[10px] font-mono text-primary/60 uppercase tracking-[0.15em]">Шаг {currentStep}</p>
-              <h1 className="text-xl font-bold text-on-surface">{stepConfig?.title ?? `Шаг ${currentStep}`}</h1>
-            </div>
-          </div>
-
-          {/* Fill-in hint for this step */}
-          {stepConfig?.hint && (
-            <div className="flex items-start gap-2 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2">
-              <span className="material-symbols-outlined text-sm text-primary/70 mt-0.5 flex-shrink-0">lightbulb</span>
-              <p className="text-xs text-on-surface-variant leading-snug">{stepConfig.hint}</p>
-            </div>
-          )}
-        </div>
-        </>)}
+        {/* Step header: title, time, hint, «Зачем спрашиваем → что получите» */}
+        {!isReview && <StepHeader step={currentStep} config={stepConfig} fill={fill[currentStep - 1]} />}
 
         {saveError && (
           <div role="alert" className="mb-5 flex items-start gap-2 rounded-xl border border-error/30 bg-error/10 px-4 py-3">

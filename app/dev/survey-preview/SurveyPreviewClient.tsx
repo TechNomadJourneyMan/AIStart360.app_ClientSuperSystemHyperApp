@@ -11,6 +11,7 @@ import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
 import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@/lib/survey/progress'
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
+import StepHeader from '@/components/onboarding/StepHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
@@ -172,23 +173,7 @@ export default function SurveyPreviewClient({ variant, step }: { variant: Survey
             onEditStep={go} onBack={() => go(TOTAL_STEPS)} onSubmit={() => {}} />
         ) : (
           <>
-            <div className="mb-6">
-              <div className="mb-2 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
-                  <span className="material-symbols-outlined text-lg text-primary">{stepConfig?.icon ?? 'description'}</span>
-                </div>
-                <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary/60">Шаг {currentStep}</p>
-                  <h1 className="text-xl font-bold text-on-surface">{stepConfig?.title}</h1>
-                </div>
-              </div>
-              {stepConfig?.hint && (
-                <div className="flex items-start gap-2 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2">
-                  <span className="material-symbols-outlined mt-0.5 flex-shrink-0 text-sm text-primary/70">lightbulb</span>
-                  <p className="text-xs leading-snug text-on-surface-variant">{stepConfig.hint}</p>
-                </div>
-              )}
-            </div>
+            <StepHeader step={currentStep} config={stepConfig} fill={fill[currentStep - 1]} />
 
             <div className="mb-8">
               {variant === 'ai' && <DocumentSuggestions key={`sg-${currentStep}`} step={currentStep} answers={answers} onApply={onChange} />}

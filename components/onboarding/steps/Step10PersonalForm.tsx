@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { NumberField } from '@/components/onboarding/shared'
+import { FieldNote, NumberField } from '@/components/onboarding/shared'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step10PersonalFormProps {
@@ -176,6 +176,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
             <label htmlFor="s10_who_to_blame" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
               Кто виноват
             </label>
+            <FieldNote fieldKey="s10_who_to_blame" />
             <textarea
               id="s10_who_to_blame"
               rows={3}
@@ -191,6 +192,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
             <label htmlFor="s10_dept_assessment" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
               Оценка отделов
             </label>
+            <FieldNote fieldKey="s10_dept_assessment" />
             <textarea
               id="s10_dept_assessment"
               rows={3}
