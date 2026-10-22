@@ -15,8 +15,7 @@ import {
 } from '@/lib/survey/steps'
 import { buildSurveySummary, syncSurveyToGoogleSheet } from '@/lib/survey/export'
 import { spreadsheetUrl } from '@/lib/integrations/google-sheets'
-import { annualGoalFromAnswers } from '@/lib/survey/targets'
-import { syncRevenueGoal } from '@/lib/goals/store'
+import { syncGoalsFromSurvey, surveyWriterFor, touchesGoalKeys, type GoalActor } from '@/lib/goals/survey-sync'
 import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/completion-notice'
 import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
@@ -175,11 +174,26 @@ export async function POST(req: NextRequest) {
   const allRows = Array.from(merged.values())
   const progress = surveyProgressFromRows(allRows)
 
-  // Keep companies.target_revenue_* in sync with the step-1 goals — including
-  // later edits, as long as the stored target still came from the survey.
-  const beforeAnswers: Record<string, unknown> = {}
-  for (const r of beforeRows) beforeAnswers[r.question_key] = r.answer
-  await syncCompanyTargetsFromAnswers(sb, targetUserId, Object.fromEntries(accepted), beforeAnswers)
+  // A goal answer of step 1 was saved → the goal (metric_targets, companies.
+  // target_revenue_*) follows it (lib/goals/survey-sync.ts, plan 2026-10-22 W1).
+  // Who: the admin in edit mode / staff saving for a client → expert goal.
+  if (rows.length && touchesGoalKeys(rows.map((r) => r.question_key))) {
+    const actor: GoalActor = imp
+      ? { id: imp.aid, role: 'admin' }
+      : sessionUser && sessionUser.id !== targetUserId
+        ? { id: sessionUser.id, role: 'expert' }
+        : { id: targetUserId, role: 'owner' }
+    const service = createServiceClient()
+    await syncGoalsFromSurvey(service, {
+      userId: targetUserId,
+      companyId: company_id,
+      answers: Object.fromEntries(accepted),
+      touchedKeys: rows.map((r) => r.question_key),
+      actor,
+      allowClear: !autosave,
+      writer: surveyWriterFor(actor, service),
+    })
+  }
 
   const announce = shouldAnnounceCompletion({
     finalSubmitted,
@@ -300,67 +314,4 @@ async function mirrorAndAnnounce(userId: string, announce: boolean, step: number
     goal12m: summary.goal12m,
     sheetUrl: sheet.url ?? spreadsheetUrl(),
   }, userId)
-}
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-const unwrap = (v: unknown) =>
-  v !== null && typeof v === 'object' && !Array.isArray(v) && 'value' in (v as object) ? (v as { value: unknown }).value : v
-
-/**
- * Fill or follow `companies.target_revenue_*` from the step-1 goals.
- * A stored target is replaced only when it is empty or still equals the goal
- * derived from the PREVIOUS survey answers (i.e. it came from the survey);
- * a target the owner typed on the dashboard is never overwritten.
- */
-async function syncCompanyTargetsFromAnswers(
-  sb: ReturnType<typeof createServerClient>,
-  userId: string,
-  newAnswers: Record<string, unknown>,
-  beforeAnswers: Record<string, unknown>,
-): Promise<void> {
-  const now: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(beforeAnswers)) now[k] = unwrap(v)
-  for (const [k, v] of Object.entries(newAnswers)) now[k] = unwrap(v)
-  const prev: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(beforeAnswers)) prev[k] = unwrap(v)
-
-  const touchesGoals = Object.keys(newAnswers).some((k) => k.startsWith('s1_goal_'))
-  if (!touchesGoals) return
-
-  const goal12 = annualGoalFromAnswers(now, 's1_goal_12m_revenue_year', 's1_goal_12m_revenue_month', 12)
-  const goal3y = annualGoalFromAnswers(now, 's1_goal_3y_revenue_year', 's1_goal_3y_revenue_month', 12)
-  const prev12 = annualGoalFromAnswers(prev, 's1_goal_12m_revenue_year', 's1_goal_12m_revenue_month', 12)
-  const prev3y = annualGoalFromAnswers(prev, 's1_goal_3y_revenue_year', 's1_goal_3y_revenue_month', 12)
-  if (!goal12 && !goal3y) return
-  try {
-    const { data: company } = await sb
-      .from('companies')
-      .select('id, target_revenue_12m_kzt, target_revenue_3y_kzt')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!company) return
-    const followsSurvey = (stored: unknown, previous: number | null) =>
-      stored == null || (previous != null && Number(stored) === previous)
-    const patch: Record<string, number | string> = {}
-    // Only when the survey goal itself changed: a goal the owner removed on
-    // the dashboard (column → null) must not come back on the next step save.
-    if (goal12 && goal12 !== prev12 && Number(company.target_revenue_12m_kzt) !== goal12 && followsSurvey(company.target_revenue_12m_kzt, prev12)) {
-      patch.target_revenue_12m_kzt = goal12
-    }
-    if (goal3y && goal3y !== prev3y && Number(company.target_revenue_3y_kzt) !== goal3y && followsSurvey(company.target_revenue_3y_kzt, prev3y)) {
-      patch.target_revenue_3y_kzt = goal3y
-    }
-    if (!Object.keys(patch).length) return
-    patch.updated_at = new Date().toISOString()
-    const { data: updated, error: updateErr } = await sb.from('companies').update(patch).eq('id', company.id).select('id')
-    // Mirror only what was really written (RLS may drop the update silently).
-    if (updateErr || !updated?.length) return
-    // The goals live in metric_targets (lib/goals/store.ts): mirror there too.
-    const service = createServiceClient()
-    if (typeof patch.target_revenue_12m_kzt === 'number') await syncRevenueGoal(service, String(company.id), '12m', patch.target_revenue_12m_kzt, userId)
-    if (typeof patch.target_revenue_3y_kzt === 'number') await syncRevenueGoal(service, String(company.id), '3y', patch.target_revenue_3y_kzt, userId)
-  } catch (e) {
-    console.error('[onboarding/survey] target sync failed', e)
-  }
 }

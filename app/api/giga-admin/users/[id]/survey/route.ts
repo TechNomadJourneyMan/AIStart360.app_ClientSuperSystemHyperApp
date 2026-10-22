@@ -10,6 +10,7 @@ import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { answersProfanityResponse } from '@/lib/moderation/http'
+import { syncGoalsFromSurvey, surveyWriterFor, touchesGoalKeys } from '@/lib/goals/survey-sync'
 
 // GET   /api/giga-admin/users/:id/survey?historyPage=1 — all answers grouped by
 //       theme + change history (who / when / old → new).
@@ -101,6 +102,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   try {
     const result = await adminEditSurvey(guard.actor, params.id, parsed.data.changes, req, { reason: parsed.data.reason })
+    // A staff edit of a step-1 goal answer moves the client's goal too (lib/goals/survey-sync.ts).
+    if (result.updated + result.deleted > 0 && touchesGoalKeys(Object.keys(parsed.data.changes))) {
+      const service = createServiceClient()
+      const actor = { id: guard.actor.id, role: 'admin' as const }
+      await syncGoalsFromSurvey(service, {
+        userId: params.id, answers: parsed.data.changes, touchedKeys: Object.keys(parsed.data.changes), actor, allowClear: true,
+        writer: surveyWriterFor(actor, service),
+      })
+    }
     return NextResponse.json({ ok: true, data: result })
   } catch (e) {
     if (e instanceof SurveyEditError) return NextResponse.json({ ok: false, error: e.message }, { status: e.status })

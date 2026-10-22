@@ -6,7 +6,8 @@
 //              direction?, deadline? (YYYY-MM-DD), label?, note? }
 //
 // One goal per metric and period (public.metric_targets — the one source of
-// goals; revenue goals are mirrored into companies.target_revenue_*). Reads
+// goals; revenue goals are mirrored into companies.target_revenue_* and the
+// step-1 answers s1_goal_<12m|3y>_revenue_* — lib/goals/survey-sync.ts). Reads
 // with the session (RLS); writes after a manage check with the service role.
 // A change emits TARGET_CHANGED → Point A / Point B are recalculated.
 // ============================================================
@@ -21,6 +22,7 @@ import { loadCompanyMetrics } from '@/lib/metrics/company-metrics'
 import { evaluateGoal } from '@/lib/goals/evaluate'
 import { loadGoalsWithEvaluation, valuePeriod } from '@/lib/goals/current'
 import { upsertGoal } from '@/lib/goals/store'
+import { mirrorGoalToSurvey } from '@/lib/goals/survey-sync'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { profanityResponse } from '@/lib/moderation/http'
 import { notifyGoalNeedsReview } from '@/lib/point-b/plan/notify'
@@ -79,6 +81,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     const goal = await upsertGoal(service, companyId, { ...parsed.data, source }, {
       actorId: t.user.id,
       baseline: { value: current?.value ?? null, period: valuePeriod(current) },
+    })
+    // A revenue goal (12m / 3y) is also the step-1 answer of the questionnaire.
+    await mirrorGoalToSurvey(service, {
+      companyId, metricId: goal.metricId, periodLabel: goal.periodLabel, valueYear: goal.targetValue,
+      actor: { id: t.user.id, role: source },
     })
     emitPlatformEventSafely({
       name: 'TARGET_CHANGED', companyId, subjectType: 'goal', subjectId: goal.id, actor: `user:${t.user.id}`,

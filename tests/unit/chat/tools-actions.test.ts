@@ -82,4 +82,17 @@ describe('decideAction', () => {
     expect(out).toMatchObject({ ok: true, event: 'TARGET_CHANGED' })
     expect(m.db.metric_targets[0]).toMatchObject({ metric_key: 'biz.finansy.valovaya_marzha', target_value: 40 })
   })
+
+  it('apply set_goal of the revenue goal → the step-1 answers of the questionnaire follow', async () => {
+    const m = memoryClient({
+      companies: [{ id: 'co', user_id: 'owner' }], metric_targets: [], metrics: [], survey_answers: [],
+      ai_pending_actions: [{ ...base, kind: 'set_goal', payload: { metricId: 'biz.finansy.vyruchka_god', targetValue: 1_200_000_000, periodLabel: '3y' } }],
+    })
+    const out = await decideAction(m.client, m.db.ai_pending_actions[0] as never, 'apply', actor)
+    expect(out).toMatchObject({ ok: true, event: 'TARGET_CHANGED' })
+    expect(m.db.survey_answers.map((r) => [r.user_id, r.question_key, r.step, (r.answer as { value: number }).value])).toEqual([
+      ['owner', 's1_goal_3y_revenue_year', 1, 1_200_000_000],
+      ['owner', 's1_goal_3y_revenue_month', 1, 100_000_000],
+    ])
+  })
 })

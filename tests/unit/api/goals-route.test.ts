@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { memoryClient } from '../data-layer/memory-client'
 
 const h = vi.hoisted(() => ({
   user: { id: 'u-1' } as { id: string } | null,
@@ -8,13 +9,19 @@ const h = vi.hoisted(() => ({
   emit: vi.fn(),
   list: vi.fn(),
   review: vi.fn(),
+  // The service role's view: the company and its owner's answers (lib/goals/survey-sync.ts).
+  service: null as unknown as ReturnType<typeof import('../data-layer/memory-client').memoryClient>,
+  writers: [] as Array<{ id: string; source: string }>,
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: h.user }, error: null }) } }) }))
-vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({}) }))
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => h.service.client,
+  createActorServiceClient: (a: { id: string; source: string }) => { h.writers.push(a); return h.service.client },
+}))
 vi.mock('@/lib/tenancy', () => ({ resolveTenantWith: vi.fn(async () => h.tenant), tenantErrorMessage: () => 'Нет доступа' }))
 vi.mock('@/lib/metrics/company-metrics', () => ({ loadCompanyMetrics: async () => new Map([['biz.finansy.valovaya_marzha', { value: 25, provenance: { period: { year: 2026 } } }]]) }))
-vi.mock('@/lib/goals/store', () => ({ upsertGoal: h.upsert, deleteGoal: h.del }))
+vi.mock('@/lib/goals/store', async (orig) => ({ ...(await orig<typeof import('@/lib/goals/store')>()), upsertGoal: h.upsert, deleteGoal: h.del }))
 vi.mock('@/lib/goals/current', async (orig) => ({ ...(await orig<typeof import('@/lib/goals/current')>()), loadGoalsWithEvaluation: h.list }))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: h.emit }))
 vi.mock('@/lib/point-b/plan/notify', () => ({ notifyGoalNeedsReview: h.review }))
@@ -32,7 +39,15 @@ beforeEach(() => {
   h.user = { id: 'u-1' }
   h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'owner', canManage: true, legacy: false } }
   h.upsert.mockReset().mockImplementation(async (_s, _c, input) => ({ id: 'g1', metricId: input.metricId, label: 'Маржа', unit: '%', targetValue: input.targetValue, direction: 'higher_is_better', periodLabel: input.periodLabel, deadline: null, baselineValue: 25, baselinePeriod: '2026', source: input.source, note: null, createdAt: '2026-10-12T00:00:00Z' }))
-  h.del.mockReset().mockResolvedValue(true)
+  h.del.mockReset().mockResolvedValue({ metricId: 'biz.finansy.valovaya_marzha', periodLabel: '12m' })
+  h.service = memoryClient({
+    companies: [{ id: 'co-1', user_id: 'owner-1' }],
+    survey_answers: [
+      { user_id: 'owner-1', question_key: 's1_goal_12m_revenue_year', step: 1, answer: { value: 6_000_000 } },
+      { user_id: 'owner-1', question_key: 's1_goal_12m_revenue_month', step: 1, answer: { value: 500_000 } },
+    ],
+  })
+  h.writers = []
   h.emit.mockReset()
   h.list.mockReset().mockResolvedValue([])
   h.review.mockReset().mockResolvedValue(undefined)
@@ -95,7 +110,33 @@ describe('/api/v1/goals', () => {
     expect(h.emit).toHaveBeenCalledWith(expect.objectContaining({ name: 'TARGET_CHANGED' }))
     expect((await del('company-12m')).status).toBe(200)
     expect((await del('drop table')).status).toBe(404)
-    h.del.mockResolvedValue(false)
+    h.del.mockResolvedValue(null)
     expect((await del('0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3')).status).toBe(404)
+  })
+
+  it('POST of the 12-month revenue goal rewrites the owner\'s step-1 answers (year, month = year / 12)', async () => {
+    const { status } = await post({ metricId: 'biz.finansy.vyruchka_god', targetValue: 780_000_000, periodLabel: '12m' })
+    expect(status).toBe(200)
+    const ans = Object.fromEntries(h.service.db.survey_answers.map((r) => [r.question_key, r]))
+    expect(ans.s1_goal_12m_revenue_year).toMatchObject({ user_id: 'owner-1', step: 1, answer: { value: 780_000_000 } })
+    expect(ans.s1_goal_12m_revenue_month).toMatchObject({ user_id: 'owner-1', step: 1, answer: { value: 65_000_000 } })
+    // Written as the caller (survey_answer_history attribution).
+    expect(h.writers).toEqual([{ id: 'u-1', source: 'user' }])
+  })
+
+  it('a non-revenue goal does not touch the questionnaire', async () => {
+    const before = JSON.stringify(h.service.db.survey_answers)
+    await post({ metricId: 'biz.finansy.valovaya_marzha', targetValue: 40, periodLabel: '12m' })
+    expect(JSON.stringify(h.service.db.survey_answers)).toBe(before)
+    expect(h.writers).toEqual([])
+  })
+
+  it('DELETE of the revenue goal removes its step-1 answers; an expert writes as staff', async () => {
+    h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'staff', canManage: true, legacy: false } }
+    h.del.mockResolvedValue({ metricId: 'biz.finansy.vyruchka_god', periodLabel: '12m' })
+    const res = await DELETE(new Request('http://localhost/api/v1/goals/company-12m', { method: 'DELETE' }), { params: { id: 'company-12m' } })
+    expect(res.status).toBe(200)
+    expect(h.service.db.survey_answers).toEqual([])
+    expect(h.writers).toEqual([{ id: 'u-1', source: 'admin' }])
   })
 })

@@ -21,7 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseAmount } from '@/lib/format/kzt'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { positiveNumber } from '@/lib/survey/targets'
-import { createActorServiceClient } from '@/lib/supabase-service'
+import { createActorServiceClient, createServiceClient } from '@/lib/supabase-service'
 import { REVENUE_GOAL_METRIC, syncRevenueColumn, syncRevenueGoal } from './store'
 
 export type RevenuePeriod = '12m' | '3y'
@@ -93,11 +93,14 @@ function goalSource(actor: GoalActor): 'owner' | 'expert' {
 
 /**
  * A service-role client that stamps the actor on survey_answers writes, so
- * survey_answer_history (073) shows who changed the answer. Falls back to
- * the given client when it cannot be built (tests, missing env).
+ * survey_answer_history (073) shows who changed the answer. Only when the
+ * caller works with the real service client: any other client (a test
+ * double, a session client) is used as is — a test never gets a networked
+ * client this way.
  */
 export function surveyWriterFor(actor: GoalActor, fallback: SupabaseClient): SupabaseClient {
   try {
+    if (fallback !== createServiceClient()) return fallback
     return createActorServiceClient({ id: actor.id, source: actor.role === 'owner' ? 'user' : 'admin' })
   } catch {
     return fallback
@@ -251,6 +254,32 @@ export async function syncGoalsFromSurvey(service: SupabaseClient, input: SyncGo
     return out
   } catch (err) {
     console.error('[goals/survey-sync] survey → goal failed', input.userId, err instanceof Error ? err.message : err)
+    return { skipped: 'error' }
+  }
+}
+
+/**
+ * A goal saved or removed outside the questionnaire (goals API, revenue
+ * targets, AI chat, Point B) → the questionnaire. Only the revenue goal on
+ * 12m / 3y has answers; anything else is a no-op. Writes are stamped with the
+ * actor (survey_answer_history). Never throws.
+ */
+export async function mirrorGoalToSurvey(
+  service: SupabaseClient,
+  input: { companyId: string; metricId: string; periodLabel: string; valueYear: number | null; actor: GoalActor; writer?: SupabaseClient },
+): Promise<WriteGoalResult> {
+  try {
+    if (input.metricId !== REVENUE_GOAL_METRIC) return { skipped: 'not_revenue_metric' }
+    if (!REVENUE_PERIODS.includes(input.periodLabel as RevenuePeriod)) return { skipped: 'not_revenue_period' }
+    return await writeGoalToSurvey(service, {
+      companyId: input.companyId,
+      periodLabel: input.periodLabel,
+      valueYear: input.valueYear,
+      actor: input.actor,
+      writer: input.writer ?? surveyWriterFor(input.actor, service),
+    })
+  } catch (err) {
+    console.error('[goals/survey-sync] goal → survey failed', input.companyId, err instanceof Error ? err.message : err)
     return { skipped: 'error' }
   }
 }

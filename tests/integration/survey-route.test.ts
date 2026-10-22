@@ -5,7 +5,7 @@
  * in-memory Supabase-заглушки. Проверяет ровно то, что сломалось в E2E:
  *   1. колонка `step` больше не затирается номером текущего шага;
  *   2. прогресс считается по ключу вопроса → 12/12, а не 1/12;
- *   3. companies.target_revenue_* заполняется из целей шага 1;
+ *   3. цели шага 1 становятся целями компании (metric_targets + companies.target_revenue_*);
  *   4. строка уходит в Google Sheets;
  *   5. уведомление «анкета пройдена» уходит один раз.
  *
@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
+import { memoryClient } from '../unit/data-layer/memory-client'
 
 // ─── in-memory Supabase ──────────────────────────────────────────────────────
 
@@ -69,6 +70,9 @@ const fakeServerClient = {
 
 const PROFILE_EMAIL = 'client@example.com'
 
+/** Goals (metric_targets) and the companies row as the service role sees them (lib/goals/survey-sync.ts). */
+let goalsDb = memoryClient()
+
 // Service client: used by the background mirror (answers + client profile)
 // and by the completion marker (app_notifications).
 const fakeServiceClient = {
@@ -84,10 +88,22 @@ const fakeServiceClient = {
       })
       return chain
     }
+    if (t === 'metric_targets' || t === 'companies') return goalsDb.client.from(t)
     if (t === 'survey_answers') {
+      const rows = () => db.answers.map((r) => ({ question_key: r.question_key, step: r.step, answer: r.answer }))
       Object.assign(chain, {
         select: ret,
-        eq: () => Promise.resolve({ data: db.answers.map((r) => ({ question_key: r.question_key, step: r.step, answer: r.answer })), error: null }),
+        eq: () => Object.assign(Promise.resolve({ data: rows(), error: null }), {
+          in: (_c: string, keys: string[]) => Promise.resolve({ data: rows().filter((r) => keys.includes(r.question_key)), error: null }),
+        }),
+        upsert: (list: AnswerRow[]) => {
+          for (const row of list) {
+            const i = db.answers.findIndex((a) => a.user_id === row.user_id && a.question_key === row.question_key)
+            if (i >= 0) db.answers[i] = row
+            else db.answers.push(row)
+          }
+          return Promise.resolve({ error: null })
+        },
       })
       return chain
     }
@@ -168,6 +184,7 @@ function oneAnswerPerStep(): Record<string, unknown> {
 beforeEach(() => {
   db.answers = []
   db.companies = [{ id: 'co-1', user_id: USER, target_revenue_12m_kzt: null, target_revenue_3y_kzt: null }]
+  goalsDb = memoryClient({ companies: db.companies, metric_targets: [] })
   db.notifications = []
   notifyAdmins.mockClear()
   clientEmail.mockClear()
@@ -196,6 +213,14 @@ describe('POST /api/v1/onboarding/survey', () => {
     await post(1, { s1_company_name: 'ТОО kOtaq-Telecom', s1_goal_12m_revenue_year: 24_000_000, s1_goal_3y_revenue_month: 6_000_000 })
     expect(db.companies[0].target_revenue_12m_kzt).toBe(24_000_000)
     expect(db.companies[0].target_revenue_3y_kzt).toBe(72_000_000)
+    // The goals live in metric_targets: the owner's goals, attributed to the owner.
+    const goals = goalsDb.db.metric_targets
+    expect(goals.map((g) => [g.period_label, g.target_value, g.source, g.updated_by])).toEqual([
+      ['12m', 24_000_000, 'owner', USER],
+      ['3y', 72_000_000, 'owner', USER],
+    ])
+    // Only the month of the 3-year goal was written: the year answer is aligned, with ITS step.
+    expect(db.answers.find((a) => a.question_key === 's1_goal_3y_revenue_year')).toMatchObject({ step: SURVEY_KEY_STEP.s1_goal_3y_revenue_year, answer: { value: 72_000_000 } })
   })
 
   it('следует за правкой цели в анкете, пока цель пришла из анкеты', async () => {
@@ -205,10 +230,30 @@ describe('POST /api/v1/onboarding/survey', () => {
     expect(db.companies[0].target_revenue_12m_kzt, 'дашборд не должен застревать на старой цели').toBe(24_000_000)
   })
 
-  it('не перетирает цель, выставленную вручную', async () => {
+  it('одна цель: правка цели в анкете меняет и цель, выставленную на дашборде (W1 2026-10-22)', async () => {
     db.companies[0].target_revenue_12m_kzt = 99_000_000
-    await post(1, { s1_goal_12m_revenue_year: 24_000_000 })
-    expect(db.companies[0].target_revenue_12m_kzt).toBe(99_000_000)
+    goalsDb.db.metric_targets.push({ id: 't1', company_id: 'co-1', metric_key: 'biz.finansy.vyruchka_god', period_label: '12m', target_value: 99_000_000, source: 'owner', updated_by: USER })
+    await post(1, { s1_goal_12m_revenue_year: 24_000_000, s1_goal_12m_revenue_month: 2_000_000 })
+    expect(db.companies[0].target_revenue_12m_kzt).toBe(24_000_000)
+    expect(goalsDb.db.metric_targets).toHaveLength(1)
+    expect(goalsDb.db.metric_targets[0]).toMatchObject({ target_value: 24_000_000 })
+  })
+
+  it('сотрудник, сохраняющий анкету клиента, ставит цель эксперта', async () => {
+    sessionUserId = 'staff-1'
+    await post(1, { s1_goal_3y_revenue_year: 600_000_000, s1_goal_3y_revenue_month: 50_000_000 })
+    expect(goalsDb.db.metric_targets[0]).toMatchObject({ period_label: '3y', target_value: 600_000_000, source: 'expert', updated_by: 'staff-1' })
+  })
+
+  it('автосохранение пустого поля не удаляет цель (ввод ещё идёт)', async () => {
+    await post(1, { s1_goal_12m_revenue_year: 24_000_000, s1_goal_12m_revenue_month: 2_000_000 })
+    const res = await POST(new Request('http://localhost/api/v1/onboarding/survey', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 1, autosave: true, answers: { s1_goal_12m_revenue_month: { value: 0 }, s1_goal_12m_revenue_year: { value: 0 } } }),
+    }) as never)
+    expect(res.status).toBe(200)
+    expect(goalsDb.db.metric_targets).toHaveLength(1)
+    expect(db.companies[0].target_revenue_12m_kzt).toBe(24_000_000)
   })
 
   it('уведомление уходит один раз по явной отправке анкеты, даже если шаг 12 пустой', async () => {

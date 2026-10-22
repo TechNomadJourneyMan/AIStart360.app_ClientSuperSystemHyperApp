@@ -12,7 +12,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { dbError } from '@/lib/api-error'
 import { createServiceClient } from '@/lib/supabase-service'
-import { syncRevenueGoal } from '@/lib/goals/store'
+import { REVENUE_GOAL_METRIC, syncRevenueGoal } from '@/lib/goals/store'
+import { mirrorGoalToSurvey } from '@/lib/goals/survey-sync'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 interface TargetsBody {
@@ -102,7 +103,10 @@ export async function PATCH(req: NextRequest) {
     try {
       const service = createServiceClient()
       for (const [field, period] of [['target_revenue_12m_kzt', '12m'], ['target_revenue_3y_kzt', '3y']] as const) {
-        if (field in patch) await syncRevenueGoal(service, companyId, period, patch[field], user.id)
+        if (!(field in patch)) continue
+        await syncRevenueGoal(service, companyId, period, patch[field], user.id)
+        // …and into the step-1 goal answers of the questionnaire (never throws).
+        await mirrorGoalToSurvey(service, { companyId, metricId: REVENUE_GOAL_METRIC, periodLabel: period, valueYear: patch[field], actor: { id: user.id, role: 'owner' } })
       }
     } catch (err) {
       console.error('[v1/companies/targets] goal mirror failed', err instanceof Error ? err.message : err)

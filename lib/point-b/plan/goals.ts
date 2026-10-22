@@ -26,6 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import type { Goal } from '@/lib/goals/evaluate'
 import { loadGoals, REVENUE_GOAL_METRIC, upsertGoal } from '@/lib/goals/store'
+import { mirrorGoalToSurvey } from '@/lib/goals/survey-sync'
 import { getMetricById } from '@/lib/metrics/registry'
 import { assertClean } from '@/lib/moderation/profanity'
 import { PlanError } from './store'
@@ -182,6 +183,7 @@ export async function reviewGoal(sb: SupabaseClient, input: ReviewGoalInput): Pr
       source: 'expert', note: reason,
     }, { actorId: input.reviewer.id })
     targetChanged(input.companyId, set, `user:${input.reviewer.id}`)
+    await mirrorGoalToSurvey(sb, { companyId: input.companyId, metricId: set.metricId, periodLabel: set.periodLabel, valueYear: set.targetValue, actor: { id: input.reviewer.id, role: 'expert' } })
     const review = await insertReview(sb, {
       ...base, status: 'verified', proposed_value: set.targetValue, proposed_deadline: set.deadline, previous_value: null, reason,
     })
@@ -223,6 +225,8 @@ async function applyProposal(sb: SupabaseClient, row: GoalReviewRow, actorId: st
     source: 'expert',
   }, { actorId })
   targetChanged(row.company_id, set, `user:${actorId}`)
+  // The owner agreed to the expert's value: the questionnaire's goal answer follows (lib/goals/survey-sync.ts).
+  await mirrorGoalToSurvey(sb, { companyId: row.company_id, metricId: set.metricId, periodLabel: set.periodLabel, valueYear: set.targetValue, actor: { id: actorId, role: 'expert' } })
 }
 
 async function claim(sb: SupabaseClient, reviewId: string, patch: Record<string, unknown>): Promise<GoalReviewRow | null> {

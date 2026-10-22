@@ -55,7 +55,9 @@ export default function Step1CompanyForm({
   useEffect(() => {
     const m = num(data.s1_goal_12m_revenue_month)
     const expected = m * 12
-    if (num(data.s1_goal_12m_revenue_year) !== expected) {
+    // A year set from the goal elsewhere (dashboard, Point A — month = round(year / 12),
+    // lib/goals/survey-sync.ts) is consistent: don't rewrite 3 400 000 000 as 3 399 999 996.
+    if (Math.round(num(data.s1_goal_12m_revenue_year) / 12) !== m) {
       onChange('s1_goal_12m_revenue_year', expected)
     }
     // Intentional: only track month changes
@@ -65,7 +67,9 @@ export default function Step1CompanyForm({
   useEffect(() => {
     const m = num(data.s1_goal_3y_revenue_month)
     const expected = m * 12
-    if (num(data.s1_goal_3y_revenue_year) !== expected) {
+    // A year set from the goal elsewhere (dashboard, Point A — month = round(year / 12),
+    // lib/goals/survey-sync.ts) is consistent: don't rewrite 3 400 000 000 as 3 399 999 996.
+    if (Math.round(num(data.s1_goal_3y_revenue_year) / 12) !== m) {
       onChange('s1_goal_3y_revenue_year', expected)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

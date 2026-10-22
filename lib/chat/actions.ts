@@ -11,6 +11,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveDiscrepancy, type ResolveChoice } from '@/lib/data-layer/resolve'
 import { upsertGoal, type GoalInput } from '@/lib/goals/store'
+import { mirrorGoalToSurvey } from '@/lib/goals/survey-sync'
 import { loadCompanyMetrics } from '@/lib/metrics/company-metrics'
 import { valuePeriod } from '@/lib/goals/current'
 import { getMetricById } from '@/lib/metrics/registry'
@@ -105,6 +106,11 @@ export async function decideAction(
     const current = metrics.get(input.metricId)
     const goal = await upsertGoal(service, row.company_id, { ...input, source: actor.expert ? 'expert' : 'owner' }, {
       actorId: actor.userId, baseline: { value: current?.value ?? null, period: valuePeriod(current) },
+    })
+    // A revenue goal (12m / 3y) is also the step-1 answer of the questionnaire (never throws).
+    await mirrorGoalToSurvey(service, {
+      companyId: row.company_id, metricId: goal.metricId, periodLabel: goal.periodLabel, valueYear: goal.targetValue,
+      actor: { id: actor.userId, role: actor.expert ? 'expert' : 'owner' },
     })
     await finish(service, row.id, 'applied', { goal: goal.id })
     return { ok: true, status: 'applied', companyId: row.company_id, kind: row.kind, event: 'TARGET_CHANGED' }

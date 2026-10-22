@@ -35,6 +35,13 @@ vi.mock('@/lib/tenancy', () => ({
 }))
 vi.mock('@/lib/metrics/company-metrics', () => ({ loadCompanyMetrics: async () => new Map() }))
 vi.mock('@/lib/goals/store', () => ({ upsertGoal: h.upsertGoal, deleteGoal: vi.fn(), syncRevenueGoal: vi.fn() }))
+// Goal ↔ questionnaire mirroring is covered by tests/unit/goals/survey-sync.test.ts.
+vi.mock('@/lib/goals/survey-sync', () => ({
+  mirrorGoalToSurvey: vi.fn(async () => ({ skipped: 'test' })),
+  syncGoalsFromSurvey: vi.fn(async () => ({ skipped: 'test' })),
+  surveyWriterFor: vi.fn(),
+  touchesGoalKeys: () => false,
+}))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: vi.fn() }))
 
 // onboarding/company + survey: legacy server client

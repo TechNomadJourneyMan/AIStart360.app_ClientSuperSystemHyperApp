@@ -1,11 +1,13 @@
 // DELETE /api/v1/goals/[id][?companyId=] — remove a goal (manage access);
-// a revenue goal also clears companies.target_revenue_*. Emits TARGET_CHANGED.
+// a revenue goal also clears companies.target_revenue_* and the step-1 goal
+// answers. Emits TARGET_CHANGED.
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError } from '@/lib/api-error'
 import { deleteGoal } from '@/lib/goals/store'
+import { mirrorGoalToSurvey } from '@/lib/goals/survey-sync'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 export const dynamic = 'force-dynamic'
@@ -20,8 +22,12 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: 'manage' })
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   try {
-    const removed = await deleteGoal(createServiceClient(), tenant.tenant.companyId, params.id)
+    const service = createServiceClient()
+    const removed = await deleteGoal(service, tenant.tenant.companyId, params.id)
     if (!removed) return apiError('Цель не найдена', 404)
+    // A removed revenue goal leaves the questionnaire too (lib/goals/survey-sync.ts).
+    const role = tenant.tenant.role === 'staff' || tenant.tenant.role === 'partner_expert' ? 'expert' : 'owner'
+    await mirrorGoalToSurvey(service, { companyId: tenant.tenant.companyId, metricId: removed.metricId, periodLabel: removed.periodLabel, valueYear: null, actor: { id: user.id, role } })
     emitPlatformEventSafely({
       name: 'TARGET_CHANGED', companyId: tenant.tenant.companyId, subjectType: 'goal', subjectId: params.id, actor: `user:${user.id}`,
       payload: { removed: true }, dedupeKey: `target_removed:${params.id}:${Date.now()}`,
