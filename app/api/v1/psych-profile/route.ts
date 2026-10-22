@@ -6,6 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { interpretStep10 } from '@/lib/psych/interpret'
+import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 /**
  * GET    /api/v1/psych-profile → { ok, consent, profile }
@@ -48,7 +49,7 @@ export async function POST(_req: NextRequest) {
   const { data: rows } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', user.id).like('question_key', 's10_%')
   const answers: Record<string, unknown> = {}
   for (const r of (rows ?? []) as Array<{ question_key: string; answer: unknown }>) {
-    answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value ?? r.answer
+    answers[r.question_key] = unwrapAnswer(r.answer)
   }
 
   const interpretation = interpretStep10(answers)

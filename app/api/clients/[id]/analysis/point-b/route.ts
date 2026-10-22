@@ -7,6 +7,7 @@ import { requireExpert } from '@/lib/expert-auth'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { calculatePointB } from '@/lib/point-b-engine'
 import { safeErrorMessage } from '@/lib/api-error'
+import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 /**
  * GET /api/clients/:id/analysis/point-b
@@ -32,7 +33,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
     const answers: Record<string, unknown> = {}
     for (const row of surveyRows) {
-      answers[row.question_key] = (row.answer as { value?: unknown })?.value ?? row.answer
+      answers[row.question_key] = unwrapAnswer(row.answer)
     }
 
     // The client's stored Point A (the score they see), then Point B; the

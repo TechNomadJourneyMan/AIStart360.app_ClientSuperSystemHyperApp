@@ -8,6 +8,7 @@
 import { SURVEY_KEY_STEP, SURVEY_TOTAL_STEPS, surveyProgressFromRows, type SurveyStepRow } from '@/lib/survey/steps'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue } from '@/lib/survey-labels'
 import { stripMarkdown } from '@/lib/survey/markdown'
+import { fromAnswerEnvelope, unwrapAnswer } from '@/lib/survey/answer-value'
 import { upsertRowByKey, googleSheetsConfigured, spreadsheetUrl } from '@/lib/integrations/google-sheets'
 import { absoluteFileHref, fileRefName, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
 import { getSiteUrl } from '@/lib/site-url'
@@ -46,19 +47,16 @@ const IDENTITY_HEADERS = [
   'Шагов заполнено',
 ] as const
 
+/** question_key → value; «не знаю» / «примерно» stay marks, so the sheet says «Не знаю». */
 export function answersFromRows(rows: ReadonlyArray<SurveyStepRow>): Record<string, unknown> {
   const answers: Record<string, unknown> = {}
-  for (const r of rows) {
-    const a = r.answer
-    answers[r.question_key] =
-      a !== null && typeof a === 'object' && !Array.isArray(a) && 'value' in a ? (a as { value: unknown }).value : a
-  }
+  for (const r of rows) answers[r.question_key] = fromAnswerEnvelope(r.answer)
   return answers
 }
 
 function text(answers: Record<string, unknown>, keys: string[]): string {
   for (const k of keys) {
-    const v = answers[k]
+    const v = unwrapAnswer(answers[k])
     if (typeof v === 'string' && v.trim()) return stripMarkdown(v).trim()
     if (typeof v === 'number' && Number.isFinite(v)) return String(v)
   }

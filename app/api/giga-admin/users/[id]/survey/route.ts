@@ -12,6 +12,7 @@ import { guardClientAccess } from '@/lib/admin/client-scope'
 import { answersProfanityResponse } from '@/lib/moderation/http'
 import { syncGoalsFromSurvey, surveyWriterFor, touchesGoalKeys } from '@/lib/goals/survey-sync'
 import { loadAttribution, type AttributionSourceRow } from '@/lib/survey/attribution-read'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 
 // GET   /api/giga-admin/users/:id/survey?historyPage=1 — all answers grouped by
 //       theme + change history (who / when / old → new).
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const answeredAt: Record<string, string> = {}
   const visible = ((answersRes.data ?? []) as AttributionSourceRow[]).filter((r) => isWizardVisibleKey(String(r.question_key)))
   for (const r of visible) {
-    answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value
+    answers[r.question_key] = fromAnswerEnvelope(r.answer)
     if (r.answered_at) answeredAt[r.question_key] = String(r.answered_at)
   }
   const summary = buildUserProfileSummary(answers)

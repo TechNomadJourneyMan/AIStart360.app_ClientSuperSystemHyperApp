@@ -23,6 +23,8 @@
  * outside the 12-step wizard (medical/e-commerce intakes, period goals).
  */
 
+import { isUnknownAnswer } from './answer-value'
+
 export const SURVEY_TOTAL_STEPS = 12
 
 /** question_key → wizard step (1..12). Generated from the step forms. */
@@ -240,6 +242,8 @@ export interface SurveyStepRow {
 
 function rowHasValue(answer: unknown): boolean {
   if (answer === null || answer === undefined) return false
+  // «Не знаю» ({ value: null, unknown: true }) is an answer (lib/survey/answer-value.ts).
+  if (isUnknownAnswer(answer)) return true
   const v =
     typeof answer === 'object' && answer !== null && !Array.isArray(answer) && 'value' in answer
       ? (answer as { value: unknown }).value

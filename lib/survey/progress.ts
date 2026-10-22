@@ -7,6 +7,7 @@
  * `filled/total` per step is the finer-grained number shown next to it.
  */
 import { SURVEY_KEY_STEP, SURVEY_TOTAL_STEPS } from './steps'
+import { isMarkedAnswer } from './answer-value'
 
 export interface StepFill {
   step: number
@@ -15,7 +16,9 @@ export interface StepFill {
   started: boolean
 }
 
+/** «Не знаю» and «примерно» (lib/survey/answer-value.ts) are answers. */
 export function hasAnswerValue(v: unknown): boolean {
+  if (isMarkedAnswer(v)) return true
   if (v === null || v === undefined) return false
   if (typeof v === 'string') return v.trim().length > 0
   if (Array.isArray(v)) return v.length > 0

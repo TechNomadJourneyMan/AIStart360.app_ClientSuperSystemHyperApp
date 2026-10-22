@@ -3,11 +3,13 @@ import { isWritableSurveyKey, stepForQuestionKey } from '@/lib/survey/steps'
 import { recordAdminAction } from '@/lib/admin/audit'
 import type { GigaActor } from '@/lib/admin/giga-actor'
 import { staffAuthorRole, writeWithAttribution } from '@/lib/survey/attribution'
+import { fromAnswerEnvelope, toAnswerEnvelope } from '@/lib/survey/answer-value'
 
 /**
  * Staff edit of one user's questionnaire (CRUD on survey_answers).
  *
- *  - `changes[key] = value`  → upsert; `null` → delete the answer;
+ *  - `changes[key] = value`  → upsert; `null` → delete the answer; a «не знаю» /
+ *    «примерно» mark (lib/survey/answer-value.ts) is stored as its own envelope;
  *  - only survey keys are writable (never staff notes / widget data);
  *  - the audit entry (old → new of every touched key) is written BEFORE the
  *    change and is mandatory;
@@ -54,7 +56,7 @@ export async function adminEditSurvey(
   const upserts: Array<Record<string, unknown>> = []
   const deletes: string[] = []
   for (const [key, value] of valid) {
-    const prev = before.get(key)?.answer?.value
+    const prev = fromAnswerEnvelope(before.get(key)?.answer)
     if (JSON.stringify(prev ?? null) === JSON.stringify(value ?? null)) continue
     oldValue[key] = prev ?? null
     newValue[key] = value
@@ -65,7 +67,7 @@ export async function adminEditSurvey(
         user_id: userId,
         question_key: key,
         step: stepForQuestionKey(key, null) ?? before.get(key)?.step ?? 0,
-        answer: { value },
+        answer: toAnswerEnvelope(value),
         answered_at: new Date().toISOString(),
       })
     }

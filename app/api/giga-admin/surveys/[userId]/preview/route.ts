@@ -8,6 +8,7 @@ import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 
 // GET /api/giga-admin/surveys/:userId/preview — light data for the hover card
 // in «Анкеты»: who, key business facts, fill per theme. Two queries only.
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: { userId: stri
   let last: string | null = null
   for (const r of answersRes.data ?? []) {
     if (!isWizardVisibleKey(String(r.question_key))) continue
-    answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value
+    answers[r.question_key] = fromAnswerEnvelope(r.answer)
     const at = r.answered_at ? String(r.answered_at) : null
     if (at && (!first || at < first)) first = at
     if (at && (!last || at > last)) last = at

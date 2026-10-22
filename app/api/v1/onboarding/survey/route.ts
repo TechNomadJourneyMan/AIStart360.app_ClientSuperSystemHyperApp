@@ -20,6 +20,7 @@ import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/co
 import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
 import { parseSurveySaveBody } from '@/lib/survey/schema'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { trackEvent, trackEventOnce } from '@/lib/events/track'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { activeImpersonation } from '@/lib/impersonation/server'
@@ -62,7 +63,8 @@ export async function GET(req: NextRequest) {
   const rows = (data ?? []).filter((row) => isWizardVisibleKey(String(row.question_key)))
   const answers: Record<string, unknown> = {}
   for (const row of rows) {
-    answers[row.question_key] = (row.answer as { value: unknown } | null)?.value
+    // «Не знаю» / «примерно» come back as marks (lib/survey/answer-value.ts).
+    answers[row.question_key] = fromAnswerEnvelope(row.answer)
   }
   const completedSteps = completedStepsFromRows(rows)
   // Who filled each answer (line under the field). Expert / admin names come
@@ -172,7 +174,8 @@ export async function POST(req: NextRequest) {
         await adminEditSurvey(
           { id: imp.aid, kind: 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
           targetUserId,
-          Object.fromEntries(accepted.map(([k, v]) => [k, (v as { value: unknown }).value])),
+          // A mark («не знаю» / «примерно») goes as is; adminEditSurvey stores the envelope.
+          Object.fromEntries(accepted.map(([k, v]) => [k, fromAnswerEnvelope(v) ?? null])),
           req,
           { source: 'impersonation', impersonationSessionId: imp.sid },
         )

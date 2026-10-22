@@ -73,6 +73,19 @@ describe('adminEditSurvey', () => {
     await expect(adminEditSurvey(actor, USER, { goal_week_v2: 1 }, null)).rejects.toBeInstanceOf(SurveyEditError)
   })
 
+  it('stores a «не знаю» / «примерно» mark as its own envelope (never nested, never a delete)', async () => {
+    const r = await adminEditSurvey(actor, USER, {
+      s9n_revenue_2024: { value: null, unknown: true },
+      s9n_net_profit: { value: 15, approx: true, range: [10, 20] },
+    }, null)
+    expect(r).toMatchObject({ updated: 2, deleted: 0 })
+    expect(state.upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ question_key: 's9n_revenue_2024', answer: { value: null, unknown: true } }),
+      expect.objectContaining({ question_key: 's9n_net_profit', answer: { value: 15, approx: true, range: [10, 20] } }),
+    ]))
+    expect(state.audits[0].entry).toMatchObject({ oldValue: { s9n_revenue_2024: 100 }, newValue: { s9n_revenue_2024: { value: null, unknown: true } } })
+  })
+
   it('marks impersonation edits', async () => {
     await adminEditSurvey(actor, USER, { s1_company_name: 'Z' }, null, { source: 'impersonation', impersonationSessionId: 'sess-1' })
     expect(state.audits[0].entry.action).toBe('impersonation.survey_edited')

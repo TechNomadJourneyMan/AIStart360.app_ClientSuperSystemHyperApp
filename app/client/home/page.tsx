@@ -8,6 +8,7 @@ import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import UserHome, { type UserHomeData } from '@/components/user-dashboard/UserHome'
 import { visibleSectionsFor } from '@/lib/platform/sections'
 import { visiblePagesFor } from '@/lib/cms/server'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
@@ -45,7 +46,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   let firstAnswerAt: string | null = null
   let lastAnswerAt: string | null = null
   for (const r of rows) {
-    answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value
+    answers[r.question_key] = fromAnswerEnvelope(r.answer)
     const at = r.answered_at ? String(r.answered_at) : null
     if (at && (!firstAnswerAt || at < firstAnswerAt)) firstAnswerAt = at
     if (at && (!lastAnswerAt || at > lastAnswerAt)) lastAnswerAt = at

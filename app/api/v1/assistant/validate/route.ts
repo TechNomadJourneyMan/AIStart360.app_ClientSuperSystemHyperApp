@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import type { AssistantContext } from '@/lib/assistant/types'
+import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 /**
  * POST /api/v1/assistant/validate
@@ -37,9 +38,10 @@ export async function POST(req: NextRequest) {
 
     // Merge draft answers over the persisted snapshot so unsaved edits are
     // validated. Only plain objects are honoured; anything else is ignored.
-    const draft =
+    // «Не знаю» / «примерно» marks become null / the midpoint (lib/survey/answer-value.ts).
+    const draft: Record<string, unknown> =
       body.draftAnswers && typeof body.draftAnswers === 'object' && !Array.isArray(body.draftAnswers)
-        ? body.draftAnswers
+        ? Object.fromEntries(Object.entries(body.draftAnswers).map(([k, v]) => [k, unwrapAnswer(v)]))
         : {}
     const mergedCtx: AssistantContext = {
       ...ctx,

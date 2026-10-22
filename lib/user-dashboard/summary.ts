@@ -9,6 +9,7 @@
 import { SURVEY_LABELS, formatSurveyValue } from '@/lib/survey-labels'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { hasAnswerValue, stepFillFromAnswers, overallFill, type StepFill } from '@/lib/survey/progress'
+import { isUnknownAnswer } from '@/lib/survey/answer-value'
 
 export interface ProfileSectionDef {
   id: string
@@ -73,14 +74,18 @@ const orderOf = (key: string) => LABEL_ORDER.get(key) ?? Number.MAX_SAFE_INTEGER
 
 const first = (answers: Readonly<Record<string, unknown>>, keys: string[]): string => {
   for (const k of keys) {
-    if (!hasAnswerValue(answers[k])) continue
+    // «Не знаю» is listed in its section, never as the company's revenue / goal.
+    if (!hasAnswerValue(answers[k]) || isUnknownAnswer(answers[k])) continue
     const v = formatSurveyValue(k, answers[k])
     if (v && v !== '—') return v
   }
   return ''
 }
 
-/** `answers` = flat question_key → value map (unwrapped from the `{value}` envelope). */
+/**
+ * `answers` = flat question_key → value map (unwrapped from the `{value}`
+ * envelope; «не знаю» / «примерно» kept as marks — `fromAnswerEnvelope`).
+ */
 export function buildUserProfileSummary(answers: Readonly<Record<string, unknown>>): UserProfileSummary {
   const fill = stepFillFromAnswers(answers)
   const overall = overallFill(fill)

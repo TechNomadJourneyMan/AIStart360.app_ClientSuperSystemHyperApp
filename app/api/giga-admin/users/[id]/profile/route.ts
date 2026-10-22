@@ -10,6 +10,7 @@ import { canImpersonate, canManageTarget, hasPermission } from '@/lib/admin/rbac
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { isSurveyCompleted, loadSurveyCompletionMarkers, surveyCompletedAt } from '@/lib/survey/completion'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   let surveyLast: string | null = null
   for (const r of answersRes.data ?? []) {
     if (!isWizardVisibleKey(String(r.question_key))) continue
-    answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value
+    answers[r.question_key] = fromAnswerEnvelope(r.answer)
     const at = r.answered_at ? String(r.answered_at) : null
     if (at && (!surveyFirst || at < surveyFirst)) surveyFirst = at
     if (at && (!surveyLast || at > surveyLast)) surveyLast = at

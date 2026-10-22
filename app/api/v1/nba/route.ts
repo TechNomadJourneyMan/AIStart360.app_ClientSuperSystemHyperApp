@@ -10,6 +10,7 @@ import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { trackUserAction } from '@/lib/events/server'
 import { nbaEventMetadata } from '@/lib/nba/events'
+import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 const POINT_A_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -128,7 +129,7 @@ export async function GET(_req: NextRequest) {
       if (sa && sa.length > 0) {
         const answers: Record<string, unknown> = {}
         for (const r of sa as Array<{ question_key: string; answer: unknown }>) {
-          answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value ?? r.answer
+          answers[r.question_key] = unwrapAnswer(r.answer)
         }
         pa = calculatePointA(answers)
       }

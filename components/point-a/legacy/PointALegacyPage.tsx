@@ -13,6 +13,7 @@ import { ShareButton } from '@/components/share/ShareButton'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 export default async function PointALegacyPage() {
   // Identity comes from the Supabase session only. The old forgeable
@@ -64,7 +65,7 @@ export default async function PointALegacyPage() {
         const rows = await surveyRes.json()
         if (Array.isArray(rows)) {
           for (const row of rows) {
-            surveyAnswers[row.question_key] = row.answer?.value ?? row.answer
+            surveyAnswers[row.question_key] = unwrapAnswer(row.answer)
           }
           // Same rule as every other page: key-derived step, empty answers and
           // staff/widget rows don't count (this page used to count both).

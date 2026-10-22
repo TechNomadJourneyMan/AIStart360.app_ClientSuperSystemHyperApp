@@ -28,6 +28,7 @@ import type {
   Risk, Insight, QuickWin, DataGap
 } from '@/types/onboarding'
 import { coerceNumeric, parsePercentChange } from '@/lib/metrics/source-adapters'
+import { isUnknownAnswer } from '@/lib/survey/answer-value'
 import { metricsTableCell, readMetricsTable, type MetricsTable, type MetricsTableColumnPick, type MetricsTableRow } from '@/lib/survey/metrics-table'
 
 /**
@@ -62,6 +63,8 @@ function clamp(v: number, min = 0, max = 100): number {
 
 export function present(v: unknown): boolean {
   if (v === undefined || v === null) return false
+  // «Не знаю» is «нет данных» (lib/survey/answer-value.ts); readers normally see it as null already.
+  if (isUnknownAnswer(v)) return false
   if (typeof v === 'string') return v.trim().length > 0
   if (Array.isArray(v)) return v.length > 0
   return true

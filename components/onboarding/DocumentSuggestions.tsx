@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { isUnknownAnswer } from '@/lib/survey/answer-value'
 
 /**
  * Chips «Из документа: 12 500 000 ₸ · Принять» for the current wizard step
@@ -22,6 +23,8 @@ interface Suggestion {
 
 function isEmptyAnswer(v: unknown): boolean {
   if (v === null || v === undefined) return true
+  // «Не знаю»: the document may know — the server accepts over it as well.
+  if (isUnknownAnswer(v)) return true
   if (typeof v === 'string') return v.trim() === ''
   if (typeof v === 'number') return !Number.isFinite(v) || v === 0
   if (Array.isArray(v)) return v.length === 0

@@ -7,6 +7,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { canManageTarget } from '@/lib/admin/rbac'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { createServiceClient } from '@/lib/supabase-service'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 
 /**
  * GET /api/giga-admin/requests/[id]/survey
@@ -46,7 +47,7 @@ export async function GET(
 
     if (surveyRows) {
       for (const row of surveyRows) {
-        const val = (row.answer as Record<string, unknown>)?.value ?? row.answer
+        const val = fromAnswerEnvelope(row.answer)
         answers[row.question_key] = val
         completedSteps.add(row.step)
       }

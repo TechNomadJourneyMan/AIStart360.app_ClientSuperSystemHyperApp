@@ -4,6 +4,7 @@
  */
 
 import { stripMarkdown } from '@/lib/survey/markdown'
+import { formatMarkedAnswer } from '@/lib/survey/answer-value'
 import { stepForQuestionKey } from '@/lib/survey/steps'
 import { isSurveyFileKey, surveyFileLabel } from '@/lib/documents/survey-files'
 
@@ -317,9 +318,24 @@ export function formatSurveyTableRows(rows: ReadonlyArray<Record<string, unknown
   return lines.length ? lines.join('; ') : '—'
 }
 
+const isMoneyKey = (key: string) => key.includes('revenue') || key.includes('avg_check') || key.includes('cac') || key.includes('ltv')
+  || key.includes('net_profit') || key.includes('debts_amount') || key.includes('breakeven_point') || key.includes('expense_')
+const isPercentKey = (key: string) => key.includes('margin') || key.includes('budget_pct') || key.includes('transparency_pct')
+  || key.includes('funnel_') || key.endsWith('_rate')
+
+/** The unit a numeric answer of `key` is shown with: '₸', '%' or ''. */
+export function surveyValueUnit(key: string): string {
+  if (isMoneyKey(key)) return '₸'
+  if (isPercentKey(key)) return '%'
+  return ''
+}
+
 /** Format a survey value for display */
 export function formatSurveyValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
+  // «Не знаю» / «примерно» (lib/survey/answer-value.ts): before the {value} unwrap below.
+  const marked = formatMarkedAnswer(value, surveyValueUnit(key))
+  if (marked) return marked
   // Unwrap Supabase JSONB {value: ...} wrapper
   if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
     return formatSurveyValue(key, (value as Record<string, unknown>).value)
@@ -350,16 +366,9 @@ export function formatSurveyValue(key: string, value: unknown): string {
     return value.map(v => typeof v === 'object' && v !== null && 'value' in v ? (v as any).value : v).join(', ')
   }
   if (typeof value === 'number') {
-    if (key.includes('revenue') || key.includes('avg_check') || key.includes('cac') || key.includes('ltv')
-        || key.includes('net_profit') || key.includes('debts_amount') || key.includes('breakeven_point')) {
-      return new Intl.NumberFormat('ru-KZ').format(value) + ' ₸'
-    }
-    if (key.includes('margin') || key.includes('budget_pct') || key.includes('transparency_pct')) {
-      return value + '%'
-    }
-    if (key.includes('funnel_')) {
-      return value + '%'
-    }
+    const unit = surveyValueUnit(key)
+    if (unit === '₸') return new Intl.NumberFormat('ru-KZ').format(value) + ' ₸'
+    if (unit === '%') return value + '%'
     return String(value)
   }
 
