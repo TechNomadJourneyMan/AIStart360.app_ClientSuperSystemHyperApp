@@ -9,7 +9,8 @@ import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-confi
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
 import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, writeDraft } from '@/lib/survey/draft'
-import { overallFill, stepFillFromAnswers } from '@/lib/survey/progress'
+import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@/lib/survey/progress'
+import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
@@ -463,15 +464,13 @@ function OnboardingPageInner() {
           <div className="flex items-center gap-3">
             <SaveStatusChip state={saveState} savedAt={savedAt} />
             <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">
-              {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`} · {progress}%
+              {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`}
             </span>
           </div>
         </div>
 
-        {/* Progress bar */}
-        <div className="h-0.5 bg-white/[0.04]" role="progressbar" aria-label="Заполнено анкеты" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-          <div className="h-full bg-gradient-to-r from-primary to-[#00e29e] transition-all duration-500" style={{ width: `${progress}%` }} />
-        </div>
+        {/* Honest progress: «Минимум для Точки А» + «Глубина» (lib/survey/progress.ts) */}
+        <SurveyProgressHeader answers={stepData} />
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
@@ -512,7 +511,7 @@ function OnboardingPageInner() {
                 key={stepN}
                 onClick={() => { void goToStep(stepN) }}
                 disabled={isSaving || submitting || !loaded}
-                title={`${s.title}: заполнено ${fill[i]?.filled ?? 0} из ${fill[i]?.total ?? 0}`}
+                title={`${s.title}: заполнено ${fill[i]?.filled ?? 0} из ${fill[i]?.total ?? 0} · ${stepTimeHint(fill[i], s.minutes)}`}
                 aria-current={isActive ? 'step' : undefined}
                 className={`
                   flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
@@ -563,6 +562,8 @@ function OnboardingPageInner() {
           <SurveyReview
             fill={fill}
             percent={progress}
+            minimum={pointAMinimum(stepData)}
+            answers={stepData}
             submitting={submitting}
             hasUnsaved={saveState === 'dirty' || saveState === 'error'}
             onEditStep={(n) => { setCurrentStep(n); window.scrollTo({ top: 0, behavior: 'smooth' }) }}

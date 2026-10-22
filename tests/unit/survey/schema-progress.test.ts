@@ -59,12 +59,12 @@ describe('survey fill', () => {
     expect(fill[1].started).toBe(false)
   })
 
-  it('overall percent = started steps / 12 and reaches 100', () => {
+  it('overall percent = answered fields (not started steps / 12) and reaches 100', () => {
     expect(overallFill(stepFillFromAnswers({})).percent).toBe(0)
     const one = overallFill(stepFillFromAnswers({ s1_company_name: 'Acme' }))
     expect(one.startedSteps).toBe(1)
-    expect(one.percent).toBe(8)
-    const all = stepFillFromAnswers({}).map((s) => ({ ...s, filled: 1, started: true }))
+    expect(one.percent).toBe(1) // one field of 171, not «1 step of 12 = 8 %»
+    const all = stepFillFromAnswers({}).map((s) => ({ ...s, filled: s.total, started: true }))
     expect(overallFill(all).percent).toBe(100)
     expect(overallFill(all).missingSteps).toEqual([])
   })

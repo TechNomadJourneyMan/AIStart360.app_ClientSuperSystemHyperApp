@@ -23,9 +23,15 @@
  * outside the 12-step wizard (medical/e-commerce intakes, period goals).
  */
 
-import { isUnknownAnswer } from './answer-value'
+import { fromAnswerEnvelope } from './answer-value'
+import { isAnswerFilled } from './answer-filled'
+import { computePointAMinimum } from './point-a-minimum'
 
 export const SURVEY_TOTAL_STEPS = 12
+
+/** Fields the wizard computes itself («год = месяц × 12»): not questions, not progress. */
+export const AUTO_KEYS = ['s1_current_revenue_year', 's1_goal_12m_revenue_year', 's1_goal_3y_revenue_year'] as const
+const AUTO = new Set<string>(AUTO_KEYS)
 
 /** question_key → wizard step (1..12). Generated from the step forms. */
 export const SURVEY_KEY_STEP: Readonly<Record<string, number>> = {
@@ -240,19 +246,13 @@ export interface SurveyStepRow {
   answer?: unknown
 }
 
+/**
+ * The same rule as the wizard (lib/survey/answer-filled.ts): «не знаю» counts,
+ * a table template without a real row does not.
+ */
 function rowHasValue(answer: unknown): boolean {
   if (answer === null || answer === undefined) return false
-  // «Не знаю» ({ value: null, unknown: true }) is an answer (lib/survey/answer-value.ts).
-  if (isUnknownAnswer(answer)) return true
-  const v =
-    typeof answer === 'object' && answer !== null && !Array.isArray(answer) && 'value' in answer
-      ? (answer as { value: unknown }).value
-      : answer
-  if (v === null || v === undefined) return false
-  if (typeof v === 'string') return v.trim().length > 0
-  if (Array.isArray(v)) return v.length > 0
-  if (typeof v === 'object') return Object.keys(v as object).length > 0
-  return true
+  return isAnswerFilled(fromAnswerEnvelope(answer))
 }
 
 /**
@@ -265,6 +265,7 @@ export function completedStepsFromRows(rows: ReadonlyArray<SurveyStepRow>): numb
   for (const r of rows) {
     if (!r || typeof r.question_key !== 'string') continue
     if (r.answer !== undefined && !rowHasValue(r.answer)) continue
+    if (AUTO.has(r.question_key)) continue
     const stored = r.step === null || r.step === undefined ? null : Number(r.step)
     // The stored step is trusted only for older-generation survey keys. Staff
     // notes / widget data (gri_expert_*, goal_*_v2, ec_*) never count toward
@@ -279,21 +280,46 @@ export function completedStepsFromRows(rows: ReadonlyArray<SurveyStepRow>): numb
   return Array.from(steps).sort((a, b) => a - b)
 }
 
-/** Progress summary used by the status API and server components. */
+const DEPTH_KEYS = Object.keys(SURVEY_KEY_STEP).filter((k) => !AUTO.has(k))
+
+/**
+ * Progress summary used by the status API, server components, GIGA, the bot
+ * and the Sheets export — the same numbers as the wizard (lib/survey/progress.ts):
+ *  • `percent` — «Глубина»: answered wizard fields / all fields (was the share
+ *    of started steps: one toggle made a step «done»);
+ *  • `minimum` — «Минимум для Точки А: X из N»;
+ *  • `completed` / `is_complete` — started steps (the completion events use them).
+ */
 export function surveyProgressFromRows(rows: ReadonlyArray<SurveyStepRow>): {
   completed_steps: number[]
   completed: number
   total_steps: number
   percent: number
+  /** Started steps / 12, % (the old `percent`). */
+  steps_percent: number
+  answered: number
+  total_fields: number
+  minimum: { answered: number; total: number }
   is_complete: boolean
 } {
   const completed_steps = completedStepsFromRows(rows)
   const completed = completed_steps.length
+  const answers: Record<string, unknown> = {}
+  for (const r of rows) {
+    if (!r || typeof r.question_key !== 'string' || !(r.question_key in SURVEY_KEY_STEP)) continue
+    answers[r.question_key] = r.answer === undefined ? undefined : fromAnswerEnvelope(r.answer)
+  }
+  const answered = DEPTH_KEYS.filter((k) => isAnswerFilled(answers[k])).length
+  const minimum = computePointAMinimum(answers, (k) => stepForQuestionKey(k))
   return {
     completed_steps,
     completed,
     total_steps: SURVEY_TOTAL_STEPS,
-    percent: Math.round((completed / SURVEY_TOTAL_STEPS) * 100),
+    percent: DEPTH_KEYS.length ? Math.round((answered / DEPTH_KEYS.length) * 100) : 0,
+    steps_percent: Math.round((completed / SURVEY_TOTAL_STEPS) * 100),
+    answered,
+    total_fields: DEPTH_KEYS.length,
+    minimum: { answered: minimum.answered, total: minimum.total },
     is_complete: completed >= SURVEY_TOTAL_STEPS,
   }
 }

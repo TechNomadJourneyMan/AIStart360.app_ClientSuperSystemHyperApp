@@ -1,11 +1,17 @@
 'use client'
 
 import { STEPS } from '@/components/onboarding/constants/step-config'
-import type { StepFill } from '@/lib/survey/progress'
+import type { PointAMinimum, StepFill } from '@/lib/survey/progress'
+import { blindSpots } from '@/lib/survey/blind-spots'
 
 interface Props {
   fill: ReadonlyArray<StepFill>
+  /** «Глубина», %. */
   percent: number
+  /** «Минимум для Точки А». */
+  minimum?: PointAMinimum
+  /** Flat answers: the «Не знаю» list (карта слепых зон). */
+  answers?: Readonly<Record<string, unknown>>
   submitting: boolean
   hasUnsaved: boolean
   onEditStep: (step: number) => void
@@ -14,8 +20,9 @@ interface Props {
 }
 
 /** Final confirmation before the survey is submitted: what is filled, what is not. */
-export default function SurveyReview({ fill, percent, submitting, hasUnsaved, onEditStep, onBack, onSubmit }: Props) {
+export default function SurveyReview({ fill, percent, minimum, answers, submitting, hasUnsaved, onEditStep, onBack, onSubmit }: Props) {
   const missing = fill.filter((s) => !s.started)
+  const spots = answers ? blindSpots(answers) : []
 
   return (
     <div className="pb-8">
@@ -32,15 +39,40 @@ export default function SurveyReview({ fill, percent, submitting, hasUnsaved, on
       <div className={`mb-5 rounded-xl border px-4 py-3 ${missing.length ? 'border-amber-400/25 bg-amber-400/[0.06]' : 'border-primary/20 bg-primary/[0.06]'}`}>
         <p className="text-sm font-semibold text-on-surface">
           {missing.length
-            ? `Заполнено ${percent}% — без ответов ${missing.length} из ${fill.length} разделов`
-            : 'Все разделы заполнены'}
+            ? `Глубина ${percent}% — без ответов ${missing.length} из ${fill.length} разделов`
+            : `Все разделы начаты · глубина ${percent}%`}
         </p>
+        {minimum && (
+          <p className="mt-1 text-xs text-on-surface">
+            Минимум для Точки А: <b>{minimum.answered} из {minimum.total}</b>
+            {minimum.missing.length > 0 && (
+              <span className="text-on-surface-variant"> · не хватает: {minimum.missing.slice(0, 4).map((m) => m.label.toLowerCase()).join(', ')}{minimum.missing.length > 4 ? '…' : ''}</span>
+            )}
+          </p>
+        )}
         <p className="mt-1 text-xs text-on-surface-variant leading-snug">
           {missing.length
             ? 'Отправить можно и так: диагностика построится по тому, что есть, но будет менее точной. Пустые разделы можно дозаполнить позже.'
             : 'После отправки мы сформируем ваш профиль и Точку А. Ответы можно будет изменить в любой момент.'}
         </p>
       </div>
+
+      {spots.length > 0 && (
+        <section aria-labelledby="survey-blind-spots" className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+          <h2 id="survey-blind-spots" className="text-sm font-semibold text-on-surface">Слепые зоны: вы ответили «Не знаю» — {spots.length}</h2>
+          <p className="mt-0.5 text-[11px] text-on-surface-variant">Это тоже результат: цифры, которые стоит начать считать в первую очередь.</p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {spots.map((s) => (
+              <li key={s.key}>
+                <button type="button" onClick={() => onEditStep(s.step)} disabled={submitting}
+                  className="rounded-lg border border-white/[0.08] px-2 py-1 text-[11px] text-on-surface-variant hover:border-primary/30 hover:text-on-surface">
+                  {s.label} <span className="text-on-surface-variant/50">· шаг {s.step}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ul className="mb-6 grid gap-2 sm:grid-cols-2">
         {fill.map((s) => {

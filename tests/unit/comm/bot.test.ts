@@ -338,7 +338,7 @@ describe('runBotReply', () => {
     expect(facts.join('\n')).toContain('ТОО Ромашка')
     expect(facts.join('\n')).toContain('Точка А: 62/100')
     expect(facts.join('\n')).toContain('Маркетинг — 30')
-    expect(facts.join('\n')).toMatch(/Анкета: заполнено 1 из 12/)
+    expect(facts.join('\n')).toMatch(/Анкета: начато 1 из 12 шагов, глубина \d+%/)
     expect(facts.join('\n')).not.toContain('Чужая')
     expect(facts.join('\n')).not.toContain('99')
     const r = botDeps(sb)

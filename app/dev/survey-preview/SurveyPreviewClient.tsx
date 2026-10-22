@@ -9,7 +9,8 @@ import { useCallback, useState } from 'react'
 import { STEPS, TOTAL_STEPS } from '@/components/onboarding/constants/step-config'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
-import { overallFill, stepFillFromAnswers } from '@/lib/survey/progress'
+import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@/lib/survey/progress'
+import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
@@ -125,13 +126,11 @@ export default function SurveyPreviewClient({ variant, step }: { variant: Survey
           <div className="flex items-center gap-3">
             <SaveStatusChip state={dirty ? 'dirty' : variant === 'empty' ? 'idle' : 'saved'} savedAt={new Date('2026-10-22T10:15:00')} />
             <span className="whitespace-nowrap font-mono text-[10px] text-on-surface-variant">
-              {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`} · {progress}%
+              {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`}
             </span>
           </div>
         </div>
-        <div className="h-0.5 bg-white/[0.04]" role="progressbar" aria-label="Заполнено анкеты" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
-          <div className="h-full bg-gradient-to-r from-primary to-[#00e29e]" style={{ width: `${progress}%` }} />
-        </div>
+        <SurveyProgressHeader answers={answers} />
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-6 md:py-10">
@@ -155,7 +154,7 @@ export default function SurveyPreviewClient({ variant, step }: { variant: Survey
             const started = fill[i]?.started === true
             return (
               <button key={n} type="button" onClick={() => go(n)} aria-current={active ? 'step' : undefined}
-                title={`${s.title}: заполнено ${fill[i]?.filled ?? 0} из ${fill[i]?.total ?? 0}`}
+                title={`${s.title}: заполнено ${fill[i]?.filled ?? 0} из ${fill[i]?.total ?? 0} · ${stepTimeHint(fill[i], s.minutes)}`}
                 className={`flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 font-mono text-[10px] ${active ? 'border border-primary/20 bg-primary/15 text-primary' : started ? 'bg-white/[0.04] text-on-surface-variant' : 'bg-white/[0.02] text-on-surface-variant/60'}`}>
                 <span className={`material-symbols-outlined text-xs ${started && !active ? 'text-primary/80' : ''}`}>{started ? 'check_circle' : s.icon}</span>
                 {s.title}
@@ -169,7 +168,7 @@ export default function SurveyPreviewClient({ variant, step }: { variant: Survey
         </div>
 
         {isReview ? (
-          <SurveyReview fill={fill} percent={progress} submitting={false} hasUnsaved={dirty}
+          <SurveyReview fill={fill} percent={progress} minimum={pointAMinimum(answers)} answers={answers} submitting={false} hasUnsaved={dirty}
             onEditStep={go} onBack={() => go(TOTAL_STEPS)} onSubmit={() => {}} />
         ) : (
           <>

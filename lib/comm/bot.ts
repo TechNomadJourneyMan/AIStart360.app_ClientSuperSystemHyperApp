@@ -181,7 +181,7 @@ export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise
     facts.push(progress.is_complete
       ? 'Анкета: заполнена полностью'
       : progress.completed > 0
-        ? `Анкета: заполнено ${progress.completed} из ${progress.total_steps} шагов (${progress.percent}%)`
+        ? `Анкета: начато ${progress.completed} из ${progress.total_steps} шагов, глубина ${progress.percent}%, минимум для Точки А ${progress.minimum.answered} из ${progress.minimum.total}`
         : 'Анкета: ещё не начата')
     if (c?.id) {
       const { data: snap } = await sb

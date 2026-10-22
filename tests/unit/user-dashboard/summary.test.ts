@@ -32,7 +32,7 @@ describe('buildUserProfileSummary', () => {
     expect(s.hero.revenue).not.toBe('')
     expect(s.hero.goal12m).toBe('Удвоить выручку')
     expect(s.startedSteps).toBe(3)
-    expect(s.percent).toBe(25)
+    expect(s.percent).toBe(2) // «глубина»: 4 answered fields of 171 (was 3 started steps of 12 = 25 %)
   })
 
   it('editStep points at the first step of the section that still has gaps', () => {
