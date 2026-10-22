@@ -46,8 +46,9 @@ function dbError(op: string, error: { code?: string } | null | undefined): Error
 }
 
 /** The company of a client (the oldest one); null when the client has none. */
+// public.companies is a Prisma-era table: its timestamps are camelCase ("createdAt"), not created_at.
 export async function companyOfUser(sb: SupabaseClient, userId: string): Promise<{ id: string; name: string | null } | null> {
-  const { data, error } = await sb.from('companies').select('id, name').eq('user_id', userId).order('created_at', { ascending: true }).limit(1)
+  const { data, error } = await sb.from('companies').select('id, name').eq('user_id', userId).order('createdAt', { ascending: true }).limit(1)
   if (error) throw dbError('read company', error)
   const row = ((data ?? []) as Array<{ id: string; name?: string | null }>)[0]
   return row ? { id: row.id, name: row.name ?? null } : null
