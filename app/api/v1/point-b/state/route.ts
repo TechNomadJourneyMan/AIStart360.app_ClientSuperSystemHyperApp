@@ -24,11 +24,17 @@ export async function GET() {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-  const upgrade = await gateFeature(sb, user.id, 'point_b', { exemptStaff: true })
+  // The Pro gate and the read go out together (the read only reads): a gated user still gets the 402
+  // and nothing else, everyone else saves the gate's round trip.
+  const [upgrade, loaded] = await Promise.all([
+    gateFeature(sb, user.id, 'point_b', { exemptStaff: true }),
+    loadPointBState(createServiceClient(), user.id).then((data) => ({ data }), (error: unknown) => ({ error })),
+  ])
   if (upgrade) return upgrade
 
   try {
-    const data = await loadPointBState(createServiceClient(), user.id)
+    if ('error' in loaded) throw loaded.error
+    const data = loaded.data
     // The page opens with this read (the details tab loads its own data lazily), so a fetch = a view of Point B.
     void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'point_b', entityId: user.id, metadata: { level: data.overview.result.level, plan: data.plan.status } })
     return NextResponse.json({ ok: true, data })
