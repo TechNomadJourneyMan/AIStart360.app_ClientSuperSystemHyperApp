@@ -56,7 +56,12 @@ async function deliverCreated(
 }
 
 export async function runInviteRules(
-  sb: SupabaseClient, input: { userId: string; companyId: string; now: Date; impersonating?: boolean },
+  sb: SupabaseClient,
+  input: {
+    userId: string; companyId: string; now: Date; impersonating?: boolean
+    /** Candidates of other rules (the plan-fact of Ф6b: deviation from the plan, a milestone reached), merged by priority. */
+    extra?: InsightCandidate[]
+  },
 ): Promise<{ created: number; skipped: number }> {
   try {
     if (await impersonated(input.userId, input.impersonating)) return NONE
@@ -77,12 +82,15 @@ export async function runInviteRules(
     const result = computeModel(inputs, profiles)
     if (result.level === 0) return NONE
 
-    const candidates = evaluateInsightRules({
-      result,
-      selectedScenario: published.selected_scenario ?? null,
-      finmodelMissing: inputs.finmodel?.missing.length ?? 0,
-      pendingCorrection: goals.items.some((i) => i.reviewStatus === 'corrected'),
-    })
+    const candidates = [
+      ...evaluateInsightRules({
+        result,
+        selectedScenario: published.selected_scenario ?? null,
+        finmodelMissing: inputs.finmodel?.missing.length ?? 0,
+        pendingCorrection: goals.items.some((i) => i.reviewStatus === 'corrected'),
+      }),
+      ...(input.extra ?? []),
+    ].sort((a, b) => a.priority - b.priority) // stable: the order of the rules within a priority stays
     if (!candidates.length) return NONE
 
     const r = await createInvites(sb, { companyId: input.companyId, userId: input.userId, candidates, now: input.now })

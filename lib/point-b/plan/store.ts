@@ -108,7 +108,8 @@ export async function loadPlanBundle(sb: SupabaseClient, companyId: string): Pro
 export interface DraftInput {
   goals: PlanGoalsSnapshot
   baseSnapshotId: string | null
-  author: { id: string; name: string; kind: PlanAuthorKind }
+  /** id null = the system (the scheduled recompute proposing a revision, plan Ф6b). */
+  author: { id: string | null; name: string; kind: PlanAuthorKind }
   changeReason: string | null
   /** The version to start from: its content is copied into the new draft. */
   fromVersion?: PlanVersionRow | null
