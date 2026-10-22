@@ -12,6 +12,7 @@ import {
   Badge, Button, ConfirmDialog, ErrorState, Field, PageHeader, Panel, Skeleton, cx, fmtAgo, fmtDateTime,
   gigaFetch, inputClass, useGigaQuery,
 } from '@/components/giga-panel/kit'
+import { PointBSettingsCard } from '@/components/giga-panel/settings/PointBSettingsCard'
 import { NOTIFICATION_TYPES, SETTINGS, type AdminNotificationType, type SettingKey, type SettingValue } from '@/lib/settings/registry'
 
 type Values = { [K in SettingKey]: SettingValue<K> }
@@ -250,6 +251,8 @@ export default function SettingsPage() {
           </Panel>
 
           <CommCard values={v} meta={meta} disabled={!canEdit} saving={saving} onSave={save} />
+
+          <PointBSettingsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onSave={save} />
 
           {canEdit && <HealthCard />}
         </div>
