@@ -66,6 +66,11 @@ function buildPrompt(
     const v = answers[key]
     return typeof v === 'number' ? v : 0
   }
+  // File answers: whether a file was uploaded — never its storage path / URL.
+  const file = (key: string) => {
+    const v = answers[key]
+    return typeof v === 'string' && v.trim() ? 'file uploaded' : '—'
+  }
 
   const revGrowth = num('s2_revenue_2023') > 0
     ? (((num('s2_revenue_2024') - num('s2_revenue_2023')) / num('s2_revenue_2023')) * 100).toFixed(1)
@@ -179,9 +184,9 @@ Upsell/Cross-sell: ${get('s5n_upsell_crosssell')}
 Journey Table: ${get('s6n_journey_table')}
 Weak Funnel Points: ${get('s6n_weak_funnel_points')}
 Post-Sale Touchpoints: ${get('s6n_post_sale_touchpoints')}
-First Contact Script: ${get('s6n_script_first_contact')}
-Meeting Script: ${get('s6n_script_meeting')}
-Proposal Script: ${get('s6n_script_proposal')}
+First Contact Script: ${file('s6n_script_first_contact')}
+Meeting Script: ${file('s6n_script_meeting')}
+Proposal Script: ${file('s6n_script_proposal')}
 
 --- STEP 7: MARKETING ---
 Marketing Channels Table: ${get('s7n_channels_table')}

@@ -5,6 +5,7 @@
 
 import { stripMarkdown } from '@/lib/survey/markdown'
 import { stepForQuestionKey } from '@/lib/survey/steps'
+import { isSurveyFileKey, surveyFileLabel } from '@/lib/documents/survey-files'
 
 export const SURVEY_STEP_LABELS: Record<number, string> = {
   1: 'О компании',
@@ -328,6 +329,11 @@ export function formatSurveyValue(key: string, value: unknown): string {
     try { return JSON.stringify(value) } catch { return '—' }
   }
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+  // File answers (step 6 scripts): the file name, never a Storage URL — the
+  // bucket is private; links go through /api/v1/files/documents.
+  if (isSurveyFileKey(key) && typeof value === 'string') {
+    return surveyFileLabel(value) ?? (value.trim() ? 'Файл загружен' : '—')
+  }
   if (Array.isArray(value)) {
     if (value.length === 0) return '—'
     // Step-1 uploads: show file names, not storage paths / byte sizes.

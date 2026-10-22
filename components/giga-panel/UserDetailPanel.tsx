@@ -6,6 +6,7 @@ import {
   Paperclip, File, FileBarChart, FileSpreadsheet,
 } from 'lucide-react'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
+import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
 import { UserInsightsBlock } from './UserInsightsBlock'
 import { BillingControls } from './BillingControls'
 import { ImpersonateDialog } from './user360/ImpersonateDialog'
@@ -327,7 +328,10 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
           {data.completedSteps.map(step => {
             const fields = Object.entries(editing ? editValues : data.answers)
               .filter(([k]) => getStepFromKey(k) === step)
-              .map(([k, v]) => ({ key: k, label: SURVEY_LABELS[k] || k, value: editing ? String(v ?? '') : formatSurveyValue(k, v) }))
+              .map(([k, v]) => {
+                const file = !editing && isSurveyFileKey(k) ? surveyFileRef(v) : null
+                return { key: k, label: SURVEY_LABELS[k] || k, value: editing ? String(v ?? '') : formatSurveyValue(k, v), href: file ? fileHref(file) : null }
+              })
             if (!fields.length) return null
             return (
               <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
@@ -343,7 +347,11 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
                           onChange={e => setEditValues(prev => ({ ...prev, [f.key]: e.target.value }))}
                           className="mt-0.5 px-2 py-1 rounded bg-white/[0.05] border border-white/[0.1] text-[11px] text-slate-200 focus:border-blue-500/40 focus:outline-none transition-all" />
                       ) : (
-                        <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                        f.href ? (
+                          <a href={f.href} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-300 leading-tight hover:underline">{f.value}</a>
+                        ) : (
+                          <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                        )
                       )}
                     </div>
                   ))}

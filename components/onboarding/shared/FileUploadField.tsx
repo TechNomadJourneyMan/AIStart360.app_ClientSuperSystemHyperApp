@@ -1,24 +1,36 @@
 'use client'
 
 import React, { useState, useRef, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { CLIENT_DOCUMENT_ACCEPT, uploadClientDocument } from '@/lib/documents/client-upload'
+import { encodeFileRef, fileHref, fileRefName, isFileRouteBucket, surveyFileRef } from '@/lib/documents/survey-files'
 import { FieldLabel } from './FieldLabel'
 import { FieldError } from './FieldError'
 
 interface FileUploadFieldProps {
   label: string
+  /** The questionnaire key: the uploaded document is attached to this question. */
   fieldKey: string
+  /** Empty (preview without a session) — the picker is disabled, nothing is uploaded. */
   userId: string
   accept?: string
+  /** Stored answer: `<bucket>/<path>` (new) or a legacy public Storage URL. */
   value?: string
-  onChange: (url: string) => void
+  /** Receives the storage reference `<bucket>/<path>` — never a URL. */
+  onChange: (ref: string) => void
 }
 
+/**
+ * A file answer of the questionnaire (step 6 «Скрипты»). The file goes through
+ * the normal document pipeline — private bucket `client-documents`, then
+ * POST /api/v1/documents (checks, dedupe, processing, «Мои документы»), linked
+ * to the question. The answer keeps the storage reference; the «Открыть» link
+ * goes through the access-checked route (lib/documents/survey-files.ts).
+ */
 export function FileUploadField({
   label,
   fieldKey,
   userId,
-  accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.png',
+  accept = CLIENT_DOCUMENT_ACCEPT,
   value,
   onChange,
 }: FileUploadFieldProps) {
@@ -26,51 +38,50 @@ export function FileUploadField({
   const [error, setError] = useState<string | undefined>()
   const [fileName, setFileName] = useState<string | undefined>()
   const inputRef = useRef<HTMLInputElement>(null)
+  const disabled = !userId
 
   const handleUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
-      if (!file) return
+      e.target.value = ''
+      if (!file || disabled) return
 
       setError(undefined)
       setUploading(true)
-      setFileName(file.name)
 
       try {
-        const supabase = createClient()
-        const ext = file.name.split('.').pop()
-        const path = `${userId}/${fieldKey}/${Date.now()}.${ext}`
-
-        const { error: uploadErr } = await supabase.storage
-          .from('documents')
-          .upload(path, file, { upsert: true })
-
-        if (uploadErr) throw uploadErr
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from('documents').getPublicUrl(path)
-
-        onChange(publicUrl)
-      } catch (err: any) {
-        setError(err?.message ?? 'Ошибка загрузки файла')
-        setFileName(undefined)
+        const out = await uploadClientDocument(file, { docType: 'scripts', questionKey: fieldKey })
+        if (out.kind === 'failed' || out.kind === 'rejected') {
+          setError(out.error)
+          return
+        }
+        const doc = out.document
+        if (!doc.storage_path || !isFileRouteBucket(doc.storage_bucket)) {
+          setError('Файл загружен, но ссылка на него недоступна. Загрузите файл ещё раз.')
+          return
+        }
+        setFileName(doc.file_name || file.name)
+        onChange(encodeFileRef({ bucket: doc.storage_bucket, path: doc.storage_path }))
+      } catch (err) {
+        setError(err instanceof Error && /[а-яё]/i.test(err.message) ? err.message : 'Ошибка загрузки файла')
       } finally {
         setUploading(false)
       }
     },
-    [userId, fieldKey, onChange]
+    [disabled, fieldKey, onChange]
   )
 
-  const displayName = fileName ?? (value ? decodeURIComponent(value.split('/').pop() ?? '') : undefined)
+  const ref = surveyFileRef(value)
+  const displayName = fileName ?? (ref ? fileRefName(ref) : value ? 'Файл загружен' : undefined)
 
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
 
       <div
-        onClick={() => inputRef.current?.click()}
-        className="flex items-center gap-3 bg-surface-container border border-dashed border-white/[0.12] rounded-xl px-4 py-3 cursor-pointer hover:border-primary/30 transition-all"
+        onClick={() => { if (!disabled && !uploading) inputRef.current?.click() }}
+        aria-disabled={disabled || undefined}
+        className={`flex items-center gap-3 bg-surface-container border border-dashed border-white/[0.12] rounded-xl px-4 py-3 transition-all ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:border-primary/30'}`}
       >
         <span className="material-symbols-outlined text-on-surface-variant text-xl">
           {uploading ? 'hourglass_empty' : value ? 'check_circle' : 'upload_file'}
@@ -88,9 +99,9 @@ export function FileUploadField({
           )}
         </div>
 
-        {value && !uploading && (
+        {ref && !uploading && (
           <a
-            href={value}
+            href={fileHref(ref)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
@@ -106,6 +117,7 @@ export function FileUploadField({
         type="file"
         accept={accept}
         onChange={handleUpload}
+        disabled={disabled}
         className="hidden"
       />
 

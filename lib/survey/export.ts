@@ -9,6 +9,8 @@ import { SURVEY_KEY_STEP, SURVEY_TOTAL_STEPS, surveyProgressFromRows, type Surve
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue } from '@/lib/survey-labels'
 import { stripMarkdown } from '@/lib/survey/markdown'
 import { upsertRowByKey, googleSheetsConfigured, spreadsheetUrl } from '@/lib/integrations/google-sheets'
+import { absoluteFileHref, fileRefName, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
+import { getSiteUrl } from '@/lib/site-url'
 
 export interface SurveyExportMeta {
   userId: string
@@ -117,6 +119,9 @@ export function buildSurveySheetRow(rows: ReadonlyArray<SurveyStepRow>, meta: Su
   ]
   const cells = SURVEY_EXPORT_KEYS.map((k) => {
     if (!(k in answers)) return ''
+    // A file answer: a link to the portal's access-checked route, never to Storage.
+    const file = isSurveyFileKey(k) ? surveyFileRef(answers[k]) : null
+    if (file) return `${fileRefName(file)} — ${absoluteFileHref(file, getSiteUrl())}`
     const v = formatSurveyValue(k, answers[k])
     return v === '—' ? '' : v
   })

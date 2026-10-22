@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-data-access'
-import { isInOwnerFolder, locationForDocument } from '@/lib/documents/storage'
+import { isInOwnerFolder, locationForDocument, parseStorageUrl } from '@/lib/documents/storage'
 import { dbError } from '@/lib/api-error'
 
 /**
@@ -38,7 +38,11 @@ export async function GET(
     // (089); legacy rows a Storage URL or a bare path of the `documents` bucket.
     const docsWithUrls = await Promise.all(
       (documents ?? []).map(async (doc) => {
-        let downloadUrl: string | null = /^https?:\/\//i.test(doc.file_url ?? '') ? doc.file_url : null
+        // A stored Storage URL (a public URL of the formerly public `documents`
+        // bucket, a long-lived signed URL) is never handed out — only a fresh
+        // short-lived signature; other legacy http(s) URLs as stored.
+        let downloadUrl: string | null =
+          /^https?:\/\//i.test(doc.file_url ?? '') && !parseStorageUrl(doc.file_url ?? '') ? doc.file_url : null
         const loc = locationForDocument(doc)
         if (loc && isInOwnerFolder(loc, doc.user_id)) {
           const { data: signed } = await supabase.storage

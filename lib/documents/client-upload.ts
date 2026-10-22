@@ -16,6 +16,7 @@
 import { createClient } from '@/lib/supabase/client'
 import { isDocumentType, type DocumentTypeValue } from './doc-types'
 import { DUPLICATE_MESSAGE, type ClientDocument } from './status-view'
+import { fileHref, isSafeObjectPath, LEGACY_DOCUMENTS_BUCKET, ownerFolderOf } from './survey-files'
 
 export type { ClientDocument } from './status-view'
 
@@ -435,14 +436,20 @@ async function signedUrl(bucket: string, path: string, deps: ClientDeps): Promis
  * A short-lived link to the caller's own document. New rows: a signed URL of
  * storage_bucket/storage_path (storage RLS lets the owner sign their folder).
  * Legacy rows with a Supabase Storage URL: a fresh 1-hour link for the parsed
- * bucket/path — the stored long-lived signed URL is never handed out again (a
- * public-bucket URL, readable anyway, is the fallback when signing is refused).
- * Other legacy http(s) URLs (non-Supabase hosts): as stored.
+ * bucket/path — the stored long-lived signed URL is never handed out again.
+ * Objects of the formerly public `documents` bucket (a stored public URL, a
+ * bare `<uid>/…` path of the medical intake, or storage_bucket = 'documents')
+ * open through the access-checked route GET /api/v1/files/documents — no
+ * public URL is ever returned. Other legacy http(s) URLs (non-Supabase hosts):
+ * as stored.
  */
 export async function documentDownloadUrl(
   doc: Pick<ClientDocument, 'storage_bucket' | 'storage_path' | 'file_url'>,
   deps: ClientDeps = {},
 ): Promise<DownloadUrlOutcome> {
+  if (doc.storage_bucket === LEGACY_DOCUMENTS_BUCKET && doc.storage_path && isSafeObjectPath(doc.storage_path)) {
+    return { ok: true, url: fileHref({ bucket: LEGACY_DOCUMENTS_BUCKET, path: doc.storage_path }) }
+  }
   if (doc.storage_bucket && doc.storage_path) {
     const fresh = await signedUrl(doc.storage_bucket, doc.storage_path, deps)
     if (fresh) return fresh
@@ -450,10 +457,20 @@ export async function documentDownloadUrl(
   if (doc.file_url && /^https?:\/\//i.test(doc.file_url)) {
     const legacy = legacyStorageLocation(doc.file_url)
     if (!legacy) return { ok: true, url: doc.file_url }
+    // The formerly public `documents` bucket (migration 133 makes it private):
+    // the access-checked route signs a short-lived link — the stored public URL
+    // is never handed out.
+    if (legacy.bucket === LEGACY_DOCUMENTS_BUCKET) {
+      return isSafeObjectPath(legacy.path)
+        ? { ok: true, url: fileHref({ bucket: LEGACY_DOCUMENTS_BUCKET, path: legacy.path }) }
+        : { ok: false, error: 'Файл недоступен для просмотра.' }
+    }
     const fresh = await signedUrl(legacy.bucket, legacy.path, deps)
-    if (fresh?.ok) return fresh
-    if (!legacy.signed) return { ok: true, url: doc.file_url }
-    return fresh ?? { ok: false, error: 'Файл недоступен для просмотра.' }
+    return fresh?.ok ? fresh : fresh ?? { ok: false, error: 'Файл недоступен для просмотра.' }
+  }
+  // A bare `<uid>/…` path: the medical intake stores objects of `documents` this way.
+  if (!doc.storage_bucket && doc.file_url && isSafeObjectPath(doc.file_url) && ownerFolderOf(doc.file_url)) {
+    return { ok: true, url: fileHref({ bucket: LEGACY_DOCUMENTS_BUCKET, path: doc.file_url }) }
   }
   return { ok: false, error: 'Файл недоступен для просмотра.' }
 }

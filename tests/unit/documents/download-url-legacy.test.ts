@@ -2,7 +2,8 @@
  * Security P2-13 (code part) — legacy documents rows keep a year-long SIGNED
  * Supabase URL in file_url. documentDownloadUrl no longer hands that stored
  * bearer URL out: it signs a fresh 1-hour link for the parsed bucket/path. A
- * public-bucket URL (readable anyway) and non-Supabase URLs keep working.
+ * public URL of the `documents` bucket (private since migration 133) goes
+ * through /api/v1/files/documents; non-Supabase URLs keep working.
  */
 import { describe, expect, it } from 'vitest'
 import { documentDownloadUrl } from '@/lib/documents/client-upload'
@@ -41,9 +42,11 @@ describe('documentDownloadUrl — legacy rows', () => {
     expect(JSON.stringify(out)).not.toContain('year-long-jwt')
   })
 
-  it('a public-bucket URL is still served when it cannot be signed', async () => {
+  it('a public URL of the formerly public `documents` bucket opens through the access-checked route (migration 133)', async () => {
     const f = fakeSupabase(null, 'new row violates row-level security policy')
-    expect(await documentDownloadUrl(legacy(LEGACY_PUBLIC), { supabase: f.sb })).toEqual({ ok: true, url: LEGACY_PUBLIC })
+    expect(await documentDownloadUrl(legacy(LEGACY_PUBLIC), { supabase: f.sb }))
+      .toEqual({ ok: true, url: '/api/v1/files/documents?bucket=documents&path=u1%2Fx.pdf' })
+    expect(f.calls).toEqual([])
   })
 
   it('a non-Supabase URL is returned as stored', async () => {

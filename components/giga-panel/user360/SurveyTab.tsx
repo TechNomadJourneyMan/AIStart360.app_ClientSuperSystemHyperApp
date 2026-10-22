@@ -11,6 +11,7 @@ import { SURVEY_LABELS } from '@/lib/survey-labels'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { STEPS } from '@/components/onboarding/constants/step-config'
 import { formatAttribution, type AnswerAttribution } from '@/lib/survey/attribution-label'
+import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
 
 interface Section {
   id: string; title: string; description: string; steps: number[]; filled: number; total: number
@@ -37,6 +38,17 @@ function toEditable(v: unknown): { text: string; kind: EditKind } {
   if (typeof v === 'number') return { text: String(v), kind: 'number' }
   if (typeof v === 'boolean') return { text: v ? 'true' : 'false', kind: 'boolean' }
   return { text: JSON.stringify(v, null, 2), kind: 'json' }
+}
+
+/** A file answer opens through the access-checked route (signed link), never a Storage URL. */
+function AnswerValue({ answerKey, text, raw }: { answerKey: string; text: string; raw: unknown }) {
+  const ref = isSurveyFileKey(answerKey) ? surveyFileRef(raw) : null
+  if (!ref) return <>{text}</>
+  return (
+    <a href={fileHref(ref)} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline-offset-2 hover:underline">
+      {text}
+    </a>
+  )
 }
 
 function plural(n: number, one: string, few: string, many: string): string {
@@ -147,7 +159,9 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
                         </span>
                       ) : d.answeredAt[a.key] && <span className="block text-[10px] text-slate-700">{fmtDateTime(d.answeredAt[a.key])}</span>}
                     </dt>
-                    <dd className="whitespace-pre-line break-words text-xs text-slate-200">{a.value}</dd>
+                    <dd className="whitespace-pre-line break-words text-xs text-slate-200">
+                      <AnswerValue answerKey={a.key} text={a.value} raw={d.raw[a.key]} />
+                    </dd>
                     <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                       <Button size="sm" variant="ghost" aria-label="История поля" icon={<History size={12} />} onClick={() => { setHistoryKey(a.key); setHistoryPage(1) }} />
                       {canEdit && (
