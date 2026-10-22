@@ -3,7 +3,7 @@
  * Point A v4 state and the rendered block (react-dom/server, no DOM).
  */
 import { describe, expect, it, vi } from 'vitest'
-import { createElement } from 'react'
+import { createElement, type ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }), usePathname: () => '/dashboard' }))
@@ -151,7 +151,7 @@ describe('«AI · Карта роста» uses the synced goals', () => {
     const { default: GrowthSnapshotHero } = await import('@/components/dashboard/GrowthSnapshotHero')
     const qc = new QueryClient()
     qc.setQueryData(['goals'], items)
-    return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(GrowthSnapshotHero, { visibleSections: ['point_b', 'gri', 'documents'], hideSnapshot: true })))
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client: qc }, createElement(GrowthSnapshotHero as ComponentType<{ visibleSections?: string[]; hideSnapshot?: boolean }>, { visibleSections: ['point_b', 'gri', 'documents'], hideSnapshot: true })))
   }
 
   it('goals exist → shows them and opens Point B, does not ask to enter goals', async () => {
