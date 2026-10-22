@@ -147,5 +147,6 @@ describe('save body accepts the marks', () => {
     expect(bad({ value: 9, approx: true, range: [1, 3] })).toBe(false) // value outside the range
     expect(bad({ value: 2, approx: true, range: [3, 1] })).toBe(false) // min > max
     expect(bad({ value: 2, approx: true, range: [1, 3], extra: 1 })).toBe(false)
+    expect(bad({ value: { value: null, unknown: true } })).toBe(false) // nested, not an envelope
   })
 })

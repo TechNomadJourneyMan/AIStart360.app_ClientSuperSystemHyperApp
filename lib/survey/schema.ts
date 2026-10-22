@@ -6,6 +6,7 @@
  * (`isWritableSurveyKey`); this file only guards shape and size.
  */
 import { z } from 'zod'
+import { isMarkedAnswer } from './answer-value'
 
 export const SURVEY_MAX_ANSWERS = 400
 const MAX_VALUE_BYTES = 64 * 1024
@@ -28,7 +29,8 @@ const answerEnvelope = z
       const [min, max] = a.range
       return min <= max && a.value >= min && a.value <= max
     }
-    return a.range === undefined
+    // A mark nested in { value } would be stored as an answer object nobody reads.
+    return a.range === undefined && !isMarkedAnswer(a.value)
   }, 'inconsistent «не знаю» / «примерно» answer')
   .refine((a) => {
     try {

@@ -20,6 +20,7 @@ import SurveyFieldLayer, { type EditorRequest } from '@/components/onboarding/Su
 import AnswerEditorModal, { type AnswerEditorTarget } from '@/components/onboarding/AnswerEditorModal'
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { profanityRejection } from '@/lib/moderation/client'
+import { toAnswerEnvelope } from '@/lib/survey/answer-value'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -245,8 +246,9 @@ function OnboardingPageInner() {
           }
         }
 
-        const formatted: Record<string, { value: unknown }> = {}
-        for (const k of keys) formatted[k] = { value: snapshot[k] }
+        // «Не знаю» / «примерно» go as their own envelope, never nested in { value }.
+        const formatted: Record<string, Record<string, unknown>> = {}
+        for (const k of keys) formatted[k] = toAnswerEnvelope(snapshot[k])
         const origins: Record<string, 'document'> = {}
         for (const k of keys) if (originRef.current.get(k) === 'document') origins[k] = 'document'
         lastSaveErrorRef.current = null
