@@ -1,14 +1,10 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import type { UserProfileSummary } from '@/lib/user-dashboard/summary'
 import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
 import ExpertMessages from '@/components/client/ExpertMessages'
-import { trackLogout } from '@/lib/events/client'
 
 export interface UserHomeData {
   fullName: string
@@ -49,7 +45,6 @@ function Stat({ icon, label, value, hint }: { icon: string; label: string; value
 }
 
 export default function UserHome({ data }: { data: UserHomeData }) {
-  const router = useRouter()
   const { summary } = data
   const { hero } = summary
   const status = STATUS_VIEW[data.status] ?? STATUS_VIEW.pending_approval
@@ -57,12 +52,6 @@ export default function UserHome({ data }: { data: UserHomeData }) {
   const title = hero.company || data.fullName || 'Ваш профиль'
   const facts = [hero.industry, hero.businessModel, hero.employees && `${hero.employees} сотр.`, hero.regions].filter(Boolean) as string[]
   const surveyDone = summary.missingSteps.length === 0
-
-  const logout = async () => {
-    trackLogout()
-    await createClient().auth.signOut()
-    router.push('/login')
-  }
 
   const readyByKey: Record<string, boolean> = {
     point_a: data.diagnostics != null,
@@ -78,28 +67,9 @@ export default function UserHome({ data }: { data: UserHomeData }) {
   }))
 
   return (
-    <div className="min-h-screen text-on-surface">
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#0A0B0F]/90 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/client/home" className="flex items-center gap-2">
-            <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} priority />
-            <span className="hidden text-sm font-bold text-on-surface/80 sm:block">AIStart360</span>
-          </Link>
-          <nav className="flex items-center gap-1 text-xs" aria-label="Разделы">
-            <a href="#profile" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Анкета</a>
-            <a href="#gri" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">GRI</a>
-            <Link href="/client/messages" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Сообщения</Link>
-            {approved && (
-              <Link href="/dashboard" className="rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">Кабинет</Link>
-            )}
-            <button type="button" onClick={logout} className="ml-1 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface">
-              <span className="material-symbols-outlined text-sm" aria-hidden>logout</span>
-              <span className="hidden sm:inline">Выйти</span>
-            </button>
-          </nav>
-        </div>
-      </header>
-
+    // Navigation, profile menu and sign-out live in the cabinet shell
+    // (components/client/ClientNav, mounted by app/client/layout.tsx).
+    <div className="text-on-surface">
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
         {data.unavailableSection && (
           <p role="status" className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] px-4 py-3 text-sm text-amber-200">

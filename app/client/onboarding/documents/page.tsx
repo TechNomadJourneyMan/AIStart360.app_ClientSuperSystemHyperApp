@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS } from '@/lib/survey-labels'
@@ -24,7 +23,6 @@ import {
   formatDocumentSize,
   type DocumentStatusView,
 } from '@/lib/documents/status-view'
-import { trackLogout } from '@/lib/events/client'
 
 interface ParsedDocumentData {
   summary?: unknown
@@ -521,40 +519,13 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0B0F]">
-      {/* Header */}
-      <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/client/onboarding" aria-label="Назад к анкете" className="text-on-surface-variant hover:text-on-surface transition-colors">
-              <span className="material-symbols-outlined text-xl">arrow_back</span>
-            </Link>
-            <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
-            <button onClick={async () => {
-                // End the Supabase session too, or middleware bounces the user
-                // right back (couldn't sign out from the documents step).
-                trackLogout()
-                try {
-                  await createClient().auth.signOut()
-                } catch (err) {
-                  console.warn('[onboarding/documents] sign-out failed', err instanceof Error ? err.message : err)
-                }
-                document.cookie = 'aistart360_role=; path=/; max-age=0'
-                document.cookie = 'aistart360_user_id=; path=/; max-age=0'
-                window.location.href = '/login'
-              }}
-              className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2 py-1 rounded-lg transition-all">
-              <span className="material-symbols-outlined text-sm">logout</span>
-              Выход
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+    // The cabinet shell (app/client/layout.tsx → ClientNav) gives the menu,
+    // the profile and sign-out; the page keeps only its way back to the survey.
+    <div>
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <Link href="/client/onboarding" className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary">
+          <span className="material-symbols-outlined text-sm" aria-hidden>arrow_back</span> К анкете
+        </Link>
         {/* Title */}
         <div>
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Документы · загрузка файлов</p>

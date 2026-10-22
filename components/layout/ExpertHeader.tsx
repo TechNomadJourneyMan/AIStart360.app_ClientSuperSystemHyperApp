@@ -5,8 +5,10 @@ import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { EXPERT_NAV, isExpertNavActive } from './ExpertSidebar'
+import type { CabinetLink } from '@/lib/client-shell/staff-links'
 
-export function ExpertHeader() {
+/** `cabinet` — «Открыть кабинет клиента (проверка)», resolved on the server (app/(expert)/layout.tsx). */
+export function ExpertHeader({ cabinet = null }: { cabinet?: CabinetLink | null } = {}) {
   const { user, logout } = useAuthStore()
   const router = useRouter()
   const pathname = usePathname()
@@ -33,6 +35,13 @@ export function ExpertHeader() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
+        {cabinet && (
+          <Link href={cabinet.href} title={cabinet.label} aria-label={cabinet.label}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-white/[0.06] px-2.5 text-xs font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+            <span className="material-symbols-outlined text-lg" aria-hidden>person_search</span>
+            <span className="hidden lg:inline">{cabinet.label}</span>
+          </Link>
+        )}
         <Link href="/notifications" aria-label="Уведомления"
           className="relative w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.04] flex items-center justify-center transition-colors">
           <span className="material-symbols-outlined text-xl text-on-surface-variant">notifications</span>
@@ -80,6 +89,13 @@ export function ExpertHeader() {
               })}
             </nav>
             <div className="border-t border-white/[0.04] px-2 py-3">
+              {cabinet && (
+                <Link href={cabinet.href} onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-all">
+                  <span className="material-symbols-outlined text-[20px]" aria-hidden>person_search</span>
+                  <span className="text-sm">{cabinet.label}</span>
+                </Link>
+              )}
               <button onClick={handleLogout}
                 className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[#8a93a0] hover:text-error hover:bg-error/5 transition-all">
                 <span className="material-symbols-outlined text-[20px]">logout</span>

@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Bell, Bot, Building2, ClipboardList, Coins, CopyCheck, Eye, FileBarChart, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
   Lightbulb, ListChecks, LogOut, Mail, MessageCircle, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, Stamp,
-  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, Megaphone, BookOpen, type LucideIcon,
+  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, UserRound, Megaphone, BookOpen, type LucideIcon,
 } from 'lucide-react'
 import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
 import { useWorkspace } from './WorkspaceContext'
@@ -16,6 +16,7 @@ import { useStaff } from './StaffContext'
 import { cx, gigaFetch } from './kit'
 import { CommandPalette } from './CommandPalette'
 import { NAV_BADGES_CHANGED } from './agents/model'
+import { gigaCabinetLink } from '@/lib/client-shell/staff-links'
 
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, users: Users2, inbox: InboxIcon, building: Building2, sparkles: Sparkles,
@@ -86,6 +87,9 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
     if (!activeHref) return
     document.querySelectorAll<HTMLElement>('aside nav a[aria-current="page"]').forEach((el) => el.scrollIntoView({ block: 'nearest' }))
   }, [activeHref, isOpen])
+  // «Открыть кабинет клиента (проверка)»: the actor comes from /api/giga-admin/me
+  // (server-verified staff); hidden while impersonating (lib/client-shell/staff-links).
+  const cabinet = gigaCabinetLink(me)
   const casesBadge = useCasesBadge(!loading && nav.some((g) => g.items.some((i) => i.badge === 'cases' && can(i.permission))))
 
   useEffect(() => {
@@ -179,6 +183,17 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
       </nav>
 
       <div className="px-3 pb-5">
+        {cabinet && (
+          <Link
+            href={cabinet.href}
+            onClick={onClose}
+            title="Ваш собственный кабинет клиента — посмотреть, как его видит пользователь"
+            className="mb-2 flex items-center gap-2.5 rounded-xl border border-white/[0.07] px-3 py-2 text-[12px] font-medium text-slate-300 transition-colors hover:bg-white/[0.05] hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+          >
+            <UserRound size={15} aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{cabinet.label}</span>
+          </Link>
+        )}
         <div className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.03] px-3 py-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
             <Shield size={13} />

@@ -112,7 +112,7 @@ export default function MedicalDashboardPage() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <header className="sticky top-0 z-10 bg-surface/80 backdrop-blur-md border-b border-white/[0.06]">
+      <header className="sticky top-14 z-10 bg-surface/80 backdrop-blur-md border-b border-white/[0.06]">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
