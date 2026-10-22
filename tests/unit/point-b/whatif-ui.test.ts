@@ -575,7 +575,7 @@ describe('«Что если»: input rules and parsing', () => {
   })
 
   it('«Что если» sits between «Рекомендации» and «Финмодель»', () => {
-    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'whatif', 'finmodel', 'details'])
+    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'history', 'whatif', 'finmodel', 'details'])
     expect(POINT_B_TABS.find((t) => t.key === 'whatif')!.label).toBe('Что если')
   })
 })

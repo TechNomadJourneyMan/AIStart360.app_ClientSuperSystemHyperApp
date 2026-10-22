@@ -21,6 +21,11 @@ import type { NodeProgress } from './strategy/progress'
 import type { PlanStrategy, StrategyNode } from './strategy/types'
 import type { ClientRecommendationView } from './recs/types'
 import type { InviteView } from './invites/types'
+import { buildCheckpoint, currentCheckpoint } from './planfact/checkpoint'
+import { summarizeVersion } from './planfact/diff'
+import { plannedFor, planKpis } from './planfact/planned'
+import { goalProgress } from './planfact/progress'
+import type { KpiValues, PlanFactState } from './planfact/types'
 
 /** `level2`: the same business as `full`, with the finmodel filled in — profit, cash flow, funding need. */
 export const POINT_B_FIXTURE_VARIANTS = ['full', 'no-goal', 'stale-base', 'level2'] as const
@@ -834,4 +839,55 @@ export function fixtureInvites(variant: PointBFixtureVariant = 'level2'): Invite
 /** «Следующий шаг» of the fixture: the next action of the verified recommendation. */
 export function fixtureNextStep(): { title: string; action: string | null; recId: string | null } {
   return { title: 'Собрать единый скрипт продаж', action: 'Разобрать последние звонки отдела продаж и собрать единый скрипт', recId: RK.r1 }
+}
+
+// ── Plan-fact (Ф6b) ─────────────────────────────────────────────────────
+
+/**
+ * The «План-факт и история» tab of the fixture: the approved version v2 (calculated in May 2026) with its scenarios,
+ * five months of checkpoints built by the REAL builder (facts: on track, then the conversion slips, September behind,
+ * October without facts), the progress of the revenue goal, the form for September (not filled) and the versions
+ * (v2 approved, v1 superseded — metadata only, as the client gets it). `empty`: an approved plan without any checkpoint.
+ */
+export function fixturePlanFact(variant: PointBFixtureVariant = 'full', mode: 'default' | 'empty' = 'default'): PlanFactState {
+  const result = fixtureModelResult(variant)
+  const now = new Date('2026-10-22T09:00:00.000Z')
+  const version = {
+    id: 'fixture-v2', version: 2, status: 'approved', scenarios: result.scenarios, selected_scenario: result.scenarios.length ? 'moderate' : null,
+    assumptions: { model: { computedAt: '2026-05-10T09:00:00.000Z', level: result.level, kind: result.kind, gap: result.gap } },
+    goals: { primary: { metricKey: 'biz.finansy.vyruchka_god', periodLabel: '12m' }, items: [{ metricKey: 'biz.finansy.vyruchka_god', periodLabel: '12m', label: 'Выручка 120 млн ₸ в год', baselineValue: BASE_NOW, baselinePeriod: '2026', targetValue: GOAL, deadline: '2027-05-31', reviewStatus: 'agreed' as const, baselineAt: '2026-05-10T09:00:00.000Z' }] },
+    strategy: { items: [{ key: 's1', kind: 'strategy', title: 'Рост конверсии отдела продаж' }, { key: 'i1', kind: 'initiative', title: 'Единый скрипт продаж' }] },
+    change_reason: 'Выбрали умеренный темп и добавили стратегию продаж', author_name: 'Анна Ким', author_kind: 'expert',
+    approved_at: '2026-05-14T10:00:00.000Z', approved_by: 'fixture-admin', created_at: '2026-05-10T09:00:00.000Z',
+  }
+  const planned = (period: string) => plannedFor(version, period).values
+  const facts: Record<string, KpiValues> = mode === 'empty' ? {} : {
+    '2026-06': { revenue: Math.round((planned('2026-06').revenue ?? 0) * 1.01), leads: planned('2026-06').leads, conversion: planned('2026-06').conversion },
+    '2026-07': { revenue: Math.round((planned('2026-07').revenue ?? 0) * 0.97), leads: planned('2026-07').leads, conversion: planned('2026-07').conversion },
+    '2026-08': { revenue: Math.round((planned('2026-08').revenue ?? 0) * 0.93), leads: planned('2026-08').leads, conversion: Math.round((planned('2026-08').conversion ?? 0) * 0.9 * 10) / 10 },
+    '2026-09': { revenue: Math.round((planned('2026-09').revenue ?? 0) * 0.84), leads: Math.round((planned('2026-09').leads ?? 0) * 0.95), conversion: Math.round((planned('2026-09').conversion ?? 0) * 0.82 * 10) / 10 },
+  }
+  const periods = mode === 'empty' ? [] : ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10']
+  const checkpoints = periods.map((period) => buildCheckpoint({
+    version, period, actual: facts[period] ?? {}, actualSources: Object.fromEntries(Object.keys(facts[period] ?? {}).map((k) => [k, 'reconciliation'])),
+    result, tolerances: { onTrackPct: 5, riskPct: 15 }, now: new Date('2026-10-20T22:00:00.000Z'),
+  }))
+  const sep = facts['2026-09']?.revenue
+  const v1 = summarizeVersion({ ...version, id: 'fixture-v1', version: 1, status: 'superseded', change_reason: 'Первый план эксперта', approved_at: '2026-04-02T10:00:00.000Z', created_at: '2026-03-30T09:00:00.000Z' })
+  return {
+    checkpoints,
+    current: currentCheckpoint(checkpoints),
+    progress: goalProgress({
+      goals: version.goals.items, facts: sep ? { 'biz.finansy.vyruchka_god': { value: sep * 12, period: '2026-09' } } : {},
+      revenueTrendMonthlyPct: result.forecast.trendMonthlyPct, planStart: version.approved_at, now,
+    }),
+    kpis: planKpis(version),
+    reconciliation: { period: '2026-09', done: false, values: {} },
+    computedAt: mode === 'empty' ? null : '2026-10-20T22:00:00.000Z',
+    staleDays: mode === 'empty' ? null : 1,
+    versions: [
+      { ...summarizeVersion(version, { approverName: 'Админ Главный' }) },
+      { ...v1, goals: [], primaryGoal: null, selectedScenario: null, pace: null, assumptions: [], strategy: [], contentHidden: true, totals: { timeToGoalMonths: null, revenueAtDeadline: null, revenueTotal: null, netProfitTotal: null, fundingNeed: null } },
+    ],
+  }
 }

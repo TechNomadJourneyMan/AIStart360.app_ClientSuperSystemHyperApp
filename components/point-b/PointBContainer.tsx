@@ -7,6 +7,7 @@ import PointBDetails from './PointBDetails'
 import PointBPaywall from './PointBPaywall'
 import FinmodelTab from './tabs/FinmodelTab'
 import OverviewTab from './tabs/OverviewTab'
+import PlanFactTab from './tabs/PlanFactTab'
 import PointBTabs from './tabs/PointBTabs'
 import RecommendationsTab from './tabs/RecommendationsTab'
 import RoadmapTab from './tabs/RoadmapTab'
@@ -23,6 +24,7 @@ import { usePointBState } from './usePointBState'
  *   «Стратегия»   — strategies → initiatives → tasks of the approved plan with progress, and the impact × effort matrix;
  *   «Дорожная карта» — the same on a timeline by quarters, milestones, dependencies;
  *   «Рекомендации» — recommendations verified by an expert (who, when, for what), the count of those still checked;
+ *   «План-факт и история» — plan · fact · forecast by month with the verdict, goal progress, «Факт за месяц», versions (Ф6b);
  *   «Что если»    — six calculators on the owner's own data (a calculation, not a recommendation, never changes the plan);
  *   «Финмодель»   — the money of the business (level 2): inputs, hints, origin badges;
  *   «Подробности» — the previous page as it was ({@link PointBDetails}), loaded on first open.
@@ -62,6 +64,8 @@ export default function PointBContainer() {
           roadmap: <RoadmapTab snap={snap} onRetry={() => void ctl.load()} />,
           // Only what an expert verified; the pending ones are a count, never a text.
           recs: <RecommendationsTab snap={snap} onRetry={() => void ctl.load()} />,
+          // Plan · fact · forecast by month, the progress of every goal, «Факт за месяц», the versions of the plan.
+          history: <PlanFactTab snap={snap} onRetry={() => void ctl.load()} onSaved={() => void ctl.load()} />,
           // Calculates only: nothing here changes the plan.
           whatif: <WhatIfTab state={snap} />,
           // A saved finmodel recalculates the overview and the scenarios from the new money.

@@ -299,8 +299,8 @@ describe('«Дорожная карта»', () => {
 
 describe('tabs and state', () => {
   it('tabs order includes Стратегия and Дорожная карта after Сценарии', () => {
-    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'Что если', 'Финмодель', 'Подробности'])
-    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'whatif', 'finmodel', 'details'])
+    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'План-факт и история', 'Что если', 'Финмодель', 'Подробности'])
+    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'history', 'whatif', 'finmodel', 'details'])
     expect(isTabKey('strategy')).toBe(true)
     expect(isTabKey('roadmap')).toBe(true)
     expect(isTabKey('nope')).toBe(false)

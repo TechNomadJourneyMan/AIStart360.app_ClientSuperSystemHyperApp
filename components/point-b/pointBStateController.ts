@@ -10,6 +10,7 @@ import type { ModelResult } from '@/lib/point-b/model/types'
 import type { InviteView } from '@/lib/point-b/invites/types'
 import { isUpgradeRequired } from './pointBAccess'
 import { parseRecsFromBody, type PointBNextStep, type PointBRecsState } from './recsModel'
+import { parsePlanFactFromBody, type PlanFactState } from './planFactModel'
 import { parseStrategyFromBody, type PointBStrategyState } from './strategyModel'
 import { EMPTY_PLAN_STATE, parsePointBState, type PointBFinmodelStatus, type PointBPlanState } from './overviewModel'
 
@@ -31,6 +32,8 @@ export interface PointBStateSnapshot {
   invites?: InviteView[]
   /** «Следующий шаг» of the overview; null = nothing to show. */
   nextStep?: PointBNextStep | null
+  /** Plan-fact of the APPROVED plan (Ф6b): checkpoints, goal progress, the «Факт за месяц» form, versions; null = none. */
+  planFact?: PlanFactState | null
 }
 
 export const INITIAL_STATE_SNAPSHOT: PointBStateSnapshot = { phase: 'loading', error: null, result: null, plan: EMPTY_PLAN_STATE }
@@ -65,7 +68,7 @@ export class PointBStateController {
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null
       if (my !== this.seq) return
       if (isUpgradeRequired(res.status, body)) {
-        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE, finmodel: null, strategy: null, recommendations: null, invites: [], nextStep: null })
+        this.set({ phase: 'locked', error: null, result: null, plan: EMPTY_PLAN_STATE, finmodel: null, strategy: null, recommendations: null, invites: [], nextStep: null, planFact: null })
         return
       }
       const parsed = res.ok ? parsePointBState(body) : null
@@ -80,6 +83,7 @@ export class PointBStateController {
       this.set({
         phase: 'ready', error: null, result: parsed.result, plan: parsed.plan, finmodel: parsed.finmodel, strategy: parseStrategyFromBody(body),
         ...parseRecsFromBody(body),
+        planFact: parsePlanFactFromBody(body) ?? null,
       })
     } catch {
       if (my !== this.seq) return

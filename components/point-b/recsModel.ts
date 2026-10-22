@@ -235,6 +235,7 @@ export const TAB_BUTTON_LABEL: Partial<Record<PointBTabKey, string>> = {
   scenarios: 'Смотреть сценарии',
   whatif: 'Посчитать в «Что если»',
   finmodel: 'Заполнить финмодель',
+  history: 'Открыть план-факт',
 }
 
 export function targetLabel(t: CardTarget): string {
