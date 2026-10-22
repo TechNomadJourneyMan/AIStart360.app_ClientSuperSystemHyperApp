@@ -6,6 +6,7 @@ import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/syste
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
 import { profanityResponse } from '@/lib/moderation/http'
+import { PASSWORD_MIN, classifyPasswordUpdateError, passwordPolicyError, passwordUpdateMessage } from '@/lib/auth/password-policy'
 
 // Public self-registration creates ONLY clients. The legacy 'owner' role was
 // removed from the product (2026-09-24); admin/expert/super_admin can NEVER be
@@ -13,7 +14,8 @@ import { profanityResponse } from '@/lib/moderation/http'
 // `role` is still accepted for old clients of this API but must be 'client'.
 const schema = z.object({
   email:        z.string().email(),
-  password:     z.string().min(6),
+  // The platform rule (lib/auth/password-policy.ts) — the form already asks for 8.
+  password:     z.string().min(PASSWORD_MIN).max(512),
   name:         z.string().min(2),
   role:         z.literal('client').optional().default('client'),
   organization: z.string().optional(),
@@ -33,8 +35,11 @@ export async function POST(request: Request) {
     const body = await request.json()
     const parsed = schema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Validation failed' }, { status: 400 })
+      const pwProblem = typeof body?.password === 'string' ? passwordPolicyError(body.password) : null
+      return NextResponse.json({ error: pwProblem ?? 'Validation failed' }, { status: 400 })
     }
+    const pwProblem = passwordPolicyError(parsed.data.password)
+    if (pwProblem) return NextResponse.json({ error: pwProblem }, { status: 400 })
 
     const { email, password, name, organization, position } = parsed.data
     const profane = profanityResponse({ name, organization, position })
@@ -68,6 +73,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'EMAIL_TAKEN' }, { status: 409 })
       }
       console.warn('[auth/register] signUp refused', error.status ?? '', error.message)
+      if (classifyPasswordUpdateError(error) === 'weak_password') {
+        return NextResponse.json({ error: passwordUpdateMessage('weak_password', (error as { reasons?: unknown }).reasons) }, { status: 400 })
+      }
       return NextResponse.json({ error: 'Не удалось зарегистрироваться: проверьте email и пароль' }, { status: 400 })
     }
 

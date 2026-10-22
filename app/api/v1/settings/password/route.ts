@@ -4,32 +4,51 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
+import { isRateLimitedKey } from '@/lib/rate-limit'
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN,
+  classifyPasswordUpdateError,
+  passwordPolicyError,
+  passwordUpdateMessage,
+} from '@/lib/auth/password-policy'
 
 // Change the caller's own password. Verifies the current password first (via a
 // throwaway standalone client that does NOT touch session cookies), then updates
-// on the session client. No new tables.
+// on the session client — Supabase then keeps this session and revokes the
+// others. No new tables.
+//
+// Every refusal carries `error` (machine code, used by the UI) and `message`
+// (Russian text to show as is).
 export const dynamic = 'force-dynamic'
 
 const SCHEMA = z.object({
-  current: z.string().min(1, 'Введите текущий пароль'),
-  newPassword: z.string().min(8, 'Минимум 8 символов').max(72),
+  current: z.string().min(1).max(512),
+  newPassword: z.string().max(512),
 })
+
+function fail(error: string, message: string, status = 422, extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ ok: false, error, message, ...extra }, { status })
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user?.email) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  if (!user?.email) return fail('unauthorized', 'Сессия истекла. Войдите заново.', 401)
 
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json(
-      { ok: false, error: 'validation', details: parsed.error.flatten().fieldErrors },
-      { status: 422 },
-    )
+    return fail('validation', `Введите текущий пароль и новый пароль (${PASSWORD_MIN}–${PASSWORD_MAX} символов)`)
   }
   const { current, newPassword } = parsed.data
-  if (current === newPassword) {
-    return NextResponse.json({ ok: false, error: 'same_password' }, { status: 422 })
+  const policy = passwordPolicyError(newPassword)
+  if (policy) return fail('validation', policy)
+  if (current === newPassword) return fail('same_password', passwordUpdateMessage('same_password'))
+
+  // Each attempt costs a real sign-in against Supabase: cap guessing of the
+  // current password per account.
+  if (await isRateLimitedKey(user.id, 'settings-password', { max: 5, windowMs: 15 * 60_000 })) {
+    return fail('rate_limited', passwordUpdateMessage('rate_limited'), 429)
   }
 
   // Verify current password without disturbing the live session.
@@ -40,13 +59,28 @@ export async function POST(request: Request) {
   )
   const { error: signErr } = await verifier.auth.signInWithPassword({ email: user.email, password: current })
   if (signErr) {
-    return NextResponse.json({ ok: false, error: 'wrong_current_password' }, { status: 422 })
+    // An account created through Google has no password at all: the only way
+    // to get one is the recovery link (proves the mailbox), not this form.
+    const oauthOnly = !(user.identities ?? []).some((i) => i.provider === 'email')
+    return fail(
+      'wrong_current_password',
+      oauthOnly
+        ? 'Неверный текущий пароль. Если вы входите через Google, пароля у аккаунта может не быть — задайте его по ссылке из письма.'
+        : passwordUpdateMessage('wrong_current_password'),
+      422,
+      { oauthOnly },
+    )
   }
 
   const { error: updErr } = await supabase.auth.updateUser({ password: newPassword })
   if (updErr) {
-    console.error('[settings/password]', updErr.message)
-    return NextResponse.json({ ok: false, error: 'update_failed' }, { status: 422 })
+    const failure = classifyPasswordUpdateError(updErr)
+    console.error('[settings/password]', failure, updErr.message)
+    return fail(
+      failure,
+      passwordUpdateMessage(failure, (updErr as { reasons?: unknown }).reasons),
+      failure === 'rate_limited' ? 429 : 422,
+    )
   }
   await logActivity({
     userId: user.id,

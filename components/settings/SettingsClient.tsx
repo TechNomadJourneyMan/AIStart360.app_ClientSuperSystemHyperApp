@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { apiErrorMessage } from '@/lib/moderation/client'
+import { PASSWORD_MIN, passwordPolicyError, passwordUpdateMessage } from '@/lib/auth/password-policy'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
 import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
@@ -86,7 +87,7 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
           </div>
         )}
         {tab === 'profile' && <ProfilePanel initial={initial} />}
-        {tab === 'security' && <SecurityPanel />}
+        {tab === 'security' && <SecurityPanel email={initial.email} />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}
         {tab === 'appearance' && <AppearancePanel />}
         {tab === 'assistant' && <AssistantSettingsPanel />}
@@ -165,10 +166,10 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
 }
 
 // ── Безопасность — полностью проработанный раздел ────────────────────────────
-function SecurityPanel() {
+function SecurityPanel({ email }: { email: string }) {
   return (
     <>
-      <PasswordCard />
+      <PasswordCard email={email} />
       <TwoFactorCard />
       <BiometricsCard />
       <SessionsCard />
@@ -177,16 +178,21 @@ function SecurityPanel() {
   )
 }
 
-function PasswordCard() {
+function PasswordCard({ email }: { email: string }) {
   const [current, setCurrent] = useState('')
   const [next1, setNext1] = useState('')
   const [next2, setNext2] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Accounts created through Google have no password: the form cannot work for
+  // them, the recovery link (proves the mailbox) sets the first password.
+  const [suggestLink, setSuggestLink] = useState(false)
+  const [linkState, setLinkState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
   const submit = async () => {
     setErr(null)
-    if (next1.length < 8) return setErr('Новый пароль — минимум 8 символов')
+    const policy = passwordPolicyError(next1)
+    if (policy) return setErr(policy)
     if (next1 !== next2) return setErr('Пароли не совпадают')
     setSaving(true)
     try {
@@ -196,26 +202,64 @@ function PasswordCard() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.ok) {
-        setErr(json.error === 'wrong_current_password' ? 'Неверный текущий пароль'
-          : json.error === 'same_password' ? 'Новый пароль совпадает с текущим' : 'Не удалось сменить пароль')
+        setErr(typeof json.message === 'string' && json.message
+          ? json.message
+          : passwordUpdateMessage(typeof json.error === 'string' ? json.error : 'update_failed'))
+        if (json.error === 'wrong_current_password') setSuggestLink(true)
         return
       }
       toast.success('Пароль изменён')
-      setCurrent(''); setNext1(''); setNext2('')
-    } catch { setErr('Ошибка сети.') } finally { setSaving(false) }
+      setCurrent(''); setNext1(''); setNext2(''); setSuggestLink(false)
+    } catch { setErr('Нет связи с сервером. Проверьте интернет и попробуйте снова.') } finally { setSaving(false) }
+  }
+
+  const sendLink = async () => {
+    if (!email) return
+    setLinkState('sending')
+    try {
+      const res = await fetch('/api/v1/auth/email-link', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, purpose: 'recovery' }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setLinkState('idle')
+        toast.error(typeof json.error === 'string' ? json.error : 'Не удалось отправить письмо')
+        return
+      }
+      setLinkState('sent')
+    } catch {
+      setLinkState('idle')
+      toast.error('Нет связи с сервером. Попробуйте снова.')
+    }
   }
 
   return (
     <Card title="Пароль" subtitle="Требуется текущий пароль для подтверждения." icon="password">
       <div className="space-y-4 max-w-md">
         <Field label="Текущий пароль" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="••••••••" />
-        <Field label="Новый пароль" type="password" value={next1} onChange={(e) => setNext1(e.target.value)} placeholder="Минимум 8 символов" />
+        <Field label="Новый пароль" type="password" value={next1} onChange={(e) => setNext1(e.target.value)} placeholder={`Минимум ${PASSWORD_MIN} символов`} />
         <Field label="Повторите новый пароль" type="password" value={next2} onChange={(e) => setNext2(e.target.value)} placeholder="••••••••" />
-        {err && <p className="text-xs text-error font-mono">{err}</p>}
+        {err && <p className="text-xs text-error" role="alert">{err}</p>}
         <button type="button" onClick={submit} disabled={saving || !current || !next1 || !next2} aria-busy={saving}
           className="px-6 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all disabled:opacity-50 disabled:hover:scale-100">
           {saving ? 'Меняем…' : 'Сменить пароль'}
         </button>
+        {email && (
+          <div className={`text-xs ${suggestLink ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+            {linkState === 'sent' ? (
+              <p className="text-primary">Письмо отправлено на {email}. Откройте ссылку из него и задайте новый пароль.</p>
+            ) : (
+              <p>
+                Не помните текущий пароль или входите через Google?{' '}
+                <button type="button" onClick={sendLink} disabled={linkState === 'sending'}
+                  className="text-primary hover:underline disabled:opacity-50">
+                  {linkState === 'sending' ? 'Отправляем…' : 'Задать пароль по ссылке из письма'}
+                </button>
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </Card>
   )

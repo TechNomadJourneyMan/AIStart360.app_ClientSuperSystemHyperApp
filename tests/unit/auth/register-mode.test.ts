@@ -103,3 +103,25 @@ describe('/api/auth/register — registration mode enforcement', () => {
     },
   )
 })
+
+describe('/api/auth/register — the platform password rule (W6)', () => {
+  beforeEach(() => {
+    cfg.mode = 'open'
+    createUserMock.fn.mockReset()
+    createUserMock.fn.mockResolvedValue({ data: { user: { id: 'new-user' } }, error: null })
+  })
+
+  it('a password shorter than 8 characters is refused with a Russian reason (the form asks for 8 too)', async () => {
+    const res = await POST(makeReq({ password: 'abc123' }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/минимум 8/)
+    expect(createUserMock.fn).not.toHaveBeenCalled()
+  })
+
+  it('a weak password refused by Supabase is explained, not reported as a bad email', async () => {
+    createUserMock.fn.mockResolvedValue({ data: { user: null }, error: { message: 'Password is known to be weak', code: 'weak_password', reasons: ['pwned'] } })
+    const res = await POST(makeReq({ password: 'password123' }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/утёкших/)
+  })
+})
