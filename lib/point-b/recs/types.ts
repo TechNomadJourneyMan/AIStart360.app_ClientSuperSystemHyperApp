@@ -62,3 +62,23 @@ export interface ClientRecommendationView {
   reviewedAt: string | null
   scopeNote: string | null
 }
+
+/**
+ * A recommendation before it is stored: what the rules and the AI produce (createRecommendations) and what an
+ * expert types (createExpertRecommendation). No status, no reviewer — those are set by the store / the expert.
+ */
+export interface RecDraft {
+  kind: RecKind
+  title: string
+  essence: string
+  reason: string
+  expectedEffect: string | null
+  resources: string | null
+  confidence: Recommendation['confidence']
+  confidenceReason: string | null
+  risks: string | null
+  nextAction: string | null
+  sourceRefs: RecSourceRef[]
+  generatedBy: RecSource
+  inputsHash: string | null
+}

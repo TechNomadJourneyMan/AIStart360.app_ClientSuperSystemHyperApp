@@ -10,6 +10,7 @@
  *   - the immutability trigger of pb_plan_versions: an approved row may only
  *     become superseded, a superseded row is frozen (23514);
  *   - the unique partial index (user_id, pb_task_key) of action_items (migration 128);
+ *   - the unique partial index of active invites (user_id, dedupe_key) of pb_invites (migration 129);
  *   - an update is atomic, so two «conditional» updates race exactly like in SQL.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -39,7 +40,23 @@ const DEFAULTS: Record<string, () => Row> = {
     source: 'plan', pb_task_key: null, pb_version_id: null, completed_at: null,
   }),
   metric_targets: () => ({ direction: 'higher_is_better', source: 'owner', note: null, set_by: null, deadline: null, label: null, baseline_value: null, baseline_period: null }),
+  // migration 129
+  pb_recommendations: () => ({
+    version_id: null, essence: '', reason: '', expected_effect: null, resources: null, confidence: 'medium', confidence_reason: null, risks: null,
+    next_action: null, source_refs: [], status: 'pending_review', inputs_hash: null, rec_version: 1, supersedes_id: null, reviewer_id: null,
+    reviewer_name: null, reviewer_specialty: null, reviewed_at: null, scope_note: null, review_comment: null,
+  }),
+  pb_invites: () => ({
+    kind: 'insight', body: '', href: null, why: '', source_refs: [], priority: 5, display: 'card', status: 'new', snoozed_until: null,
+    expires_at: null, delivered: {}, source_rec_id: null,
+  }),
 }
+
+/** Tables of migration 129: uuid ids (the routes validate them) and an updated_at stamp on every write. */
+const UUID_TABLES = new Set(['pb_saved_scenarios', 'pb_recommendations', 'pb_invites'])
+const STAMPED_TABLES = new Set(['pb_finmodel_inputs', 'pb_recommendations', 'pb_invites'])
+/** pb_invites_active_dedupe_uidx: one active invite per (user_id, dedupe_key). */
+const ACTIVE_INVITE = ['new', 'seen', 'snoozed']
 
 function uniqueViolation(table: string, rows: Row[], row: Row, ignoreId?: unknown): boolean {
   const others = rows.filter((r) => r.id !== ignoreId)
@@ -57,6 +74,10 @@ function uniqueViolation(table: string, rows: Row[], row: Row, ignoreId?: unknow
   }
   if (table === 'metric_targets') {
     return others.some((r) => r.company_id === row.company_id && r.metric_key === row.metric_key && r.period_label === row.period_label)
+  }
+  if (table === 'pb_invites') {
+    return ACTIVE_INVITE.includes(String(row.status))
+      && others.some((r) => r.user_id === row.user_id && r.dedupe_key === row.dedupe_key && ACTIVE_INVITE.includes(String(r.status)))
   }
   return false
 }
@@ -85,7 +106,8 @@ function cmp(a: unknown, b: unknown): number {
 export function pbDb(seed: Record<string, Row[]> = {}) {
   let seq = 0
   const db: Record<string, Row[]> = {
-    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], action_items: [], metric_targets: [], companies: [], profiles: [], ...structuredClone(seed),
+    pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], action_items: [], metric_targets: [], companies: [], profiles: [],
+    pb_recommendations: [], pb_invites: [], ...structuredClone(seed),
   }
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()
@@ -109,9 +131,9 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
             if (op === 'upsert' && conflictCols.length) {
               const hit = rows.find((r) => conflictCols.every((c) => r[c] === p[c]))
-              if (hit) { Object.assign(hit, structuredClone(p), table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}); out.push(hit); writes.push({ table, op, payload: p }); continue }
+              if (hit) { Object.assign(hit, structuredClone(p), STAMPED_TABLES.has(table) ? { updated_at: stamp() } : {}); out.push(hit); writes.push({ table, op, payload: p }); continue }
             }
-            const row: Row = { id: table === 'pb_saved_scenarios' ? uuidOf(++seq) : `${table}-${++seq}`, created_at: stamp(), ...(table === 'pb_saved_scenarios' ? { updated_at: stamp() } : {}), ...(table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {}), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
+            const row: Row = { id: UUID_TABLES.has(table) ? uuidOf(++seq) : `${table}-${++seq}`, created_at: stamp(), ...(table === 'pb_saved_scenarios' || STAMPED_TABLES.has(table) ? { updated_at: stamp() } : {}), ...(DEFAULTS[table]?.() ?? {}), ...structuredClone(p) }
             if (uniqueViolation(table, rows, row)) return { data: null, error: { code: '23505', message: `duplicate key value violates unique constraint (${table})` } }
             rows.push(row)
             out.push(row)
@@ -132,7 +154,7 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
             if (immutableViolation(table, r, next)) return { data: null, error: { code: '23514', message: 'pb_plan_versions: immutable' } }
             if (uniqueViolation(table, rows, next, r.id)) return { data: null, error: { code: '23505', message: 'duplicate key value' } }
           }
-          for (const r of hit) Object.assign(r, structuredClone(payload as Row), table === 'pb_finmodel_inputs' ? { updated_at: stamp() } : {})
+          for (const r of hit) Object.assign(r, structuredClone(payload as Row), STAMPED_TABLES.has(table) ? { updated_at: stamp() } : {})
           if (hit.length) writes.push({ table, op, payload })
           return { data: ret(hit), error: null }
         }
