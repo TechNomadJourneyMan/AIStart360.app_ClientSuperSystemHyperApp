@@ -3,6 +3,7 @@
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
 
 import { Suspense, useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { BellRing, ClipboardList, Eye, FilePlus2, RefreshCw } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
@@ -11,29 +12,32 @@ import { PROFILE_STATUS } from '@/lib/admin/labels'
 import { STAFF_ROLE_LABELS } from '@/lib/admin/rbac'
 import type { User360Profile } from '@/components/giga-panel/user360/types'
 import { ProfileTab } from '@/components/giga-panel/user360/ProfileTab'
-import { SurveyTab } from '@/components/giga-panel/user360/SurveyTab'
-import { GriTab } from '@/components/giga-panel/user360/GriTab'
-import { ActivityTab } from '@/components/giga-panel/user360/ActivityTab'
-import { JourneyTab } from '@/components/giga-panel/user360/JourneyTab'
-import { DocumentsTab } from '@/components/giga-panel/user360/DocumentsTab'
-import { HistoryTab } from '@/components/giga-panel/user360/HistoryTab'
 import { ImpersonateDialog } from '@/components/giga-panel/user360/ImpersonateDialog'
 import { DataEntryModal } from '@/components/giga-panel/user360/DataEntryModal'
-import { NotesTab } from '@/components/giga-panel/user360/NotesTab'
-import { EmailsTab } from '@/components/giga-panel/user360/EmailsTab'
-import { QualityTab } from '@/components/giga-panel/user360/QualityTab'
-import { TasksTab } from '@/components/giga-panel/user360/TasksTab'
-import { TimelineTab } from '@/components/giga-panel/user360/TimelineTab'
-import { GriDynamicsPanel } from '@/components/giga-panel/user360/GriDynamicsPanel'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
-import { PointATab } from '@/components/giga-panel/user360/PointATab'
-import { PointBTab } from '@/components/giga-panel/user360/PointBTab'
-import { PulseTab } from '@/components/giga-panel/user360/PulseTab'
-import { CasesTab } from '@/components/giga-panel/user360/CasesTab'
-import { MessagesTab } from '@/components/giga-panel/user360/MessagesTab'
-import { CommentsTab } from '@/components/giga-panel/user360/CommentsTab'
-import { ReviewTab } from '@/components/giga-panel/user360/review/ReviewTab'
+
+// The tabs (one is open at a time) load when they are opened, not with the card (W4).
+const TabLoading = () => <Skeleton className="h-64" />
+const SurveyTab = dynamic(() => import('@/components/giga-panel/user360/SurveyTab').then((m) => m.SurveyTab), { loading: TabLoading })
+const GriTab = dynamic(() => import('@/components/giga-panel/user360/GriTab').then((m) => m.GriTab), { loading: TabLoading })
+const ActivityTab = dynamic(() => import('@/components/giga-panel/user360/ActivityTab').then((m) => m.ActivityTab), { loading: TabLoading })
+const JourneyTab = dynamic(() => import('@/components/giga-panel/user360/JourneyTab').then((m) => m.JourneyTab), { loading: TabLoading })
+const DocumentsTab = dynamic(() => import('@/components/giga-panel/user360/DocumentsTab').then((m) => m.DocumentsTab), { loading: TabLoading })
+const HistoryTab = dynamic(() => import('@/components/giga-panel/user360/HistoryTab').then((m) => m.HistoryTab), { loading: TabLoading })
+const NotesTab = dynamic(() => import('@/components/giga-panel/user360/NotesTab').then((m) => m.NotesTab), { loading: TabLoading })
+const EmailsTab = dynamic(() => import('@/components/giga-panel/user360/EmailsTab').then((m) => m.EmailsTab), { loading: TabLoading })
+const QualityTab = dynamic(() => import('@/components/giga-panel/user360/QualityTab').then((m) => m.QualityTab), { loading: TabLoading })
+const TasksTab = dynamic(() => import('@/components/giga-panel/user360/TasksTab').then((m) => m.TasksTab), { loading: TabLoading })
+const TimelineTab = dynamic(() => import('@/components/giga-panel/user360/TimelineTab').then((m) => m.TimelineTab), { loading: TabLoading })
+const GriDynamicsPanel = dynamic(() => import('@/components/giga-panel/user360/GriDynamicsPanel').then((m) => m.GriDynamicsPanel), { loading: TabLoading })
+const PointATab = dynamic(() => import('@/components/giga-panel/user360/PointATab').then((m) => m.PointATab), { loading: TabLoading })
+const PointBTab = dynamic(() => import('@/components/giga-panel/user360/PointBTab').then((m) => m.PointBTab), { loading: TabLoading })
+const PulseTab = dynamic(() => import('@/components/giga-panel/user360/PulseTab').then((m) => m.PulseTab), { loading: TabLoading })
+const CasesTab = dynamic(() => import('@/components/giga-panel/user360/CasesTab').then((m) => m.CasesTab), { loading: TabLoading })
+const MessagesTab = dynamic(() => import('@/components/giga-panel/user360/MessagesTab').then((m) => m.MessagesTab), { loading: TabLoading })
+const CommentsTab = dynamic(() => import('@/components/giga-panel/user360/CommentsTab').then((m) => m.CommentsTab), { loading: TabLoading })
+const ReviewTab = dynamic(() => import('@/components/giga-panel/user360/review/ReviewTab').then((m) => m.ReviewTab), { loading: TabLoading })
 
 type TabKey = 'profile' | 'messages' | 'timeline' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 

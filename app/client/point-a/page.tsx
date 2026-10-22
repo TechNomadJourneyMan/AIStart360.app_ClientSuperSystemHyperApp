@@ -5,7 +5,9 @@
 // /client/point-a; the setting switches the engine and the page together.
 // Off: the previous page, unchanged.
 import { getSetting } from '@/lib/settings/store'
-import ClientPointALegacy from '@/components/point-a/legacy/ClientPointALegacy'
+// The previous page (setting off) is loaded only when it is shown: with v4 on its
+// client code does not reach the browser (W4).
+import { ClientPointALegacy } from '@/components/point-a/legacy/lazy'
 import PointAV4Page from '@/components/point-a-v4/PointAV4Page'
 
 export const dynamic = 'force-dynamic'
