@@ -15,6 +15,7 @@ import { BTN_GHOST, BTN_PRIMARY, CARD, Icon, SectionTitle, fmtValue } from './ui
 import { MiniSpark, TrendChip, metricValue } from './MetricParts'
 import { cn } from '@/lib/utils'
 import { BodyPortal } from '@/components/ui/body-portal'
+import { actionLabel } from '@/lib/ui/pending'
 
 const MAX = 8
 
@@ -109,7 +110,7 @@ function Picker({ state, onClose, readonly }: { state: PointAPageState; onClose:
         )}
         <div className="flex justify-end gap-2">
           <button type="button" className={BTN_GHOST} onClick={onClose}>Отмена</button>
-          <button type="button" className={BTN_PRIMARY} onClick={() => void submit()} disabled={save.isPending || ids.length === 0}>Сохранить</button>
+          <button type="button" className={BTN_PRIMARY} onClick={() => void submit()} disabled={save.isPending || ids.length === 0} aria-busy={save.isPending}>{actionLabel('Сохранить', save.isPending)}</button>
         </div>
       </div>
     </div>

@@ -11,6 +11,7 @@ import type { PointAPageState } from '@/hooks/usePointAState'
 import { useResolveDiscrepancy } from '@/hooks/usePointAState'
 import { BTN_GHOST, BTN_PRIMARY, CARD, Icon, SectionTitle, fmtValue } from './ui'
 import { cn } from '@/lib/utils'
+import { actionLabel, isPendingKey } from '@/lib/ui/pending'
 
 const SOURCE_RU: Record<string, string> = { survey: 'Анкета', document: 'Документ', manual: 'Вручную', integration: 'Интеграция', assessment: 'Оценка GRI' }
 
@@ -21,6 +22,7 @@ function CustomValue({ d, onDone }: { d: Disc; onDone: () => void }) {
   const [value, setValue] = useState('')
   const [note, setNote] = useState('')
   const submit = async () => {
+    if (resolve.isPending) return
     const n = Number(value.replace(/\s/g, '').replace(',', '.'))
     if (!Number.isFinite(n)) return toast.error('Введите число')
     try {
@@ -43,7 +45,7 @@ function CustomValue({ d, onDone }: { d: Disc; onDone: () => void }) {
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Комментарий (необязательно)"
           className="w-full rounded-xl border border-white/10 bg-surface-container-low px-3 py-2 text-base sm:text-sm text-on-surface focus:outline-none focus:border-primary/50" />
       </label>
-      <button type="button" className={BTN_PRIMARY} onClick={() => void submit()} disabled={!value.trim() || resolve.isPending}>Сохранить</button>
+      <button type="button" className={BTN_PRIMARY} onClick={() => void submit()} disabled={!value.trim() || resolve.isPending} aria-busy={resolve.isPending}>{actionLabel('Сохранить', resolve.isPending)}</button>
     </div>
   )
 }
@@ -51,12 +53,18 @@ function CustomValue({ d, onDone }: { d: Disc; onDone: () => void }) {
 function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
   const resolve = useResolveDiscrepancy()
   const [custom, setCustom] = useState(d.kind === 'invalid')
-  const decide = async (body: Parameters<typeof resolve.mutateAsync>[0]['body'], ok: string) => {
+  // Which button of the row is saving: it says «Сохраняем…», the others wait disabled.
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const decide = async (key: string, body: Parameters<typeof resolve.mutateAsync>[0]['body'], ok: string) => {
+    if (resolve.isPending) return
+    setPendingKey(key)
     try {
       await resolve.mutateAsync({ id: d.id, body })
       toast.success(ok)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Не удалось сохранить решение')
+    } finally {
+      setPendingKey(null)
     }
   }
   const title = d.kind === 'conflict' ? 'Источники расходятся' : d.kind === 'invalid' ? 'Недопустимое значение' : 'Необычное значение'
@@ -75,9 +83,9 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
                   {i === 0 && d.kind === 'conflict' && <span className="ml-2 text-[10px] font-mono text-primary/80">сейчас в расчёте</span>}
                 </span>
                 {canManage && d.kind !== 'invalid' && (
-                  <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending}
-                    onClick={() => void decide({ choice: 'candidate', index: i, expected: { sourceRef: c.sourceRef, value: c.value } }, i === 0 ? 'Оставили значение — расхождение закрыто' : 'Взяли значение — Точка А пересчитается')}>
-                    {c.sourceKind === 'survey' ? 'Верно из анкеты' : c.sourceKind === 'document' ? 'Взять из документа' : 'Это верно'}
+                  <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending} aria-busy={isPendingKey(pendingKey, `c${i}`)}
+                    onClick={() => void decide(`c${i}`, { choice: 'candidate', index: i, expected: { sourceRef: c.sourceRef, value: c.value } }, i === 0 ? 'Оставили значение — расхождение закрыто' : 'Взяли значение — Точка А пересчитается')}>
+                    {actionLabel(c.sourceKind === 'survey' ? 'Верно из анкеты' : c.sourceKind === 'document' ? 'Взять из документа' : 'Это верно', isPendingKey(pendingKey, `c${i}`))}
                   </button>
                 )}
               </li>
@@ -86,8 +94,8 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
           {canManage && (
             <div className="mt-2 flex flex-wrap gap-2">
               <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} onClick={() => setCustom((v) => !v)} aria-expanded={custom}>Ввести другое</button>
-              <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending}
-                onClick={() => void decide({ choice: 'ignore' }, 'Скрыто')}>Не важно</button>
+              <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending} aria-busy={isPendingKey(pendingKey, 'ignore')}
+                onClick={() => void decide('ignore', { choice: 'ignore' }, 'Скрыто')}>{actionLabel('Не важно', isPendingKey(pendingKey, 'ignore'))}</button>
             </div>
           )}
           {canManage && custom && <CustomValue d={d} onDone={() => setCustom(false)} />}

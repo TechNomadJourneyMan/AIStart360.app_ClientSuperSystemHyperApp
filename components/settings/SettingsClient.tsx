@@ -15,6 +15,7 @@ import {
   NOTIFY_CATEGORY_UI,
   type NotifyCategory,
 } from '@/lib/notifications/preferences'
+import { actionLabel } from '@/lib/ui/pending'
 
 export interface SettingsInitial {
   firstName: string
@@ -304,6 +305,8 @@ function TwoFactorCard() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [disabling, setDisabling] = useState(false)
   const [disableCode, setDisableCode] = useState('')
+  // Which of the 2FA actions is running — its button says so.
+  const [running, setRunning] = useState<'disable' | 'regenerate' | null>(null)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -345,7 +348,7 @@ function TwoFactorCard() {
   }
 
   const disable = async () => {
-    setBusy(true); setErr(null)
+    setBusy(true); setErr(null); setRunning('disable')
     try {
       const res = await fetch('/api/v1/security/2fa/disable', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -354,13 +357,13 @@ function TwoFactorCard() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось отключить.'); return }
       toast.success('2FA отключена'); setDisabling(false); setDisableCode(''); loadStatus()
-    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false); setRunning(null) }
   }
 
   const regenerate = async () => {
     const c = window.prompt('Введите текущий код из приложения, чтобы перевыпустить резервные коды:')
     if (!c) return
-    setBusy(true); setErr(null)
+    setBusy(true); setErr(null); setRunning('regenerate')
     try {
       const res = await fetch('/api/v1/security/backup-codes/regenerate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -369,7 +372,7 @@ function TwoFactorCard() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.ok) { toast.error(json.error === 'invalid_code' ? 'Неверный код' : 'Не удалось'); return }
       setBackupCodes(json.backup_codes); loadStatus()
-    } catch { toast.error('Ошибка сети') } finally { setBusy(false) }
+    } catch { toast.error('Ошибка сети') } finally { setBusy(false); setRunning(null) }
   }
 
   return (
@@ -391,15 +394,15 @@ function TwoFactorCard() {
           {backupCodes && <BackupCodesPanel codes={backupCodes} onDone={() => setBackupCodes(null)} />}
           {err && <p className="text-xs text-error font-mono mt-2">{err}</p>}
           <div className="flex flex-wrap gap-2 mt-4">
-            <button type="button" onClick={regenerate} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50">Перевыпустить резервные коды</button>
+            <button type="button" onClick={regenerate} disabled={busy} aria-busy={running === 'regenerate'} className="text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50">{actionLabel('Перевыпустить резервные коды', running === 'regenerate', 'reissue')}</button>
             {!disabling ? (
               <button type="button" onClick={() => { setDisabling(true); setErr(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-error/30 text-error hover:bg-error/10 transition-colors">Отключить 2FA</button>
             ) : (
               <div className="flex items-center gap-2 w-full mt-1">
                 <input value={disableCode} onChange={(e) => setDisableCode(e.target.value)} placeholder="Код из приложения или резервный"
                   className="flex-1 h-9 bg-surface-container-high border border-white/[0.06] rounded-lg px-3 text-sm font-mono text-on-surface focus:outline-none focus:border-error/40" />
-                <button type="button" onClick={disable} disabled={busy || disableCode.trim().length < 6} className="text-xs px-3 py-2 rounded-lg bg-error text-white font-semibold disabled:opacity-50">Подтвердить</button>
-                <button type="button" onClick={() => { setDisabling(false); setDisableCode('') }} className="text-xs px-3 py-2 rounded-lg text-on-surface-variant">Отмена</button>
+                <button type="button" onClick={disable} disabled={busy || disableCode.trim().length < 6} aria-busy={running === 'disable'} className="text-xs px-3 py-2 rounded-lg bg-error text-white font-semibold disabled:opacity-50">{actionLabel('Подтвердить', running === 'disable', 'disable')}</button>
+                <button type="button" onClick={() => { setDisabling(false); setDisableCode('') }} disabled={running === 'disable'} className="text-xs px-3 py-2 rounded-lg text-on-surface-variant disabled:opacity-50">Отмена</button>
               </div>
             )}
           </div>
@@ -458,6 +461,7 @@ function BiometricsCard() {
   const [creds, setCreds] = useState<PasskeyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [removingId, setRemovingId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
 
@@ -506,7 +510,7 @@ function BiometricsCard() {
 
   const remove = async (id: string, label: string | null) => {
     if (!confirm(`Удалить ключ «${label ?? 'passkey'}»? Если это последний фактор — вход снова будет только по паролю.`)) return
-    setBusy(true)
+    setBusy(true); setRemovingId(id)
     try {
       const res = await fetch('/api/v1/security/webauthn/credentials', {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -515,7 +519,7 @@ function BiometricsCard() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.ok) { toast.error('Не удалось удалить'); return }
       toast.success('Ключ удалён'); load()
-    } catch { toast.error('Ошибка сети') } finally { setBusy(false) }
+    } catch { toast.error('Ошибка сети') } finally { setBusy(false); setRemovingId(null) }
   }
 
   return (
@@ -543,8 +547,8 @@ function BiometricsCard() {
                       </p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => remove(c.id, c.label)} disabled={busy}
-                    className="text-xs text-error border border-error/30 px-3 py-1.5 rounded-lg hover:bg-error/10 transition-colors disabled:opacity-50">Удалить</button>
+                  <button type="button" onClick={() => remove(c.id, c.label)} disabled={busy} aria-busy={removingId === c.id}
+                    className="text-xs text-error border border-error/30 px-3 py-1.5 rounded-lg hover:bg-error/10 transition-colors disabled:opacity-50">{actionLabel('Удалить', removingId === c.id, 'delete')}</button>
                 </div>
               ))}
             </div>
@@ -673,11 +677,17 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
     void refreshTelegram()
   }, [refreshTelegram])
 
+  // Switches being saved (`cat:channel`): disabled until the server answers, so a fast double click
+  // cannot send two requests and roll back to a stale state.
+  const [savingKeys, setSavingKeys] = useState<ReadonlySet<string>>(new Set())
   const toggle = async (cat: NotifyCategory, channel: Channel) => {
     if (LOCKED_CATEGORIES.has(cat)) return
+    const key = `${cat}:${channel}`
+    if (savingKeys.has(key)) return
     const prev = prefs
     const value = !prefs[cat]?.[channel]
     setPrefs((p) => ({ ...p, [cat]: { ...p[cat], [channel]: value } }))
+    setSavingKeys((k) => new Set(k).add(key))
     try {
       const res = await fetch('/api/v1/settings/preferences', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -685,7 +695,12 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || !json.ok) throw new Error()
-    } catch { setPrefs(prev); toast.error('Не удалось сохранить настройку') }
+    } catch {
+      setPrefs((p) => ({ ...p, [cat]: { ...p[cat], [channel]: prev[cat]?.[channel] } }))
+      toast.error('Не удалось сохранить настройку')
+    } finally {
+      setSavingKeys((k) => { const next = new Set(k); next.delete(key); return next })
+    }
   }
   const showTelegram = configured && linked === true
   return (
@@ -702,10 +717,10 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
             <div key={c.key} className="flex items-center justify-between py-3">
               <div className="pr-4"><p className="text-sm font-medium text-on-surface">{c.label}</p><p className="text-xs text-on-surface-variant">{c.desc}</p></div>
               <div className="flex items-center gap-6 shrink-0">
-                <Toggle checked={prefs[c.key]?.in_app} disabled={locked} onChange={() => toggle(c.key, 'in_app')} label={`${c.label}: in-app`} />
-                <Toggle checked={prefs[c.key]?.email} disabled={locked} onChange={() => toggle(c.key, 'email')} label={`${c.label}: email`} />
+                <Toggle checked={prefs[c.key]?.in_app} disabled={locked || savingKeys.has(`${c.key}:in_app`)} busy={savingKeys.has(`${c.key}:in_app`)} onChange={() => toggle(c.key, 'in_app')} label={`${c.label}: in-app`} />
+                <Toggle checked={prefs[c.key]?.email} disabled={locked || savingKeys.has(`${c.key}:email`)} busy={savingKeys.has(`${c.key}:email`)} onChange={() => toggle(c.key, 'email')} label={`${c.label}: email`} />
                 {showTelegram && (
-                  <Toggle checked={prefs[c.key]?.telegram} disabled={locked} onChange={() => toggle(c.key, 'telegram')} label={`${c.label}: Telegram`} />
+                  <Toggle checked={prefs[c.key]?.telegram} disabled={locked || savingKeys.has(`${c.key}:telegram`)} busy={savingKeys.has(`${c.key}:telegram`)} onChange={() => toggle(c.key, 'telegram')} label={`${c.label}: Telegram`} />
                 )}
               </div>
             </div>
@@ -732,9 +747,10 @@ function TelegramBinding({
   onChanged: () => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState<'link' | 'unlink' | null>(null)
 
   const link = async () => {
-    setBusy(true)
+    setBusy(true); setRunning('link')
     try {
       const res = await fetch('/api/v1/settings/telegram', { method: 'POST', credentials: 'include' })
       const json = await res.json().catch(() => ({}))
@@ -749,12 +765,12 @@ function TelegramBinding({
     } catch {
       toast.error('Не удалось создать ссылку привязки')
     } finally {
-      setBusy(false)
+      setBusy(false); setRunning(null)
     }
   }
 
   const unlink = async () => {
-    setBusy(true)
+    setBusy(true); setRunning('unlink')
     try {
       const res = await fetch('/api/v1/settings/telegram', { method: 'DELETE', credentials: 'include' })
       if (res.ok) {
@@ -766,7 +782,7 @@ function TelegramBinding({
     } catch {
       toast.error('Не удалось отвязать')
     } finally {
-      setBusy(false)
+      setBusy(false); setRunning(null)
     }
   }
 
@@ -801,17 +817,19 @@ function TelegramBinding({
               <button
                 onClick={unlink}
                 disabled={busy}
+                aria-busy={running === 'unlink'}
                 className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-on-surface-variant hover:bg-white/[0.04] disabled:opacity-40 transition-colors"
               >
-                Отвязать
+                {actionLabel('Отвязать', running === 'unlink', 'unlink')}
               </button>
             ) : (
               <button
                 onClick={link}
                 disabled={busy}
+                aria-busy={running === 'link'}
                 className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-xs font-medium text-primary hover:bg-primary/25 disabled:opacity-40 transition-colors"
               >
-                Привязать Telegram
+                {actionLabel('Привязать Telegram', running === 'link', 'link')}
               </button>
             )}
           </div>
@@ -892,11 +910,11 @@ function ComingSoon({ icon, title, points }: { icon: string; title: string; poin
   )
 }
 
-function Toggle({ checked, onChange, label, disabled = false }: { checked?: boolean; onChange: () => void; label?: string; disabled?: boolean }) {
+function Toggle({ checked, onChange, label, disabled = false, busy = false }: { checked?: boolean; onChange: () => void; label?: string; disabled?: boolean; /** The switch is being saved. */ busy?: boolean }) {
   return (
-    <button type="button" role="switch" aria-checked={!!checked} aria-label={label} onClick={onChange} disabled={disabled}
-      title={disabled ? 'Эти уведомления отключить нельзя' : undefined}
-      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${checked ? 'bg-primary' : 'bg-surface-container-high'}`}>
+    <button type="button" role="switch" aria-checked={!!checked} aria-label={label} onClick={onChange} disabled={disabled} aria-busy={busy}
+      title={busy ? 'Сохраняем…' : disabled ? 'Эти уведомления отключить нельзя' : undefined}
+      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${busy ? 'disabled:cursor-wait animate-pulse' : 'disabled:cursor-not-allowed'} ${checked ? 'bg-primary' : 'bg-surface-container-high'}`}>
       <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
   )

@@ -19,11 +19,14 @@ import type { PointAComment } from '@/lib/point-a/v4/state'
 import { BTN_GHOST, CARD, CHIP, ConfidenceBar, Icon, SectionTitle, fmtValue, toneColor } from './ui'
 import { cn } from '@/lib/utils'
 import { BodyPortal } from '@/components/ui/body-portal'
+import { actionLabel, isPendingKey } from '@/lib/ui/pending'
 
 type Metric = NonNullable<PointAPageState['snapshot']>['metrics'][number]
 
-function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving, comments }: {
+function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving, toggling, comments }: {
   saving?: boolean
+  /** This card's «Скрыть / Показать» is being saved. */
+  toggling?: boolean
   comments: PointAComment[]
   block: V4Block
   metrics: Metric[]
@@ -100,8 +103,8 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
 
       {customize ? (
         <div className="flex flex-wrap gap-2 pt-1">
-          <button type="button" className={BTN_GHOST} onClick={onToggle} disabled={saving} aria-label={`${hidden ? 'Показать' : 'Скрыть'} блок «${block.title}»`}>
-            <Icon name={hidden ? 'visibility' : 'visibility_off'} className="text-[16px]" />{hidden ? 'Показать' : 'Скрыть'}
+          <button type="button" className={BTN_GHOST} onClick={onToggle} disabled={saving} aria-busy={toggling} aria-label={`${hidden ? 'Показать' : 'Скрыть'} блок «${block.title}»`}>
+            <Icon name={hidden ? 'visibility' : 'visibility_off'} className="text-[16px]" />{actionLabel(hidden ? 'Показать' : 'Скрыть', !!toggling)}
           </button>
           <button type="button" className={BTN_GHOST} onClick={() => onMove(-1)} disabled={first || saving} aria-label={`Переместить «${block.title}» выше`}><Icon name="arrow_upward" className="text-[16px]" /></button>
           <button type="button" className={BTN_GHOST} onClick={() => onMove(1)} disabled={last || saving} aria-label={`Переместить «${block.title}» ниже`}><Icon name="arrow_downward" className="text-[16px]" /></button>
@@ -118,6 +121,8 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
 export function BlocksSection({ state, customize, previewDetails }: { state: PointAPageState; customize: boolean; previewDetails?: Partial<Record<BlockKey, BlockDetail>> }) {
   const view = useBlockView()
   const [openKey, setOpenKey] = useState<BlockKey | null>(null)
+  // Which button is saving (`toggle:<block>`, `add:<block>`): it says «Сохраняем…», the others wait disabled.
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const snapshot = state.snapshot
   const cfg = state.config.blocks
   const hidden = useMemo(() => new Set(cfg.filter((b) => b.hiddenForClient).map((b) => b.key)), [cfg])
@@ -129,15 +134,19 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
   const visible = customize ? ordered : ordered.filter((b) => !hidden.has(b.key))
   const notInConfig = state.library.filter((l) => !cfg.some((c) => c.key === l.key))
 
-  const save = async (patch: { hidden?: string[]; order?: string[]; added?: string[] }) => {
+  const save = async (patch: { hidden?: string[]; order?: string[]; added?: string[] }, key: string | null = null) => {
     if (previewDetails) return toast.info('Предпросмотр: настройка не сохраняется')
+    if (view.isPending) return
+    setPendingKey(key)
     try {
       await view.mutateAsync(patch)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Не удалось сохранить вид')
+    } finally {
+      setPendingKey(null)
     }
   }
-  const toggle = (k: BlockKey) => void save({ hidden: hidden.has(k) ? [...hidden].filter((x) => x !== k) : [...hidden, k] })
+  const toggle = (k: BlockKey) => void save({ hidden: hidden.has(k) ? [...hidden].filter((x) => x !== k) : [...hidden, k] }, `toggle:${k}`)
   const move = (k: BlockKey, dir: -1 | 1) => {
     const next = ordered.map((b) => b.key)
     const i = next.indexOf(k)
@@ -161,7 +170,7 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((b, i) => (
           <BlockCard key={b.key} block={b} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
-            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} comments={commentsOf(b.key)} />
+            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} toggling={isPendingKey(pendingKey, `toggle:${b.key}`)} comments={commentsOf(b.key)} />
         ))}
       </div>
       {openKey && (
@@ -170,8 +179,9 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
       {customize && notInConfig.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {notInConfig.map((l) => (
-            <button key={l.key} type="button" className={BTN_GHOST} onClick={() => void save({ added: [...state.config.added, l.key] })}>
-              <Icon name="add" className="text-[16px]" />{l.title}
+            <button key={l.key} type="button" className={BTN_GHOST} disabled={view.isPending} aria-busy={isPendingKey(pendingKey, `add:${l.key}`)}
+              onClick={() => void save({ added: [...state.config.added, l.key] }, `add:${l.key}`)}>
+              <Icon name="add" className="text-[16px]" />{isPendingKey(pendingKey, `add:${l.key}`) ? actionLabel(l.title, true) : l.title}
             </button>
           ))}
         </div>

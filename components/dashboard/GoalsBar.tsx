@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { BodyPortal } from '@/components/ui/body-portal'
 import { LEGACY_GOALS_KEY } from '@/stores/ui.store'
 import { useDeleteGoal, useGoals, useSaveGoal, type GoalItem } from '@/hooks/useGoals'
+import { actionLabel } from '@/lib/ui/pending'
 
 const MAX_GOALS = 8
 
@@ -58,7 +59,7 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function GoalChip({ item, onRemove }: { item: GoalItem; onRemove: () => void }) {
+function GoalChip({ item, onRemove, removing = false }: { item: GoalItem; onRemove: () => void; removing?: boolean }) {
   const s = STATUS[item.evaluation.status] ?? STATUS.no_data
   return (
     <div
@@ -70,8 +71,12 @@ function GoalChip({ item, onRemove }: { item: GoalItem; onRemove: () => void }) 
         {item.goal.label}: {fmt(item.evaluation.current, item.goal.unit)} → {fmt(item.goal.targetValue, item.goal.unit)}
       </span>
       <span className={`text-[10px] font-mono ${s.cls}`}>{s.text}</span>
-      <button onClick={onRemove} className="text-primary/30 hover:text-primary transition-colors ml-0.5" aria-label={`Удалить цель «${item.goal.label}»`}>
-        <span className="material-symbols-outlined text-[13px]" aria-hidden>close</span>
+      <button onClick={onRemove} disabled={removing} aria-busy={removing}
+        className="text-primary/30 hover:text-primary transition-colors ml-0.5 disabled:opacity-60"
+        aria-label={removing ? `Удаляем цель «${item.goal.label}»…` : `Удалить цель «${item.goal.label}»`}>
+        {removing
+          ? <span className="material-symbols-outlined text-[13px] animate-spin" aria-hidden>progress_activity</span>
+          : <span className="material-symbols-outlined text-[13px]" aria-hidden>close</span>}
       </button>
     </div>
   )
@@ -110,6 +115,7 @@ export function GoalsBar() {
   const [period, setPeriod] = useState<'12m' | '3y'>('12m')
 
   const submit = async () => {
+    if (save.isPending) return
     const value = parseAmount(amount)
     if (value === null || value < 0) {
       toast.error('Введите число', { description: preset.hint })
@@ -151,7 +157,8 @@ export function GoalsBar() {
           <GoalChip
             key={item.goal.id}
             item={item}
-            onRemove={() => remove.mutate(item.goal.id, { onError: () => toast.error('Не удалось удалить цель') })}
+            removing={remove.isPending && remove.variables === item.goal.id}
+            onRemove={() => { if (!remove.isPending) remove.mutate(item.goal.id, { onError: () => toast.error('Не удалось удалить цель') }) }}
           />
         ))}
         {!isLoading && items.length < MAX_GOALS && (
@@ -232,7 +239,7 @@ export function GoalsBar() {
                 disabled={!amount.trim() || save.isPending}
                 className="px-4 py-2.5 bg-primary/20 hover:bg-primary/30 text-primary rounded-xl text-sm font-mono transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {save.isPending ? '…' : 'Сохранить'}
+                {actionLabel('Сохранить', save.isPending)}
               </button>
             </div>
           </div>

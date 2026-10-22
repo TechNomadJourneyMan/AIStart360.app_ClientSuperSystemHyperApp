@@ -62,7 +62,8 @@ function GoalRowView({ row, canEdit, onSave }: { row: RevenueGoalRow; canEdit: b
     setEditing(true)
   }
   const save = async () => {
-    if (!onSave || parsed === null) return
+    // Enter while a save is running must not send a second one.
+    if (!onSave || parsed === null || saving) return
     setSaving(true)
     try {
       await onSave(row.period, parsed)
@@ -90,7 +91,7 @@ function GoalRowView({ row, canEdit, onSave }: { row: RevenueGoalRow; canEdit: b
               inputMode="decimal"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEditing(false) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape' && !saving) setEditing(false) }}
               placeholder="например, 780 млн"
               className="w-full rounded-xl border border-white/10 bg-surface-container-low px-3 py-2 text-base sm:text-sm text-on-surface focus:outline-none focus:border-primary/50"
             />
