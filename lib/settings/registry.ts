@@ -6,6 +6,7 @@
  * fail-safe: a missing or malformed value resolves to the default.
  */
 import { z } from 'zod'
+import { DEFAULT_RECOMPUTE_CRON, isValidRecomputeCron } from '@/lib/point-b/planfact/cron'
 
 export const NOTIFICATION_TYPES = {
   user_registered: 'Новая регистрация',
@@ -292,6 +293,22 @@ export const SETTINGS = {
     group: 'point_b', label: 'Карточек подсказок в сутки на пользователя',
     help: 'Сколько карточек с рекомендациями и подсказками платформы показывать одному пользователю в сутки. Сообщения эксперта этим лимитом не ограничены.',
     schema: z.number().int().min(0).max(10), default: 3, critical: false,
+  },
+  // ── Точка Б: пересчёт и план-факт (lib/point-b/planfact, spec §13–§14) ──
+  pb_recompute_cron: {
+    group: 'point_b', label: 'Расписание пересчёта Точки Б (cron, UTC)',
+    help: 'Когда пересчитывать прогноз и план-факт клиентов с одобренным планом: «минута час день месяц день_недели» по UTC. По умолчанию понедельник и четверг в 22:00 UTC. Чаще раза в час не запускается. Кнопка «Пересчитать» у эксперта и в GIGA работает всегда.',
+    schema: z.string().trim().max(100).refine(isValidRecomputeCron, 'Формат: «0 22 * * 1,4» — минута одним числом, затем час, день, месяц, день недели'),
+    default: DEFAULT_RECOMPUTE_CRON, critical: false,
+  },
+  pb_verdict_tolerances: {
+    group: 'point_b', label: 'Допуски вердикта «на курсе / риск / отстаём», %',
+    help: 'Факт ниже плана не больше чем на «на курсе» % — на курсе; не больше чем на «риск» % — риск; больше — отстаём. Считается по каждому ключевому показателю плана; общий вердикт — по худшему.',
+    schema: z.object({
+      on_track_pct: z.number().min(0).max(50),
+      risk_pct: z.number().min(0).max(90),
+    }).refine((v) => v.risk_pct > v.on_track_pct, 'Допуск «риск» должен быть больше допуска «на курсе»'),
+    default: { on_track_pct: 5, risk_pct: 15 }, critical: false,
   },
 } as const
 

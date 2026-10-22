@@ -11,6 +11,7 @@
  *     become superseded, a superseded row is frozen (23514);
  *   - the unique partial index (user_id, pb_task_key) of action_items (migration 128);
  *   - the unique partial index of active invites (user_id, dedupe_key) of pb_invites (migration 129);
+ *   - (version_id, period) of pb_checkpoints and (company_id, period, metric) of pb_monthly_facts (migration 132);
  *   - an update is atomic, so two «conditional» updates race exactly like in SQL.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -50,11 +51,17 @@ const DEFAULTS: Record<string, () => Row> = {
     kind: 'insight', body: '', href: null, why: '', source_refs: [], priority: 5, display: 'card', status: 'new', snoozed_until: null,
     expires_at: null, delivered: {}, source_rec_id: null,
   }),
+  // migration 132
+  pb_checkpoints: () => ({ planned: {}, actual: {}, forecast: {}, verdict: {}, overall: 'no_data', reason: null, inputs_hash: null }),
+  pb_runs: () => ({
+    status: 'running', company_id: null, triggered_by: null, finished_at: null, companies: 0, skipped: 0, ai_calls: 0, cost: 0, errors: [], cursor: null,
+  }),
+  pb_monthly_facts: () => ({ source: 'monthly_reconciliation', entered_by: null, note: null }),
 }
 
 /** Tables of migration 129: uuid ids (the routes validate them) and an updated_at stamp on every write. */
-const UUID_TABLES = new Set(['pb_saved_scenarios', 'pb_recommendations', 'pb_invites'])
-const STAMPED_TABLES = new Set(['pb_finmodel_inputs', 'pb_recommendations', 'pb_invites'])
+const UUID_TABLES = new Set(['pb_saved_scenarios', 'pb_recommendations', 'pb_invites', 'pb_checkpoints', 'pb_runs', 'pb_monthly_facts'])
+const STAMPED_TABLES = new Set(['pb_finmodel_inputs', 'pb_recommendations', 'pb_invites', 'pb_checkpoints', 'pb_monthly_facts'])
 /** pb_invites_active_dedupe_uidx: one active invite per (user_id, dedupe_key). */
 const ACTIVE_INVITE = ['new', 'seen', 'snoozed']
 
@@ -74,6 +81,10 @@ function uniqueViolation(table: string, rows: Row[], row: Row, ignoreId?: unknow
   }
   if (table === 'metric_targets') {
     return others.some((r) => r.company_id === row.company_id && r.metric_key === row.metric_key && r.period_label === row.period_label)
+  }
+  if (table === 'pb_checkpoints') return others.some((r) => r.version_id === row.version_id && r.period === row.period)
+  if (table === 'pb_monthly_facts') {
+    return others.some((r) => r.company_id === row.company_id && r.period === row.period && r.metric === row.metric)
   }
   if (table === 'pb_invites') {
     return ACTIVE_INVITE.includes(String(row.status))
@@ -107,7 +118,7 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
   let seq = 0
   const db: Record<string, Row[]> = {
     pb_plans: [], pb_plan_versions: [], pb_goal_reviews: [], pb_finmodel_inputs: [], pb_saved_scenarios: [], action_items: [], metric_targets: [], companies: [], profiles: [],
-    pb_recommendations: [], pb_invites: [], ...structuredClone(seed),
+    pb_recommendations: [], pb_invites: [], pb_checkpoints: [], pb_runs: [], pb_monthly_facts: [], ...structuredClone(seed),
   }
   const writes: Array<{ table: string; op: string; payload: unknown }> = []
   const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++seq)).toISOString()
