@@ -3,7 +3,7 @@
  * объяснять, почему туда вернули (просроченная ссылка, блокировка).
  */
 import { describe, expect, it } from 'vitest'
-import { loginNotice, oauthCallbackUrl } from '@/lib/auth/login-links'
+import { friendlyAuthError, loginNotice, oauthCallbackUrl } from '@/lib/auth/login-links'
 
 describe('oauthCallbackUrl', () => {
   it('без ?from= не передаёт next — /auth/callback выберет кабинет по роли', () => {
@@ -33,5 +33,21 @@ describe('loginNotice', () => {
   it('молчит без параметров и на чужих значениях', () => {
     expect(loginNotice(p(''))).toBeNull()
     expect(loginNotice(p('error=<script>'))).toBeNull()
+  })
+})
+
+describe('friendlyAuthError', () => {
+  it('переводит типовые отказы Supabase на русский', () => {
+    expect(friendlyAuthError('Invalid login credentials')).toMatch(/Неверный email или пароль/)
+    expect(friendlyAuthError('Invalid login credentials')).toMatch(/Google/)
+    expect(friendlyAuthError('Request rate limit reached')).toMatch(/Слишком много/)
+    expect(friendlyAuthError('Failed to fetch')).toMatch(/Нет связи/)
+    expect(friendlyAuthError('User is banned')).toMatch(/закрыт/)
+    expect(friendlyAuthError('Unsupported provider: provider is not enabled')).toMatch(/недоступен/)
+  })
+  it('русский текст из нашего API пропускает, неизвестный английский — нет', () => {
+    expect(friendlyAuthError('Регистрация доступна только по приглашению.')).toBe('Регистрация доступна только по приглашению.')
+    expect(friendlyAuthError('Some internal GoTrue error 500')).toBe('Не удалось войти. Попробуйте ещё раз.')
+    expect(friendlyAuthError('', 'Ошибка регистрации')).toBe('Ошибка регистрации')
   })
 })

@@ -10,13 +10,14 @@ const s = vi.hoisted(() => ({
   link: { data: { properties: { hashed_token: 'hash-123' } }, error: null } as unknown,
   sent: [] as Array<{ to: string; subject: string; ctaUrl?: string }>,
   limited: false,
+  sendResult: undefined as unknown,
 }))
 
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({ auth: { admin: { generateLink: async () => s.link } } }),
 }))
 vi.mock('@/lib/email', () => ({
-  sendNotificationEmail: async (o: { to: string; subject: string; ctaUrl?: string }) => { s.sent.push(o) },
+  sendNotificationEmail: async (o: { to: string; subject: string; ctaUrl?: string }) => { s.sent.push(o); return s.sendResult },
 }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
 vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://portal.aistart360.app' }))
@@ -31,6 +32,7 @@ beforeEach(() => {
   s.link = { data: { properties: { hashed_token: 'hash-123' } }, error: null }
   s.sent = []
   s.limited = false
+  s.sendResult = { data: { id: 'msg-1' }, error: null }
 })
 
 describe('POST /api/v1/auth/email-link', () => {
@@ -76,5 +78,17 @@ describe('POST /api/v1/auth/email-link', () => {
 
   it('отвергает некорректный email', async () => {
     expect((await post({ email: 'не-почта' })).status).toBe(422)
+  })
+
+  it('недоставленное письмо видно в логах (без ссылки), ответ тот же', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    s.sendResult = { data: null, error: { message: 'The aistart360.app domain is not verified' } }
+    const res = await post({ email: 'user@example.com', purpose: 'recovery' })
+    expect(res.status).toBe(200)
+    expect(spy).toHaveBeenCalled()
+    const logged = spy.mock.calls.flat().join(' ')
+    expect(logged).toMatch(/not verified/)
+    expect(logged).not.toMatch(/hash-123/)
+    spy.mockRestore()
   })
 })

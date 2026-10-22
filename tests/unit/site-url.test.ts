@@ -37,3 +37,30 @@ describe('getSiteUrl', () => {
     expect(getSiteUrl('register')).toBe('https://portal.aistart360.app/register')
   })
 })
+
+describe('getSiteUrl — stale or unsafe values never reach email links (W6)', () => {
+  it('ignores the old friend deploy aistart360.vercel.app', () => {
+    process.env.AUTH_URL = 'https://aistart360.vercel.app'
+    expect(getSiteUrl('/auth/verify')).toBe('https://portal.aistart360.app/auth/verify')
+  })
+
+  it('in production ignores localhost and plain-http values', () => {
+    const env = process.env as Record<string, string | undefined>
+    env.NODE_ENV = 'production'
+    env.AUTH_URL = 'http://localhost:3000'
+    expect(getSiteUrl()).toBe('https://portal.aistart360.app')
+    env.AUTH_URL = 'http://portal.aistart360.app'
+    expect(getSiteUrl()).toBe('https://portal.aistart360.app')
+  })
+
+  it('ignores a value that is not a URL and falls through to the next one', () => {
+    process.env.AUTH_URL = 'portal'
+    process.env.NEXT_PUBLIC_APP_URL = 'https://portal.aistart360.app'
+    expect(getSiteUrl()).toBe('https://portal.aistart360.app')
+  })
+
+  it('keeps localhost outside production (local development)', () => {
+    process.env.AUTH_URL = 'http://localhost:3000'
+    expect(getSiteUrl()).toBe('http://localhost:3000')
+  })
+})

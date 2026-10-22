@@ -5,7 +5,7 @@ import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
 import { clearAllDrafts } from '@/lib/survey/draft'
-import { oauthCallbackUrl } from '@/lib/auth/login-links'
+import { friendlyAuthError, oauthCallbackUrl } from '@/lib/auth/login-links'
 import type { UserRole } from '@/types'
 
 /**
@@ -59,7 +59,8 @@ interface AuthState {
 
 const ERROR_MESSAGES: Record<string, string> = {
   USER_NOT_FOUND: 'Пользователь с таким email не найден',
-  WRONG_PASSWORD: 'Неверный пароль',
+  // Also what a Google-only account (no password) gets — say how to get in.
+  WRONG_PASSWORD: friendlyAuthError('invalid login credentials'),
   EMAIL_NOT_CONFIRMED: 'Email не подтверждён',
   EMAIL_TAKEN: 'Этот email уже зарегистрирован',
   INVALID_SESSION: 'Сессия недействительна',
@@ -209,7 +210,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const code = err instanceof Error ? err.message : 'UNKNOWN'
       set({
         isLoading: false,
-        error: ERROR_MESSAGES[code] ?? (code || 'Произошла ошибка при входе'),
+        error: ERROR_MESSAGES[code] ?? friendlyAuthError(code, 'Произошла ошибка при входе'),
       })
       throw err
     }
@@ -230,7 +231,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (error) throw new Error(error.message)
       // Redirect happens automatically — Supabase opens Google consent screen
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка входа через Google'
+      const msg = friendlyAuthError(err instanceof Error ? err.message : null, 'Ошибка входа через Google')
       set({ isLoading: false, error: msg })
     }
   },
@@ -276,7 +277,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const code = err instanceof Error ? err.message : 'UNKNOWN'
       set({
         isLoading: false,
-        error: ERROR_MESSAGES[code] ?? (code || 'Произошла ошибка при регистрации'),
+        error: ERROR_MESSAGES[code] ?? friendlyAuthError(code, 'Произошла ошибка при регистрации'),
       })
       throw err
     }

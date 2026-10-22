@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     url.searchParams.set('type', purpose === 'recovery' ? 'recovery' : 'magiclink')
     url.searchParams.set('next', next)
 
-    await sendNotificationEmail({
+    const sent = await sendNotificationEmail({
       to: email,
       subject: purpose === 'recovery' ? 'Восстановление пароля — AIStart360' : 'Вход в AIStart360',
       title: purpose === 'recovery' ? 'Задайте новый пароль' : 'Вход по ссылке',
@@ -71,6 +71,14 @@ export async function POST(req: NextRequest) {
       ctaLabel: purpose === 'recovery' ? 'Задать новый пароль' : 'Войти в кабинет',
       ctaUrl: url.toString(),
     })
+    // The reply stays the same (no account enumeration), but a letter that did
+    // not leave (no RESEND_API_KEY, unverified sender domain…) must be visible
+    // in the logs — never the link itself, it carries a one-time token.
+    const sendError = (sent as { error?: unknown } | undefined)?.error
+    if (sendError) {
+      const reason = typeof sendError === 'string' ? sendError : (sendError as { message?: string }).message ?? 'unknown'
+      console.error(`[auth/email-link] ${purpose}: письмо не отправлено — ${reason}`)
+    }
     return OK
   } catch (e) {
     console.error('[auth/email-link]', e instanceof Error ? e.message : e)
