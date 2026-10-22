@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { Paperclip, FileCheck2, Loader2, X } from 'lucide-react'
-import { FieldLabel, NumberField, PhoneField } from '@/components/onboarding/shared'
+import { ChoiceChip, FieldLabel, NumberField, PhoneField } from '@/components/onboarding/shared'
 import { useAutoYear } from '@/components/onboarding/shared/useAutoYear'
 import { answerNumber } from '@/lib/survey/answer-value'
 import {
@@ -218,21 +218,10 @@ export default function Step1CompanyForm({
           </div>
           {/* Regions multi-select */}
           <div className="md:col-span-2">
-            <FieldLabel>Регионы</FieldLabel>
-            <div className="flex flex-wrap gap-2">
+            <p id="s1_regions-label" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Регионы</p>
+            <div id="s1_regions" role="group" aria-labelledby="s1_regions-label" className="flex flex-wrap gap-2">
               {REGIONS.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => toggleRegion(opt)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                    arr(data.s1_regions).includes(opt)
-                      ? 'bg-primary/20 border-primary/50 text-primary'
-                      : 'bg-surface-container border-white/[0.08] text-on-surface-variant hover:border-white/20'
-                  }`}
-                >
-                  {opt}
-                </button>
+                <ChoiceChip key={opt} label={opt} pressed={arr(data.s1_regions).includes(opt)} onToggle={() => toggleRegion(opt)} />
               ))}
             </div>
           </div>

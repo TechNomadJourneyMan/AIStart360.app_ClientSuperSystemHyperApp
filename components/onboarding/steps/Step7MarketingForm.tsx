@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { FieldLabel, DynamicTable, MultiSelect, NumberField, TermHint } from '@/components/onboarding/shared'
+import { BoolToggle, FieldLabel, DynamicTable, MultiSelect, NumberField, TermHint } from '@/components/onboarding/shared'
 import { MARKETING_CHANNELS } from '@/components/onboarding/constants/options'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -92,11 +92,8 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
           </div>
           <NumberField id="s5_marketing_budget_pct" label="Бюджет на маркетинг (% от выручки)" value={data.s5_marketing_budget_pct} onChange={(v) => onChange('s5_marketing_budget_pct', v)} unit="%" max={100} placeholder="10" />
           <div className="flex items-end">
-            <div className="flex items-center justify-between bg-surface-container rounded-xl border border-white/[0.08] px-4 py-3 w-full">
-              <span className="text-sm text-on-surface">Есть конкурентный анализ</span>
-              <button type="button" onClick={() => onChange('s5_has_competitor_analysis', !bool(data.s5_has_competitor_analysis))} className={`w-12 h-6 rounded-full transition-all flex items-center px-1 ${bool(data.s5_has_competitor_analysis) ? 'bg-primary' : 'bg-surface-container-high'}`}>
-                <span className={`w-4 h-4 rounded-full bg-white transition-all ${bool(data.s5_has_competitor_analysis) ? 'translate-x-6' : 'translate-x-0'}`} />
-              </button>
+            <div className="w-full">
+              <BoolToggle label="Есть конкурентный анализ" value={bool(data.s5_has_competitor_analysis)} onChange={(v) => onChange('s5_has_competitor_analysis', v)} />
             </div>
           </div>
         </div>

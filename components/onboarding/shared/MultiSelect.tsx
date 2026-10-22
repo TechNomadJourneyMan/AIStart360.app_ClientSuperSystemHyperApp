@@ -1,7 +1,6 @@
 'use client'
 
-import React from 'react'
-import { FieldLabel } from './FieldLabel'
+import React, { useId } from 'react'
 import { FieldError } from './FieldError'
 
 interface MultiSelectProps {
@@ -12,6 +11,7 @@ interface MultiSelectProps {
   error?: string
 }
 
+/** Chips for a multi-choice question: a labelled group, each chip `aria-pressed`. */
 export function MultiSelect({
   label,
   options,
@@ -19,6 +19,7 @@ export function MultiSelect({
   onChange,
   error,
 }: MultiSelectProps) {
+  const labelId = useId()
   const toggle = (opt: string) => {
     onChange(
       selected.includes(opt)
@@ -29,24 +30,35 @@ export function MultiSelect({
 
   return (
     <div>
-      {label && <FieldLabel>{label}</FieldLabel>}
-      <div className="flex flex-wrap gap-2">
+      {label && (
+        <p id={labelId} className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
+          {label}
+        </p>
+      )}
+      <div role="group" aria-labelledby={label ? labelId : undefined} className="flex flex-wrap gap-2">
         {options.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => toggle(opt)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-              selected.includes(opt)
-                ? 'bg-primary/20 border-primary/50 text-primary'
-                : 'bg-surface-container border-white/[0.08] text-on-surface-variant hover:border-white/20'
-            }`}
-          >
-            {opt}
-          </button>
+          <ChoiceChip key={opt} label={opt} pressed={selected.includes(opt)} onToggle={() => toggle(opt)} />
         ))}
       </div>
       <FieldError msg={error} />
     </div>
+  )
+}
+
+/** One toggle chip of a multi-choice question (`aria-pressed`). */
+export function ChoiceChip({ label, pressed, onToggle }: { label: string; pressed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onToggle}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+        pressed
+          ? 'bg-primary/20 border-primary/50 text-primary'
+          : 'bg-surface-container border-white/[0.08] text-on-surface-variant hover:border-white/20'
+      }`}
+    >
+      {label}
+    </button>
   )
 }

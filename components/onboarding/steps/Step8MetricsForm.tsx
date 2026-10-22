@@ -76,11 +76,13 @@ function NumericCellInput({
   onCommit,
   onPaste,
   className,
+  ariaLabel,
 }: {
   value: number | null
   onCommit: (n: number | null) => void
   onPaste?: React.ClipboardEventHandler<HTMLInputElement>
   className?: string
+  ariaLabel?: string
 }) {
   const canonical = typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
   const [text, setText] = useState(canonical)
@@ -92,6 +94,7 @@ function NumericCellInput({
     <input
       type="text"
       inputMode="decimal"
+      aria-label={ariaLabel}
       value={text}
       onFocus={() => setFocused(true)}
       onBlur={() => { setFocused(false); setText(canonical) }}
@@ -190,6 +193,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                   <td className="py-1.5 pr-3 sticky left-0 bg-[#0c0e14] z-10">
                     <input
                       type="text"
+                      aria-label={`Название метрики, строка ${rowIdx + 1}`}
                       value={row.metric_name}
                       onChange={(e) => updateName(rowIdx, e.target.value)}
                       placeholder="Название метрики"
@@ -201,6 +205,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                       <NumericCellInput
                         value={cellValue((row as Record<string, unknown>)[col.key])}
                         onCommit={(num) => updateCell(rowIdx, col.key, num)}
+                        ariaLabel={`${row.metric_name || 'Метрика'} — ${col.label}`}
                         onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                         className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                       />
@@ -229,6 +234,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
               <div className="flex items-center gap-2 mb-3">
                 <input
                   type="text"
+                  aria-label={`Название метрики, строка ${rowIdx + 1}`}
                   value={row.metric_name}
                   onChange={(e) => updateName(rowIdx, e.target.value)}
                   placeholder="Название метрики"
@@ -252,6 +258,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                     <NumericCellInput
                         value={cellValue((row as Record<string, unknown>)[col.key])}
                         onCommit={(num) => updateCell(rowIdx, col.key, num)}
+                        ariaLabel={`${row.metric_name || 'Метрика'} — ${col.label}`}
                         onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                         className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                       />

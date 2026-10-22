@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { TermHint } from '@/components/onboarding/shared/TermHint'
+import { BoolToggle } from '@/components/onboarding/shared/BoolToggle'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step12ToolsFormProps {
@@ -238,22 +239,7 @@ export default function Step12ToolsForm({ data, onChange }: Step12ToolsFormProps
           </div>
 
           {/* it_support — boolean toggle */}
-          <div className="flex items-center justify-between bg-surface-container rounded-xl border border-white/[0.08] px-4 py-3">
-            <span className="text-sm text-on-surface">IT-поддержка (внутренняя или внешняя)</span>
-            <button
-              type="button"
-              onClick={() => onChange('s12_it_support', !bool(data.s12_it_support))}
-              className={`w-12 h-6 rounded-full transition-all flex items-center px-1 ${
-                bool(data.s12_it_support) ? 'bg-primary' : 'bg-surface-container-high'
-              }`}
-            >
-              <span
-                className={`w-4 h-4 rounded-full bg-white transition-all ${
-                  bool(data.s12_it_support) ? 'translate-x-6' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
+          <BoolToggle label="IT-поддержка (внутренняя или внешняя)" value={bool(data.s12_it_support)} onChange={(v) => onChange('s12_it_support', v)} />
         </div>
       </section>
     </div>

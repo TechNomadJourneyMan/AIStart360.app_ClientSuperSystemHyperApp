@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { ChoiceChip } from '@/components/onboarding/shared/MultiSelect'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step2GoalsFormProps {
@@ -178,23 +179,12 @@ export default function Step2GoalsForm({ data, onChange }: Step2GoalsFormProps) 
 
           {/* s6_growth_blockers — multi-select */}
           <div>
-            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
+            <p id="s6_growth_blockers-label" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
               Барьеры роста
-            </label>
-            <div className="flex flex-wrap gap-2">
+            </p>
+            <div id="s6_growth_blockers" role="group" aria-labelledby="s6_growth_blockers-label" className="flex flex-wrap gap-2">
               {GROWTH_BLOCKERS.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => toggleBlocker(opt)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                    arr(data.s6_growth_blockers).includes(opt)
-                      ? 'bg-primary/20 border-primary/50 text-primary'
-                      : 'bg-surface-container border-white/[0.08] text-on-surface-variant hover:border-white/20'
-                  }`}
-                >
-                  {opt}
-                </button>
+                <ChoiceChip key={opt} label={opt} pressed={arr(data.s6_growth_blockers).includes(opt)} onToggle={() => toggleBlocker(opt)} />
               ))}
             </div>
           </div>
