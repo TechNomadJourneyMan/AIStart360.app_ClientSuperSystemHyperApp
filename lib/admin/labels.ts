@@ -42,6 +42,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   'impersonation.terminated': 'Сессия от имени завершена',
   'impersonation.request': 'Действие в кабинете пользователя',
   'impersonation.survey_edited': 'Анкета изменена из кабинета',
+  'expert.survey_edited': 'Анкета изменена экспертом',
   'gri.assessment_edited': 'GRI: ответы изменены',
   'gri.assessment_deleted': 'GRI: результат удалён',
   'gri.assessment_made_current': 'GRI: результат сделан текущим',
