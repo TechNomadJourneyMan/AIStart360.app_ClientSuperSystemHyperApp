@@ -13,6 +13,9 @@
 //   ?view=chooser               — the three-mode chooser and the one-time banner (survey Ф1)
 //   ?mode=chat [&as=staff | &helper=1] — the AI chat on a recorded scenario, no model, no network (survey Ф4);
 //                                 as=staff — the expert's transcript; helper=1 — the field «Помощник»
+//   ?mode=express [&screen=N] [&phone=1] — the express screens (survey Ф2); phone=1: one question per page on hard screens
+//   ?mode=snapshot              — «Снимок бизнеса» on the variant's express answers, Point A = the v4 engine on them
+//   ?mode=blocks [&block=bN]    — the deepening blocks (list / one block)
 // Edits, the answer editor (click a text field) and «Принять» work in memory only.
 // Steps 1, 4, 5, 7, 8, 9, 10 show «Приблизительный расчёт по вашим цифрам» under the numeric
 // fields (lib/survey/calcs, components/survey/FieldCalc): ready in «filled» / «half», «≈ … (диапазон …)»
@@ -23,6 +26,7 @@ import SurveyPreviewClient from './SurveyPreviewClient'
 import { isSurveyPreviewVariant } from './fixture'
 import { AnswersPreview, ChooserPreview } from './PreviewViews'
 import { ChatPreview } from './ChatPreview'
+import { ModeTwoPreview } from './ModeTwoPreview'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,12 +39,16 @@ function parseStep(raw: string | undefined): number {
   return Number.isInteger(n) && n >= 1 && n <= TOTAL_STEPS ? n : 1
 }
 
-export default function SurveyPreviewPage({ searchParams }: { searchParams?: { step?: string; variant?: string; view?: string; as?: string; mode?: string; helper?: string } }) {
+export default function SurveyPreviewPage({ searchParams }: { searchParams?: { step?: string; variant?: string; view?: string; as?: string; mode?: string; helper?: string; screen?: string; block?: string; phone?: string } }) {
   if (process.env.NODE_ENV === 'production') notFound()
   const variant = isSurveyPreviewVariant(searchParams?.variant) ? searchParams.variant : 'filled'
   if (searchParams?.view === 'answers') return <AnswersPreview key={`${variant}-${searchParams.as}`} variant={variant} staff={searchParams.as === 'staff'} />
   if (searchParams?.view === 'chooser') return <ChooserPreview />
   if (searchParams?.mode === 'chat') return <ChatPreview staff={searchParams.as === 'staff'} helper={searchParams.helper === '1'} />
+  const mode = searchParams?.mode
+  if (mode === 'express' || mode === 'snapshot' || mode === 'blocks') {
+    return <ModeTwoPreview key={`${mode}-${variant}-${searchParams?.screen}-${searchParams?.block}-${searchParams?.phone}`} view={mode} variant={variant} screen={Number(searchParams?.screen) || 1} block={searchParams?.block} phone={searchParams?.phone === '1'} />
+  }
   const step = parseStep(searchParams?.step)
   // A new key per variant / step: the in-memory answers start over.
   return <SurveyPreviewClient key={`${variant}-${step}`} variant={variant} step={step} />
