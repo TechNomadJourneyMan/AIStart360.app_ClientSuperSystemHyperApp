@@ -11,7 +11,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CHAT_HONEST_LINE } from '@/lib/survey/chat/ask'
-import { enabledSurveyModes, SURVEY_MODE_INFO } from '@/lib/survey/modes'
+import { enabledSurveyModes, SURVEY_MODE_INFO, type SurveyMode, type SurveyPreference } from '@/lib/survey/modes'
+import { loadSurveyPreference, patchSurveyPreference, switchSurveyMode } from '@/lib/survey/mode-switch'
+import { track } from '@/lib/events/client'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
 import type { ChatButton, ChatMessageDTO, ChatQuestionDTO, ChatProgressDTO } from '@/lib/survey/chat/types'
 import { ChatInput, ChatMessages, QuickActions } from './ChatMessages'
@@ -25,6 +27,18 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
   const [draft, setDraft] = useState('')
   const [panel, setPanel] = useState(false)
   const [online, setOnline] = useState(true)
+  const [pref, setPref] = useState<SurveyPreference>({})
+  useEffect(() => { void loadSurveyPreference().then(setPref) }, [])
+
+  // Switching remembers the choice and writes SURVEY_MODE_CHOSEN (lib/survey/mode-switch.ts),
+  // like the express and the full questionnaire — otherwise /client/onboarding would
+  // open the saved «chat» again. Nothing to save first: cards are written by the server.
+  const switchMode = (mode: SurveyMode) => void switchSurveyMode({ to: mode, preference: pref }, {
+    save: async () => ({ ok: true }),
+    patchPreferences: patchSurveyPreference,
+    track: (name, metadata) => track(name, { metadata }),
+    navigate: (href) => router.push(href),
+  })
 
   useEffect(() => {
     const up = () => setOnline(navigator.onLine)
@@ -52,7 +66,7 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
     <div className="flex min-h-[100dvh] flex-col bg-[#0c0e14]">
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#0c0e14]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-          <Link href="/client/onboarding" aria-label="К анкете" className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant hover:text-primary">
+          <Link href="/client/home" aria-label="В кабинет" className="flex h-10 w-10 items-center justify-center rounded-lg text-on-surface-variant hover:text-primary">
             <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
           </Link>
           <div className="min-w-0 flex-1">
@@ -60,12 +74,16 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
             <h1 className="truncate text-base font-bold text-on-surface">{SURVEY_MODE_INFO.chat.title}</h1>
           </div>
           <div className="hidden sm:block">
-            <SurveyModeSwitch current="chat" enabled={MODES} onSwitch={(m) => router.push(SURVEY_MODE_INFO[m].href)} />
+            <SurveyModeSwitch current="chat" enabled={MODES} onSwitch={switchMode} />
           </div>
           <button type="button" onClick={() => setPanel((v) => !v)} aria-expanded={panel} aria-controls="survey-chat-panel"
             className="flex h-10 items-center gap-1 rounded-lg border border-white/[0.08] px-3 text-xs text-on-surface-variant lg:hidden">
             <span className="material-symbols-outlined text-base" aria-hidden="true">assignment</span> Анкета
           </button>
+        </div>
+        {/* Phone: the switch under the title (spec §5.2 — the mode menu in the header). */}
+        <div className="mx-auto max-w-6xl px-4 pb-2 sm:hidden">
+          <SurveyModeSwitch current="chat" enabled={MODES} onSwitch={switchMode} />
         </div>
         {chat.progress && <ProgressLine progress={chat.progress} />}
       </header>
