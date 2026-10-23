@@ -19,6 +19,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
 import { parseSurveySaveBody } from '@/lib/survey/schema'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
+import { blocksCompletedBy } from '@/lib/survey/blocks'
 import { trackEvent, trackEventOnce } from '@/lib/events/track'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { activeImpersonation } from '@/lib/impersonation/server'
@@ -216,6 +217,13 @@ export async function POST(req: NextRequest) {
   }
   if (!autosave && rows.length) {
     void trackEvent({ userId: targetUserId, name: 'QUESTIONNAIRE_STEP_COMPLETED', entityType: 'survey', entityId: targetUserId, metadata: { step: bodyStep, keys: rows.length, progress: progress.percent }, source: imp ? 'impersonation' : 'server', impersonationSessionId: imp?.sid ?? null })
+  }
+  // «Экспресс + блоки» (survey Ф2): a deepening block whose last question this save answered.
+  if (via === 'express' && rows.length) {
+    const flat = (list: ReadonlyArray<{ question_key: string; answer?: unknown }>) => Object.fromEntries(list.map((r) => [r.question_key, fromAnswerEnvelope(r.answer)]))
+    for (const block of blocksCompletedBy(flat(beforeRows), flat(allRows), rows.map((r) => r.question_key))) {
+      void trackEventOnce({ userId: targetUserId, name: 'SURVEY_BLOCK_COMPLETED', entityType: 'survey_block', entityId: block, metadata: { block }, source: imp ? 'impersonation' : 'server' })
+    }
   }
   if (finalSubmitted) {
     void trackEvent({ userId: targetUserId, name: 'QUESTIONNAIRE_COMPLETED', entityType: 'survey', entityId: targetUserId, metadata: { completed_steps: progress.completed, is_complete: progress.is_complete }, source: imp ? 'impersonation' : 'server', impersonationSessionId: imp?.sid ?? null })
