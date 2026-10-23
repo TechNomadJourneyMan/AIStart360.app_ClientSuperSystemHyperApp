@@ -2,6 +2,7 @@
 
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
 import { AnswerSearch } from '@/components/giga-panel/surveys/AnswerSearch'
+import { SurveyModesFunnel } from '@/components/giga-panel/surveys/SurveyModesFunnel'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -132,6 +133,9 @@ function SurveysInner() {
       />
 
       <AnswerSearch />
+
+      {/* Survey Ф5: the funnel of the three ways to fill in the questionnaire. */}
+      <SurveyModesFunnel />
 
       <Panel
         className="mb-4"
