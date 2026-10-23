@@ -10,6 +10,9 @@
 //       authors — filled, with the author line under every field (вы / эксперт / админ / ИИ; none when unknown)
 //       unknown — half-filled + «Не знаю» and «примерно» answers (steps 1, 5, 7, 9), blind spots on «review»
 // Edits, the answer editor (click a text field) and «Принять» work in memory only.
+// Steps 1, 4, 5, 7, 8, 9, 10 show «Приблизительный расчёт по вашим цифрам» under the numeric
+// fields (lib/survey/calcs, components/survey/FieldCalc): ready in «filled» / «half», «≈ … (диапазон …)»
+// and «укажите …» in «unknown». They recompute in memory as you edit.
 import { notFound } from 'next/navigation'
 import { TOTAL_STEPS } from '@/components/onboarding/constants/step-config'
 import SurveyPreviewClient from './SurveyPreviewClient'
