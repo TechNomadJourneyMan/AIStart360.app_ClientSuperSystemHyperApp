@@ -5,6 +5,7 @@ import { Paperclip, FileCheck2, Loader2, X } from 'lucide-react'
 import { ChoiceChip, FieldLabel, NumberField, PhoneField } from '@/components/onboarding/shared'
 import { useAutoYear } from '@/components/onboarding/shared/useAutoYear'
 import { answerNumber } from '@/lib/survey/answer-value'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 import {
   INDUSTRIES,
   REGIONS,
@@ -374,6 +375,7 @@ export default function Step1CompanyForm({
             </div>
           </div>
         </div>
+        <FieldCalc ids={['goal_pace', 'revenue_per_employee']} answers={data} />
       </section>
 
       {/* ── Продукты ──────────────────────────────────────────────────────── */}
