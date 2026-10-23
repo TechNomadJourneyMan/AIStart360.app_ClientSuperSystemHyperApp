@@ -21,6 +21,9 @@ export const EVENTS = {
   QUESTIONNAIRE_STARTED: { type: 'questionnaire', client: false, label: 'Анкета начата' },
   QUESTIONNAIRE_STEP_COMPLETED: { type: 'questionnaire', client: false, label: 'Шаг анкеты сохранён' },
   QUESTIONNAIRE_COMPLETED: { type: 'questionnaire', client: false, label: 'Анкета отправлена' },
+  // Three ways to fill in the questionnaire (spec 2026-10-23 §15).
+  SURVEY_MODE_CHOSEN: { type: 'questionnaire', client: true, label: 'Выбран способ заполнения анкеты' },
+  SURVEY_ANSWERS_VIEWED: { type: 'questionnaire', client: true, label: 'Открыт просмотр «Мои ответы»' },
   GRI_STARTED: { type: 'gri', client: false, label: 'GRI начат' },
   GRI_QUESTION_ANSWERED: { type: 'gri', client: true, label: 'Ответ в GRI' },
   GRI_SECTION_COMPLETED: { type: 'gri', client: false, label: 'Блок GRI пройден' },
