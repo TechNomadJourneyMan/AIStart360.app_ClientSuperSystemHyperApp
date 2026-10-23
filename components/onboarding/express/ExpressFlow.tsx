@@ -27,6 +27,7 @@ export function ExpressFlow() {
   const pages = useMemo(() => expressPages({ oneQuestionPerHardScreen: phone }), [phone])
   const [index, setIndex] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   const screenRef = useRef<number>(1)
 
   useEffect(() => {
@@ -54,6 +55,15 @@ export function ExpressFlow() {
     if (i >= 0 && pages[index]?.screen !== screenRef.current) setIndex(i)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages])
+
+  // Screen 1: the company name comes from the company card when the answer is empty (spec §7.1).
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (!survey.loaded || prefilled.current) return
+    prefilled.current = true
+    const name = survey.answers.s1_company_name
+    if (survey.companyName && !(typeof name === 'string' && name.trim())) survey.change('s1_company_name', survey.companyName)
+  }, [survey])
 
   // SURVEY_EXPRESS_STARTED once (per browser), and when it started (minutes to «Готово»).
   useEffect(() => {
@@ -83,6 +93,14 @@ export function ExpressFlow() {
   }
 
   const finish = async () => {
+    // Point A belongs to a company: without its name there is nothing to calculate it for.
+    const name = survey.answers.s1_company_name
+    if (!survey.companyId && !(typeof name === 'string' && name.trim())) {
+      setNote('Укажите название компании — без него Точку А не посчитать.')
+      go(0)
+      return
+    }
+    setNote(null)
     setBusy(true)
     const r = await survey.save()
     if (!r.ok) { setBusy(false); return }
@@ -107,7 +125,8 @@ export function ExpressFlow() {
         <div className="flex items-center justify-center rounded-2xl border border-white/[0.06] p-10" aria-busy="true">
           <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-primary" />
         </div>
-      ) : (
+      ) : (<>
+        {note && <p role="alert" className="mb-4 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 text-xs text-on-surface">{note}</p>}
         <ExpressScreen
           key={page.index}
           page={page}
@@ -122,7 +141,7 @@ export function ExpressFlow() {
           fieldIssue={survey.fieldIssue}
           suggestions={<DocumentSuggestions step={page.questions[0]?.step ?? 1} keys={page.questions.map((q) => q.key)} answers={survey.answers} onApply={(k, v) => survey.change(k, v, 'document')} />}
         />
-      )}
+      </>)}
     </ModeTwoChrome>
   )
 }
