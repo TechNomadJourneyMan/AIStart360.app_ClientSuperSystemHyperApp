@@ -5,8 +5,9 @@ export const dynamic = 'force-dynamic'
 // base file. Writes to:
 //   1. companies (name = clinic_name, contact_*, stage='Growth' as MVP default)
 //   2. survey_answers (step=0, one row per field)
-//   3. documents + Supabase Storage bucket 'documents' (if file attached,
-//      doc_type='patient_base')
+//   3. documents + the private Storage bucket 'client-documents' (if file
+//      attached, doc_type='patient_base'; storage_bucket/storage_path set —
+//      until 2026-10-23 it went to the formerly public bucket 'documents')
 //
 // Phase-1 scope: only persist data. RFM segmentation + revenue audit kick off
 // in a follow-up job (chunk 5) — endpoint just returns { ok: true, companyId }.
@@ -17,6 +18,7 @@ import { MEDICAL_INTAKE_FIELDS } from '@/lib/intake-schemas'
 import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
 import { answersProfanityResponse } from '@/lib/moderation/http'
+import { UPLOAD_BUCKET } from '@/lib/documents/storage'
 
 function srBase() {
   return {
@@ -55,7 +57,7 @@ async function uploadFileToStorage(
   new Uint8Array(ab).set(buf)
   const body = new Blob([ab], { type: file.type || 'application/octet-stream' })
   const res = await fetch(
-    `${url}/storage/v1/object/documents/${objectPath}`,
+    `${url}/storage/v1/object/${UPLOAD_BUCKET}/${objectPath}`,
     {
       method: 'POST',
       headers: {
@@ -196,7 +198,11 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         company_id: companyId,
         file_name: file.name,
+        // file_url holds the path for old readers (as lib/documents/finalize.ts);
+        // readers resolve the object by storage_bucket/storage_path first.
         file_url: storedPath,
+        storage_bucket: UPLOAD_BUCKET,
+        storage_path: storedPath,
         file_size: file.size,
         mime_type: file.type || null,
         doc_type: 'patient_base',
