@@ -21,22 +21,25 @@ export type ApplyOutcome =
   | { ok: true; status: 'applied' | 'rejected'; companyId: string; kind: string; event: string | null }
   | { ok: false; status: 400 | 403 | 404 | 409 | 410 | 500; error: string }
 
-interface PendingRow {
+export interface PendingRow {
   id: string
   user_id: string
+  /** NULL only for questionnaire cards of a client without a company (migration 136). */
   company_id: string
-  kind: 'set_value' | 'resolve_discrepancy' | 'set_goal'
+  /** 'set_survey_answer' — the questionnaire chat card (lib/survey/chat/apply.ts). */
+  kind: 'set_value' | 'resolve_discrepancy' | 'set_goal' | 'set_survey_answer'
+  conversation_id?: string | null
   payload: Record<string, unknown>
   status: string
   expires_at: string
 }
 
 export async function loadPending(service: SupabaseClient, id: string, userId: string): Promise<PendingRow | null> {
-  const { data } = await service.from('ai_pending_actions').select('id, user_id, company_id, kind, payload, status, expires_at').eq('id', id).eq('user_id', userId).maybeSingle()
+  const { data } = await service.from('ai_pending_actions').select('id, user_id, company_id, conversation_id, kind, payload, status, expires_at').eq('id', id).eq('user_id', userId).maybeSingle()
   return (data as PendingRow | null) ?? null
 }
 
-async function finish(service: SupabaseClient, id: string, status: 'applied' | 'expired' | 'failed', result: Record<string, unknown> | null, from: 'pending' | 'applying' = 'applying') {
+export async function finish(service: SupabaseClient, id: string, status: 'applied' | 'expired' | 'failed', result: Record<string, unknown> | null, from: 'pending' | 'applying' = 'applying') {
   await service.from('ai_pending_actions').update({ status, result, decided_at: new Date().toISOString() }).eq('id', id).eq('status', from)
 }
 
@@ -44,7 +47,7 @@ async function finish(service: SupabaseClient, id: string, status: 'applied' | '
  * Moves a still-pending, unexpired action to `to` in one statement: of two
  * parallel «Применить» (double click, two tabs) only one gets the row.
  */
-async function claim(service: SupabaseClient, id: string, to: 'applying' | 'rejected'): Promise<boolean> {
+export async function claim(service: SupabaseClient, id: string, to: 'applying' | 'rejected'): Promise<boolean> {
   const patch: Record<string, unknown> = { status: to }
   if (to === 'rejected') patch.decided_at = new Date().toISOString()
   const { data, error } = await service.from('ai_pending_actions').update(patch).eq('id', id).eq('status', 'pending').gt('expires_at', new Date().toISOString()).select('id').maybeSingle()
@@ -72,6 +75,8 @@ export async function decideAction(
     return { ok: true, status: 'rejected', companyId: row.company_id, kind: row.kind, event: null }
   }
   if (!actor.canManage) return { ok: false, status: 403, error: 'forbidden' }
+  // Questionnaire cards are applied by lib/survey/chat/apply.ts (owner only, no company rights).
+  if (row.kind === 'set_survey_answer') return { ok: false, status: 400, error: 'bad_value' }
   if (!(await claim(service, row.id, 'applying'))) return { ok: false, status: 409, error: 'already_decided' }
 
   const p = row.payload
