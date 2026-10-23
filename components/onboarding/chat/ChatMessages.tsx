@@ -9,6 +9,7 @@
 import Link from 'next/link'
 import { ProposalCard } from './ProposalCard'
 import type { ChatButton, ChatMessageDTO } from '@/lib/survey/chat/types'
+import { transcriptMessageId } from '@/lib/survey/chat/transcript-anchor'
 
 export interface ChatMessagesHandlers {
   onApply?: (m: ChatMessageDTO, editedValue?: unknown) => void
@@ -17,22 +18,28 @@ export interface ChatMessagesHandlers {
   onEscalate?: (m: ChatMessageDTO) => void
 }
 
-export function ChatMessages({ messages, handlers = {}, readOnly = false, keyLabel, typing = false }: {
+export function ChatMessages({ messages, handlers = {}, readOnly = false, keyLabel, typing = false, anchors = false, focusId = null }: {
   messages: readonly ChatMessageDTO[]
   handlers?: ChatMessagesHandlers
   readOnly?: boolean
   /** Staff transcript: the question each message is about. */
   keyLabel?: (key: string) => string | null
   typing?: boolean
+  /** Staff transcript: every message gets a DOM id (opened from an answer, survey Ф5). */
+  anchors?: boolean
+  /** Staff transcript: the message the answer came from — outlined. */
+  focusId?: string | null
 }) {
   const lastCard = [...messages].reverse().find((m) => m.proposal)?.id
   return (
     <div role="log" aria-live="polite" aria-relevant="additions" aria-label="Беседа с помощником анкеты" className="flex flex-col gap-3">
       {messages.map((m) => {
         const mine = m.role === 'user'
+        const focused = focusId === m.id
         return (
-          <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${mine ? 'bg-primary/15 text-on-surface' : 'border border-white/[0.06] bg-white/[0.03] text-on-surface'}`}>
+          <div key={m.id} id={anchors ? transcriptMessageId(m.id) : undefined} aria-current={focused ? 'true' : undefined}
+            className={`flex scroll-mt-24 ${mine ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${mine ? 'bg-primary/15 text-on-surface' : 'border border-white/[0.06] bg-white/[0.03] text-on-surface'}${focused ? ' ring-2 ring-amber-300/70' : ''}`}>
               {keyLabel && m.key && (
                 <p className="mb-1 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant/70">
                   {m.focus ? 'Помощник у поля · ' : ''}{keyLabel(m.key)}

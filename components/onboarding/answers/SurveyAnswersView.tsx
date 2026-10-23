@@ -36,6 +36,8 @@ export interface SurveyAnswersViewProps {
   onEditRaw?: (key: string) => void
   /** A link that opens a file answer (access-checked route), or null. */
   fileLink?: (key: string, value: unknown) => string | null
+  /** Staff: «Открыть беседу» at an answer that came through the AI helper (path chat / helper, survey Ф5). */
+  onOpenChat?: (key: string) => void
 }
 
 const CHIP = 'px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium border transition-colors whitespace-nowrap'
@@ -209,6 +211,7 @@ export function SurveyAnswersView(props: SurveyAnswersViewProps) {
                     onHistory={props.onHistory}
                     onEditRaw={editable ? props.onEditRaw : undefined}
                     fileLink={props.fileLink}
+                    onOpenChat={mode === 'staff' ? props.onOpenChat : undefined}
                   />
                 ))}
               </dl>
@@ -233,7 +236,13 @@ export function SurveyAnswersView(props: SurveyAnswersViewProps) {
   )
 }
 
-function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, onCancel, onSave, onHistory, onEditRaw, fileLink }: {
+/** The answer came through the AI helper: the chat (card «Записать») or the field «Помощник». */
+export function answerFromChat(item: Pick<AnswerItem, 'filled' | 'attribution'>): boolean {
+  const via = item.attribution?.updatedVia
+  return item.filled && (via === 'chat' || via === 'helper')
+}
+
+function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, onCancel, onSave, onHistory, onEditRaw, fileLink, onOpenChat }: {
   item: AnswerItem
   mode: 'client' | 'staff'
   editable: boolean
@@ -246,6 +255,7 @@ function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, 
   onHistory?: (key: string) => void
   onEditRaw?: (key: string) => void
   fileLink?: (key: string, value: unknown) => string | null
+  onOpenChat?: (key: string) => void
 }) {
   const q = item.question
   const link = item.filled && q.type === 'file' && fileLink ? fileLink(q.key, item.value) : null
@@ -301,6 +311,13 @@ function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, 
           <button type="button" onClick={() => onEditRaw(q.key)} aria-label={`Изменить: ${q.label}`}
             className="min-h-[36px] rounded-lg px-3 text-xs font-medium text-primary hover:bg-primary/10">
             Изменить
+          </button>
+        )}
+        {onOpenChat && answerFromChat(item) && (
+          <button type="button" onClick={() => onOpenChat(q.key)} aria-label={`Открыть беседу: ${q.label}`} title="Открыть место в беседе с ИИ-помощником"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2 text-xs text-primary hover:bg-primary/10">
+            <span className="material-symbols-outlined text-[16px]" aria-hidden="true">forum</span>
+            <span className="hidden sm:inline">Открыть беседу</span>
           </button>
         )}
         {onHistory && (

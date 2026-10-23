@@ -4,7 +4,7 @@ import { Component, useCallback, useEffect, useState, type ErrorInfo, type React
 import Link from 'next/link'
 import { UserDetailPanel } from '@/components/giga-panel/UserDetailPanel'
 import { ExpertSurveyPanel } from '@/components/expert/ExpertSurveyPanel'
-import { SurveyChatTranscriptSection } from '@/components/onboarding/chat/SurveyChatTranscript'
+import { SurveyChatTranscriptSection, type TranscriptFocus } from '@/components/onboarding/chat/SurveyChatTranscript'
 import { ExpertCommentThread } from '@/components/expert/ExpertCommentThread'
 import { ExpertCommentsProvider, useExpertComments } from '@/components/expert/ExpertCommentsContext'
 import { DashboardTab } from '@/components/expert/tabs/DashboardTab'
@@ -84,6 +84,8 @@ export default function ExpertClientDetailPage({ params }: Props) {
     } catch { /* ignore */ }
   }, [params.id])
 
+  // «Открыть беседу» at an answer → the chat section opens at that message (survey Ф5).
+  const [chatFocus, setChatFocus] = useState<TranscriptFocus | null>(null)
   const [client, setClient] = useState<ExpertClient | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -199,9 +201,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
             {activeTab === 'anketa' && (
               <div className="space-y-5">
               {/* The questionnaire with author + path and editing (spec 2026-10-23 §6.5, PO §18.3 item 3). */}
-              <TabErrorBoundary tab="Анкета"><ExpertSurveyPanel clientId={params.id} /></TabErrorBoundary>
+              <TabErrorBoundary tab="Анкета"><ExpertSurveyPanel clientId={params.id} onOpenChat={(key) => setChatFocus({ key, at: Date.now() })} /></TabErrorBoundary>
               {/* The questionnaire AI chat of the client (survey Ф4): read-only. */}
-              <TabErrorBoundary tab="Беседа с ИИ"><SurveyChatTranscriptSection url={`/api/expert/clients/${params.id}/survey-chat`} /></TabErrorBoundary>
+              <TabErrorBoundary tab="Беседа с ИИ"><SurveyChatTranscriptSection url={`/api/expert/clients/${params.id}/survey-chat`} focus={chatFocus} /></TabErrorBoundary>
               <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-5">
                 <section className="rounded-2xl bg-surface-container-low border border-white/[0.04] overflow-hidden">
                   <div className="px-5 py-3 border-b border-white/[0.04] flex items-center gap-2">

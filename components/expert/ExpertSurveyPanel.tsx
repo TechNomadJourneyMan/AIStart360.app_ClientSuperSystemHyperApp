@@ -24,7 +24,11 @@ function fileLink(key: string, raw: unknown): string | null {
  * and path of every answer. An expert edits answers of an assigned client with
  * a reason; the client is notified (GET/PATCH /api/expert/clients/[id]/survey).
  */
-export function ExpertSurveyPanel({ clientId }: { clientId: string }) {
+export function ExpertSurveyPanel({ clientId, onOpenChat }: {
+  clientId: string
+  /** «Открыть беседу» at an answer through the AI helper (survey Ф5). */
+  onOpenChat?: (key: string) => void
+}) {
   const [data, setData] = useState<Payload | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,6 +78,7 @@ export function ExpertSurveyPanel({ clientId }: { clientId: string }) {
       reason="required"
       onSave={save}
       fileLink={fileLink}
+      onOpenChat={onOpenChat}
     />
   )
 }
