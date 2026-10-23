@@ -120,6 +120,12 @@ export interface NewMessage { role: 'user' | 'assistant'; content: string; groun
 /** Insert messages in order (explicit, increasing created_at: one turn may write several). */
 export async function insertMessages(db: Db, conversationId: string, list: NewMessage[], at = new Date()): Promise<MessageRow[]> {
   if (!list.length) return []
+  // Messages are ordered by created_at: never before the last one already stored
+  // (two turns in the same millisecond, a card applied from another tab).
+  const { data: last } = await db.from('ai_messages').select('created_at').eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false }).limit(1)
+  const lastAt = Date.parse(String(((last as Array<{ created_at?: string }> | null) ?? [])[0]?.created_at ?? ''))
+  if (Number.isFinite(lastAt) && lastAt >= at.getTime()) at = new Date(lastAt + 1)
   const rows = list.map((m, i) => ({
     conversation_id: conversationId, role: m.role, content: m.content.slice(0, 8000), grounding: m.grounding,
     model: m.model ?? null, created_at: new Date(at.getTime() + i).toISOString(),
