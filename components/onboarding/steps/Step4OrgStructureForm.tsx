@@ -3,6 +3,7 @@
 import React from 'react'
 import { FieldLabel, BoolToggle, DynamicTable, NumberField } from '@/components/onboarding/shared'
 import { REPORTING_TOOLS } from '@/components/onboarding/constants/options'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step4OrgStructureFormProps {
@@ -66,6 +67,7 @@ export default function Step4OrgStructureForm({ data, onChange }: Step4OrgStruct
         <div className="mt-4">
           <FieldLabel>Штатное расписание</FieldLabel>
           <DynamicTable columns={STAFFING_COLUMNS} rows={rows(data.s4n_staffing_table)} onChange={(r) => onChange('s4n_staffing_table', r)} />
+          <FieldCalc forKey="s4n_staffing_table" answers={data} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -148,6 +150,7 @@ export default function Step4OrgStructureForm({ data, onChange }: Step4OrgStruct
             </div>
           </div>
         </div>
+        <FieldCalc forKey="s4m_hours_on_ops" answers={data} />
       </section>
     </div>
   )
