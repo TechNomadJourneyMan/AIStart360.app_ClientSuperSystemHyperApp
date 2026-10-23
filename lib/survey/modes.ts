@@ -75,10 +75,11 @@ export function availableSurveyModes(raw: string | null | undefined = process.en
 
 /**
  * Modes whose screens exist. Ф1 builds the full questionnaire, Ф4 the chat
- * (/client/onboarding/chat); Ф2 adds 'express'. A mode switched on by the flag but not built yet is
- * shown on the chooser as «Скоро» and cannot be picked.
+ * (/client/onboarding/chat), Ф2 the express flow + blocks (/client/onboarding/express).
+ * A mode switched on by the flag but not built yet is shown on the chooser as
+ * «Скоро» and cannot be picked.
  */
-export const SURVEY_MODES_BUILT: readonly SurveyMode[] = ['full', 'chat']
+export const SURVEY_MODES_BUILT: readonly SurveyMode[] = ['full', 'express', 'chat']
 
 /** Modes a client can actually pick: switched on AND built. */
 export function enabledSurveyModes(raw?: string | null, built: readonly SurveyMode[] = SURVEY_MODES_BUILT): SurveyMode[] {

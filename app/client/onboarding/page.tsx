@@ -15,7 +15,9 @@ import StepHeader from '@/components/onboarding/StepHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import { SurveyModeGate } from '@/components/onboarding/modes/SurveyModeGate'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
-import { enabledSurveyModes } from '@/lib/survey/modes'
+import { enabledSurveyModes, type SurveyMode } from '@/lib/survey/modes'
+import { loadSurveyPreference, patchSurveyPreference, switchSurveyMode } from '@/lib/survey/mode-switch'
+import { track } from '@/lib/events/client'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
 import FieldIssueNote, { questionLabel } from '@/components/onboarding/FieldIssueNote'
@@ -470,6 +472,20 @@ function OnboardingPageInner() {
     await recalcAndLeave(AFTER_SURVEY_PATH)
   }
 
+  // Another way of filling in: unsaved edits are saved first (lib/survey/mode-switch.ts).
+  const switchMode = async (mode: SurveyMode) => {
+    const r = await switchSurveyMode({ to: mode, preference: await loadSurveyPreference() }, {
+      save: async () => {
+        const ok = await saveToServer(currentStepRef.current)
+        return ok ? { ok } : { ok, error: lastSaveErrorRef.current ?? undefined }
+      },
+      patchPreferences: patchSurveyPreference,
+      track: (name, metadata) => track(name, { metadata }),
+      navigate: (href) => router.push(href),
+    })
+    if (!r.ok) setSaveError(r.error)
+  }
+
   const goBack = () => { setCurrentStep(s => Math.max(1, s - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const isReview = currentStep === REVIEW_STEP
   // Progress = how much is actually filled, not which tab is open.
@@ -500,8 +516,8 @@ function OnboardingPageInner() {
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>
           <div className="flex items-center gap-3">
-            {/* Modes + «Мои ответы» (spec 2026-10-23 §5.2); Ф1: the link only. */}
-            <SurveyModeSwitch current="full" enabled={SURVEY_MODES_ENABLED} />
+            {/* Modes + «Мои ответы» (spec 2026-10-23 §5.2): switching saves first, then opens the mode. */}
+            <SurveyModeSwitch current="full" enabled={SURVEY_MODES_ENABLED} onSwitch={(m) => void switchMode(m)} />
             <SaveStatusChip state={saveState} savedAt={savedAt} />
             <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">
               {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`}
