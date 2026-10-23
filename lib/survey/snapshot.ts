@@ -159,3 +159,12 @@ export function readSnapshotPointA(data: PointAStateSlice | null, freshSince: nu
   if (running || freshSince !== null) return { view: { state: 'pending', snapshot: snap }, poll: true }
   return { view: snap ? { state: 'ready', snapshot: snap } : { state: 'none' }, poll: false }
 }
+
+/** The recommendation input (lib/survey/blocks.ts) from a ready Point A view; null otherwise. */
+export function recommendationInput(view: SnapshotPointA): { blocks: Array<{ key: string; weight: number; status: string; coverage: number; informational?: boolean }>; uploadChecklist?: ReadonlyArray<{ block: string; gain: number }> } | null {
+  if (view.state !== 'ready' || !view.snapshot) return null
+  return {
+    blocks: view.snapshot.blocks.map((b) => ({ key: b.key, weight: b.weight ?? 0, status: b.status, coverage: b.coverage ?? 0, informational: b.informational })),
+    uploadChecklist: view.snapshot.uploadChecklist,
+  }
+}

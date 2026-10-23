@@ -12,6 +12,7 @@
  *    Finished blocks are not recommended.
  */
 import { isAnswerFilled } from './answer-filled'
+import { CALCS_BY_KEY, type CalcId } from './calcs'
 import { SURVEY_BLOCKS, SURVEY_BLOCK_IDS, type SurveyBlock, type SurveyBlockId } from './questions'
 
 /** Point A v4 blocks a deepening block feeds (spec §7.4 «что улучшит»). */
@@ -110,4 +111,24 @@ export function nextBlock(id: SurveyBlockId, answers: Readonly<Record<string, un
 export function blocksCompletedBy(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>, written: readonly string[]): SurveyBlockId[] {
   const touched = new Set(written)
   return SURVEY_BLOCKS.filter((b) => b.keys.some((k) => touched.has(k)) && !blockProgress(b, before).complete && blockProgress(b, after).complete).map((b) => b.id)
+}
+
+/** The calculations of a block (lib/survey/calcs), each once, in key order. */
+export function blockCalcIds(block: Pick<SurveyBlock, 'keys'>): CalcId[] {
+  const out: CalcId[] = []
+  for (const k of block.keys) for (const id of CALCS_BY_KEY[k] ?? []) if (!out.includes(id)) out.push(id)
+  return out
+}
+
+export interface BlockImpact { key: string; title: string; score: number | null; coverage: number; status: string }
+
+/** «Что изменилось в Точке А»: the v4 blocks this block feeds, as the latest snapshot has them. */
+export function blockV4Impact(
+  block: Pick<SurveyBlock, 'id'>,
+  v4Blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; informational?: boolean; hiddenForClient?: boolean }>,
+): BlockImpact[] {
+  const linked = SURVEY_BLOCK_V4[block.id]
+  return v4Blocks
+    .filter((b) => linked.includes(b.key) && !b.hiddenForClient)
+    .map((b) => ({ key: b.key, title: b.title, score: b.score, coverage: b.coverage ?? 0, status: b.status }))
 }
