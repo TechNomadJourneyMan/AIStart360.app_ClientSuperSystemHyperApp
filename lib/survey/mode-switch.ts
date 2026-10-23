@@ -15,7 +15,7 @@ export interface ModeSwitchDeps {
   save: () => Promise<{ ok: boolean; error?: string }>
   /** PATCH /api/v1/settings/preferences (deep merge). */
   patchPreferences: (body: { survey: SurveyPreference }) => Promise<void>
-  track: (name: 'SURVEY_MODE_CHOSEN', metadata: Record<string, unknown>) => void
+  track: (name: 'SURVEY_MODE_CHOSEN', metadata: ReturnType<typeof modeChosenMetadata>) => void
   navigate: (href: string) => void
 }
 
