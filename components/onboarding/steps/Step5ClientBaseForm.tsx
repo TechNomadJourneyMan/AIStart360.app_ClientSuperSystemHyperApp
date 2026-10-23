@@ -3,6 +3,7 @@
 import React from 'react'
 import { FieldLabel, NumberField, TermHint } from '@/components/onboarding/shared'
 import { yearLabel } from '@/lib/survey/year-labels'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step5ClientBaseFormProps {
@@ -58,6 +59,7 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
             <input id="s3_flagship_product" type="text" value={str(data.s3_flagship_product)} onChange={(e) => onChange('s3_flagship_product', e.target.value)} placeholder="Название основного продукта" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
           </div>
         </div>
+        <FieldCalc forKey="s3_rejections_2025" answers={data} />
       </section>
 
       {/* ── Воронка конверсии ──────────────────────────────────────────────── */}
@@ -71,6 +73,7 @@ export default function Step5ClientBaseForm({ data, onChange }: Step5ClientBaseF
             <NumberField key={f.key} id={f.key} label={f.label} value={data[f.key]} onChange={(v) => onChange(f.key, v)} unit="%" max={100} />
           ))}
         </div>
+        <FieldCalc forKey="s5n_funnel_lead_to_sale" answers={data} />
       </section>
 
       {/* ── ABC/RFM анализ ─────────────────────────────────────────────────── */}
