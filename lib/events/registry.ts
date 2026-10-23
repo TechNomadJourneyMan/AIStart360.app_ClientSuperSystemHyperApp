@@ -24,6 +24,14 @@ export const EVENTS = {
   // Three ways to fill in the questionnaire (spec 2026-10-23 §15).
   SURVEY_MODE_CHOSEN: { type: 'questionnaire', client: true, label: 'Выбран способ заполнения анкеты' },
   SURVEY_ANSWERS_VIEWED: { type: 'questionnaire', client: true, label: 'Открыт просмотр «Мои ответы»' },
+  // «Экспресс + блоки» (survey Ф2). Completion of the express flow is NOT «анкета отправлена»
+  // (PO 2026-10-23): only the full questionnaire writes QUESTIONNAIRE_COMPLETED.
+  SURVEY_EXPRESS_STARTED: { type: 'questionnaire', client: true, label: 'Начат быстрый старт анкеты' },
+  SURVEY_EXPRESS_COMPLETED: { type: 'questionnaire', client: false, label: 'Быстрый старт анкеты завершён' },
+  SURVEY_SNAPSHOT_VIEWED: { type: 'questionnaire', client: true, label: 'Открыт «Снимок бизнеса»' },
+  SURVEY_BLOCK_OPENED: { type: 'questionnaire', client: true, label: 'Открыт блок углубления анкеты' },
+  SURVEY_BLOCK_COMPLETED: { type: 'questionnaire', client: false, label: 'Блок углубления анкеты заполнен' },
+  SURVEY_CALC_EXPANDED: { type: 'questionnaire', client: true, label: 'Открыт «Как посчитано» у расчёта' },
   // The questionnaire AI helper (survey Ф4): the field «Помощник» is opened in the browser;
   // cards, guard refusals and escalations are written by the server only.
   SURVEY_HELPER_OPENED: { type: 'questionnaire', client: true, label: 'Открыт «Помощник» у вопроса анкеты' },
