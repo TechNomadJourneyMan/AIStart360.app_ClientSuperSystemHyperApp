@@ -36,6 +36,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
 import { surveyProgressFromRows } from '@/lib/survey/steps'
+import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
+import { formatAttributionDate } from '@/lib/survey/attribution-label'
+import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 import { computeSlaDueAt, getSlaHours } from '@/lib/admin/escalations'
 import {
   asksIfHuman, BOT_NAME, BOT_REPLIES_PER_HOUR, BotDecisionSchema, botDelayMs, buildBotPrompt, CASE_TEXT, clipReply,
@@ -164,14 +167,32 @@ export async function planBotReply(job: BotJob, deps: BotDeps = {}): Promise<Bot
 
 // ─── The user's own data ────────────────────────────────────────────────────
 
+/**
+ * The questionnaire mode as a fact for the bot (survey Ф5): after the express
+ * the next step is the blocks or the full questionnaire — not «N из 12 шагов».
+ * PO §18.3 item 1: the express is not «анкета заполнена».
+ */
+export function surveyModeFact(status: SurveyStaffStatus | null | undefined, complete: boolean): string | null {
+  if (!status || complete) return null
+  if (status.express) {
+    return `Анкета: быстрый старт пройден ${formatAttributionDate(status.express.completedAt) ?? ''}, первичная Точка А посчитана по быстрым данным; ` +
+      'полная анкета не отправлена. Следующий шаг — блоки углубления (/client/onboarding/blocks) или полная анкета (/client/onboarding)'
+  }
+  if (status.mode === 'express') return 'Анкета: клиент проходит быстрый старт (/client/onboarding/express) — 15 коротких экранов до первичной Точки А'
+  if (status.mode === 'chat') return 'Анкета: клиент заполняет её в беседе с ИИ-помощником (/client/onboarding/chat)'
+  return null
+}
+
 /** Facts the bot may use: ONLY this user's questionnaire progress and latest Point A. */
 export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise<string[]> {
   const facts: string[] = []
   try {
-    const [{ data: profile }, { data: company }, { data: answers }] = await Promise.all([
+    const [{ data: profile }, { data: company }, { data: answers }, statuses] = await Promise.all([
       sb.from('profiles').select('full_name').eq('id', userId).maybeSingle(),
       sb.from('companies').select('id, name').eq('user_id', userId).limit(1).maybeSingle(),
       sb.from('survey_answers').select('question_key, step, answer').eq('user_id', userId).limit(2000),
+      // The questionnaire mode (survey Ф5); never throws, an empty map keeps the step line only.
+      loadSurveyStaffStatuses(sb, [userId], { fullSubmittedAt: new Map() }),
     ])
     const name = (profile as { full_name?: string | null } | null)?.full_name?.trim()
     if (name) facts.push(`Имя: ${name}`)
@@ -183,6 +204,8 @@ export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise
       : progress.completed > 0
         ? `Анкета: начато ${progress.completed} из ${progress.total_steps} шагов, глубина ${progress.percent}%, минимум для Точки А ${progress.minimum.answered} из ${progress.minimum.total}`
         : 'Анкета: ещё не начата')
+    const modeFact = surveyModeFact(statuses.get(userId), progress.is_complete)
+    if (modeFact) facts.push(modeFact)
     if (c?.id) {
       const { data: snap } = await sb
         .from('point_a_snapshots')

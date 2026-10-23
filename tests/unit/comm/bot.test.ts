@@ -16,7 +16,8 @@ import {
   asksIfHuman, BOT_INTRO, botDelayMs, buildBotPrompt, CASE_TEXT, ensureBotDisclosure, HANDOFF_TEXT, isComplaint, isProfanityOnly,
   overHourlyCap, rankKbByKeywords, wantsCase, wantsHuman, type BotDecision, type BotJob,
 } from '@/lib/comm/bot-rules'
-import { loadUserFacts, planBotReply, runBotReply, type BotDeps, type HandoffNotice } from '@/lib/comm/bot'
+import { loadUserFacts, planBotReply, runBotReply, surveyModeFact, type BotDeps, type HandoffNotice } from '@/lib/comm/bot'
+import { buildSurveyStaffStatus } from '@/lib/survey/staff-status'
 import { handleTelegramInbound, recordInbound, type InboundNotice } from '@/lib/comm/inbound'
 import { searchKnowledge } from '@/lib/comm/kb'
 import { commDb, fakeTransports, type Row } from './_db'
@@ -345,6 +346,26 @@ describe('runBotReply', () => {
     await runBotReply(JOB, r.d)
     expect(r.prompts[0].user).not.toContain('Чужая компания')
     expect(r.prompts[0].user).not.toContain('secret')
+  })
+})
+
+describe('the questionnaire mode in the bot facts (survey Ф5)', () => {
+  it('after the express: blocks or the full questionnaire, never «заполнена»', async () => {
+    const { sb, db } = seed()
+    db.profiles[0].preferences = { survey: { mode: 'express', chosen_at: '2026-10-10T00:00:00.000Z' } }
+    db.user_events = [{ id: 'e1', user_id: USER, event_name: 'SURVEY_EXPRESS_COMPLETED', created_at: '2026-10-11T09:00:00.000Z', metadata: {}, source: 'server' }]
+    const facts = (await loadUserFacts(sb, USER)).join('\n')
+    expect(facts).toContain('быстрый старт пройден 11.10.2026')
+    expect(facts).toContain('полная анкета не отправлена')
+    expect(facts).toContain('/client/onboarding/blocks')
+  })
+
+  it('express / chat in progress; nothing for the full mode or a complete questionnaire', () => {
+    expect(surveyModeFact(buildSurveyStaffStatus({ preferences: { survey: { mode: 'express' } } }), false)).toContain('быстрый старт')
+    expect(surveyModeFact(buildSurveyStaffStatus({ preferences: { survey: { mode: 'chat' } } }), false)).toContain('беседе с ИИ-помощником')
+    expect(surveyModeFact(buildSurveyStaffStatus({ preferences: { survey: { mode: 'full' } } }), false)).toBeNull()
+    expect(surveyModeFact(buildSurveyStaffStatus({ expressCompleted: { at: '2026-10-11T09:00:00Z' } }), true)).toBeNull()
+    expect(surveyModeFact(null, false)).toBeNull()
   })
 })
 

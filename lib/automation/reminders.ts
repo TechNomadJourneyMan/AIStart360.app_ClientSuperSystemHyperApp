@@ -37,6 +37,11 @@ import {
   type GriDraft,
 } from '@/lib/automation/data'
 import { addDays, daysBetween, isoWeekday, localDate, mondayOf } from '@/lib/automation/time'
+import { fetchSurveyModes, type SurveyModeFacts } from '@/lib/automation/survey-modes'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
+import { expressSummary } from '@/lib/survey/express'
+import { recommendedBlocks } from '@/lib/survey/blocks'
+import { formatAttributionDate } from '@/lib/survey/attribution-label'
 
 export type ReminderKind = 'gri_draft_reminder' | 'survey_reminder' | 'welcome' | 'gri_start_reminder' | 'pulse_reminder'
 
@@ -59,6 +64,12 @@ export interface ReminderInput {
   surveySteps: number[]
   draft: GriDraft | null
   pulseWeeks: string[]
+  /**
+   * The questionnaire mode (survey Ф5): the express done → «уточните блоки»;
+   * the express / the chat in progress → back to that mode. Absent → the classic
+   * «N из 12 шагов».
+   */
+  survey?: SurveyModeFacts & { answers?: Readonly<Record<string, unknown>> }
 }
 
 const QUESTION_COUNT = Object.keys(SURVEY_KEY_STEP).length
@@ -142,6 +153,73 @@ function welcomeTouch(userId: string, stage: 'd1' | 'd3' | 'd7'): PlannedTouch {
   }
 }
 
+type SurveyTouchText = Pick<PlannedTouch, 'title' | 'body' | 'ctaUrl' | 'ctaLabel'>
+
+/** «Вы остановились на шаге N» — the full questionnaire (as before survey Ф5). */
+function classicSurveyTouch(input: ReminderInput, age: number): SurveyTouchText | null {
+  const step = firstMissingStep(input.surveySteps)
+  if (!step) return null
+  const left = SURVEY_TOTAL_STEPS - input.surveySteps.length
+  return {
+    title: `Вы остановились на шаге ${step}`,
+    body:
+      `Анкета заполнена на ${input.surveySteps.length} из ${SURVEY_TOTAL_STEPS} шагов, последний раз вы её меняли ${age} дн. назад. ` +
+      `Следующий — шаг ${stepLabel(step)}, около ${roundMinutes(questionsOnStep(step))} минут.\n\n` +
+      `Пока анкета не отправлена, «Точка А» считается по неполным данным. Осталось шагов: ${left}; незаполненные можно пропустить и отправить анкету как есть.`,
+    ctaUrl: `/client/onboarding?step=${step}`,
+    ctaLabel: `Продолжить с шага ${step}`,
+  }
+}
+
+/**
+ * The reminder in the client's mode (survey Ф5; PO §18.3 item 1 — only the full
+ * questionnaire is «отправлена», so the express never ends the reminders):
+ *   express done      → «Первичная Точка А готова — уточните её»: three blocks, the full questionnaire;
+ *   express started   → «Продолжите быстрый старт»;
+ *   the chat          → «Продолжите беседу с помощником».
+ * null → the classic text.
+ */
+export function modeSurveyTouch(input: ReminderInput, age: number): SurveyTouchText | null {
+  const s = input.survey
+  if (!s) return null
+  const answers = s.answers ?? {}
+  if (s.expressCompletedAt) {
+    const blocks = recommendedBlocks(answers, null, 3).map((r) => `«${r.block.title}» (~${r.block.minutes} мин)`)
+    return {
+      title: 'Первичная Точка А готова — уточните её',
+      body:
+        `Быстрый старт пройден ${formatAttributionDate(s.expressCompletedAt) ?? ''}: Точка А посчитана по быстрым данным, последний раз вы меняли ответы ${age} дн. назад. ` +
+        (blocks.length ? `Чтобы оценка стала точнее, ответьте на блоки — начните с ${blocks.join(', ')}.` : 'Чтобы оценка стала полной, проверьте и дополните ответы.') +
+        '\n\nПолная анкета ещё не отправлена: эксперт получит полную картину бизнеса после отправки. Ответы быстрого старта уже в ней — повторно вводить не нужно.',
+      ctaUrl: '/client/onboarding/blocks',
+      ctaLabel: 'Открыть блоки',
+    }
+  }
+  if (s.mode === 'express') {
+    const e = expressSummary(answers)
+    const left = Math.max(1, Math.round((e.skipped * SECONDS_PER_QUESTION) / 60))
+    return {
+      title: 'Продолжите быстрый старт',
+      body:
+        `Отвечено ${e.answered} из ${e.total} вопросов быстрого старта, последний раз ${age} дн. назад. Осталось около ${left} мин — ` +
+        'после этого появятся снимок бизнеса и первичная Точка А. Если цифры нет под рукой, отвечайте «не знаю» или «примерно».',
+      ctaUrl: '/client/onboarding/express',
+      ctaLabel: 'Продолжить быстрый старт',
+    }
+  }
+  if (s.mode === 'chat') {
+    return {
+      title: 'Продолжите беседу с помощником анкеты',
+      body:
+        `Анкета заполнена на ${input.surveySteps.length} из ${SURVEY_TOTAL_STEPS} шагов, последний раз ${age} дн. назад. ` +
+        'Помощник продолжит с вопроса, на котором вы остановились, объяснит его и подскажет, где взять цифру. В анкету попадает только то, что вы подтвердите.',
+      ctaUrl: '/client/onboarding/chat',
+      ctaLabel: 'Продолжить беседу',
+    }
+  }
+  return null
+}
+
 /**
  * Все положенные клиенту касания, от важного к менее важному.
  * Раннер отправит первое, которое ещё не уходило (dedupe) и не упрётся в потолок.
@@ -175,27 +253,17 @@ export function planReminders(input: ReminderInput, now: Date): PlannedTouch[] {
 
   // survey / welcome — анкета.
   if (!state.survey_completed) {
-    if (step1Done) {
+    const mode = input.survey
+    // The express / chat may start without step 1 (survey Ф5): they count as «начата» too.
+    const modeStarted = !!mode?.expressCompletedAt || ((mode?.mode === 'express' || mode?.mode === 'chat') && input.surveySteps.length > 0)
+    if (step1Done || modeStarted) {
       const last = state.survey_last_change_at ?? state.survey_first_at
       const age = last ? daysBetween(last, now) : -1
       const stage = surveyStage(age)
-      const step = firstMissingStep(input.surveySteps)
-      if (stage && step && last) {
-        const left = SURVEY_TOTAL_STEPS - input.surveySteps.length
-        out.push({
-          userId,
-          kind: 'survey_reminder',
-          stage,
-          dedupeKey: `survey_reminder:${stage}:${userId}:${mondayOf(localDate(new Date(last)))}`,
-          title: `Вы остановились на шаге ${step}`,
-          body:
-            `Анкета заполнена на ${input.surveySteps.length} из ${SURVEY_TOTAL_STEPS} шагов, последний раз вы её меняли ${age} дн. назад. ` +
-            `Следующий — шаг ${stepLabel(step)}, около ${roundMinutes(questionsOnStep(step))} минут.\n\n` +
-            `Пока анкета не отправлена, «Точка А» считается по неполным данным. Осталось шагов: ${left}; незаполненные можно пропустить и отправить анкету как есть.`,
-          ctaUrl: `/client/onboarding?step=${step}`,
-          ctaLabel: `Продолжить с шага ${step}`,
-          eyebrow: 'Анкета',
-        })
+      if (stage && last) {
+        const dedupeKey = `survey_reminder:${stage}:${userId}:${mondayOf(localDate(new Date(last)))}`
+        const touch = modeSurveyTouch(input, age) ?? classicSurveyTouch(input, age)
+        if (touch) out.push({ userId, kind: 'survey_reminder', stage, dedupeKey, eyebrow: 'Анкета', ...touch })
       }
     } else {
       const anchor = state.approved_at ?? state.registered_at
@@ -315,17 +383,23 @@ export async function runReminders(now: Date = new Date()): Promise<ReminderRunS
   const isFriday = isoWeekday(localDate(now)) === 5
   const pulseIds = isFriday ? states.filter((s) => s.gri_completed_at).map((s) => s.user_id) : []
 
-  const [surveyRows, drafts, pulse] = await Promise.all([
+  const [surveyRows, drafts, pulse, modes] = await Promise.all([
     surveyIds.length ? fetchSurveyRows(surveyIds) : Promise.resolve(new Map<string, SurveyStepRow[]>()),
     draftIds.length ? fetchGriDrafts(draftIds) : Promise.resolve(new Map<string, GriDraft>()),
     pulseIds.length ? fetchPulseWeeks(pulseIds, addDays(localDate(now), -84)) : Promise.resolve(new Map<string, string[]>()),
+    // The questionnaire mode (survey Ф5); a failure keeps the classic text.
+    surveyIds.length ? fetchSurveyModes(surveyIds).catch(() => new Map<string, SurveyModeFacts>()) : Promise.resolve(new Map<string, SurveyModeFacts>()),
   ])
 
   const plans = states.map((state) => {
     const rows = surveyRows.get(state.user_id)
     const surveySteps = rows ? completedStepsFromRows(rows) : (state.survey_filled_steps ?? [])
+    const mode = modes.get(state.user_id)
+    const survey = mode && (mode.mode || mode.expressCompletedAt)
+      ? { ...mode, answers: Object.fromEntries((rows ?? []).map((r) => [r.question_key, fromAnswerEnvelope(r.answer)])) }
+      : undefined
     return planReminders(
-      { state, surveySteps, draft: drafts.get(state.user_id) ?? null, pulseWeeks: pulse.get(state.user_id) ?? [] },
+      { state, surveySteps, draft: drafts.get(state.user_id) ?? null, pulseWeeks: pulse.get(state.user_id) ?? [], survey },
       now,
     )
   })
