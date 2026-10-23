@@ -3,6 +3,7 @@
 import React from 'react'
 import { BoolToggle, FieldLabel, DynamicTable, MultiSelect, NumberField, TermHint } from '@/components/onboarding/shared'
 import { MARKETING_CHANNELS } from '@/components/onboarding/constants/options'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step7MarketingFormProps {
@@ -97,6 +98,7 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
             </div>
           </div>
         </div>
+        <FieldCalc forKey="s5_marketing_budget_pct" answers={data} className="mb-4" />
 
         {/* Channels performance table */}
         <FieldLabel>Эффективность каналов</FieldLabel>
@@ -133,6 +135,7 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
           <NumberField id="s7_repeat_freq_days" label="Частота повторной покупки" value={data.s7_repeat_freq_days} onChange={(v) => onChange('s7_repeat_freq_days', v)} unit="дней" integer placeholder="90" />
           <NumberField id="s7_nps_score" label={<>Как клиенты оценивают вас по 10-балльной шкале?<TermHint term="NPS" /></>} note="Индекс от −100 до 100. Если не измеряли — «Не знаю»." value={data.s7_nps_score} onChange={(v) => onChange('s7_nps_score', v)} integer allowNegative max={100} placeholder="35" />
         </div>
+        <FieldCalc ids={['funnel', 'leads_to_goal', 'repeat_rate']} forKey="s7_leads_per_month" answers={data} />
       </section>
 
       {/* ── Глубокий анализ конкурентов ────────────────────────────────────── */}
