@@ -4,6 +4,7 @@ import { NumberField, type NumberFieldProps } from '@/components/onboarding/shar
 import { FieldNote } from '@/components/onboarding/shared/FieldNote'
 import { FIELD_NOTES } from '@/components/onboarding/constants/step-config'
 import { yearLabel, yearOfKey, yearPhrase } from '@/lib/survey/year-labels'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 interface Props { data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }
 
@@ -56,7 +57,7 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
 
   return (
     <div className="space-y-6">
-      {section('Основные показатели', 'payments', (
+      {section('Основные показатели', 'payments', (<>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {money('s9n_revenue_2024', yearLabel('Годовая выручка', 's9n_revenue_2024'))}
           {field('s9n_change_vs_2023', `Изменение выручки: ${yearPhrase(2024)} к 2023`, 'text', '+15% или -10%')}
@@ -67,9 +68,10 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
           {field('s9n_breakeven_point', 'Точка безубыточности', 'text')}
           {field('s9n_dividend_policy', 'Дивидендная политика', 'textarea', 'Как собственник извлекает доход')}
         </div>
-      ))}
+        <FieldCalc ids={['revenue_years', 'margin_check']} forKey="s9n_net_profit" answers={data} />
+      </>))}
 
-      {section(`Структура расходов — ${yearPhrase(yearOfKey('s9n_expense_cogs') ?? 2024)}`, 'receipt_long', (
+      {section(`Структура расходов — ${yearPhrase(yearOfKey('s9n_expense_cogs') ?? 2024)}`, 'receipt_long', (<>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* ₸ PER YEAR: every reader treats these answers as yearly (finmodel/sources.ts, metrics/formulas.ts). */}
           {money('s9n_expense_cogs', 'Себестоимость продукции/услуг', { unit: '₸/год' })}
@@ -77,9 +79,10 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
           {money('s9n_expense_rent', 'Аренда, коммунальные', { unit: '₸/год' })}
           {money('s9n_expense_other', 'Прочие расходы', { unit: '₸/год' })}
         </div>
-      ))}
+        <FieldCalc ids={['expense_structure', 'marketing_money']} forKey="s9n_expense_marketing" answers={data} />
+      </>))}
 
-      {section('Управление финансами', 'account_balance', (
+      {section('Управление финансами', 'account_balance', (<>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {field('s9n_accounting_method', 'Способ ведения финансового учёта', 'text')}
           {select('s9n_planning_frequency', 'Частота финансового планирования', [
@@ -100,7 +103,8 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
           {field('s9n_audit_preparedness', 'Подготовленность к проверкам', 'text')}
           {field('s9n_financial_blockers', 'Что мешает улучшить финансы', 'textarea')}
         </div>
-      ))}
+        <FieldCalc forKey="s9n_debtor_days" answers={data} />
+      </>))}
     </div>
   )
 }
