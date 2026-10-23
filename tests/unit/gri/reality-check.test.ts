@@ -314,3 +314,38 @@ describe('computeRealityCheck — нет данных → нет расхожд�
     expect(new Set(ids).size).toBe(ids.length)
   })
 })
+
+// ─── Блоки без данных (анкета Ф2: после экспресса v1-нули не факты) ─────────
+
+describe('computeRealityCheck — блоки без данных из снимка Точки А', () => {
+  const zeros = (): RealityCheckContext['pointA']['blocks'] =>
+    ['finance', 'sales', 'operations', 'marketing', 'strategy'].map((k) => ({ key: k, label: labelOf(k), score: k === 'operations' ? 80 : 12, status: k === 'operations' ? 'strong' : 'critical' }))
+
+  it('finance без данных (v1-ноль) не даёт «Точка А оценивает финансы в 12/100»', () => {
+    const input = {
+      sectionAvgs: { 'cash-stability': 9, 'product-demand': 9 },
+      ctx: baseCtx({ pointA: { has_diagnostic: true, health_index: 20, blocks: zeros() } }),
+    }
+    expect(computeRealityCheck(input).some((i) => i.finding.includes('12/100'))).toBe(true)
+    const honest = computeRealityCheck({ ...input, quality: { blocksWithoutData: ['finance', 'sales', 'marketing', 'strategy'], v1Fallback: true } })
+    expect(honest.some((i) => i.finding.includes('12/100'))).toBe(false)
+    // Индекс здоровья v1-фолбэка не сравнивается.
+    expect(honest.some((i) => i.blockId === 'overall')).toBe(false)
+  })
+
+  it('реалистичность пересчитывается без блоков без данных (нет штрафа за «слабые» нули)', () => {
+    // ×1,3 за год: CAGR 30 % → ambitious; с ≥ 2 «слабыми» нулевыми блоками было бы aggressive.
+    const ctx = baseCtx({
+      // Статусы «средне»: правила против Точки А молчат, проверяем только реалистичность.
+      pointA: { has_diagnostic: true, health_index: 50, blocks: zeros().map((b) => ({ ...b, status: 'average' })) },
+      pointB: {
+        current_revenue_year: 100_000_000, goal_12m_revenue_year: 130_000_000, goal_3y_revenue_year: null,
+        gap: { required_mom_growth: 2.2 }, realism: { level: 'aggressive', score: 20 },
+      },
+    })
+    const penalised = computeRealityCheck({ sectionAvgs: { 'business-model': 8 }, ctx })
+    expect(penalised.find((i) => i.blockId === 'business-model')?.finding).toMatch(/агрессивная/)
+    const honest = computeRealityCheck({ sectionAvgs: { 'business-model': 8 }, ctx, quality: { blocksWithoutData: ['finance', 'sales', 'marketing', 'strategy'], v1Fallback: false } })
+    expect(honest.find((i) => i.blockId === 'business-model')).toBeUndefined()
+  })
+})

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { computeRealityCheck } from '@/lib/gri/reality-check'
+import { loadPointAQuality } from '@/lib/point-a/blocks-without-data'
 import { isRateLimited } from '@/lib/rate-limit'
 
 /**
@@ -46,8 +47,10 @@ export async function GET(req: NextRequest) {
     // Факты: анкета + Точка А + Точка B — тот же курируемый снимок,
     // что у ассистента (никаких сырых строк БД в правила).
     const ctx = await buildAssistantContext(user.id, sb)
+    // Blocks without data (v4 snapshot): their v1 zeros are not facts to compare with.
+    const quality = await loadPointAQuality(sb, user.id)
 
-    const items = computeRealityCheck({ sectionAvgs, ctx })
+    const items = computeRealityCheck({ sectionAvgs, ctx, quality })
 
     return NextResponse.json({
       ok: true,

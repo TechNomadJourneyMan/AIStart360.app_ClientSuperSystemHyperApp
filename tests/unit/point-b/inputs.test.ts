@@ -67,6 +67,13 @@ describe('loadPointBInputs', () => {
     expect(v1.blocksWithoutData).toEqual([])
   })
 
+  it('a v1 FALLBACK of a v4 company (express only: no v4 overall) reads blocks without data from the v4 blocks (survey Ф2)', async () => {
+    // The diagnostics row is v1 (unanswered = 0) — those zeros must not become «weak» blocks.
+    const fallback = snapshot({ engine: 'v1', config_version: 'default@1|v4', blocks: [{ key: 'finance', score: null }, { key: 'sales', score: null }, { key: 'operations', score: 80 }] })
+    const r = await loadPointBInputs(seed({ point_a_snapshots: [fallback] }).sb, 'u1', { now: NOW })
+    expect(r.blocksWithoutData).toEqual(['finance', 'sales'])
+  })
+
   it('no diagnostic gives pointA null and does not throw', async () => {
     const { sb } = seed({ diagnostics: [] })
     const r = await loadPointBInputs(sb, 'u1', { now: NOW })

@@ -20,6 +20,17 @@
 //                          'realistic' | 'ambitious' | 'aggressive' | 'unrealistic' | 'unknown'
 //   - ctx.pointB.gap.required_mom_growth — требуемый % роста в месяц (12m горизонт)
 
+//
+// Блоки без данных (анкета, режимы, Ф2): строка diagnostics не умеет «нет
+// данных» — у блока без v4-оценки там лежит v1-блок, где неотвеченное = 0
+// (после экспресса это большинство блоков). Маршрут передаёт `quality` из
+// последнего снимка Точки А (lib/point-a/blocks-without-data.ts): такие блоки
+// не сравниваются с самооценкой, реалистичность цели пересчитывается без них
+// (тот же assessRealism), индекс здоровья v1-фолбэка не сравнивается.
+
+import type { PointA } from '@/types/onboarding'
+import { assessRealism, computeGap } from '@/lib/point-b/engine'
+
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
 export type RealityCheckSeverity = 'mismatch' | 'note'
@@ -49,6 +60,8 @@ export interface RealityCheckContext {
   pointB: {
     current_revenue_year: number | null
     goal_12m_revenue_year: number | null
+    /** Есть в AssistantContext; нужен для пересчёта реалистичности без блоков без данных. */
+    goal_3y_revenue_year?: number | null
     gap: { required_mom_growth: number | null }
     realism: { level: string; score: number }
   }
@@ -59,6 +72,36 @@ export interface RealityCheckInput {
   /** gri_assessments.section_avgs — { sectionId: 0..10 }. */
   sectionAvgs: Record<string, number>
   ctx: RealityCheckContext
+  /** Из последнего снимка Точки А: блоки без данных и v1-фолбэк (lib/point-a/blocks-without-data.ts). */
+  quality?: { blocksWithoutData: readonly string[]; v1Fallback: boolean }
+}
+
+/**
+ * Контекст без v1-нулей: блоки без данных убраны, реалистичность пересчитана
+ * без них, индекс здоровья v1-фолбэка скрыт. Без `quality` — как был.
+ */
+export function honestRealityContext(ctx: RealityCheckContext, quality?: RealityCheckInput['quality']): RealityCheckContext {
+  if (!quality || (quality.blocksWithoutData.length === 0 && !quality.v1Fallback)) return ctx
+  const without = new Set(quality.blocksWithoutData)
+  const blocks = ctx.pointA.blocks.filter((b) => !without.has(b.key))
+  let realism = ctx.pointB.realism
+  if (without.size > 0) {
+    const pointA = { blocks: Object.fromEntries(ctx.pointA.blocks.map((b) => [b.key, { score: b.score }])) } as unknown as PointA
+    const cur = ctx.pointB.current_revenue_year
+    const r = assessRealism(
+      pointA,
+      computeGap(cur, ctx.pointB.goal_3y_revenue_year ?? null, 36),
+      [],
+      computeGap(cur, ctx.pointB.goal_12m_revenue_year, 12),
+      { blocksWithoutData: [...without] },
+    )
+    realism = { ...realism, level: r.level, score: r.score }
+  }
+  return {
+    ...ctx,
+    pointA: { ...ctx.pointA, blocks, health_index: quality.v1Fallback ? null : ctx.pointA.health_index },
+    pointB: { ...ctx.pointB, realism },
+  }
 }
 
 // ─── Карты (явные, без инвенции) ─────────────────────────────────────────────
@@ -305,7 +348,8 @@ function ruleOverallIndex(input: RealityCheckInput): RealityCheckItem | null {
  * Точки B. Не пишет в БД, не зовёт LLM. Максимум одна карточка на блок
  * (mismatch приоритетнее note). Нет данных → пустой массив.
  */
-export function computeRealityCheck(input: RealityCheckInput): RealityCheckItem[] {
+export function computeRealityCheck(raw: RealityCheckInput): RealityCheckItem[] {
+  const input: RealityCheckInput = { ...raw, ctx: raw.ctx ? honestRealityContext(raw.ctx, raw.quality) : raw.ctx }
   const { sectionAvgs, ctx } = input
   if (!sectionAvgs || Object.keys(sectionAvgs).length === 0) return []
   if (!ctx?.answers || Object.keys(ctx.answers).length === 0) return []

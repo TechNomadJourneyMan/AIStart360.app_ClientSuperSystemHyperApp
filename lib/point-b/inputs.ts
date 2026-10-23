@@ -19,6 +19,7 @@ import { parsePeriodKey, periodOrdinal } from '@/lib/data-layer/period-key'
 import { diagToPointA, mapGriTop5 } from './adapters'
 import { parseGoals, POINT_B_LEVER_METRICS, type PointBOptions } from './engine'
 import { loadPointBMetrics, type PointBMetricOptions } from './metrics'
+import { blocksWithoutDataOf } from '@/lib/point-a/blocks-without-data'
 
 /** A revenue base older than this many months is flagged as stale. */
 export const STALE_BASE_MONTHS = 15
@@ -52,14 +53,6 @@ export interface LoadPointBInputsOptions {
    */
   goals?: () => Promise<Goal[]>
 }
-
-const ENGINE_BLOCK_COLUMNS: ReadonlyArray<readonly [string, string]> = [
-  ['finance', 'finance_score'],
-  ['sales', 'sales_score'],
-  ['operations', 'operations_score'],
-  ['marketing', 'marketing_score'],
-  ['strategy', 'strategy_score'],
-]
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null
@@ -152,7 +145,7 @@ export async function loadPointBInputs(
     client.from('gri_assessments').select('top_5_limits').eq('user_id', userId).eq('is_current', true).limit(1),
     loadPointBMetrics(client, companyId),
     companyId
-      ? client.from('point_a_snapshots').select('id, engine, confidence, coverage, created_at, blocks, inputs').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
+      ? client.from('point_a_snapshots').select('id, engine, config_version, confidence, coverage, created_at, blocks, inputs').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
       : Promise.resolve({ data: [], error: null }),
     companyId
       ? (opts.goals ? opts.goals() : loadGoals(client, companyId)).catch((err) => {
@@ -182,19 +175,10 @@ export async function loadPointBInputs(
       }
     : null
 
-  // 5. Blocks without data. v4: a block with no score. Otherwise a diagnostics row without the block column
-  //    (the adapter turns it into a zero block — that zero must not count as «weak»).
-  const without: string[] = []
-  if (snapRow && snapshot?.engine === 'v4' && Array.isArray(snapRow.blocks)) {
-    for (const b of snapRow.blocks as Array<{ key?: unknown; score?: unknown }>) {
-      if (typeof b?.key === 'string' && (b.score === null || b.score === undefined)) without.push(b.key)
-    }
-  } else if (diagnostic) {
-    for (const [key, column] of ENGINE_BLOCK_COLUMNS) {
-      const v = diagnostic[column]
-      if (!v || typeof v !== 'object') without.push(key)
-    }
-  }
+  // 5. Blocks without data. v4 (and a v1 FALLBACK of a v4 company — e.g. after the express flow):
+  //    a v4 block with no score; its v1 column holds unanswered = 0, which must not count as «weak».
+  //    Otherwise a diagnostics row without the block column (lib/point-a/blocks-without-data.ts).
+  const without = blocksWithoutDataOf(snapRow, diagnostic)
 
   // 6. Revenue base with its period.
   const goalOf = (period: '12m' | '3y') => positive(goals.find((g) => g.metricId === REVENUE_GOAL_METRIC && g.periodLabel === period)?.targetValue)
