@@ -17,7 +17,7 @@ const blocks = effectiveBlocks(DEFAULT_TEMPLATE)
 const EXPRESS_KEYS = EXPRESS_SCREENS.flatMap((s) => s.keys)
 /** As the snapshot reads survey_answers: `answer.value` (unknown → null, approx → its value). */
 const stored = (answers: Record<string, unknown>) =>
-  Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v && typeof v === 'object' && 'unknown' in v ? null : v && typeof v === 'object' && 'approx' in v ? (v as { value: number }).value : v]))
+  Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v && typeof v === 'object' && 'unknown' in v ? null : v && typeof v === 'object' && 'approx' in v ? (v as unknown as { value: number }).value : v]))
 const expressOnly = (): Record<string, unknown> => {
   const filled = previewAnswers('filled')
   return Object.fromEntries(EXPRESS_KEYS.filter((k) => k in filled).map((k) => [k, filled[k]]))
