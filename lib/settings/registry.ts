@@ -91,6 +91,16 @@ export const SETTINGS = {
     help: 'То же для персонала платформы (эксперты, администраторы).',
     schema: z.number().min(0).max(1000), default: 20, critical: false,
   },
+  survey_chat_enabled: {
+    group: 'content', label: 'ИИ-помощник анкеты',
+    help: 'Беседа с ИИ при заполнении анкеты и кнопка «Помощник» у вопросов. Выключено — объяснения вопросов и «где взять цифру» остаются (без ИИ), ответы — только в форме.',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  survey_ai_budget_usd_per_client: {
+    group: 'content', label: 'Потолок ИИ-помощника анкеты на клиента (Free), $',
+    help: 'Сколько долларов ИИ может потратить помощник анкеты на одного нового или бесплатного клиента за всё время. PRO — без потолка, пока полная анкета не отправлена; после — обычный дневной лимит PRO.',
+    schema: z.number().min(0).max(100), default: 0.5, critical: false,
+  },
   announcement: {
     group: 'cabinet', label: 'Объявление в кабинете',
     help: 'Полоса над кабинетом клиента: новости, акции, плановые работы.',

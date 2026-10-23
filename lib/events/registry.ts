@@ -24,6 +24,12 @@ export const EVENTS = {
   // Three ways to fill in the questionnaire (spec 2026-10-23 §15).
   SURVEY_MODE_CHOSEN: { type: 'questionnaire', client: true, label: 'Выбран способ заполнения анкеты' },
   SURVEY_ANSWERS_VIEWED: { type: 'questionnaire', client: true, label: 'Открыт просмотр «Мои ответы»' },
+  // The questionnaire AI helper (survey Ф4): the field «Помощник» is opened in the browser;
+  // cards, guard refusals and escalations are written by the server only.
+  SURVEY_HELPER_OPENED: { type: 'questionnaire', client: true, label: 'Открыт «Помощник» у вопроса анкеты' },
+  SURVEY_CHAT_PROPOSAL: { type: 'questionnaire', client: false, label: 'ИИ-помощник анкеты: карточка «Записать»' },
+  SURVEY_CHAT_GUARD_BLOCKED: { type: 'questionnaire', client: false, label: 'ИИ-помощник анкеты: число не из слов клиента' },
+  SURVEY_CHAT_ESCALATED: { type: 'questionnaire', client: false, label: 'ИИ-помощник анкеты: вопрос передан эксперту' },
   GRI_STARTED: { type: 'gri', client: false, label: 'GRI начат' },
   GRI_QUESTION_ANSWERED: { type: 'gri', client: true, label: 'Ответ в GRI' },
   GRI_SECTION_COMPLETED: { type: 'gri', client: false, label: 'Блок GRI пройден' },
