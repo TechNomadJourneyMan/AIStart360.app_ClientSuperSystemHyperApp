@@ -10,7 +10,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AnswerAttribution } from './attribution-label'
-import { isAnswerAuthorRole } from './attribution'
+import { isAnswerAuthorRole, isAnswerVia } from './attribution'
 
 export interface AttributionSourceRow {
   question_key: string
@@ -19,6 +19,8 @@ export interface AttributionSourceRow {
   updated_by?: string | null
   updated_by_role?: string | null
   updated_at?: string | null
+  /** Migration 134; absent before it. */
+  updated_via?: string | null
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -32,12 +34,15 @@ export function attributionOf(row: AttributionSourceRow, names: ReadonlyMap<stri
   const role = isAnswerAuthorRole(row.updated_by_role) ? row.updated_by_role : null
   if (role) {
     const by = row.updated_by ?? null
-    return {
+    const out: AnswerAttribution = {
       updatedBy: by,
       updatedByRole: role,
       updatedAt: row.updated_at ?? row.answered_at ?? null,
       updatedByName: (role === 'expert' || role === 'admin') && by ? names.get(by) ?? null : null,
     }
+    // The path is present only when known (migration 134, new writes).
+    if (isAnswerVia(row.updated_via)) out.updatedVia = row.updated_via
+    return out
   }
   if (hasSource(row.answer)) {
     return { updatedBy: null, updatedByRole: 'ai', updatedAt: row.answered_at ?? null, updatedByName: null, legacy: true }

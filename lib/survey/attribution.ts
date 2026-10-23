@@ -17,26 +17,47 @@
  * Deploy before migration 131: PostgREST answers PGRST204 (unknown column in
  * the schema cache) / Postgres 42703. `writeWithAttribution` then retries the
  * same write once without the author columns and logs a warning, so saving
- * answers never breaks on the missing columns.
+ * answers never breaks on the missing columns. Before migration 134 only the
+ * path column (updated_via) is missing: the retry keeps the author.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const ANSWER_AUTHOR_ROLES = ['user', 'expert', 'admin', 'ai', 'system'] as const
 export type AnswerAuthorRole = (typeof ANSWER_AUTHOR_ROLES)[number]
 
+/**
+ * HOW the answer was given (survey_answers.updated_via, migration 134; spec
+ * 2026-10-23 §5.4): the full questionnaire / «Мои ответы», the express flow and
+ * blocks, the AI chat, the field «Помощник», a document, a staff edit, the system.
+ */
+export const ANSWER_VIA = ['full', 'express', 'chat', 'helper', 'document', 'staff', 'system'] as const
+export type AnswerVia = (typeof ANSWER_VIA)[number]
+/** Paths a client may write with its own JWT (the trigger of 134 enforces the same). */
+export const CLIENT_ANSWER_VIA = ['full', 'express', 'helper', 'document'] as const
+/** Paths the client save route accepts in its body (`document` comes from `origins`). */
+export const BODY_ANSWER_VIA = ['full', 'express', 'helper'] as const
+export type BodyAnswerVia = (typeof BODY_ANSWER_VIA)[number]
+
+export function isAnswerVia(v: unknown): v is AnswerVia {
+  return typeof v === 'string' && (ANSWER_VIA as readonly string[]).includes(v)
+}
+
 export interface AnswerAuthor {
   /** auth user / profile id; anything that is not a uuid is stored as null. */
   id: string | null
   role: AnswerAuthorRole
+  /** The path; when present it is written to updated_via (null clears it). */
+  via?: AnswerVia | null
 }
 
 export type AttributionColumns = {
   updated_by: string | null
   updated_by_role: AnswerAuthorRole
   updated_at: string
+  updated_via?: AnswerVia | null
 }
 
-export const ATTRIBUTION_COLUMNS = ['updated_by', 'updated_by_role', 'updated_at'] as const
+export const ATTRIBUTION_COLUMNS = ['updated_by', 'updated_by_role', 'updated_at', 'updated_via'] as const
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -64,13 +85,24 @@ export function authorFor(input: {
   actorId: string | null | undefined
   ownerId: string
   staffRoles?: Array<string | null | undefined>
-  origin?: 'document' | null
+  /** 'document' — accepted from a file; 'chat' — confirmed in the field «Помощник». */
+  origin?: 'document' | 'chat' | null
+  /**
+   * The path the owner saved from (body `via`). When given, the author also
+   * carries the path: the owner → full / express / helper / document, staff → staff.
+   */
+  via?: BodyAnswerVia | null
 }): AnswerAuthor {
   const actor = input.actorId ?? null
+  const withVia = input.via !== undefined
   if (!actor || actor === input.ownerId) {
-    return { id: input.ownerId, role: input.origin === 'document' ? 'ai' : 'user' }
+    const role: AnswerAuthorRole = input.origin === 'document' ? 'ai' : 'user'
+    if (!withVia) return { id: input.ownerId, role }
+    const via: AnswerVia = input.origin === 'document' ? 'document' : input.origin === 'chat' ? 'helper' : input.via ?? 'full'
+    return { id: input.ownerId, role, via }
   }
-  return { id: actor, role: staffAuthorRole(...(input.staffRoles ?? [])) }
+  const role = staffAuthorRole(...(input.staffRoles ?? []))
+  return withVia ? { id: actor, role, via: 'staff' } : { id: actor, role }
 }
 
 /**
@@ -99,11 +131,13 @@ export function authorFromGoalActor(actor: { id: string; role: 'owner' | 'expert
 }
 
 export function attributionColumns(author: AnswerAuthor, at: Date = new Date()): AttributionColumns {
-  return {
+  const cols: AttributionColumns = {
     updated_by: author.id && UUID_RE.test(author.id) ? author.id : null,
     updated_by_role: author.role,
     updated_at: at.toISOString(),
   }
+  if (author.via !== undefined) cols.updated_via = isAnswerVia(author.via) ? author.via : null
+  return cols
 }
 
 /** Rows with the author columns added (the input is not mutated). */
@@ -121,12 +155,21 @@ export function unstampRows<T extends Record<string, unknown>>(rows: T[]): T[] {
   })
 }
 
+/** Rows without the path column only (131 applied, 134 not yet). */
+export function withoutViaColumn<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.map((r) => {
+    const out = { ...r }
+    delete (out as Record<string, unknown>).updated_via
+    return out
+  })
+}
+
 /** Rows split by author (one write per author; order of first appearance). */
 export function groupByAuthor<T>(rows: T[], authorOf: (row: T) => AnswerAuthor): Array<{ author: AnswerAuthor; rows: T[] }> {
   const groups = new Map<string, { author: AnswerAuthor; rows: T[] }>()
   for (const row of rows) {
     const author = authorOf(row)
-    const k = `${author.id ?? ''}|${author.role}`
+    const k = `${author.id ?? ''}|${author.role}|${author.via ?? ''}`
     const g = groups.get(k)
     if (g) g.rows.push(row)
     else groups.set(k, { author, rows: [row] })
@@ -135,6 +178,12 @@ export function groupByAuthor<T>(rows: T[], authorOf: (row: T) => AnswerAuthor):
 }
 
 interface DbError { code?: string | null; message?: string | null }
+
+/** The missing column is the path of migration 134 (the author columns of 131 exist). */
+export function isMissingViaColumnError(err: unknown): boolean {
+  if (!isMissingColumnError(err)) return false
+  return /updated_via/.test(String((err as DbError).message ?? ''))
+}
 
 /** PostgREST / Postgres «this column does not exist» (migration 131 not applied yet). */
 export function isMissingColumnError(err: unknown): boolean {
@@ -155,8 +204,15 @@ export async function writeWithAttribution<T extends Record<string, unknown>, R 
   write: (rows: Array<Record<string, unknown>>) => PromiseLike<R>,
   opts: { at?: Date; label?: string } = {},
 ): Promise<R> {
-  const first = await write(stampRows(rows, author, opts.at))
+  const stamped = stampRows(rows, author, opts.at)
+  const first = await write(stamped)
   if (!first.error || !isMissingColumnError(first.error)) return first
+  if (isMissingViaColumnError(first.error)) {
+    // 131 is there, 134 is not: keep the author, drop the path.
+    console.warn(`[survey/attribution] ${opts.label ?? 'survey_answers'}: updated_via missing (migration 134 not applied?) — saved without the path`)
+    const second = await write(withoutViaColumn(stamped))
+    if (!second.error || !isMissingColumnError(second.error)) return second
+  }
   console.warn(`[survey/attribution] ${opts.label ?? 'survey_answers'}: author columns missing (migration 131 not applied?) — saved without the author`)
   return write(unstampRows(rows))
 }

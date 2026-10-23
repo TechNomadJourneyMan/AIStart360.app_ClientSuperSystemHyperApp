@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
-  attributionColumns, authorFor, authorFromGoalActor, groupByAuthor, isMissingColumnError, loadStaffRoles,
-  stampRows, staffAuthorRole, unstampRows, writeWithAttribution,
+  ANSWER_VIA, CLIENT_ANSWER_VIA, attributionColumns, authorFor, authorFromGoalActor, groupByAuthor, isAnswerVia, isMissingColumnError,
+  isMissingViaColumnError, loadStaffRoles, stampRows, staffAuthorRole, unstampRows, writeWithAttribution,
 } from '@/lib/survey/attribution'
 import { memoryClient } from '../data-layer/memory-client'
 
@@ -102,5 +102,62 @@ describe('writeWithAttribution', () => {
     expect(isMissingColumnError({ message: 'column "question_key" does not exist' })).toBe(true)
     expect(isMissingColumnError({ code: '42501', message: 'permission denied' })).toBe(false)
     expect(isMissingColumnError(null)).toBe(false)
+  })
+})
+
+describe('the path of an answer (updated_via, migration 134)', () => {
+  it('authorFor with a body path: owner → full / express / helper / document, staff → staff', () => {
+    expect(authorFor({ actorId: OWNER, ownerId: OWNER, via: 'full' })).toEqual({ id: OWNER, role: 'user', via: 'full' })
+    expect(authorFor({ actorId: OWNER, ownerId: OWNER, via: 'express' })).toEqual({ id: OWNER, role: 'user', via: 'express' })
+    expect(authorFor({ actorId: OWNER, ownerId: OWNER, via: null })).toEqual({ id: OWNER, role: 'user', via: 'full' })
+    expect(authorFor({ actorId: OWNER, ownerId: OWNER, via: 'full', origin: 'document' })).toEqual({ id: OWNER, role: 'ai', via: 'document' })
+    expect(authorFor({ actorId: OWNER, ownerId: OWNER, via: 'full', origin: 'chat' })).toEqual({ id: OWNER, role: 'user', via: 'helper' })
+    expect(authorFor({ actorId: EXPERT, ownerId: OWNER, staffRoles: ['expert'], via: 'full' })).toEqual({ id: EXPERT, role: 'expert', via: 'staff' })
+  })
+
+  it('the column is written only when the author carries a path; null clears it', () => {
+    expect(attributionColumns({ id: OWNER, role: 'user', via: 'express' }, AT)).toMatchObject({ updated_via: 'express' })
+    expect(attributionColumns({ id: OWNER, role: 'user', via: null }, AT)).toMatchObject({ updated_via: null })
+    expect(attributionColumns({ id: OWNER, role: 'user' }, AT)).not.toHaveProperty('updated_via')
+    expect(unstampRows(stampRows([{ question_key: 'a' }], { id: OWNER, role: 'user', via: 'full' }, AT))).toEqual([{ question_key: 'a' }])
+  })
+
+  it('authors on different paths are written separately', () => {
+    const groups = groupByAuthor(['a', 'b'], (k) => ({ id: OWNER, role: 'user' as const, via: k === 'a' ? 'full' as const : 'helper' as const }))
+    expect(groups).toHaveLength(2)
+  })
+
+  it('the code paths match the migration lists', () => {
+    expect([...ANSWER_VIA]).toEqual(['full', 'express', 'chat', 'helper', 'document', 'staff', 'system'])
+    expect(CLIENT_ANSWER_VIA).not.toContain('chat')
+    expect(CLIENT_ANSWER_VIA).not.toContain('staff')
+    expect(isAnswerVia('chat')).toBe(true)
+    expect(isAnswerVia('admin')).toBe(false)
+  })
+
+  it('before migration 134: retried without updated_via only, the author is kept', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const write = vi.fn()
+      .mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'updated_via' column of 'survey_answers' in the schema cache" } })
+      .mockResolvedValueOnce({ error: null })
+    const res = await writeWithAttribution([{ question_key: 'a' }], { id: OWNER, role: 'user', via: 'full' }, write, { at: AT })
+    expect(res.error).toBeNull()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write.mock.calls[1][0]).toEqual([{ question_key: 'a', updated_by: OWNER, updated_by_role: 'user', updated_at: AT.toISOString() }])
+    expect(isMissingViaColumnError({ code: '42703', message: 'column "updated_via" of relation "survey_answers" does not exist' })).toBe(true)
+    expect(isMissingViaColumnError({ code: '42703', message: 'column "updated_by" does not exist' })).toBe(false)
+    warn.mockRestore()
+  })
+
+  it('neither 131 nor 134: the second retry drops all author columns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const write = vi.fn()
+      .mockResolvedValueOnce({ error: { code: '42703', message: 'column "updated_via" of relation "survey_answers" does not exist' } })
+      .mockResolvedValueOnce({ error: { code: '42703', message: 'column "updated_by" of relation "survey_answers" does not exist' } })
+      .mockResolvedValueOnce({ error: null })
+    const res = await writeWithAttribution([{ question_key: 'a' }], { id: OWNER, role: 'user', via: 'full' }, write, { at: AT })
+    expect(res.error).toBeNull()
+    expect(write.mock.calls[2][0]).toEqual([{ question_key: 'a' }])
+    warn.mockRestore()
   })
 })

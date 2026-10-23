@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
-import { formatAttribution, formatAttributionDate, type AnswerAttribution } from '@/lib/survey/attribution-label'
+import { formatAttribution, formatAttributionDate, formatAuthorSummary, summarizeAuthors, type AnswerAttribution } from '@/lib/survey/attribution-label'
 import { attributionOf, loadAttribution, staffAuthorIds } from '@/lib/survey/attribution-read'
 import { memoryClient } from '../data-layer/memory-client'
 
@@ -97,5 +97,67 @@ describe('attributionOf — survey GET shaping', () => {
     const broken = { from: () => { throw new Error('down') } } as never
     const out = await loadAttribution(broken, [{ question_key: 'a', updated_by: EXPERT, updated_by_role: 'expert' }])
     expect(out.a).toMatchObject({ updatedByRole: 'expert', updatedByName: null })
+  })
+})
+
+describe('the path in the author line (spec §5.4, migration 134)', () => {
+  const user = (via?: AnswerAttribution['updatedVia']) => a({ updatedBy: OWNER, updatedByRole: 'user', ...(via ? { updatedVia: via } : {}) })
+
+  it('the owner sees the path: быстрый старт / через ИИ-помощника; the full questionnaire adds nothing', () => {
+    expect(formatAttribution(user('full'), { viewerIsOwner: true })).toBe('Заполнил: вы · 22.10.2026')
+    expect(formatAttribution(user('express'), { viewerIsOwner: true })).toBe('Заполнил: вы (быстрый старт) · 22.10.2026')
+    expect(formatAttribution(user('chat'), { viewerIsOwner: true })).toBe('Заполнил: вы (через ИИ-помощника) · 22.10.2026')
+    expect(formatAttribution(user('helper'), { viewerIsOwner: true })).toBe('Заполнил: вы (через ИИ-помощника) · 22.10.2026')
+  })
+
+  it('staff see the client by name and the path: экспресс / через ИИ-помощника', () => {
+    expect(formatAttribution(user('express'), { viewerId: EXPERT, ownerName: 'Айгуль' })).toBe('Заполнил пользователь Айгуль (экспресс) · 22.10.2026')
+    expect(formatAttribution(user('chat'), { viewerId: EXPERT, ownerName: 'Айгуль' })).toBe('Заполнил пользователь Айгуль (через ИИ-помощника) · 22.10.2026')
+    expect(formatAttribution(user(), { viewerId: EXPERT })).toBe('Заполнил пользователь · 22.10.2026')
+  })
+
+  it('documents, staff and system lines do not change with the path', () => {
+    expect(formatAttribution(a({ updatedByRole: 'ai', updatedVia: 'document' }), { viewerIsOwner: true })).toBe('Заполнил ИИ (из документов) · 22.10.2026')
+    expect(formatAttribution(a({ updatedBy: EXPERT, updatedByRole: 'expert', updatedByName: 'Иван Петров', updatedVia: 'staff' }), { viewerIsOwner: true })).toBe('Изменил эксперт Иван Петров · 22.10.2026')
+    expect(formatAttribution(a({ updatedBy: EXPERT, updatedByRole: 'expert', updatedVia: 'staff' }), { viewerId: EXPERT })).toBe('Изменили вы (эксперт) · 22.10.2026')
+  })
+
+  it('attributionOf carries a valid path only', () => {
+    expect(attributionOf({ question_key: 'k', updated_by: OWNER, updated_by_role: 'user', updated_at: AT, updated_via: 'helper' }).updatedVia).toBe('helper')
+    expect(attributionOf({ question_key: 'k', updated_by: OWNER, updated_by_role: 'user', updated_at: AT, updated_via: 'hack' })).not.toHaveProperty('updatedVia')
+    expect(attributionOf({ question_key: 'k', updated_by: OWNER, updated_by_role: 'user', updated_at: AT })).not.toHaveProperty('updatedVia')
+  })
+})
+
+describe('«Кто заполнял» — summary', () => {
+  const attribution: Record<string, AnswerAttribution> = {
+    k1: a({ updatedBy: OWNER, updatedByRole: 'user', updatedVia: 'full' }),
+    k2: a({ updatedBy: OWNER, updatedByRole: 'user', updatedVia: 'chat' }),
+    k3: a({ updatedBy: OWNER, updatedByRole: 'user', updatedVia: 'express' }),
+    k4: a({ updatedByRole: 'ai', updatedVia: 'document' }),
+    k5: a({ updatedBy: EXPERT, updatedByRole: 'expert', updatedByName: 'Иван Петров' }),
+    k6: a({ updatedBy: EXPERT, updatedByRole: 'expert', updatedByName: 'Иван Петров' }),
+    k7: a({ updatedBy: ADMIN, updatedByRole: 'admin', updatedByName: 'Админ' }),
+    k8: a({ updatedByRole: null, legacy: true }),
+  }
+  const keys = [...Object.keys(attribution), 'k9']
+
+  it('counts per author and path', () => {
+    const s = summarizeAuthors(keys, attribution)
+    expect(s).toMatchObject({ total: 9, owner: 3, ownerViaAssistant: 1, ownerViaExpress: 1, documents: 1, system: 0, unknown: 2 })
+    expect(s.staff).toEqual([
+      { role: 'expert', id: EXPERT, name: 'Иван Петров', count: 2 },
+      { role: 'admin', id: ADMIN, name: 'Админ', count: 1 },
+    ])
+  })
+
+  it('one line for the owner and for staff', () => {
+    const s = summarizeAuthors(keys, attribution)
+    expect(formatAuthorSummary(s, { viewerIsOwner: true })).toBe(
+      'Ответов 9: вы — 3 (из них в быстром старте — 1, через ИИ-помощника — 1), из документов — 1, эксперт Иван Петров — 2, админ Админ — 1, без автора (старые) — 2',
+    )
+    expect(formatAuthorSummary(s, { viewerId: EXPERT, ownerName: 'Айгуль' })).toContain('пользователь Айгуль — 3')
+    expect(formatAuthorSummary(s, { viewerId: EXPERT, ownerName: 'Айгуль' })).toContain('вы (эксперт) — 2')
+    expect(formatAuthorSummary(summarizeAuthors([], {}))).toBe('Ответов пока нет')
   })
 })
