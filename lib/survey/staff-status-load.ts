@@ -16,7 +16,8 @@ import { buildSurveyStaffStatus, type SurveyStaffStatus } from './staff-status'
 
 type Db = Pick<SupabaseClient, 'from' | 'rpc'>
 
-const CHUNK = 100
+// Ids per `in.(…)` filter: the URL stays short (as in /api/expert/clients).
+const CHUNK = 50
 const EVENTS_PER_CHUNK = 5000
 export const STAFF_STATUS_EVENTS = ['SURVEY_MODE_CHOSEN', 'SURVEY_EXPRESS_COMPLETED', 'QUESTIONNAIRE_COMPLETED'] as const
 /** Events from a cabinet opened by staff are not the client's own. */

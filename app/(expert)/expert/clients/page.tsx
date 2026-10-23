@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
+import { SurveyStatusChips } from '@/components/survey/SurveyStatusChips'
+import {
+  SURVEY_STATUS_FILTERS, SURVEY_STATUS_FILTER_LABELS, countBySurveyFilter, matchesSurveyFilter,
+  type SurveyStaffStatus, type SurveyStatusFilter,
+} from '@/lib/survey/staff-status'
 
 interface ExpertClient {
   id: string
@@ -19,6 +24,8 @@ interface ExpertClient {
   healthIndex: number | null
   calculatedAt: string | null
   commentsCount: number
+  /** The questionnaire status (survey Ф5): mode, express, full submitted; null when unknown. */
+  survey?: SurveyStaffStatus | null
 }
 
 function scoreBadgeClass(score: number | null): string {
@@ -83,6 +90,7 @@ function ClientCard({ client }: { client: ExpertClient }) {
             </span>
           )}
         </div>
+        {client.survey && <div className="mb-3"><SurveyStatusChips status={client.survey} size="xs" /></div>}
 
         <div className="flex items-center justify-between text-[11px] text-on-surface-variant">
           <span className="inline-flex items-center gap-1">
@@ -106,6 +114,7 @@ export default function ExpertClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [surveyFilter, setSurveyFilter] = useState<SurveyStatusFilter>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -126,10 +135,12 @@ export default function ExpertClientsPage() {
     load()
   }, [load])
 
+  const surveyCounts = useMemo(() => countBySurveyFilter(clients), [clients])
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return clients
-    return clients.filter((c) => {
+    const bySurvey = clients.filter((c) => matchesSurveyFilter(c.survey, surveyFilter))
+    if (!q) return bySurvey
+    return bySurvey.filter((c) => {
       return (
         (c.companyName ?? '').toLowerCase().includes(q) ||
         (c.fullName ?? '').toLowerCase().includes(q) ||
@@ -137,7 +148,7 @@ export default function ExpertClientsPage() {
         (c.industry ?? '').toLowerCase().includes(q)
       )
     })
-  }, [clients, search])
+  }, [clients, search, surveyFilter])
 
   return (
     <div className="space-y-6">
@@ -183,8 +194,27 @@ export default function ExpertClientsPage() {
         </div>
         <div className="text-xs text-on-surface-variant">
           Всего: {clients.length}
-          {search && ` · найдено: ${filtered.length}`}
+          {(search || surveyFilter !== 'all') && ` · найдено: ${filtered.length}`}
         </div>
+      </div>
+
+      {/* The questionnaire (survey Ф5): who has not submitted the full questionnaire, who stopped after the express. */}
+      <div role="group" aria-label="Анкета" className="flex flex-wrap items-center gap-1.5">
+        {SURVEY_STATUS_FILTERS.map((f) => (
+          <button
+            key={f}
+            type="button"
+            aria-pressed={surveyFilter === f}
+            onClick={() => setSurveyFilter(f)}
+            className={`min-h-[36px] rounded-xl border px-3 text-xs transition-all ${
+              surveyFilter === f
+                ? 'border-primary/30 bg-primary/15 text-primary'
+                : 'border-white/[0.06] bg-white/[0.03] text-on-surface-variant hover:text-on-surface'
+            }`}
+          >
+            {SURVEY_STATUS_FILTER_LABELS[f]} · {surveyCounts[f]}
+          </button>
+        ))}
       </div>
 
       {loading ? (

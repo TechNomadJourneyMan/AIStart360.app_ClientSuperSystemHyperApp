@@ -15,6 +15,8 @@ import { PulseTab } from '@/components/expert/tabs/PulseTab'
 import { ExpertCasesTable } from '@/components/expert/ExpertCasesTable'
 import { ExpertClientShare } from '@/components/share/ExpertClientShare'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
+import { SurveyStatusChips } from '@/components/survey/SurveyStatusChips'
+import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 
 interface ExpertClient {
   id: string
@@ -30,6 +32,8 @@ interface ExpertClient {
   healthIndex: number | null
   calculatedAt: string | null
   commentsCount: number
+  /** The questionnaire status (survey Ф5). */
+  survey?: SurveyStaffStatus | null
 }
 
 function scoreBadgeClass(score: number | null): string {
@@ -303,6 +307,7 @@ function HeaderCard({
               {liveCount} коммент.
             </span>
           </div>
+          {client.survey && <div className="mt-2"><SurveyStatusChips status={client.survey} /></div>}
         </div>
 
         <div className="flex flex-col items-end gap-1 flex-shrink-0">

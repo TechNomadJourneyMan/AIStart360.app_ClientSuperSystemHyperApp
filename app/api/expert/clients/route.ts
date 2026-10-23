@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { createServiceClient } from '@/lib/supabase-service'
+import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 
 /**
  * Service-role REST fetch — bypasses RLS on profiles (which only exposes
@@ -98,13 +100,16 @@ export async function GET() {
   interface CommentRow {
     client_id: string
   }
-  const [diagnostics, companies, comments] = await Promise.all([
+  // The questionnaire status (survey Ф5): mode, express, full submitted. A failed
+  // read leaves `survey: null` — the list itself never fails because of it.
+  const [diagnostics, companies, comments, surveyStatuses] = await Promise.all([
     sbFetchByIds<DiagRow>(ids, (idList) =>
       `diagnostics?user_id=in.(${idList})&select=user_id,overall_score,health_index,stage,calculated_at&order=calculated_at.desc,id.asc`),
     sbFetchByIds<CompanyRow>(ids, (idList) =>
       `companies?user_id=in.(${idList})&select=user_id,name,industry,stage&order=user_id.asc`),
     sbFetchByIds<CommentRow>(ids, (idList) =>
       `expert_comments?client_id=in.(${idList})&select=client_id&order=id.asc`),
+    loadSurveyStaffStatuses(createServiceClient(), ids),
   ])
   if (!diagnostics || !companies || !comments) {
     return NextResponse.json({ error: 'failed to load client details' }, { status: 500 })
@@ -142,6 +147,7 @@ export async function GET() {
       healthIndex: diag?.health_index ?? null,
       calculatedAt: diag?.calculated_at ?? null,
       commentsCount: commentCount.get(c.id) ?? 0,
+      survey: surveyStatuses.get(c.id) ?? null,
     }
   })
 
