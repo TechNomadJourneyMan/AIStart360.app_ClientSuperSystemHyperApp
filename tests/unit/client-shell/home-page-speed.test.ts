@@ -38,7 +38,7 @@ describe('/client/home — round trips (W4)', () => {
   it('two round trips; Point A comes from the v4 snapshot', async () => {
     const data = await dataOf()
     expect(s.net!.waves()).toBe(2)
-    expect(data.diagnostics).toEqual({ overallScore: 61, stage: 'growth', calculatedAt: '2026-10-10T00:00:00Z' })
+    expect(data.diagnostics).toEqual({ overallScore: 61, stage: 'growth', calculatedAt: '2026-10-10T00:00:00Z', primary: false })
     expect(data.documentsCount).toBe(1)
     expect(data.fullName).toBe('Клиент')
   })
