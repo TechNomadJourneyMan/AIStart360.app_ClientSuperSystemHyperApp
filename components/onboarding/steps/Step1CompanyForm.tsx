@@ -11,6 +11,22 @@ import {
   BUSINESS_MODELS,
 } from '@/components/onboarding/constants/options'
 import { createClient } from '@/lib/supabase/client'
+import {
+  CLIENT_DOCUMENT_ACCEPT,
+  CLIENT_DOCUMENT_FORMATS_LABEL,
+  CLIENT_DOCUMENT_MAX_LABEL,
+  httpErrorMessage,
+  uploadClientDocument,
+} from '@/lib/documents/client-upload'
+import { fileHref } from '@/lib/documents/survey-files'
+import {
+  mergeS1Files,
+  s1EntryFromDocument,
+  s1FileRef,
+  s1StoredFiles,
+  S1_FILES_KEY,
+  type S1StoredFile,
+} from '@/lib/survey/uploaded-files'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step1CompanyFormProps {
@@ -19,22 +35,15 @@ interface Step1CompanyFormProps {
   userId?: string
 }
 
-interface StoredFile {
-  path: string
-  name: string
-  size: number
-  kind: 'sales_report' | 'crm_export'
-  uploaded_at: string
-}
+type StoredFile = S1StoredFile
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB (Supabase plan cap)
-const BUCKET = 'client-documents'
+/** Old entries (no document row) were uploaded straight to this bucket. */
+const LEGACY_BUCKET = 'client-documents'
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const arr = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : [])
-const files = (v: unknown): StoredFile[] =>
-  Array.isArray(v) ? (v as StoredFile[]) : []
+const files = s1StoredFiles
 const fmtMoney = (v: unknown): string => {
   const n = answerNumber(v)
   return n !== null && n > 0 ? new Intl.NumberFormat('ru-RU').format(n) : ''
@@ -62,56 +71,69 @@ export default function Step1CompanyForm({
   // Current revenue feeds Point A / Point B gap analysis.
   useAutoYear(data, onChange, 's1_current_revenue_month', 's1_current_revenue_year')
 
-  // ── File uploads (to Supabase Storage 'client-documents' bucket) ─────────
+  // ── File uploads: the regular document pipeline (private bucket
+  // `client-documents`, a documents row, parsing, «Мои документы»), linked to
+  // the question s1_uploaded_files. The answer keeps the document id + path.
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const uploadFiles = async (kind: StoredFile['kind'], fileList: FileList | null) => {
     if (!fileList || !userId) return
     const list = Array.from(fileList)
-    const tooBig = list.find((f) => f.size > MAX_FILE_SIZE)
-    if (tooBig) {
-      setUploadError(`Файл «${tooBig.name}» больше 50 МБ (лимит хранилища)`)
-      return
-    }
     setUploadError(null)
     setUploading((u) => ({ ...u, [kind]: true }))
 
-    const sb = createClient()
     const saved: StoredFile[] = []
-    for (const f of list) {
-      const safeName = f.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      const path = `${userId}/${kind}/${Date.now()}_${safeName}`
-      const { error } = await sb.storage
-        .from(BUCKET)
-        .upload(path, f, { contentType: f.type, upsert: false })
-      if (error) {
-        setUploadError(`Ошибка загрузки ${f.name}: ${error.message}`)
-        continue
+    const errors: string[] = []
+    try {
+      for (const f of list) {
+        const out = await uploadClientDocument(f, { docType: kind, questionKey: S1_FILES_KEY })
+        if (out.kind === 'failed' || out.kind === 'rejected') {
+          errors.push(`«${f.name}»: ${out.error}`)
+          continue
+        }
+        const entry = s1EntryFromDocument(out.document, f, kind)
+        if (entry) saved.push(entry)
+        else errors.push(`«${f.name}»: файл загружен, но ссылка на него недоступна. Загрузите файл ещё раз.`)
       }
-      saved.push({
-        path,
-        name: f.name,
-        size: f.size,
-        kind,
-        uploaded_at: new Date().toISOString(),
-      })
+    } finally {
+      if (saved.length) onChange('s1_uploaded_files', mergeS1Files(files(data.s1_uploaded_files), saved))
+      if (errors.length) setUploadError(errors.join(' '))
+      setUploading((u) => ({ ...u, [kind]: false }))
     }
-
-    const current = files(data.s1_uploaded_files)
-    onChange('s1_uploaded_files', [...current, ...saved])
-    setUploading((u) => ({ ...u, [kind]: false }))
   }
 
   const removeFile = async (p: string) => {
     const current = files(data.s1_uploaded_files)
     const target = current.find((f) => f.path === p)
     if (!target) return
-    try {
-      const sb = createClient()
-      await sb.storage.from(BUCKET).remove([p])
-    } catch {
-      // silent — metadata cleanup matters more than storage cleanup
+    setUploadError(null)
+    if (target.document_id) {
+      // Detach from the question; the document stays in «Мои документы».
+      try {
+        const res = await fetch('/api/v1/onboarding/survey/attachments', {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: target.document_id, key: S1_FILES_KEY }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          setUploadError(httpErrorMessage(res.status, json?.error, 'Не удалось открепить файл.'))
+          return
+        }
+      } catch {
+        setUploadError(httpErrorMessage(null, null))
+        return
+      }
+    } else {
+      // An old entry without a document row: only the Storage object exists.
+      try {
+        const sb = createClient()
+        await sb.storage.from(target.bucket || LEGACY_BUCKET).remove([p])
+      } catch {
+        // silent — metadata cleanup matters more than storage cleanup
+      }
     }
     onChange('s1_uploaded_files', current.filter((f) => f.path !== p))
   }
@@ -235,8 +257,9 @@ export default function Step1CompanyForm({
           Документы компании
         </h3>
         <p className="text-xs text-on-surface-variant mb-3">
-          До 50 МБ на файл. Поддерживается несколько файлов. Файлы сохраняются в
-          защищённом хранилище.
+          До {CLIENT_DOCUMENT_MAX_LABEL} на файл, {CLIENT_DOCUMENT_FORMATS_LABEL}. Можно
+          несколько файлов. Файлы сохраняются в защищённом хранилище, разбираются
+          автоматически и появляются в «Моих документах».
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -506,14 +529,20 @@ function FileUploadCard({
         id={inputId}
         type="file"
         multiple
+        accept={CLIENT_DOCUMENT_ACCEPT}
         disabled={disabled || uploading}
         className="hidden"
-        onChange={(e) => onSelect(e.target.files)}
+        onChange={(e) => {
+          onSelect(e.target.files)
+          e.target.value = ''
+        }}
       />
 
       {items.length > 0 && (
         <ul className="mt-3 space-y-1.5">
-          {items.map((f) => (
+          {items.map((f) => {
+            const ref = s1FileRef(f)
+            return (
             <li
               key={f.path}
               className="flex items-center gap-2 text-xs bg-black/20 rounded-md px-2 py-1.5"
@@ -523,6 +552,16 @@ function FileUploadCard({
               <span className="text-on-surface-variant flex-shrink-0">
                 {(f.size / 1024 / 1024).toFixed(1)} МБ
               </span>
+              {ref && (
+                <a
+                  href={fileHref(ref)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex-shrink-0"
+                >
+                  Открыть
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => onRemove(f.path)}
@@ -532,7 +571,8 @@ function FileUploadCard({
                 <X size={13} />
               </button>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>
