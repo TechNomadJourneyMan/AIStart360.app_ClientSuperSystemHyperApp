@@ -12,10 +12,25 @@
  *
  * Now the draft is per user and stores ONLY unsaved edits ("dirty" keys).
  * On load the server is the source of truth; the draft is overlaid on top.
+ *
+ * Stale drafts (survey modes, spec 2026-10-23 §6.1 / §14.2): the same answer
+ * can now change in another mode (express, the AI chat), by an expert or on
+ * another device while this device still holds an unsaved edit. The draft (v3)
+ * remembers, per key, the server's `updated_at` the edit started from
+ * (`base`); if the server answer changed after that, the server answer wins
+ * and the key is reported as stale («Ответ изменён в другом режиме»). Comparing
+ * server times with server times avoids the device clock.
  */
 
 export const DRAFT_PREFIX = 'aistart360_onboarding'
-const DRAFT_VERSION = 2
+const DRAFT_VERSION = 3
+/** v2 drafts (no per-key base) are still read. */
+const READABLE_VERSIONS = new Set([2, 3])
+/**
+ * Our own save is stamped twice — by the route (the attribution it returns)
+ * and by the database trigger (`now()`); a few seconds apart is the same write.
+ */
+export const STALE_TOLERANCE_MS = 5000
 
 export interface SurveyDraft {
   v: typeof DRAFT_VERSION
@@ -23,6 +38,11 @@ export interface SurveyDraft {
   current_step: number
   /** Unsaved edits only: question_key → value. */
   dirty: Record<string, unknown>
+  /**
+   * question_key → the server `updated_at` of that answer when the edit
+   * started (null: no answer on the server then). Absent in v2 drafts.
+   */
+  base?: Record<string, string | null>
   saved_at: string
 }
 
@@ -39,8 +59,8 @@ export function readDraft(storage: StorageLike, userId: string): SurveyDraft | n
     storage.removeItem(DRAFT_PREFIX)
     const raw = storage.getItem(draftKey(userId))
     if (!raw) return null
-    const d = JSON.parse(raw) as Partial<SurveyDraft>
-    if (d?.v !== DRAFT_VERSION || d.user_id !== userId || typeof d.dirty !== 'object' || d.dirty === null) {
+    const d = JSON.parse(raw) as Omit<Partial<SurveyDraft>, 'v'> & { v?: number }
+    if (!READABLE_VERSIONS.has(Number(d?.v)) || d.user_id !== userId || typeof d.dirty !== 'object' || d.dirty === null) {
       storage.removeItem(draftKey(userId))
       return null
     }
@@ -50,6 +70,7 @@ export function readDraft(storage: StorageLike, userId: string): SurveyDraft | n
       user_id: userId,
       current_step: Number.isInteger(step) && step >= 1 && step <= 12 ? step : 1,
       dirty: d.dirty as Record<string, unknown>,
+      ...(d.base && typeof d.base === 'object' && !Array.isArray(d.base) ? { base: sanitizeBase(d.base) } : {}),
       saved_at: String(d.saved_at ?? ''),
     }
   } catch {
@@ -57,11 +78,19 @@ export function readDraft(storage: StorageLike, userId: string): SurveyDraft | n
   }
 }
 
+function sanitizeBase(raw: object): Record<string, string | null> {
+  const out: Record<string, string | null> = {}
+  for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' || v === null) out[k] = v
+  return out
+}
+
 export function writeDraft(
   storage: StorageLike,
   userId: string,
   currentStep: number,
   dirty: Record<string, unknown>,
+  /** question_key → server `updated_at` the edit started from (see SurveyDraft.base). */
+  base?: Readonly<Record<string, string | null>>,
 ): void {
   try {
     const draft: SurveyDraft = {
@@ -69,6 +98,7 @@ export function writeDraft(
       user_id: userId,
       current_step: currentStep,
       dirty,
+      ...(base ? { base: Object.fromEntries(Object.keys(dirty).filter((k) => k in base).map((k) => [k, base[k]])) } : {}),
       saved_at: new Date().toISOString(),
     }
     storage.setItem(draftKey(userId), JSON.stringify(draft))
@@ -100,13 +130,57 @@ export function clearAllDrafts(storage: StorageLike): void {
   }
 }
 
-/** Server answers are the truth; unsaved local edits are laid on top. */
+const time = (iso: string | null | undefined): number | null => {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  return Number.isFinite(t) ? t : null
+}
+
+/**
+ * Is the draft value of `key` older than the server answer? With a base (v3):
+ * the server answer changed after the edit started (or appeared where there was
+ * none). Without one (v2): the server answer is newer than the draft itself.
+ */
+export function isDraftKeyStale(draft: SurveyDraft, key: string, serverUpdatedAt: string | null | undefined): boolean {
+  const server = time(serverUpdatedAt)
+  if (server === null) return false
+  if (draft.base && Object.prototype.hasOwnProperty.call(draft.base, key)) {
+    const base = time(draft.base[key])
+    return base === null ? true : server - base > STALE_TOLERANCE_MS
+  }
+  const saved = time(draft.saved_at)
+  return saved !== null && server > saved
+}
+
+/**
+ * Server answers are the truth; unsaved local edits are laid on top — except
+ * an edit whose answer changed on the server after it started (another mode,
+ * an expert, another device): that key keeps the server answer and is listed
+ * in `staleKeys`. `serverUpdatedAt` is question_key → the answer's updated_at
+ * (GET /api/v1/onboarding/survey `attribution[key].updatedAt`).
+ */
 export function mergeServerAndDraft(
   server: Record<string, unknown>,
   draft: SurveyDraft | null,
-): { answers: Record<string, unknown>; dirtyKeys: string[] } {
-  if (!draft) return { answers: { ...server }, dirtyKeys: [] }
-  return { answers: { ...server, ...draft.dirty }, dirtyKeys: Object.keys(draft.dirty) }
+  serverUpdatedAt: Readonly<Record<string, string | null | undefined>> = {},
+): { answers: Record<string, unknown>; dirtyKeys: string[]; staleKeys: string[] } {
+  if (!draft) return { answers: { ...server }, dirtyKeys: [], staleKeys: [] }
+  const answers: Record<string, unknown> = { ...server }
+  const dirtyKeys: string[] = []
+  const staleKeys: string[] = []
+  for (const [key, value] of Object.entries(draft.dirty)) {
+    if (isDraftKeyStale(draft, key, serverUpdatedAt[key])) { staleKeys.push(key); continue }
+    answers[key] = value
+    dirtyKeys.push(key)
+  }
+  return { answers, dirtyKeys, staleKeys }
+}
+
+/** question_key → updatedAt of the answer attribution map (for mergeServerAndDraft). */
+export function updatedAtOf(attribution: Readonly<Record<string, { updatedAt?: string | null } | undefined>>): Record<string, string | null> {
+  const out: Record<string, string | null> = {}
+  for (const [k, a] of Object.entries(attribution)) out[k] = a?.updatedAt ?? null
+  return out
 }
 
 /** `?step=N` deep link from «Мои данные → Редактировать»; null when absent/invalid. */

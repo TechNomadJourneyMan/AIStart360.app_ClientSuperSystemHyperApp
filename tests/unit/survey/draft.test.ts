@@ -5,6 +5,7 @@ import {
   draftKey,
   mergeServerAndDraft,
   parseStepParam,
+  updatedAtOf,
   readDraft,
   writeDraft,
 } from '@/lib/survey/draft'
@@ -58,6 +59,54 @@ describe('survey draft (E2E 2026-09-10 P0: cross-user leak, stale overwrite)', (
     ls.setItem('aistart360_rq_cache', 'keep-me')
     clearAllDrafts(ls)
     expect(ls.keys()).toEqual(['aistart360_rq_cache'])
+  })
+})
+
+describe('stale draft protection (survey modes, spec §6.1 / §14.2)', () => {
+  const T = (min: number) => new Date(Date.UTC(2026, 9, 23, 10, min)).toISOString()
+
+  it('an answer changed on the server after the edit started wins; the key is stale', () => {
+    // The full form edited «выручка» from the server answer of 10:00; the express flow saved it at 10:20.
+    writeDraft(ls, 'u', 1, { s1_current_revenue_month: 4_000_000, s6_main_pain: 'нет людей' }, { s1_current_revenue_month: T(0), s6_main_pain: null })
+    const server = { s1_current_revenue_month: 5_500_000 }
+    const { answers, dirtyKeys, staleKeys } = mergeServerAndDraft(server, readDraft(ls, 'u'), { s1_current_revenue_month: T(20) })
+    expect(answers.s1_current_revenue_month).toBe(5_500_000)
+    expect(staleKeys).toEqual(['s1_current_revenue_month'])
+    // A key the server never answered keeps the draft.
+    expect(answers.s6_main_pain).toBe('нет людей')
+    expect(dirtyKeys).toEqual(['s6_main_pain'])
+  })
+
+  it('the server answer the edit started from (or our own save, seconds apart) keeps the draft', () => {
+    writeDraft(ls, 'u', 1, { s1_current_revenue_month: 4_000_000 }, { s1_current_revenue_month: T(0) })
+    const same = mergeServerAndDraft({ s1_current_revenue_month: 3_000_000 }, readDraft(ls, 'u'), { s1_current_revenue_month: T(0) })
+    expect(same.answers.s1_current_revenue_month).toBe(4_000_000)
+    expect(same.staleKeys).toEqual([])
+    const ownSave = mergeServerAndDraft({ s1_current_revenue_month: 3_000_000 }, readDraft(ls, 'u'), { s1_current_revenue_month: new Date(Date.parse(T(0)) + 2000).toISOString() })
+    expect(ownSave.staleKeys).toEqual([])
+  })
+
+  it('no answer when the edit started, one on the server now → stale', () => {
+    writeDraft(ls, 'u', 1, { s3_deal_cycle_days: 30 }, { s3_deal_cycle_days: null })
+    const r = mergeServerAndDraft({ s3_deal_cycle_days: 14 }, readDraft(ls, 'u'), { s3_deal_cycle_days: T(5) })
+    expect(r.answers.s3_deal_cycle_days).toBe(14)
+    expect(r.staleKeys).toEqual(['s3_deal_cycle_days'])
+  })
+
+  it('a v2 draft (no base) is compared by its own save time', () => {
+    ls.setItem(draftKey('u'), JSON.stringify({ v: 2, user_id: 'u', current_step: 2, dirty: { a: 1, b: 2 }, saved_at: T(10) }))
+    const r = mergeServerAndDraft({ a: 9, b: 8 }, readDraft(ls, 'u'), { a: T(15), b: T(5) })
+    expect(r.answers).toEqual({ a: 9, b: 2 })
+    expect(r.staleKeys).toEqual(['a'])
+  })
+
+  it('without server times nothing changes (old behaviour)', () => {
+    writeDraft(ls, 'u', 1, { a: 1 }, { a: T(0) })
+    expect(mergeServerAndDraft({ a: 2 }, readDraft(ls, 'u')).answers.a).toBe(1)
+  })
+
+  it('updatedAtOf reads the attribution map', () => {
+    expect(updatedAtOf({ a: { updatedAt: T(1) }, b: { updatedAt: null }, c: undefined })).toEqual({ a: T(1), b: null, c: null })
   })
 })
 

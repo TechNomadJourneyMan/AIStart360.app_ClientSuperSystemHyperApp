@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
-import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, writeDraft } from '@/lib/survey/draft'
+import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, updatedAtOf, writeDraft } from '@/lib/survey/draft'
 import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@/lib/survey/progress'
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import StepHeader from '@/components/onboarding/StepHeader'
@@ -24,6 +24,7 @@ import AnswerEditorModal, { type AnswerEditorTarget } from '@/components/onboard
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { profanityRejection } from '@/lib/moderation/client'
 import { toAnswerEnvelope } from '@/lib/survey/answer-value'
+import { surveyQuestion } from '@/lib/survey/questions'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -101,6 +102,9 @@ function OnboardingPageInner() {
   // Who filled each answer (line under the field) and the open answer editor.
   const [attribution, setAttribution] = useState<Record<string, AnswerAttribution>>({})
   const [editor, setEditor] = useState<AnswerEditorTarget | null>(null)
+  // Unsaved local edits whose answer changed elsewhere meanwhile (another mode,
+  // an expert): the server answer is shown (lib/survey/draft.ts, spec §14.2).
+  const [staleKeys, setStaleKeys] = useState<string[]>([])
   const retryAttemptRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const submittedRef = useRef(false)
@@ -110,6 +114,9 @@ function OnboardingPageInner() {
   const dirtyRef = useRef<Set<string>>(new Set())
   // Keys whose value was accepted from a document (→ «ИИ (из документов)»).
   const originRef = useRef<Map<string, 'document'>>(new Map())
+  // question_key → the server updated_at an unsaved edit started from (stale-draft check).
+  const baseRef = useRef<Record<string, string | null>>({})
+  const attributionRef = useRef<Record<string, AnswerAttribution>>({})
   // The last save failure, for the answer editor's own error line.
   const lastSaveErrorRef = useRef<string | null>(null)
   const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true))
@@ -119,6 +126,7 @@ function OnboardingPageInner() {
   useEffect(() => { stepDataRef.current = stepData }, [stepData])
   useEffect(() => { companyIdRef.current = companyId }, [companyId])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
+  useEffect(() => { attributionRef.current = attribution }, [attribution])
 
   const persistDraft = useCallback(() => {
     const uid = userIdRef.current
@@ -126,7 +134,7 @@ function OnboardingPageInner() {
     const dirty: Record<string, unknown> = {}
     for (const k of dirtyRef.current) dirty[k] = stepDataRef.current[k]
     if (Object.keys(dirty).length === 0) clearDraft(window.localStorage, uid)
-    else writeDraft(window.localStorage, uid, currentStepRef.current, dirty)
+    else writeDraft(window.localStorage, uid, currentStepRef.current, dirty, baseRef.current)
   }, [])
 
   // Bootstrap: the SERVER is the source of truth; this user's unsaved local
@@ -152,6 +160,7 @@ function OnboardingPageInner() {
         .catch(() => {})
 
       let server: Record<string, unknown> = {}
+      let serverAttribution: Record<string, AnswerAttribution> = {}
       try {
         const [surveyRes, companyRes] = await Promise.all([
           fetch('/api/v1/onboarding/survey', { credentials: 'include' }),
@@ -160,7 +169,9 @@ function OnboardingPageInner() {
         const surveyJson = await surveyRes.json().catch(() => null)
         if (surveyRes.ok && surveyJson?.ok) {
           server = surveyJson.data?.answers ?? {}
-          setAttribution(surveyJson.data?.attribution ?? {})
+          serverAttribution = surveyJson.data?.attribution ?? {}
+          attributionRef.current = serverAttribution
+          setAttribution(serverAttribution)
         }
         else setSaveError('Не удалось загрузить сохранённые ответы. Обновите страницу, прежде чем продолжать.')
         const companyJson = await companyRes.json().catch(() => null)
@@ -171,8 +182,11 @@ function OnboardingPageInner() {
       if (cancelled) return
 
       const draft = readDraft(window.localStorage, uid)
-      const { answers, dirtyKeys } = mergeServerAndDraft(server, draft)
+      const serverAt = updatedAtOf(serverAttribution)
+      const { answers, dirtyKeys, staleKeys: stale } = mergeServerAndDraft(server, draft, serverAt)
       dirtyRef.current = new Set(dirtyKeys)
+      baseRef.current = Object.fromEntries(dirtyKeys.map((k) => [k, draft?.base?.[k] ?? serverAt[k] ?? null]))
+      if (stale.length) setStaleKeys(stale)
       stepDataRef.current = answers
       setStepData(answers)
       const fromUrl = parseStepParam(searchParams.get('step'), TOTAL_STEPS)
@@ -276,9 +290,12 @@ function OnboardingPageInner() {
           if (Object.is(stepDataRef.current[k], snapshot[k])) {
             dirtyRef.current.delete(k)
             originRef.current.delete(k)
+            delete baseRef.current[k]
           }
         }
         const saved = json.data?.attribution as Record<string, AnswerAttribution> | undefined
+        // A key edited again during the request now starts from the answer just saved.
+        if (saved) for (const k of keys) if (dirtyRef.current.has(k) && saved[k]) baseRef.current[k] = saved[k].updatedAt ?? null
         if (saved && Object.keys(saved).length) setAttribution((prev) => ({ ...prev, ...saved }))
         persistDraft()
         setSaveError(null)
@@ -356,6 +373,7 @@ function OnboardingPageInner() {
       setSaveError(null)
     }
     originRef.current.delete(key)
+    if (!dirtyRef.current.has(key)) baseRef.current[key] = attributionRef.current[key]?.updatedAt ?? null
     dirtyRef.current.add(key)
     setSaveState((s) => (s === 'saving' ? s : 'dirty'))
     setStepData(prev => ({ ...prev, [key]: value }))
@@ -547,6 +565,17 @@ function OnboardingPageInner() {
           </div>
         )}
         {fieldIssue && !isReview && <FieldIssueNote fieldKey={fieldIssue.key} message={fieldIssue.message} />}
+        {staleKeys.length > 0 && (
+          <div role="status" className="mb-5 flex items-start gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3">
+            <span className="material-symbols-outlined text-base text-amber-200 mt-0.5 flex-shrink-0" aria-hidden="true">sync_problem</span>
+            <p className="flex-1 text-xs text-on-surface leading-snug">
+              {staleKeys.length === 1 ? 'Ответ изменён' : 'Ответы изменены'} в другом режиме или экспертом — показан новый: {staleKeys.map((k) => `«${surveyQuestion(k)?.label ?? k}»`).join(', ')}. Ваша несохранённая правка на этом устройстве не применена.
+            </p>
+            <button type="button" onClick={() => setStaleKeys([])} className="min-h-[32px] px-2 text-xs text-on-surface-variant hover:text-on-surface" aria-label="Скрыть">
+              <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+            </button>
+          </div>
+        )}
 
         {isReview ? (
           <SurveyReview
