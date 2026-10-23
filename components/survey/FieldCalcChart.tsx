@@ -35,7 +35,7 @@ export default function FieldCalcChart({ chart }: { chart: Exclude<CalcChart, { 
   const axes = (
     <>
       <XAxis dataKey="label" tick={{ fill: AXIS, fontSize: 10 }} axisLine={false} tickLine={false} interval={0} />
-      <YAxis tick={{ fill: AXIS, fontSize: 10 }} axisLine={false} tickLine={false} width={44} tickFormatter={compact} />
+      <YAxis tick={{ fill: AXIS, fontSize: 10 }} axisLine={false} tickLine={false} width={64} tickFormatter={compact} />
     </>
   )
   return (

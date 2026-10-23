@@ -11,8 +11,11 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSe
 
 const { ModeTwoPreview } = await import('@/app/dev/survey-preview/ModeTwoPreview')
 const { SURVEY_PREVIEW_VARIANTS } = await import('@/app/dev/survey-preview/fixture')
+const { previewPointA } = await import('@/app/dev/survey-preview/point-a')
 
-const render = (props: Record<string, unknown>) => renderToStaticMarkup(createElement(ModeTwoPreview, props as never))
+// Point A is computed on the server (the v4 engine imports node:crypto) and passed in, as the page does.
+const render = (props: Record<string, unknown>) =>
+  renderToStaticMarkup(createElement(ModeTwoPreview, { pointA: previewPointA(props.variant as never, props.view === 'snapshot'), ...props } as never))
 
 describe('mode-two preview', () => {
   it('every view of every variant renders', () => {

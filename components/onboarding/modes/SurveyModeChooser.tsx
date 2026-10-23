@@ -41,7 +41,9 @@ export function SurveyModeChooser({ enabled, recommended, busy = null, onChoose 
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
                     <span className="material-symbols-outlined text-lg text-primary" aria-hidden="true">{info.icon}</span>
                   </span>
-                  {rec && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Рекомендуем</span>}
+                  {/* PO 2026-10-23: the full questionnaire is the main one — it alone counts as «анкета заполнена». */}
+                  {mode === 'full' && on && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Основная</span>}
+                  {rec && mode !== 'full' && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-on-surface">Быстрый старт</span>}
                   {!on && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">Скоро</span>}
                 </span>
                 <span className="mt-4 text-base font-bold text-on-surface">{info.title}</span>

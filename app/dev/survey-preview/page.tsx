@@ -27,6 +27,7 @@ import { isSurveyPreviewVariant } from './fixture'
 import { AnswersPreview, ChooserPreview } from './PreviewViews'
 import { ChatPreview } from './ChatPreview'
 import { ModeTwoPreview } from './ModeTwoPreview'
+import { previewPointA } from './point-a'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ export default function SurveyPreviewPage({ searchParams }: { searchParams?: { s
   if (searchParams?.mode === 'chat') return <ChatPreview staff={searchParams.as === 'staff'} helper={searchParams.helper === '1'} />
   const mode = searchParams?.mode
   if (mode === 'express' || mode === 'snapshot' || mode === 'blocks') {
-    return <ModeTwoPreview key={`${mode}-${variant}-${searchParams?.screen}-${searchParams?.block}-${searchParams?.phone}`} view={mode} variant={variant} screen={Number(searchParams?.screen) || 1} block={searchParams?.block} phone={searchParams?.phone === '1'} />
+    return <ModeTwoPreview key={`${mode}-${variant}-${searchParams?.screen}-${searchParams?.block}-${searchParams?.phone}`} view={mode} variant={variant} screen={Number(searchParams?.screen) || 1} block={searchParams?.block} phone={searchParams?.phone === '1'} pointA={previewPointA(variant, mode === 'snapshot')} />
   }
   const step = parseStep(searchParams?.step)
   // A new key per variant / step: the in-memory answers start over.

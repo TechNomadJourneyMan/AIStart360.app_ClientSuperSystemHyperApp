@@ -64,7 +64,7 @@ describe('survey preview — Ф1 views', () => {
     const { ChooserPreview } = await import('@/app/dev/survey-preview/PreviewViews')
     const html = renderToStaticMarkup(createElement(ChooserPreview))
     expect(html).toContain('Расширенная полная анкета')
-    expect(html).toContain('Рекомендуем')
+    expect(html).toContain('Основная')
     expect(html).toContain('Скоро')
   })
 })

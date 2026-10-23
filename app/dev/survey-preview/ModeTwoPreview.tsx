@@ -12,8 +12,6 @@ import { BusinessSnapshot } from '@/components/onboarding/express/BusinessSnapsh
 import { BlockList } from '@/components/onboarding/blocks/BlockList'
 import { BlockPage } from '@/components/onboarding/blocks/BlockPage'
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
-import { calculatePointAV4 } from '@/lib/point-a/v4/engine'
-import { DEFAULT_TEMPLATE, effectiveBlocks } from '@/lib/point-a/v4/config'
 import { isApproxAnswer, isUnknownAnswer } from '@/lib/survey/answer-value'
 import { blockV4Impact, nextBlock, recommendedBlocks } from '@/lib/survey/blocks'
 import { expressPages } from '@/lib/survey/express'
@@ -23,17 +21,10 @@ import { previewAnswers, type SurveyPreviewVariant } from './fixture'
 
 export type ModeTwoView = 'express' | 'snapshot' | 'blocks'
 
+// The v4 engine uses node:crypto — it runs on the server (./point-a.ts); the page passes its result in.
 const EXPRESS_KEYS = new Set(EXPRESS_SCREENS.flatMap((s) => s.keys))
 
-/** Point A v4 on the answers as the snapshot would compute it (marks → stored values). */
-function previewPointA(answers: Record<string, unknown>): SnapshotPointA {
-  const flat = Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, isUnknownAnswer(v) ? null : isApproxAnswer(v) ? v.value : v]))
-  if (Object.keys(flat).length === 0) return { state: 'none' }
-  const v4 = calculatePointAV4({ answers: flat, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
-  return { state: 'ready', snapshot: { overall: v4.overall, confidence: v4.confidence, blocks: v4.blocks, uploadChecklist: v4.upload_checklist } }
-}
-
-export function ModeTwoPreview({ view, variant, screen, block, phone }: { view: ModeTwoView; variant: SurveyPreviewVariant; screen?: number; block?: string; phone?: boolean }) {
+export function ModeTwoPreview({ view, variant, screen, block, phone, pointA }: { view: ModeTwoView; variant: SurveyPreviewVariant; screen?: number; block?: string; phone?: boolean; pointA: SnapshotPointA }) {
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const all = previewAnswers(variant)
     return view === 'snapshot' ? Object.fromEntries(Object.entries(all).filter(([k]) => EXPRESS_KEYS.has(k))) : all
@@ -41,7 +32,6 @@ export function ModeTwoPreview({ view, variant, screen, block, phone }: { view: 
   const change = (k: string, v: unknown) => setAnswers((a) => ({ ...a, [k]: v }))
   const pages = useMemo(() => expressPages({ oneQuestionPerHardScreen: phone }), [phone])
   const [index, setIndex] = useState(() => Math.max(0, pages.findIndex((p) => p.screen === (screen ?? 1))))
-  const pointA = useMemo(() => previewPointA(answers), [answers])
   const recommended = useMemo(() => recommendedBlocks(answers, recommendationInput(pointA)), [answers, pointA])
   const [done, setDone] = useState(false)
 

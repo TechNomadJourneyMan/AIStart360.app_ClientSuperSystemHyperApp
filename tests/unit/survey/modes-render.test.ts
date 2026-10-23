@@ -23,9 +23,10 @@ describe('SurveyModeChooser', () => {
     expect(html).toContain('Способ можно сменить в любой момент — ответы сохранятся.')
   })
 
-  it('the recommended card is marked', () => {
+  it('the full questionnaire is marked main, the recommended quick mode «Быстрый старт»', () => {
     const html = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full', 'express', 'chat'], recommended: 'express', onChoose: noop }))
-    expect(html.match(/Рекомендуем/g)).toHaveLength(1)
+    expect(html.match(/Основная/g)).toHaveLength(1)
+    expect(html.match(/Быстрый старт/g)).toHaveLength(1)
     expect(html).not.toContain('Скоро')
   })
 })
