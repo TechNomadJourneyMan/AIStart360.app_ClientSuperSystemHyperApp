@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useState } from 'react'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step8MetricsFormProps {
@@ -282,6 +283,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
             Введите свои значения по годам, план и факт 2026 — или вставьте таблицу из Excel.
           </p>
         </div>
+        <FieldCalc forKey="s8n_metrics_table" answers={data} />
       </section>
     </div>
   )
