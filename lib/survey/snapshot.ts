@@ -122,3 +122,40 @@ export function expressBlindSpots(answers: Readonly<Record<string, unknown>>): E
 
 /** Calculations shown on the snapshot (2–3 main ones, §7.3). */
 export const SNAPSHOT_CALC_IDS = ['goal_pace', 'marketing_money'] as const
+
+// ─── Point A on the snapshot ────────────────────────────────────────────────
+
+export interface SnapshotPointA {
+  /** loading: not read yet; pending: the recalculation is running; ready: the snapshot is there; none: no Point A. */
+  state: 'loading' | 'pending' | 'ready' | 'none'
+  snapshot?: {
+    overall: number | null
+    confidence: number | null
+    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean }>
+    uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
+  } | null
+}
+
+/** The slice of GET /api/v1/point-a/state the snapshot reads. */
+export interface PointAStateSlice {
+  snapshot?: (NonNullable<SnapshotPointA['snapshot']> & { createdAt: string }) | null
+  recalculation?: string
+}
+
+/** A snapshot this much older than «Готово» is the previous one (clock skew allowance). */
+const FRESH_SKEW_MS = 30_000
+
+/**
+ * What the snapshot shows about Point A, and whether to ask again. `freshSince`
+ * — when «Готово» was pressed: an older snapshot is the previous Point A, the
+ * new one is still being calculated.
+ */
+export function readSnapshotPointA(data: PointAStateSlice | null, freshSince: number | null): { view: SnapshotPointA; poll: boolean } {
+  if (!data) return { view: { state: freshSince ? 'pending' : 'none' }, poll: freshSince !== null }
+  const snap = data.snapshot ?? null
+  const running = !!data.recalculation && data.recalculation !== 'idle'
+  const fresh = !!snap && (freshSince === null || Date.parse(snap.createdAt) >= freshSince - FRESH_SKEW_MS)
+  if (snap && fresh && !running) return { view: { state: 'ready', snapshot: snap }, poll: false }
+  if (running || freshSince !== null) return { view: { state: 'pending', snapshot: snap }, poll: true }
+  return { view: snap ? { state: 'ready', snapshot: snap } : { state: 'none' }, poll: false }
+}

@@ -6,6 +6,7 @@ import type { PointAPageState } from '@/hooks/usePointAState'
 import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, ConfidenceBar, Icon, STAGE_RU, pct } from './ui'
 import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
+import { PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, isPrimaryPointA } from '@/lib/point-a/v4/primary'
 
 export function PointAHeader({
   state, onRecalc, recalcPending, customize, onCustomize,
@@ -37,6 +38,10 @@ export function PointAHeader({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {s?.stage && <span className={cn(CHIP, 'bg-primary/10 text-primary')}>{STAGE_RU[s.stage] ?? s.stage}</span>}
+            {/* A block without data → the assessment is primary (survey express, spec 2026-10-23 §7.2). */}
+            {s && s.overall !== null && isPrimaryPointA(s.blocks) && (
+              <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')} title={PRIMARY_POINT_A_HINT}>{PRIMARY_POINT_A_LABEL}</span>
+            )}
             {s && <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')}>Полнота данных {pct(s.coverage)}</span>}
             {withoutData > 0 && <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>Без данных: {withoutData}</span>}
             {state.review?.status === 'current' && (
