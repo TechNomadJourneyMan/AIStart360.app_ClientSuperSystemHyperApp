@@ -20,6 +20,7 @@ import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStat
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
 import FieldIssueNote, { questionLabel } from '@/components/onboarding/FieldIssueNote'
 import SurveyFieldLayer, { type EditorRequest } from '@/components/onboarding/SurveyFieldLayer'
+import { FieldHelperLayer } from '@/components/onboarding/chat/FieldHelperLayer'
 import AnswerEditorModal, { type AnswerEditorTarget } from '@/components/onboarding/AnswerEditorModal'
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { profanityRejection } from '@/lib/moderation/client'
@@ -113,7 +114,8 @@ function OnboardingPageInner() {
   const stepDataRef = useRef<Record<string, unknown>>({})
   const dirtyRef = useRef<Set<string>>(new Set())
   // Keys whose value was accepted from a document (→ «ИИ (из документов)»).
-  const originRef = useRef<Map<string, 'document'>>(new Map())
+  // 'chat' — confirmed in the field «Помощник» (→ path «helper», survey Ф4).
+  const originRef = useRef<Map<string, 'document' | 'chat'>>(new Map())
   // question_key → the server updated_at an unsaved edit started from (stale-draft check).
   const baseRef = useRef<Record<string, string | null>>({})
   const attributionRef = useRef<Record<string, AnswerAttribution>>({})
@@ -266,8 +268,11 @@ function OnboardingPageInner() {
         // «Не знаю» / «примерно» go as their own envelope, never nested in { value }.
         const formatted: Record<string, Record<string, unknown>> = {}
         for (const k of keys) formatted[k] = toAnswerEnvelope(snapshot[k])
-        const origins: Record<string, 'document'> = {}
-        for (const k of keys) if (originRef.current.get(k) === 'document') origins[k] = 'document'
+        const origins: Record<string, 'document' | 'chat'> = {}
+        for (const k of keys) {
+          const origin = originRef.current.get(k)
+          if (origin) origins[k] = origin
+        }
         lastSaveErrorRef.current = null
         const res = await fetch('/api/v1/onboarding/survey', {
           method: 'POST',
@@ -383,6 +388,13 @@ function OnboardingPageInner() {
   const applySuggestion = (key: string, value: unknown) => {
     handleFieldChange(key, value)
     originRef.current.set(key, 'document')
+  }
+
+  // A value confirmed in the field «Помощник» (spec §8.10): into the form, saved by
+  // the usual autosave on the path «helper» — the helper never writes the database.
+  const applyHelper = (key: string, value: unknown) => {
+    handleFieldChange(key, value)
+    originRef.current.set(key, 'chat')
   }
 
   // The answer editor (modal): a click on a text field opens it; «Сохранить»
@@ -601,9 +613,11 @@ function OnboardingPageInner() {
               {/* F-076: answers found in the user's documents — accept = normal field change + autosave */}
               {hasDocs && <DocumentSuggestions step={currentStep} answers={stepData} onApply={applySuggestion} />}
               {StepForm && (
-                <SurveyFieldLayer attribution={attribution} viewer={{ viewerId: userId, viewerIsOwner: true }} onOpenEditor={openEditor}>
-                  <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
-                </SurveyFieldLayer>
+                <FieldHelperLayer onApply={applyHelper} enabled={SURVEY_MODES_ENABLED.includes('chat')}>
+                  <SurveyFieldLayer attribution={attribution} viewer={{ viewerId: userId, viewerIsOwner: true }} onOpenEditor={openEditor}>
+                    <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
+                  </SurveyFieldLayer>
+                </FieldHelperLayer>
               )}
             </>
           )}

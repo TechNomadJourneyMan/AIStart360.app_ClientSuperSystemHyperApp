@@ -10,6 +10,7 @@ import {
 import { SURVEY_LABELS } from '@/lib/survey-labels'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { STEPS } from '@/components/onboarding/constants/step-config'
+import { SurveyChatTranscript } from '@/components/onboarding/chat/SurveyChatTranscript'
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { SurveyAnswersView } from '@/components/onboarding/answers/SurveyAnswersView'
 import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
@@ -67,6 +68,7 @@ const HISTORY_SOURCE: Record<string, { label: string; tone: 'neutral' | 'violet'
 export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canEdit: boolean; onChanged?: () => void }) {
   const [historyPage, setHistoryPage] = useState(1)
   const [historyKey, setHistoryKey] = useState<string | null>(null)
+  const [showChat, setShowChat] = useState(false)
   const url = `/api/giga-admin/users/${userId}/survey?historyPage=${historyPage}${historyKey ? `&key=${historyKey}` : ''}`
   const { data, error, loading, reload } = useGigaQuery<SurveyPayload>(url)
   const [edit, setEdit] = useState<{ key: string; label: string; text: string; kind: EditKind } | null>(null)
@@ -185,6 +187,15 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
           empty={<EmptyState title="Изменений ещё нет" text="История ведётся с момента подключения GIGA-CRM." />}
         />
         <Pagination page={d.historyPage} pageSize={d.historyPageSize} total={d.historyTotal} onChange={setHistoryPage} />
+      </Panel>
+
+      {/* The questionnaire AI chat (survey Ф4): read-only, loaded on demand. */}
+      <Panel
+        title="Беседа с ИИ-помощником"
+        description="Переписка клиента с помощником анкеты и у полей: карточки «Записать», передачи эксперту. Только чтение."
+        actions={!showChat ? <Button size="sm" variant="ghost" onClick={() => setShowChat(true)}>Открыть беседу</Button> : undefined}
+      >
+        {showChat ? <SurveyChatTranscript url={`/api/giga-admin/users/${userId}/survey-chat`} /> : null}
       </Panel>
 
       <Modal

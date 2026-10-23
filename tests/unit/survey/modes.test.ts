@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  SURVEY_MODE_INFO, availableSurveyModes, enabledSurveyModes, modeChosenMetadata, readSurveyPreference, recommendedSurveyMode, resolveSurveyEntry,
+  SURVEY_MODE_INFO, SURVEY_MODES_BUILT, availableSurveyModes, enabledSurveyModes, modeChosenMetadata, readSurveyPreference, recommendedSurveyMode, resolveSurveyEntry,
   surveyBannerDismissPatch, surveyPreferencePatch,
 } from '@/lib/survey/modes'
 import { EVENTS, isClientEvent } from '@/lib/events/registry'
@@ -19,7 +19,9 @@ describe('availability', () => {
   })
 
   it('a mode is selectable only when switched on AND built (Ф1: the full questionnaire only)', () => {
-    expect(enabledSurveyModes('express,chat')).toEqual(['full'])
+    // Ф4 built the chat; express is Ф2's.
+    expect(enabledSurveyModes('express,chat')).toEqual(SURVEY_MODES_BUILT.includes('express') ? ['full', 'express', 'chat'] : ['full', 'chat'])
+    expect(enabledSurveyModes('')).toEqual(['full'])
     expect(enabledSurveyModes('express,chat', ['full', 'express'])).toEqual(['full', 'express'])
     expect(enabledSurveyModes('', ['full', 'express'])).toEqual(['full'])
   })
