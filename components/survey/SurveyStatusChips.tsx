@@ -1,4 +1,4 @@
-import { surveyStatusChips, type SurveyChipTone, type SurveyStaffStatus } from '@/lib/survey/staff-status'
+import { historyLine, surveyStatusChips, type SurveyChipTone, type SurveyStaffStatus } from '@/lib/survey/staff-status'
 
 const TONE: Record<SurveyChipTone, string> = {
   neutral: 'border-white/[0.08] bg-white/[0.04] text-on-surface-variant',
@@ -27,5 +27,24 @@ export function SurveyStatusChips({ status, size = 'sm', now }: { status: Survey
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * «Способ заполнения» in the questionnaire tab (spec §10: «значок режима и дата
+ * выбора, история переключений»): the chips and the switches, newest first.
+ */
+export function SurveyModeHistory({ status, now }: { status: SurveyStaffStatus | null | undefined; now?: Date }) {
+  if (!status || (!status.mode && !status.express && !status.history.length)) return null
+  return (
+    <section aria-labelledby="survey-mode-history" className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <h3 id="survey-mode-history" className="mb-2 text-xs font-semibold text-on-surface">Способ заполнения</h3>
+      <SurveyStatusChips status={status} now={now} />
+      {status.history.length > 0 && (
+        <ol aria-label="История выбора способа" className="mt-3 space-y-1 text-[11px] text-on-surface-variant">
+          {status.history.map((h) => <li key={`${h.at}-${h.mode}`}>{historyLine(h, now)}</li>)}
+        </ol>
+      )}
+    </section>
   )
 }

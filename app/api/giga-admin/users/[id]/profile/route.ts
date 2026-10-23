@@ -11,6 +11,7 @@ import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { isSurveyCompleted, loadSurveyCompletionMarkers, surveyCompletedAt } from '@/lib/survey/completion'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
+import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
@@ -70,17 +71,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
   const summary = buildUserProfileSummary(answers)
   const surveyFacts = { ...surveyMarkers, filledSteps: summary.startedSteps, lastAnswerAt: surveyLast }
+  const surveyCompleted = isSurveyCompleted(surveyFacts) ? surveyCompletedAt(surveyFacts) ?? surveyLast : null
 
   const diags = diagRes.data ?? []
   const diagIds = diags.map((d) => d.id)
   // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
   // последний раз открывал его карточку. Сбой записи карточку не ломает.
   // The mark is written together with the last read (one round trip).
-  const [{ data: pointB }] = await Promise.all([
+  const [{ data: pointB }, , surveyStatuses] = await Promise.all([
     diagIds.length
       ? sb.from('point_b_analysis').select('calculated_at').in('diagnostic_id', diagIds).order('calculated_at', { ascending: true }).limit(1)
       : Promise.resolve({ data: [] as Array<{ calculated_at: string }> }),
     markClientViewed(sb, guard.actor.id, userId),
+    loadSurveyStaffStatuses(sb, [userId], { fullSubmittedAt: new Map([[userId, surveyCompleted]]) }),
   ])
 
   const gri = griRes.data ?? []
@@ -93,7 +96,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     registered: profile.created_at,
     approved: profile.status === 'approved' ? profile.approved_at ?? profile.created_at : null,
     survey_started: surveyFirst,
-    survey_completed: isSurveyCompleted(surveyFacts) ? surveyCompletedAt(surveyFacts) ?? surveyLast : null,
+    survey_completed: surveyCompleted,
     point_a: diags[0]?.calculated_at ?? null,
     gri_started: griStarted,
     gri_completed: griFirst,
@@ -121,6 +124,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         hero: sensitive ? summary.hero : { ...summary.hero, contact: '' },
         sections: summary.sections.map((s) => ({ id: s.id, title: s.title, icon: s.icon, filled: s.filled, total: s.total })),
       },
+      // How the client fills in the questionnaire (survey Ф5): mode, express, full submitted.
+      surveyStatus: surveyStatuses.get(userId) ?? null,
       diagnostics: currentDiag ? { ...currentDiag, runs: diags.length } : null,
       gri: {
         current: currentGri ? { id: currentGri.id, index: Number(currentGri.gri_index), sectionAvgs: currentGri.section_avgs ?? {}, assessedAt: currentGri.created_at } : null,

@@ -1,5 +1,6 @@
 import type { Journey } from '@/lib/admin/journey'
 import type { StaffRole } from '@/lib/admin/rbac'
+import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 
 export interface User360Profile {
   profile: {
@@ -14,6 +15,8 @@ export interface User360Profile {
     hero: Record<string, string>
     sections: Array<{ id: string; title: string; icon: string; filled: number; total: number }>
   }
+  /** How the client fills in the questionnaire (survey Ф5); null when unknown. */
+  surveyStatus?: SurveyStaffStatus | null
   diagnostics: { id: string; overall_score: number | null; health_index: number | null; stage: string | null; calculated_at: string; runs: number } | null
   gri: { current: { id: string; index: number; sectionAvgs: Record<string, number>; assessedAt: string } | null; runs: number; draftUpdatedAt: string | null }
   journey: Journey

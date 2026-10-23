@@ -15,6 +15,7 @@ import { ProfileTab } from '@/components/giga-panel/user360/ProfileTab'
 import { ImpersonateDialog } from '@/components/giga-panel/user360/ImpersonateDialog'
 import { DataEntryModal } from '@/components/giga-panel/user360/DataEntryModal'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
+import { SurveyStatusChips } from '@/components/survey/SurveyStatusChips'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
 
 // The tabs (one is open at a time) load when they are opened, not with the card (W4).
@@ -99,6 +100,8 @@ function User360Inner({ id }: { id: string }) {
       {!u && loading && <Skeleton className="h-64" />}
       {u && (
         <>
+          {/* The questionnaire mode, express status, full submitted (survey Ф5). */}
+          {u.surveyStatus && <div className="mb-3"><SurveyStatusChips status={u.surveyStatus} /></div>}
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile label="Анкета" value={`${u.survey.percent}%`} hint={`${u.survey.startedSteps}/${u.survey.totalSteps} шагов · ${fmtAgo(u.survey.updatedAt)}`} tone="blue" />
             <StatTile label="GRI" value={u.gri.current ? u.gri.current.index.toFixed(1) : '—'} hint={u.gri.runs ? `прохождений: ${u.gri.runs}` : u.gri.draftUpdatedAt ? 'тест в процессе' : 'не пройден'} tone="violet" />
@@ -134,7 +137,7 @@ function User360Inner({ id }: { id: string }) {
           {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
           {tab === 'timeline' && <TimelineTab userId={id} />}
           {tab === 'messages' && can('inbox.view') && <MessagesTab userId={id} />}
-          {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
+          {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} surveyStatus={u.surveyStatus ?? null} />}
           {tab === 'gri' && (
             <>
               <GriDynamicsPanel userId={id} industry={u.company?.industry ?? null} />

@@ -14,6 +14,8 @@ import { SurveyChatTranscript } from '@/components/onboarding/chat/SurveyChatTra
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 import { SurveyAnswersView } from '@/components/onboarding/answers/SurveyAnswersView'
 import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
+import { SurveyModeHistory } from '@/components/survey/SurveyStatusChips'
+import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 
 interface Section {
   id: string; title: string; description: string; steps: number[]; filled: number; total: number
@@ -65,7 +67,11 @@ const HISTORY_SOURCE: Record<string, { label: string; tone: 'neutral' | 'violet'
   service: { label: 'система', tone: 'blue' },
 }
 
-export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canEdit: boolean; onChanged?: () => void }) {
+export function SurveyTab({ userId, canEdit, onChanged, surveyStatus = null }: {
+  userId: string; canEdit: boolean; onChanged?: () => void
+  /** How the client fills in the questionnaire (survey Ф5), from the User 360 header data. */
+  surveyStatus?: SurveyStaffStatus | null
+}) {
   const [historyPage, setHistoryPage] = useState(1)
   const [historyKey, setHistoryKey] = useState<string | null>(null)
   const [showChat, setShowChat] = useState(false)
@@ -157,6 +163,7 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
 
   return (
     <div className="space-y-4">
+      <SurveyModeHistory status={surveyStatus} />
       {/* The same view as the client's «Мои ответы» (spec 2026-10-23 §6.5): author + path, filters, search. */}
       <SurveyAnswersView
         answers={d.raw}

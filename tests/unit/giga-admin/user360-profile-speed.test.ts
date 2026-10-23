@@ -53,6 +53,15 @@ describe('User 360 profile — round trips (W4)', () => {
     expect(s.tables.__writes).toEqual([expect.objectContaining({ table: 'staff_client_views', staff_id: STAFF, user_id: USER })])
   })
 
+  it('the questionnaire status (survey Ф5): mode, express, full not submitted — still two round trips', async () => {
+    s.tables.profiles[0].preferences = { survey: { mode: 'express', chosen_at: '2026-09-03T00:00:00Z' } }
+    s.tables.user_events.push({ id: 'e-1', user_id: USER, event_name: 'SURVEY_EXPRESS_COMPLETED', created_at: '2026-09-04T00:00:00Z', metadata: { answered: 20, unknown: 2, skipped: 6 }, source: 'server' })
+    const res = await route.GET(new NextRequest(`http://x/api/giga-admin/users/${USER}/profile`), { params: { id: USER } })
+    const body = await res.json()
+    expect(s.net!.waves()).toBe(2)
+    expect(body.data.surveyStatus).toMatchObject({ mode: 'express', stuckOnExpress: true, fullPending: true, express: { answered: 20, total: 26 } })
+  })
+
   it('an unknown user is 404 and nothing is marked as viewed', async () => {
     s.tables.profiles = []
     const res = await route.GET(new NextRequest(`http://x/api/giga-admin/users/${USER}/profile`), { params: { id: USER } })

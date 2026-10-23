@@ -166,3 +166,21 @@ describe('loadSurveyStaffStatuses', () => {
     expect((await loadSurveyStaffStatuses(fakeDb(tables) as never, [])).size).toBe(0)
   })
 })
+
+describe('SurveyModeHistory', () => {
+  it('chips and the switches, newest first; nothing for a client who never met the modes', async () => {
+    const { SurveyModeHistory } = await import('@/components/survey/SurveyStatusChips')
+    const status = buildSurveyStaffStatus({
+      preferences: { survey: { mode: 'full', chosen_at: '2026-10-23T09:00:00', switched_at: '2026-10-24T09:00:00' } },
+      modeEvents: [
+        { at: '2026-10-23T09:00:00', metadata: { mode: 'express', previous: null, from: 'chooser' } },
+        { at: '2026-10-24T09:00:00', metadata: { mode: 'full', previous: 'express', from: 'switch' } },
+      ],
+    })
+    const html = renderToStaticMarkup(createElement(SurveyModeHistory, { status, now: NOW }))
+    expect(html).toContain('Способ заполнения')
+    expect(html).toContain('Заполняет: полная анкета (с 24.10)')
+    expect(html.indexOf('24.10 · полная анкета (переключение с «экспресс + блоки»)')).toBeLessThan(html.indexOf('23.10 · экспресс + блоки (выбор)'))
+    expect(renderToStaticMarkup(createElement(SurveyModeHistory, { status: buildSurveyStaffStatus({ fullSubmittedAt: '2026-10-28T00:00:00' }) }))).toBe('')
+  })
+})
