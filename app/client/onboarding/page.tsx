@@ -13,6 +13,9 @@ import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import StepHeader from '@/components/onboarding/StepHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
+import { SurveyModeGate } from '@/components/onboarding/modes/SurveyModeGate'
+import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
+import { enabledSurveyModes } from '@/lib/survey/modes'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
 import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
 import FieldIssueNote, { questionLabel } from '@/components/onboarding/FieldIssueNote'
@@ -467,6 +470,8 @@ function OnboardingPageInner() {
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>
           <div className="flex items-center gap-3">
+            {/* Modes + «Мои ответы» (spec 2026-10-23 §5.2); Ф1: the link only. */}
+            <SurveyModeSwitch current="full" enabled={SURVEY_MODES_ENABLED} />
             <SaveStatusChip state={saveState} savedAt={savedAt} />
             <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">
               {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`}
@@ -632,11 +637,16 @@ function OnboardingPageInner() {
   )
 }
 
+const SURVEY_MODES_ENABLED = enabledSurveyModes()
+
 // useSearchParams (for the `?step=N` deep link) needs a Suspense boundary.
 export default function OnboardingPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#0c0e14]" />}>
-      <OnboardingPageInner />
+      {/* The mode chooser / banner before the full questionnaire (lib/survey/modes.ts). */}
+      <SurveyModeGate>
+        <OnboardingPageInner />
+      </SurveyModeGate>
     </Suspense>
   )
 }
