@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { buildSurveyStaffStatus } from '@/lib/survey/staff-status'
 import {
+  answerPathSummary,
   buildSurveySheetHeaders,
   buildSurveySheetRow,
   buildSurveySummary,
@@ -22,7 +24,7 @@ describe('survey export → sheet row', () => {
     const headers = buildSurveySheetHeaders()
     const row = buildSurveySheetRow(rows, { userId: 'u-1', email: 'qa@example.com', updatedAt: new Date('2026-09-08T10:00:00Z') })
     expect(headers.length).toBe(row.length)
-    expect(headers.length).toBe(8 + SURVEY_EXPORT_KEYS.length)
+    expect(headers.length).toBe(8 + SURVEY_EXPORT_KEYS.length + 3)
     expect(row.slice(0, 8)).toEqual([
       'u-1', '2026-09-08 10:00:00', 'qa@example.com', 'ТОО kOtaq-Telecom', 'QA_TEST_Иван', "'+7 700 000 00 00", 'Телеком', '2/12',
     ])
@@ -48,6 +50,39 @@ describe('survey export → sheet row', () => {
   it('summary picks company/contact/revenue for the Telegram message', () => {
     const s = buildSurveySummary(rows, { email: 'fallback@example.com' })
     expect(s).toMatchObject({ company: 'ТОО kOtaq-Telecom', contact: 'QA_TEST_Иван', revenue: '4000000', email: 'fallback@example.com', completedSteps: 2 })
+  })
+})
+
+describe('survey Ф5 — mode, express and answer paths at the END of the row', () => {
+  const status = buildSurveyStaffStatus({
+    preferences: { survey: { mode: 'express', chosen_at: '2026-10-23T09:00:00' } },
+    expressCompleted: { at: '2026-10-23T09:10:00', metadata: { answered: 24, unknown: 2, skipped: 2 } },
+  })
+  const viaRows = [
+    { ...rows[0], updated_via: 'express' }, { ...rows[1], updated_via: 'express' }, { ...rows[2], updated_via: 'chat' },
+    { ...rows[3], updated_via: 'helper' }, { ...rows[4], updated_via: null }, { ...rows[5], updated_via: 'staff' },
+  ]
+
+  it('the question columns keep their positions; three new columns close the row', () => {
+    const headers = buildSurveySheetHeaders()
+    expect(headers.slice(-3)).toEqual(['Режим анкеты', 'Экспресс', 'Путь ответов'])
+    expect(headers[8]).toBe(buildSurveySheetHeaders()[8])
+    expect(headers.indexOf('Режим анкеты')).toBe(8 + SURVEY_EXPORT_KEYS.length)
+  })
+
+  it('cells: «Экспресс + блоки с 23.10.2026», «пройден 23.10.2026 · ответов 24 из 26, «не знаю» — 2», paths', () => {
+    const row = buildSurveySheetRow(viaRows, { userId: 'u-1', status })
+    expect(row.slice(-3)).toEqual([
+      'Экспресс + блоки с 23.10.2026',
+      'пройден 23.10.2026 · ответов 24 из 26, «не знаю» — 2',
+      'экспресс 2 · беседа 1 · помощник 1 · эксперт 1 · без отметки 1',
+    ])
+    expect(row).toHaveLength(buildSurveySheetHeaders().length)
+  })
+
+  it('no status, no paths (before migration 134) → empty cells', () => {
+    expect(buildSurveySheetRow(rows, { userId: 'u-1' }).slice(-3)).toEqual(['', '', ''])
+    expect(answerPathSummary([{ question_key: 'a', step: 1, answer: {}, updated_via: 'full' }])).toBe('полная 1')
   })
 })
 

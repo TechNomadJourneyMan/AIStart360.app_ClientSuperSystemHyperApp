@@ -12,12 +12,21 @@ import { fromAnswerEnvelope, unwrapAnswer } from '@/lib/survey/answer-value'
 import { upsertRowByKey, googleSheetsConfigured, spreadsheetUrl } from '@/lib/integrations/google-sheets'
 import { absoluteFileHref, fileRefName, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
 import { getSiteUrl } from '@/lib/site-url'
+import { formatAttributionDate } from '@/lib/survey/attribution-label'
+import { ANSWER_VIA, type AnswerVia } from '@/lib/survey/attribution'
+import { expressDetails, type SurveyStaffStatus } from '@/lib/survey/staff-status'
+import type { SurveyMode } from '@/lib/survey/modes'
 
 export interface SurveyExportMeta {
   userId: string
   email?: string | null
   updatedAt?: Date
+  /** How the client fills in the questionnaire (survey Ф5): the «Режим анкеты» / «Экспресс» columns. */
+  status?: SurveyStaffStatus | null
 }
+
+/** A survey row with the path of the answer (migration 134), when the column is there. */
+export type SurveyExportRow = SurveyStepRow & { updated_via?: string | null }
 
 export interface SurveySummary {
   company: string
@@ -89,7 +98,43 @@ export function asSheetText(value: string): string {
   return /^[=+\-@]/.test(value) ? `'${value}` : value
 }
 
-/** Sheet header (row 1) — identity columns + «Шаг N · Вопрос» for every wizard key. */
+/**
+ * Survey Ф5 columns. They go AFTER the questions: the Apps Script rewrites only
+ * the header row and writes values by position, so a column inserted in the
+ * middle would shift every existing row until it is synced again.
+ */
+export const MODE_HEADERS = ['Режим анкеты', 'Экспресс', 'Путь ответов'] as const
+
+const MODE_SHEET_NAME: Readonly<Record<SurveyMode, string>> = { full: 'Полная анкета', express: 'Экспресс + блоки', chat: 'Беседа с ИИ' }
+const VIA_SHEET_NAME: Readonly<Record<AnswerVia, string>> = {
+  full: 'полная', express: 'экспресс', chat: 'беседа', helper: 'помощник', document: 'документы', staff: 'эксперт', system: 'система',
+}
+
+/** «полная 40 · экспресс 20 · беседа 5 · без отметки 16» — how the answers were given. */
+export function answerPathSummary(rows: ReadonlyArray<SurveyExportRow>): string {
+  const counts = new Map<string, number>()
+  let unmarked = 0
+  for (const r of rows) {
+    const via = r.updated_via
+    if (via && (ANSWER_VIA as readonly string[]).includes(via)) counts.set(via, (counts.get(via) ?? 0) + 1)
+    else unmarked++
+  }
+  const parts = ANSWER_VIA.filter((v) => counts.get(v)).map((v) => `${VIA_SHEET_NAME[v]} ${counts.get(v)}`)
+  if (unmarked && parts.length) parts.push(`без отметки ${unmarked}`)
+  return parts.join(' · ')
+}
+
+/** The three survey Ф5 cells: mode (since when), express, answer paths. */
+export function buildModeCells(rows: ReadonlyArray<SurveyExportRow>, status: SurveyStaffStatus | null | undefined): string[] {
+  const since = formatAttributionDate(status?.modeSince)
+  const mode = status?.mode ? `${MODE_SHEET_NAME[status.mode]}${since ? ` с ${since}` : ''}` : ''
+  const e = status?.express
+  const details = e ? expressDetails(e) : null
+  const express = e ? `пройден ${formatAttributionDate(e.completedAt) ?? ''}${details ? ` · ${details.toLowerCase()}` : ''}`.trim() : ''
+  return [mode, express, answerPathSummary(rows)]
+}
+
+/** Sheet header (row 1) — identity columns + «Шаг N · Вопрос» for every wizard key + the mode columns. */
 export function buildSurveySheetHeaders(): string[] {
   return [
     ...IDENTITY_HEADERS,
@@ -97,11 +142,12 @@ export function buildSurveySheetHeaders(): string[] {
       const step = SURVEY_KEY_STEP[k]
       return `Шаг ${step} · ${SURVEY_STEP_LABELS[step] ?? ''} · ${SURVEY_LABELS[k] || k}`
     }),
+    ...MODE_HEADERS,
   ]
 }
 
 /** One row per user, same column order as `buildSurveySheetHeaders()`. */
-export function buildSurveySheetRow(rows: ReadonlyArray<SurveyStepRow>, meta: SurveyExportMeta): string[] {
+export function buildSurveySheetRow(rows: ReadonlyArray<SurveyExportRow>, meta: SurveyExportMeta): string[] {
   const answers = answersFromRows(rows)
   const summary = buildSurveySummary(rows, meta)
   const updated = (meta.updatedAt ?? new Date()).toISOString().replace('T', ' ').slice(0, 19)
@@ -123,7 +169,7 @@ export function buildSurveySheetRow(rows: ReadonlyArray<SurveyStepRow>, meta: Su
     const v = formatSurveyValue(k, answers[k])
     return v === '—' ? '' : v
   })
-  return [...identity, ...cells].map(asSheetText)
+  return [...identity, ...cells, ...buildModeCells(rows, meta.status)].map(asSheetText)
 }
 
 export interface SurveySheetSyncResult {
@@ -135,7 +181,7 @@ export interface SurveySheetSyncResult {
 
 /** Mirror the user's answers into the configured Google Sheet (best-effort). */
 export async function syncSurveyToGoogleSheet(
-  rows: ReadonlyArray<SurveyStepRow>,
+  rows: ReadonlyArray<SurveyExportRow>,
   meta: SurveyExportMeta,
 ): Promise<SurveySheetSyncResult> {
   if (!googleSheetsConfigured()) return { ok: false, skipped: 'not_configured', url: null }

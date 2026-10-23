@@ -11,7 +11,8 @@ import {
   surveyProgressFromRows,
   type SurveyStepRow,
 } from '@/lib/survey/steps'
-import { buildSurveySummary, syncSurveyToGoogleSheet } from '@/lib/survey/export'
+import { buildSurveySummary, syncSurveyToGoogleSheet, type SurveyExportRow } from '@/lib/survey/export'
+import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { spreadsheetUrl } from '@/lib/integrations/google-sheets'
 import type { GoalActor } from '@/lib/goals/survey-sync'
 import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/completion-notice'
@@ -290,11 +291,14 @@ function savedAttribution(a: AnswerAuthor, at: Date): AnswerAttribution {
 async function mirrorAndAnnounce(userId: string, announce: boolean, step: number): Promise<void> {
   const service = createServiceClient()
   // Re-read the latest answers so a slow background run never mirrors a stale snapshot.
-  const [{ data: rowsData }, { data: profile }] = await Promise.all([
-    service.from('survey_answers').select('question_key, step, answer').eq('user_id', userId),
+  // '*': the answer path (updated_via, migration 134) is read when the column is there.
+  // The mode / express status feed the «Режим анкеты» columns (survey Ф5); never throws.
+  const [{ data: rowsData }, { data: profile }, statuses] = await Promise.all([
+    service.from('survey_answers').select('*').eq('user_id', userId),
     service.from('profiles').select('email, full_name').eq('id', userId).maybeSingle(),
+    loadSurveyStaffStatuses(service, [userId], { fullSubmittedAt: new Map() }),
   ])
-  const rows = ((rowsData ?? []) as SurveyStepRow[]).filter((r) => isWizardVisibleKey(r.question_key))
+  const rows = ((rowsData ?? []) as SurveyExportRow[]).filter((r) => isWizardVisibleKey(r.question_key))
   const progress = surveyProgressFromRows(rows)
 
   // Sheet email = the CLIENT's email (profile), never the session user's —
@@ -303,6 +307,7 @@ async function mirrorAndAnnounce(userId: string, announce: boolean, step: number
   const sheet = await syncSurveyToGoogleSheet(rows, {
     userId,
     email: person?.email ?? null,
+    status: statuses.get(userId) ?? null,
   })
   if (!sheet.ok && !sheet.skipped) console.error('[onboarding/survey] sheet mirror failed:', sheet.error)
 
