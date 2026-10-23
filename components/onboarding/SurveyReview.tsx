@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { STEPS } from '@/components/onboarding/constants/step-config'
 import type { PointAMinimum, StepFill } from '@/lib/survey/progress'
 import { blindSpots } from '@/lib/survey/blind-spots'
@@ -73,6 +74,11 @@ export default function SurveyReview({ fill, percent, minimum, answers, submitti
           </ul>
         </section>
       )}
+
+      <p className="mb-3 text-xs text-on-surface-variant">
+        Все ответы одним списком — с поиском, фильтрами и правкой —{' '}
+        <Link href="/client/onboarding/answers" className="font-medium text-primary hover:underline">в «Мои ответы»</Link>.
+      </p>
 
       <ul className="mb-6 grid gap-2 sm:grid-cols-2">
         {fill.map((s) => {
