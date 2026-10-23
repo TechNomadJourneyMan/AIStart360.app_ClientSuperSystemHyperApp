@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { isMarkedAnswer } from './answer-value'
+import { BODY_ANSWER_VIA } from './attribution'
 
 export const SURVEY_MAX_ANSWERS = 400
 const MAX_VALUE_BYTES = 64 * 1024
@@ -54,11 +55,19 @@ export const surveySaveBodySchema = z
     /** The user pressed «Отправить анкету». */
     final: z.boolean().optional().default(false),
     /**
-     * Keys whose value the owner accepted from a document suggestion: the
-     * answer is attributed to «ИИ (из документов)» (lib/survey/attribution.ts).
+     * How the owner is filling in (survey_answers.updated_via, migration 134):
+     * the full questionnaire and «Мои ответы» → 'full' (default), the express
+     * flow and blocks → 'express', a value from the field «Помощник» → 'helper'.
+     * 'chat' and 'staff' are never accepted from the browser.
+     */
+    via: z.enum(BODY_ANSWER_VIA).optional(),
+    /**
+     * Keys whose value the owner accepted from a document suggestion (answer
+     * attributed to «ИИ (из документов)») or confirmed in the field «Помощник»
+     * ('chat' → path 'helper'); lib/survey/attribution.ts.
      */
     origins: z
-      .record(z.string().regex(KEY_RE, 'invalid question key'), z.literal('document'))
+      .record(z.string().regex(KEY_RE, 'invalid question key'), z.enum(['document', 'chat']))
       .refine((o) => Object.keys(o).length <= SURVEY_MAX_ANSWERS, 'too many origins')
       .optional(),
   })

@@ -257,6 +257,8 @@ function OnboardingPageInner() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             step: Math.min(step, TOTAL_STEPS), answers: formatted, final: opts.final === true, autosave: quiet,
+            // The path of the answer (migration 134): the full questionnaire.
+            via: 'full',
             ...(Object.keys(origins).length ? { origins } : {}),
           }),
         })

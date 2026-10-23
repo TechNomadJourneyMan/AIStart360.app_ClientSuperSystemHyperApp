@@ -132,3 +132,24 @@ describe('GET — the author of every answer', () => {
     expect(data.attribution).not.toHaveProperty('gri_expert_cash')
   })
 })
+
+describe('POST — the path of the answer (migration 134)', () => {
+  it('the body path is stamped (default full), returned with the author line; a month alone brings its year', async () => {
+    const { json } = await post({ s2n_goal_12m_what: 'экспресс' }, { via: 'express' })
+    expect(row('s2n_goal_12m_what')).toMatchObject({ updated_by_role: 'user', updated_via: 'express' })
+    expect(json.data.attribution.s2n_goal_12m_what).toMatchObject({ updatedVia: 'express' })
+    await post({ s1_current_revenue_month: 2_000_000 })
+    expect(row('s1_current_revenue_month')).toMatchObject({ updated_via: 'full' })
+    expect(row('s1_current_revenue_year')).toMatchObject({ step: 1, answer: { value: 24_000_000 }, updated_via: 'full' })
+  })
+
+  it('the browser cannot claim the chat or a staff edit', async () => {
+    expect((await post({ s2n_goal_12m_what: 'x' }, { via: 'chat' })).status).toBe(400)
+    expect((await post({ s2n_goal_12m_what: 'x' }, { via: 'staff' })).status).toBe(400)
+  })
+
+  it('a value confirmed in the field «Помощник» → path helper', async () => {
+    await post({ s2n_goal_12m_what: 'из помощника' }, { origins: { s2n_goal_12m_what: 'chat' } })
+    expect(row('s2n_goal_12m_what')).toMatchObject({ updated_by_role: 'user', updated_via: 'helper' })
+  })
+})

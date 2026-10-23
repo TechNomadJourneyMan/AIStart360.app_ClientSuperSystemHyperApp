@@ -8,14 +8,12 @@ import { resolveTargetUserId } from '@/lib/api-identity'
 import {
   completedStepsFromRows,
   isWizardVisibleKey,
-  isWritableSurveyKey,
-  stepForQuestionKey,
   surveyProgressFromRows,
   type SurveyStepRow,
 } from '@/lib/survey/steps'
 import { buildSurveySummary, syncSurveyToGoogleSheet } from '@/lib/survey/export'
 import { spreadsheetUrl } from '@/lib/integrations/google-sheets'
-import { syncGoalsFromSurvey, surveyWriterFor, touchesGoalKeys, type GoalActor } from '@/lib/goals/survey-sync'
+import type { GoalActor } from '@/lib/goals/survey-sync'
 import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/completion-notice'
 import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
@@ -27,10 +25,8 @@ import { activeImpersonation } from '@/lib/impersonation/server'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { answersProfanityResponse } from '@/lib/moderation/http'
-import {
-  attributionColumns, authorFor, groupByAuthor, loadStaffRoles, staffAuthorRole, writeWithAttribution, type AnswerAuthor,
-} from '@/lib/survey/attribution'
+import { attributionColumns, authorFor, loadStaffRoles, staffAuthorRole, type AnswerAuthor } from '@/lib/survey/attribution'
+import { prepareSurveyWrite, surveyProfanityResponse, syncGoalsAfterWrite, writeSurveyRows } from '@/lib/survey/write'
 import { loadAttribution, type AttributionSourceRow, type ProfilesReader } from '@/lib/survey/attribution-read'
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
 
@@ -105,16 +101,12 @@ export async function POST(req: NextRequest) {
   }
   const parsed = parseSurveySaveBody(raw)
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
-  const { user_id, step: bodyStep, answers, autosave, origins } = parsed.data
+  const { user_id, step: bodyStep, answers, autosave, origins, via } = parsed.data
   const finalSubmitted = parsed.data.final
 
   // Свободные текстовые ответы с матом не сохраняем: 400 с ключом вопроса,
   // чтобы мастер показал ошибку рядом с ним. Числа и выбор не трогаем.
-  const profane = answersProfanityResponse(Object.fromEntries(
-    Object.entries(answers)
-      .filter(([k]) => isWritableSurveyKey(k))
-      .map(([k, a]) => [k, (a as { value?: unknown } | null)?.value]),
-  ))
+  const profane = surveyProfanityResponse(answers)
   if (profane) return profane
 
   const sb = createServerClient()
@@ -142,40 +134,33 @@ export async function POST(req: NextRequest) {
     .eq('user_id', targetUserId)
   if (beforeErr) return NextResponse.json({ ok: false, error: 'Failed to load answers' }, { status: 500 })
   const beforeRows = (beforeData ?? []) as SurveyStepRow[]
-  const existingStep = new Map(beforeRows.map((r) => [r.question_key, r.step == null ? null : Number(r.step)]))
   const wasComplete = surveyProgressFromRows(beforeRows).is_complete
 
-  // Only survey keys may be written here (never gri_expert_* / goal_*_v2 …).
-  // Wizard keys get the step that OWNS them; other intake keys keep the step
-  // they already have and fall back to the body step only when new.
-  const accepted = Object.entries(answers).filter(([k]) => isWritableSurveyKey(k))
-  const ignored = Object.keys(answers).length - accepted.length
-  const rows = accepted.map(([question_key, answer]) => ({
-    user_id: targetUserId,
-    company_id: company_id ?? null,
-    step: stepForQuestionKey(question_key, null) ?? existingStep.get(question_key) ?? bodyStep,
-    question_key,
-    answer,
-    answered_at: new Date().toISOString(),
-  }))
+  // The one write path (lib/survey/write.ts): only survey keys (never
+  // gri_expert_* / goal_*_v2 …), the step that OWNS the key (other intake keys
+  // keep the step they already have, the body step only when new), the stored
+  // envelope, «год = месяц × 12» for a month written alone.
+  const savedAt = new Date()
+  const prepared = prepareSurveyWrite({ ownerId: targetUserId, companyId: company_id, envelopes: answers, existing: beforeRows, bodyStep, at: savedAt })
+  const rows = prepared.rows
+  const ignored = prepared.ignored.length
 
   // An admin working in the user's cabinet (edit mode): the write is stamped
   // with the admin so history and audit show who really changed the answers.
   const { data: { user: sessionUser } } = await sb.auth.getUser()
   const imp = sessionUser?.id === targetUserId ? await activeImpersonation(sessionUser.id) : null
-  const savedAt = new Date()
-  const authors = new Map<string, AnswerAuthor>()
+  let authors = new Map<string, AnswerAuthor>()
 
   if (rows.length) {
     if (imp) {
-      const impAuthor: AnswerAuthor = { id: imp.aid, role: staffAuthorRole(imp.arole ?? 'admin') }
+      const impAuthor: AnswerAuthor = { id: imp.aid, role: staffAuthorRole(imp.arole ?? 'admin'), via: 'staff' }
       for (const r of rows) authors.set(r.question_key, impAuthor)
       try {
         await adminEditSurvey(
           { id: imp.aid, kind: 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
           targetUserId,
           // A mark («не знаю» / «примерно») goes as is; adminEditSurvey stores the envelope.
-          Object.fromEntries(accepted.map(([k, v]) => [k, fromAnswerEnvelope(v) ?? null])),
+          Object.fromEntries(rows.map((r) => [r.question_key, fromAnswerEnvelope(r.answer) ?? null])),
           req,
           { source: 'impersonation', impersonationSessionId: imp.sid },
         )
@@ -185,24 +170,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Не удалось сохранить ответы' }, { status: 500 })
       }
     } else {
-      // Who wrote it (migration 131): the owner → «вы» (or «ИИ (из документов)»
-      // for a value accepted from a document), staff → expert / admin.
+      // Who wrote it and how (migrations 131 / 134): the owner → «вы» on the
+      // path of the body (full / express / helper), «ИИ (из документов)» for a
+      // value accepted from a document; staff → expert / admin, path «staff».
       const staffRoles = sessionUser && sessionUser.id !== targetUserId ? await loadStaffRoles(sb, sessionUser.id) : []
-      const groups = groupByAuthor(rows, (r) => authorFor({
+      const written = await writeSurveyRows(sb, rows, (r) => authorFor({
         actorId: sessionUser?.id ?? targetUserId,
         ownerId: targetUserId,
         staffRoles,
         origin: origins?.[r.question_key] ?? null,
-      }))
-      for (const g of groups) {
-        const { error } = await writeWithAttribution(
-          g.rows, g.author,
-          (list) => sb.from('survey_answers').upsert(list, { onConflict: 'user_id,question_key' }),
-          { at: savedAt, label: 'onboarding/survey' },
-        )
-        if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
-        for (const r of g.rows) authors.set(r.question_key, g.author)
-      }
+        via: via ?? 'full',
+      }), { at: savedAt, label: 'onboarding/survey' })
+      if (written.error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+      authors = written.authors
     }
   }
 
@@ -215,22 +195,13 @@ export async function POST(req: NextRequest) {
   // A goal answer of step 1 was saved → the goal (metric_targets, companies.
   // target_revenue_*) follows it (lib/goals/survey-sync.ts, plan 2026-10-22 W1).
   // Who: the admin in edit mode / staff saving for a client → expert goal.
-  if (rows.length && touchesGoalKeys(rows.map((r) => r.question_key))) {
+  if (rows.length) {
     const actor: GoalActor = imp
       ? { id: imp.aid, role: 'admin' }
       : sessionUser && sessionUser.id !== targetUserId
         ? { id: sessionUser.id, role: 'expert' }
         : { id: targetUserId, role: 'owner' }
-    const service = createServiceClient()
-    await syncGoalsFromSurvey(service, {
-      userId: targetUserId,
-      companyId: company_id,
-      answers: Object.fromEntries(accepted),
-      touchedKeys: rows.map((r) => r.question_key),
-      actor,
-      allowClear: !autosave,
-      writer: surveyWriterFor(actor, service),
-    })
+    await syncGoalsAfterWrite(createServiceClient(), { ownerId: targetUserId, companyId: company_id, rows, actor, allowClear: !autosave })
   }
 
   const announce = shouldAnnounceCompletion({
@@ -301,7 +272,9 @@ export async function POST(req: NextRequest) {
 
 function savedAttribution(a: AnswerAuthor, at: Date): AnswerAttribution {
   const cols = attributionColumns(a, at)
-  return { updatedBy: cols.updated_by, updatedByRole: cols.updated_by_role, updatedAt: cols.updated_at, updatedByName: null }
+  const out: AnswerAttribution = { updatedBy: cols.updated_by, updatedByRole: cols.updated_by_role, updatedAt: cols.updated_at, updatedByName: null }
+  if (cols.updated_via) out.updatedVia = cols.updated_via
+  return out
 }
 
 // ─── background: Google Sheets mirror + completion alert ─────────────────────
