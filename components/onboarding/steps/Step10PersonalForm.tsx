@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { FieldNote, NumberField } from '@/components/onboarding/shared'
+import { FieldCalc } from '@/components/survey/FieldCalc'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step10PersonalFormProps {
@@ -329,6 +330,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
             />
           </div>
         </div>
+        <FieldCalc forKey="s10_hours_on_ops" answers={data} />
       </section>
     </div>
   )
