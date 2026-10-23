@@ -6,6 +6,7 @@ import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
 import ExpertMessages from '@/components/client/ExpertMessages'
 import PointADashboardSummary from '@/components/dashboard/PointADashboardSummary'
+import { pointAStatHint } from '@/lib/user-dashboard/point-a-hint'
 
 export interface UserHomeData {
   fullName: string
@@ -14,7 +15,8 @@ export interface UserHomeData {
   surveyStartedAt: string | null
   surveyUpdatedAt: string | null
   summary: UserProfileSummary
-  diagnostics: { overallScore: number | null; stage: string | null; calculatedAt: string | null } | null
+  /** `primary`: Point A v4 with a block without data — «Первичная · по быстрым данным» (survey Ф5). */
+  diagnostics: { overallScore: number | null; stage: string | null; calculatedAt: string | null; primary?: boolean } | null
   gri: { index: number; assessedAt: string } | null
   documentsCount: number
   sections: Array<{ key: string; title: string; description: string | null; icon: string | null; href: string }>
@@ -130,7 +132,7 @@ export default function UserHome({ data }: { data: UserHomeData }) {
             icon="my_location"
             label="Точка А"
             value={data.diagnostics?.overallScore != null ? `${Math.round(data.diagnostics.overallScore)} / 100` : '—'}
-            hint={data.diagnostics?.calculatedAt ? `расчёт ${fmtDate(data.diagnostics.calculatedAt)}` : 'появится после анкеты'}
+            hint={pointAStatHint(data.diagnostics, fmtDate)}
           />
           <Stat
             icon="radar"
