@@ -43,9 +43,11 @@ export function formatSuggestionValue(value: unknown, label: string | null): str
   return `${num} ₸`
 }
 
-export default function DocumentSuggestions({ step, answers, onApply }: {
+export default function DocumentSuggestions({ step, keys, answers, onApply }: {
   step: number
-  answers: Record<string, unknown>
+  /** Only these questions (an express screen, a block) instead of the whole step. */
+  keys?: readonly string[]
+  answers: Readonly<Record<string, unknown>>
   onApply: (key: string, value: unknown) => void
 }) {
   const [items, setItems] = useState<Suggestion[]>([])
@@ -85,7 +87,7 @@ export default function DocumentSuggestions({ step, answers, onApply }: {
     }
   }, [answers, onApply])
 
-  const visible = items.filter((s) => s.step === step && isEmptyAnswer(answers[s.question_key]))
+  const visible = items.filter((s) => (keys ? keys.includes(s.question_key) : s.step === step) && isEmptyAnswer(answers[s.question_key]))
   if (visible.length === 0 && !note) return null
 
   return (
