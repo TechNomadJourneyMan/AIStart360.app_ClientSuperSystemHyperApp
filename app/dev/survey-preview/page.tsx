@@ -9,6 +9,8 @@
 //       ai      — half-filled + «Нашли в ваших документах» chips on steps 1, 5, 7, 9
 //       authors — filled, with the author line under every field (вы / эксперт / админ / ИИ; none when unknown)
 //       unknown — half-filled + «Не знаю» and «примерно» answers (steps 1, 5, 7, 9), blind spots on «review»
+//   ?view=answers [&as=staff]   — «Мои ответы» (survey Ф1) on the variant's answers; as=staff — the GIGA / expert view
+//   ?view=chooser               — the three-mode chooser and the one-time banner (survey Ф1)
 // Edits, the answer editor (click a text field) and «Принять» work in memory only.
 // Steps 1, 4, 5, 7, 8, 9, 10 show «Приблизительный расчёт по вашим цифрам» under the numeric
 // fields (lib/survey/calcs, components/survey/FieldCalc): ready in «filled» / «half», «≈ … (диапазон …)»
@@ -17,6 +19,7 @@ import { notFound } from 'next/navigation'
 import { TOTAL_STEPS } from '@/components/onboarding/constants/step-config'
 import SurveyPreviewClient from './SurveyPreviewClient'
 import { isSurveyPreviewVariant } from './fixture'
+import { AnswersPreview, ChooserPreview } from './PreviewViews'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,9 +32,11 @@ function parseStep(raw: string | undefined): number {
   return Number.isInteger(n) && n >= 1 && n <= TOTAL_STEPS ? n : 1
 }
 
-export default function SurveyPreviewPage({ searchParams }: { searchParams?: { step?: string; variant?: string } }) {
+export default function SurveyPreviewPage({ searchParams }: { searchParams?: { step?: string; variant?: string; view?: string; as?: string } }) {
   if (process.env.NODE_ENV === 'production') notFound()
   const variant = isSurveyPreviewVariant(searchParams?.variant) ? searchParams.variant : 'filled'
+  if (searchParams?.view === 'answers') return <AnswersPreview key={`${variant}-${searchParams.as}`} variant={variant} staff={searchParams.as === 'staff'} />
+  if (searchParams?.view === 'chooser') return <ChooserPreview />
   const step = parseStep(searchParams?.step)
   // A new key per variant / step: the in-memory answers start over.
   return <SurveyPreviewClient key={`${variant}-${step}`} variant={variant} step={step} />

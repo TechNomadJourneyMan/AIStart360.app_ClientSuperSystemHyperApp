@@ -45,3 +45,26 @@ describe('survey preview', () => {
     expect(review).toContain('Минимум для Точки А:')
   })
 })
+
+describe('survey preview — Ф1 views', () => {
+  it('?view=answers renders every variant for the client and the staff', async () => {
+    const { AnswersPreview } = await import('@/app/dev/survey-preview/PreviewViews')
+    for (const variant of SURVEY_PREVIEW_VARIANTS) {
+      const client = renderToStaticMarkup(createElement(AnswersPreview, { variant, staff: false }))
+      expect(client, variant).toContain('Мои ответы')
+      expect(client).toContain('Кто заполнял')
+      const staff = renderToStaticMarkup(createElement(AnswersPreview, { variant, staff: true }))
+      expect(staff, variant).toContain('Анкета клиента (вид эксперта)')
+    }
+    const authors = renderToStaticMarkup(createElement(AnswersPreview, { variant: 'authors', staff: true }))
+    expect(authors).toMatch(/Заполнил пользователь Айгуль Сапарова|Изменил эксперт/)
+  })
+
+  it('?view=chooser shows the three cards', async () => {
+    const { ChooserPreview } = await import('@/app/dev/survey-preview/PreviewViews')
+    const html = renderToStaticMarkup(createElement(ChooserPreview))
+    expect(html).toContain('Расширенная полная анкета')
+    expect(html).toContain('Рекомендуем')
+    expect(html).toContain('Скоро')
+  })
+})
