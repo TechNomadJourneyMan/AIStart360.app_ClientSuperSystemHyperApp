@@ -37,11 +37,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('updated_at', { ascending: false })
     .range((page - 1) * HISTORY_PAGE, page * HISTORY_PAGE - 1)
   if (key && /^[a-z0-9_]{2,80}$/.test(key)) hq = hq.eq('question_key', key)
-  const [answersRes, historyRes] = await Promise.all([
-    // '*': the author columns of migration 131 are read when present.
+  const [answersRes, historyRes, ownerRes] = await Promise.all([
+    // '*': the author (131) and path (134) columns are read when present.
     sb.from('survey_answers').select('*').eq('user_id', params.id),
     hq,
+    sb.from('profiles').select('full_name, email').eq('id', params.id).maybeSingle(),
   ])
+  const owner = (ownerRes?.data ?? null) as { full_name?: string | null; email?: string | null } | null
   if (answersRes.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить анкету' }, { status: 500 })
 
   const answers: Record<string, unknown> = {}
@@ -69,6 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       raw: answers,
       answeredAt,
       attribution,
+      ownerName: owner?.full_name?.trim() || owner?.email || null,
       sections: summary.sections,
       fill: summary.fill,
       percent: summary.percent,

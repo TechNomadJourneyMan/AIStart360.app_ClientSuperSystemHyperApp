@@ -20,6 +20,8 @@ interface Props {
   userId: string
   /** When true: hides impersonate / edit-survey buttons. Used by the expert panel. */
   readOnly?: boolean
+  /** The survey answers are shown elsewhere (expert cabinet: SurveyAnswersView). */
+  hideSurvey?: boolean
 }
 
 const DOC_ICONS: Record<string, React.ReactNode> = {
@@ -131,7 +133,7 @@ export function AccessControls({ userId }: { userId: string }) {
   )
 }
 
-export function UserDetailPanel({ userId, readOnly = false }: Props) {
+export function UserDetailPanel({ userId, readOnly = false, hideSurvey = false }: Props) {
   const { base } = useWorkspace()
   const [data, setData] = useState<{
     answers: Record<string, unknown>
@@ -317,7 +319,7 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
       )}
 
       {/* Survey answers */}
-      {data && data.completedSteps.length > 0 ? (
+      {hideSurvey ? null : data && data.completedSteps.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <FileText size={12} className="text-blue-400" />

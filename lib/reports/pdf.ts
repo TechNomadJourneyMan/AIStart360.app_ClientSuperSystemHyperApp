@@ -156,6 +156,12 @@ export interface SurveyPdfInput {
   meta: ReportMeta
   /** Flat map of question_key → raw value (already unwrapped from {value}). */
   answers: Record<string, unknown>
+  /**
+   * The registry view (lib/survey/answers-view.ts surveyPrintModel): sections
+   * with the author and path of every answer and the «кто заполнял» summary
+   * (spec 2026-10-23 §6.4). Without it the old key-by-key layout is used.
+   */
+  print?: { summary: string; answered: number; total: number; sections: Array<{ title: string; rows: Array<{ label: string; value: string; author: string | null }> }> }
 }
 
 // ─── Low-level layout helpers ─────────────────────────────────────────────────
@@ -823,6 +829,21 @@ export async function renderSurveyPdf(input: SurveyPdfInput): Promise<Buffer> {
       value: String(Object.keys(input.answers).filter((k) => hasValue(input.answers[k])).length),
     },
   })
+
+  if (input.print) {
+    sectionHeader(doc, 'Ответы анкеты')
+    paragraph(doc, `Отвечено ${input.print.answered} из ${input.print.total} вопросов · выгружено ${fmtDate()}`, { size: 9.5, color: MUTED, gap: 0.2 })
+    paragraph(doc, input.print.summary, { size: 9.5, color: MUTED })
+    if (input.print.sections.length === 0) paragraph(doc, 'Ответы анкеты не заполнены.', { color: MUTED })
+    for (const section of input.print.sections) {
+      sectionHeader(doc, section.title)
+      for (const row of section.rows) {
+        kvRow(doc, row.label, row.value)
+        if (row.author) paragraph(doc, row.author, { size: 8, color: FAINT, gap: 0.1 })
+      }
+    }
+    return finalize(doc)
+  }
 
   // Group answered keys by survey step (1..12). Keys with a known step + a
   // non-empty value only — we don't print blank rows.

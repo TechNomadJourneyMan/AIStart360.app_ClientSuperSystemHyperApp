@@ -9,6 +9,13 @@ import { parseAnswerFilters } from '@/lib/survey/answers-view'
 import { surveyQuestion } from '@/lib/survey/questions'
 import { track } from '@/lib/events/client'
 import type { AnswerAttribution } from '@/lib/survey/attribution-label'
+import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
+
+/** A file answer opens through the access-checked route (signed link). */
+function fileLink(key: string, raw: unknown): string | null {
+  const ref = isSurveyFileKey(key) ? surveyFileRef(raw) : null
+  return ref ? fileHref(ref) : null
+}
 
 /**
  * «Мои ответы» (spec 2026-10-23 §6.2): every answer of the questionnaire on one
@@ -116,6 +123,7 @@ function AnswersInner() {
             initialFilters={initialFilters}
             companyId={companyId}
             pdfHref="/api/export/report?type=survey"
+            fileLink={fileLink}
           />
         )}
       </main>

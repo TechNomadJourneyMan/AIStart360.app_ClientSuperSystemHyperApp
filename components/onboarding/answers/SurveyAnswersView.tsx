@@ -32,6 +32,10 @@ export interface SurveyAnswersViewProps {
   actions?: ReactNode
   /** Staff: a per-question history button. */
   onHistory?: (key: string) => void
+  /** Staff: raw edit of tables / files (GIGA JSON editor). */
+  onEditRaw?: (key: string) => void
+  /** A link that opens a file answer (access-checked route), or null. */
+  fileLink?: (key: string, value: unknown) => string | null
 }
 
 const CHIP = 'px-3 py-2 min-h-[36px] rounded-lg text-xs font-medium border transition-colors whitespace-nowrap'
@@ -203,6 +207,8 @@ export function SurveyAnswersView(props: SurveyAnswersViewProps) {
                     onCancel={() => { setEditing(null); setConfirmStaff(null) }}
                     onSave={save}
                     onHistory={props.onHistory}
+                    onEditRaw={editable ? props.onEditRaw : undefined}
+                    fileLink={props.fileLink}
                   />
                 ))}
               </dl>
@@ -227,7 +233,7 @@ export function SurveyAnswersView(props: SurveyAnswersViewProps) {
   )
 }
 
-function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, onCancel, onSave, onHistory }: {
+function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, onCancel, onSave, onHistory, onEditRaw, fileLink }: {
   item: AnswerItem
   mode: 'client' | 'staff'
   editable: boolean
@@ -238,8 +244,11 @@ function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, 
   onCancel: () => void
   onSave: SaveAnswer
   onHistory?: (key: string) => void
+  onEditRaw?: (key: string) => void
+  fileLink?: (key: string, value: unknown) => string | null
 }) {
   const q = item.question
+  const link = item.filled && q.type === 'file' && fileLink ? fileLink(q.key, item.value) : null
   // Experts write a reason for every change: long text too goes through the inline field.
   const kind = reason === 'required' && item.edit === 'modal' ? 'inline' : item.edit
   const canEditHere = editable && (kind === 'inline' || kind === 'modal')
@@ -253,7 +262,7 @@ function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, 
       </dt>
       <dd className="min-w-0">
         <p className={`whitespace-pre-line break-words text-sm ${item.filled ? 'text-on-surface print:text-black' : 'text-on-surface-variant/50 print:text-black/40'}`}>
-          {item.display}
+          {link ? <a href={link} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">{item.display}</a> : item.display}
         </p>
         {item.authorLine && <p className="mt-0.5 text-[11px] text-on-surface-variant/70 print:text-black/50">{item.authorLine}</p>}
         {confirming && (
@@ -287,6 +296,12 @@ function AnswerRow({ item, mode, editable, editing, confirming, reason, onEdit, 
           <Link href={formHref(q)} className="min-h-[36px] rounded-lg px-3 py-2 text-xs font-medium text-primary hover:bg-primary/10">
             Открыть в анкете
           </Link>
+        )}
+        {mode === 'staff' && kind === 'form' && onEditRaw && (
+          <button type="button" onClick={() => onEditRaw(q.key)} aria-label={`Изменить: ${q.label}`}
+            className="min-h-[36px] rounded-lg px-3 text-xs font-medium text-primary hover:bg-primary/10">
+            Изменить
+          </button>
         )}
         {onHistory && (
           <button type="button" onClick={() => onHistory(q.key)} aria-label={`История: ${q.label}`} className="min-h-[36px] rounded-lg px-2 text-on-surface-variant hover:text-on-surface">

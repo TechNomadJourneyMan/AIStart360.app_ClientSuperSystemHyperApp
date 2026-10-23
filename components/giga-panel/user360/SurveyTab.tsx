@@ -10,7 +10,8 @@ import {
 import { SURVEY_LABELS } from '@/lib/survey-labels'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
 import { STEPS } from '@/components/onboarding/constants/step-config'
-import { formatAttribution, type AnswerAttribution } from '@/lib/survey/attribution-label'
+import type { AnswerAttribution } from '@/lib/survey/attribution-label'
+import { SurveyAnswersView } from '@/components/onboarding/answers/SurveyAnswersView'
 import { fileHref, isSurveyFileKey, surveyFileRef } from '@/lib/documents/survey-files'
 
 interface Section {
@@ -25,8 +26,10 @@ interface HistoryRow {
 interface SurveyPayload {
   data: {
     raw: Record<string, unknown>; answeredAt: Record<string, string>; sections: Section[]; percent: number
-    /** Author of each answer (migration 131); absent on an older server. */
+    /** Author and path of each answer (migrations 131 / 134); absent on an older server. */
     attribution?: Record<string, AnswerAttribution>
+    /** The client's name for «Заполнил пользователь Имя». */
+    ownerName?: string | null
     history: HistoryRow[]; historyTotal: number; historyPage: number; historyPageSize: number
   }
 }
@@ -41,14 +44,9 @@ function toEditable(v: unknown): { text: string; kind: EditKind } {
 }
 
 /** A file answer opens through the access-checked route (signed link), never a Storage URL. */
-function AnswerValue({ answerKey, text, raw }: { answerKey: string; text: string; raw: unknown }) {
-  const ref = isSurveyFileKey(answerKey) ? surveyFileRef(raw) : null
-  if (!ref) return <>{text}</>
-  return (
-    <a href={fileHref(ref)} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline-offset-2 hover:underline">
-      {text}
-    </a>
-  )
+function staffFileLink(key: string, raw: unknown): string | null {
+  const ref = isSurveyFileKey(key) ? surveyFileRef(raw) : null
+  return ref ? fileHref(ref) : null
 }
 
 function plural(n: number, one: string, few: string, many: string): string {
@@ -76,6 +74,7 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; label: string } | null>(null)
   const d = data?.data
+  const viewer = useMemo(() => ({ ownerName: d?.ownerName ?? null }), [d?.ownerName])
 
   const save = async (key: string, value: unknown) => {
     setSaving(true)
@@ -94,6 +93,23 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
       toast.error(e instanceof GigaApiError ? e.message : 'Не удалось сохранить')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Inline edits of the shared view: an emptied answer is a delete → the confirm dialog.
+  const saveInline = async (key: string, value: unknown, why?: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    if (value === null) {
+      setConfirmDelete({ key, label: SURVEY_LABELS[key] ?? key })
+      return { ok: true }
+    }
+    try {
+      await gigaFetch(`/api/giga-admin/users/${userId}/survey`, { method: 'PATCH', json: { changes: { [key]: value }, reason: why || undefined } })
+      toast.success('Анкета обновлена, изменение записано в историю')
+      void reload()
+      onChanged?.()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof GigaApiError ? e.message : 'Не удалось сохранить' }
     }
   }
 
@@ -139,45 +155,19 @@ export function SurveyTab({ userId, canEdit, onChanged }: { userId: string; canE
 
   return (
     <div className="space-y-4">
-      {d.sections.every((s) => s.answers.length === 0) && (
-        <Panel><EmptyState title="Анкета не заполнена" text="Ответов пока нет. Их можно внести здесь или в кабинете пользователя." /></Panel>
-      )}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {d.sections.map((s) => (
-          <Panel key={s.id} title={s.title} description={`${s.description} · заполнено ${s.filled} из ${s.total}`}>
-            {s.answers.length === 0 ? (
-              <p className="text-xs text-slate-600">Нет ответов</p>
-            ) : (
-              <dl className="divide-y divide-white/[0.04]">
-                {s.answers.map((a) => (
-                  <div key={a.key} className="group grid grid-cols-1 gap-1 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] sm:gap-3">
-                    <dt className="text-[11px] text-slate-500">
-                      {a.label}
-                      {formatAttribution(d.attribution?.[a.key]) ? (
-                        <span className="block text-[10px] text-slate-600" title={d.answeredAt[a.key] ? fmtDateTime(d.answeredAt[a.key]) : undefined}>
-                          {formatAttribution(d.attribution?.[a.key])}
-                        </span>
-                      ) : d.answeredAt[a.key] && <span className="block text-[10px] text-slate-700">{fmtDateTime(d.answeredAt[a.key])}</span>}
-                    </dt>
-                    <dd className="whitespace-pre-line break-words text-xs text-slate-200">
-                      <AnswerValue answerKey={a.key} text={a.value} raw={d.raw[a.key]} />
-                    </dd>
-                    <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                      <Button size="sm" variant="ghost" aria-label="История поля" icon={<History size={12} />} onClick={() => { setHistoryKey(a.key); setHistoryPage(1) }} />
-                      {canEdit && (
-                        <>
-                          <Button size="sm" variant="ghost" aria-label="Изменить" icon={<Pencil size={12} />} onClick={() => setEdit({ key: a.key, label: a.label, ...toEditable(d.raw[a.key]) })} />
-                          <Button size="sm" variant="ghost" aria-label="Удалить ответ" icon={<Trash2 size={12} />} onClick={() => setConfirmDelete({ key: a.key, label: a.label })} />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </Panel>
-        ))}
-      </div>
+      {/* The same view as the client's «Мои ответы» (spec 2026-10-23 §6.5): author + path, filters, search. */}
+      <SurveyAnswersView
+        answers={d.raw}
+        attribution={d.attribution ?? {}}
+        viewer={viewer}
+        mode="staff"
+        canEdit={canEdit}
+        reason="optional"
+        onSave={saveInline}
+        onHistory={(key) => { setHistoryKey(key); setHistoryPage(1) }}
+        fileLink={staffFileLink}
+        onEditRaw={(key) => setEdit({ key, label: SURVEY_LABELS[key] ?? key, ...toEditable(d.raw[key]) })}
+      />
 
       {canEdit && <AddAnswer onAdd={(key, label) => setEdit({ key, label, text: '', kind: 'text' })} existing={d.raw} />}
 

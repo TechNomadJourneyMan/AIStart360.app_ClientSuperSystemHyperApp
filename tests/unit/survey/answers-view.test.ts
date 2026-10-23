@@ -120,3 +120,21 @@ describe('items, filters, search', () => {
     expect(parseAnswerFilters(null)).toEqual([])
   })
 })
+
+describe('surveyPrintModel — paper and PDF (spec §6.4)', () => {
+  it('answered questions by step, with the author line and «кто заполнял»', async () => {
+    const m = (await import('@/lib/survey/answers-view')).surveyPrintModel(answers, attribution)
+    expect(m.answered).toBe(10)
+    expect(m.summary).toContain('Кто заполнял: Ответов 10: вы — 2 (из них через ИИ-помощника — 1)')
+    const step12 = m.sections.find((s) => s.title === '12. Системы и инструменты')!
+    expect(step12.rows).toEqual([{ label: 'CRM-система', value: 'AmoCRM', author: 'Заполнил: вы (через ИИ-помощника) · 22.10.2026' }])
+    expect(m.sections.flatMap((s) => s.rows).find((r) => r.label === 'Чистая прибыль / убыток')?.value).toBe('Не знаю')
+  })
+
+  it('renders a PDF with the new layout', async () => {
+    const { renderSurveyPdf } = await import('@/lib/reports/pdf')
+    const { surveyPrintModel } = await import('@/lib/survey/answers-view')
+    const pdf = await renderSurveyPdf({ meta: { companyName: 'ТОО Альфа' }, answers: {}, print: surveyPrintModel(answers, attribution) })
+    expect(pdf.subarray(0, 4).toString()).toBe('%PDF')
+  }, 30_000)
+})

@@ -48,6 +48,11 @@ import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import type { PointA, AIAnalysis } from '@/types/onboarding'
 import type { PointBStrategy } from '@/types/point-b'
+import { createServiceClient } from '@/lib/supabase-service'
+import { isWizardVisibleKey } from '@/lib/survey/steps'
+import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
+import { loadAttribution, type AttributionSourceRow, type ProfilesReader } from '@/lib/survey/attribution-read'
+import { surveyPrintModel } from '@/lib/survey/answers-view'
 
 type ReportType = 'gri' | 'point-a' | 'point-b' | 'survey'
 const VALID_TYPES = new Set<ReportType>(['gri', 'point-a', 'point-b', 'survey'])
@@ -397,9 +402,10 @@ async function loadSurvey(
   sb: ReturnType<typeof createServerClient>,
   subject: Subject,
 ): Promise<SurveyPdfInput | null> {
+  // '*': the author (131) and path (134) columns are read when present.
   const { data: rows } = await sb
     .from('survey_answers')
-    .select('question_key, answer')
+    .select('*')
     .eq('user_id', subject.userId)
 
   if (!rows || rows.length === 0) return null
@@ -410,7 +416,18 @@ async function loadSurvey(
     industry: subject.industry,
     stage: subject.stage,
   }
-  return { meta, answers }
+  // The registry view with «Не знаю», «≈ …», the author and path of every
+  // answer and «кто заполнял» (spec 2026-10-23 §6.4). Expert / admin names
+  // come from profiles the client's session cannot read → the service role.
+  const wizardRows = (rows as AttributionSourceRow[]).filter((r) => isWizardVisibleKey(String(r.question_key)))
+  const marked: Record<string, unknown> = {}
+  for (const r of wizardRows) marked[r.question_key] = fromAnswerEnvelope(r.answer)
+  let names: ProfilesReader = sb
+  try { names = createServiceClient() } catch { /* names are decoration */ }
+  const attribution = await loadAttribution(names, wizardRows)
+  const { data: { user } } = await sb.auth.getUser()
+  const print = surveyPrintModel(marked, attribution, user?.id === subject.userId ? { viewerIsOwner: true } : { viewerId: user?.id ?? null })
+  return { meta, answers, print }
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────

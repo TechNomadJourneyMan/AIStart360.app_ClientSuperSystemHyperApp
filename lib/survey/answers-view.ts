@@ -11,7 +11,7 @@ import { formatMarkedAnswer, groupThousands, isApproxAnswer, isUnknownAnswer } f
 import { isAnswerFilled } from './answer-filled'
 import { computePointAMinimum, type PointAMinimum } from './point-a-minimum'
 import { stepForQuestionKey } from './steps'
-import { formatAttribution, summarizeAuthors, type AnswerAttribution, type AttributionViewer, type AuthorSummary } from './attribution-label'
+import { formatAttribution, formatAuthorSummary, summarizeAuthors, type AnswerAttribution, type AttributionViewer, type AuthorSummary } from './attribution-label'
 import { EXPRESS_SCREENS, SURVEY_BLOCKS, SURVEY_QUESTION_LIST, optionLabel, type SurveyQuestion } from './questions'
 
 export const ANSWER_FILTERS = ['empty', 'unsure', 'assistant', 'staff', 'minimum'] as const
@@ -235,4 +235,32 @@ export function formHref(q: Pick<SurveyQuestion, 'step' | 'key'>): string {
 export function parseAnswerFilters(raw: string | null | undefined): AnswerFilter[] {
   if (!raw) return []
   return raw.split(',').map((s) => s.trim()).filter(isAnswerFilter)
+}
+
+export interface SurveyPrintSection {
+  title: string
+  rows: Array<{ label: string; value: string; author: string | null }>
+}
+
+/**
+ * The questionnaire for paper / PDF (spec §6.4): answered questions by step,
+ * each with its author and path, and the «кто заполнял» line on top.
+ */
+export function surveyPrintModel(
+  answers: Readonly<Record<string, unknown>>,
+  attribution: Readonly<Record<string, AnswerAttribution | undefined>>,
+  viewer: AttributionViewer = { viewerIsOwner: true },
+): { summary: string; answered: number; total: number; sections: SurveyPrintSection[] } {
+  const items = buildAnswerItems(answers, attribution, viewer)
+  const summary = answersSummary(items, answers)
+  const sections = groupAnswerItems(items.filter((i) => i.filled), 'steps').map((g) => ({
+    title: g.title,
+    rows: g.items.map((i) => ({ label: i.question.label, value: i.display, author: i.authorLine })),
+  }))
+  return {
+    summary: `Кто заполнял: ${formatAuthorSummary(summary.authors, viewer)}`,
+    answered: summary.answered,
+    total: summary.total,
+    sections,
+  }
 }
