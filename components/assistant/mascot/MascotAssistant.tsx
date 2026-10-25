@@ -999,8 +999,7 @@ export default function MascotAssistant() {
       style={{
         bottom: baseBottom + extraBottom,
         visibility: keyboardOpen ? 'hidden' : 'visible',
-        opacity: scrolling ? 0.5 : 1,
-        transition: 'opacity 200ms ease, bottom 250ms ease',
+        transition: 'bottom 250ms ease',
       }}
     >
       {/* Idle-life carrier: the whole stack (menu, bubble, cat) strolls together,
@@ -1077,7 +1076,9 @@ export default function MascotAssistant() {
           >
             {/* Mirror only the mascot while it walks left; bubbles stay unflipped. */}
             <motion.span
-              style={{ display: 'block' }}
+              // Dim the drawing during scrolling, keeping hint text and actions
+              // at full contrast throughout the interaction.
+              style={{ display: 'block', opacity: scrolling ? 0.5 : 1, transition: 'opacity 200ms ease' }}
               animate={{ scaleX: behavior.facing === 'left' ? -1 : 1 }}
               transition={{ duration: 0.25 }}
             >

@@ -38,7 +38,7 @@ describe('loginNotice', () => {
 
 describe('friendlyAuthError', () => {
   it('переводит типовые отказы Supabase на русский', () => {
-    expect(friendlyAuthError('Invalid login credentials')).toMatch(/Неверный email или пароль/)
+    expect(friendlyAuthError('Invalid login credentials')).toMatch(/Неверный адрес почты или пароль/)
     expect(friendlyAuthError('Invalid login credentials')).toMatch(/Google/)
     expect(friendlyAuthError('Request rate limit reached')).toMatch(/Слишком много/)
     expect(friendlyAuthError('Failed to fetch')).toMatch(/Нет связи/)

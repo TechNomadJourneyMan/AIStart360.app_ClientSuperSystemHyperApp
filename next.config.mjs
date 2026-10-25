@@ -88,7 +88,9 @@ const csp = [
   "img-src 'self' data: https:",
   // Video files uploaded to the cms-media bucket.
   "media-src 'self' https://*.supabase.co",
-  `connect-src 'self' https://*.supabase.co ${marketAppOrigin}`,
+  // Next's font stylesheet loader uses fetch; its CSS and font endpoints must
+  // also be allowed here. Body/headline fonts are served locally.
+  `connect-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com ${marketAppOrigin}`,
   // YouTube (privacy-enhanced) and Vimeo embeds in content pages.
   `frame-src 'self' ${marketAppOrigin} https://www.youtube-nocookie.com https://player.vimeo.com`,
   "frame-ancestors 'none'",

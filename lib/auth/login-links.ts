@@ -48,14 +48,14 @@ export function friendlyAuthError(message: string | null | undefined, fallback =
   if (/[а-яё]/i.test(msg)) return msg
   const m = msg.toLowerCase()
   if (m.includes('invalid login credentials') || m === 'wrong_password') {
-    return 'Неверный email или пароль. Если вы регистрировались через Google — нажмите «Google» или задайте пароль через «Забыли пароль?».'
+    return 'Неверный адрес почты или пароль. Если вы регистрировались через Google — нажмите «Google» или задайте пароль через «Забыли пароль?».'
   }
   if (/rate limit|too many/.test(m)) return 'Слишком много попыток. Подождите несколько минут и попробуйте снова.'
   if (/failed to fetch|networkerror|network request failed|load failed|fetch failed/.test(m)) {
     return 'Нет связи с сервером. Проверьте интернет и попробуйте снова.'
   }
   if (m.includes('banned')) return 'Доступ к аккаунту закрыт. Если это ошибка — напишите в поддержку.'
-  if (m.includes('email not confirmed')) return 'Email не подтверждён. Откройте письмо со ссылкой или войдите по ссылке на почту.'
-  if (/provider is not enabled|unsupported provider/.test(m)) return 'Этот способ входа сейчас недоступен. Войдите по email и паролю.'
+  if (m.includes('email not confirmed')) return 'Адрес почты не подтверждён. Откройте письмо со ссылкой или войдите по ссылке на почту.'
+  if (/provider is not enabled|unsupported provider/.test(m)) return 'Этот способ входа сейчас недоступен. Войдите по адресу почты и паролю.'
   return fallback
 }

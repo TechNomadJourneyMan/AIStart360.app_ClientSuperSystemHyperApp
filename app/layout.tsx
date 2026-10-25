@@ -4,6 +4,7 @@ import NextTopLoader from 'nextjs-toploader'
 import { RouteProgress } from '@/components/navigation/RouteProgress'
 import { Providers } from './providers'
 import { getSiteUrl } from '@/lib/site-url'
+import { LegacySymbolFont } from '@/components/ui/LegacySymbolFont'
 import './globals.css'
 
 /**
@@ -58,18 +59,10 @@ export default function RootLayout({
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-          rel="stylesheet"
-        />
+        <link rel="preload" href="/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
       </head>
       <body className="font-body antialiased">
+        <LegacySymbolFont />
         {/* Top navigation progress bar — instant feedback on every click/route change */}
         <NextTopLoader color="#6effc0" height={2} showSpinner={false} shadow="0 0 8px #6effc0,0 0 4px #6effc0" />
         {/* …and its safety net: finishes on every committed route change and

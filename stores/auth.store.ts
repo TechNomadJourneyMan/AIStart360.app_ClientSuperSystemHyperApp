@@ -3,7 +3,6 @@
 import { flushEvents, track } from '@/lib/events/client'
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
-import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
 import { clearAllDrafts } from '@/lib/survey/draft'
 import { friendlyAuthError, oauthCallbackUrl } from '@/lib/auth/login-links'
 import type { UserRole } from '@/types'
@@ -61,25 +60,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   USER_NOT_FOUND: 'Пользователь с таким email не найден',
   // Also what a Google-only account (no password) gets — say how to get in.
   WRONG_PASSWORD: friendlyAuthError('invalid login credentials'),
-  EMAIL_NOT_CONFIRMED: 'Email не подтверждён',
+  EMAIL_NOT_CONFIRMED: 'Адрес почты не подтверждён',
   EMAIL_TAKEN: 'Этот email уже зарегистрирован',
   INVALID_SESSION: 'Сессия недействительна',
   SESSION_EXPIRED: 'Сессия истекла, войдите снова',
-}
-
-async function confirmEmailForDev(email: string): Promise<void> {
-  const response = await fetch('/api/dev/confirm-email', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email }),
-  })
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string }
-    throw new Error(payload.error ?? 'EMAIL_NOT_CONFIRMED')
-  }
 }
 
 function normalizeRole(role: string | null | undefined): UserRole {
@@ -178,28 +162,29 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   login: async (email, password) => {
+    // Synchronous store guard also covers Enter/programmatic submits in the
+    // same frame, before React has rendered the disabled button.
+    if (get().isLoading) return
     set({ isLoading: true, error: null })
     try {
+      const response = await fetch('/api/auth/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ email, password }),
+      })
+      const result = await response.json() as {
+        ok?: boolean
+        error?: string
+        session?: { access_token: string; refresh_token: string }
+      }
+      if (!response.ok || !result.ok || !result.session) {
+        throw new Error(result.error ?? 'Не удалось войти. Попробуйте ещё раз.')
+      }
+
       const supabase = createClient()
-      const signIn = async () => supabase.auth.signInWithPassword({ email, password })
-      let { data, error } = await signIn()
-
-      if (error && isSupabaseEmailNotConfirmedError(error.message) && process.env.NODE_ENV !== 'production') {
-        await confirmEmailForDev(email)
-        const retry = await signIn()
-        data = retry.data
-        error = retry.error
-      }
-
-      if (error) {
-        if (isSupabaseEmailNotConfirmedError(error.message)) {
-          throw new Error('EMAIL_NOT_CONFIRMED')
-        }
-        if (error.message.toLowerCase().includes('invalid login credentials')) {
-          throw new Error('WRONG_PASSWORD')
-        }
-        throw new Error(error.message)
-      }
+      const { data, error } = await supabase.auth.setSession(result.session)
+      if (error) throw new Error(error.message)
       if (!data.user) throw new Error('USER_NOT_FOUND')
 
       const appUser = await buildUserFromSession(data.user)

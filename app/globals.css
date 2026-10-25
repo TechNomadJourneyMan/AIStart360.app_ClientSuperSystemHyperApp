@@ -2,13 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/BricolageGrotesque-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/BricolageGrotesque-Bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 600 900;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
     --font-headline: 'Bricolage Grotesque';
-    --font-body: 'DM Sans';
-    --font-label: 'Space Grotesk';
-    --font-mono: 'JetBrains Mono';
+    --font-body: 'Inter';
+    --font-label: 'Inter';
+    --font-mono: 'Inter';
   }
 
   * {
@@ -20,7 +44,7 @@
   body {
     background-color: #0A0B0F;
     color: #e3e2e8;
-    font-family: 'DM Sans', 'Inter', sans-serif;
+    font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -170,10 +194,10 @@
 }
 
 @layer utilities {
-  .font-headline { font-family: 'Bricolage Grotesque', 'Space Grotesk', sans-serif; }
-  .font-body     { font-family: 'DM Sans', 'Inter', sans-serif; }
-  .font-label    { font-family: 'Space Grotesk', 'DM Sans', sans-serif; }
-  .font-mono     { font-family: 'JetBrains Mono', monospace; }
+  .font-headline { font-family: 'Bricolage Grotesque', 'Inter', sans-serif; }
+  .font-body     { font-family: 'Inter', sans-serif; }
+  .font-label    { font-family: 'Inter', sans-serif; }
+  .font-mono     { font-family: 'Inter', sans-serif; font-variant-numeric: tabular-nums; }
 }
 
 /* ═════════════════════════════════════════════════════════════════ */
