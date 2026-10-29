@@ -1,0 +1,26 @@
+[Unit]
+Description=AIStart360 web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aistart360
+Group=aistart360
+WorkingDirectory=/var/www/aistart360/current
+ExecStart=/usr/bin/node /var/www/aistart360/current/deploy/beget/runtime.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/aistart360
+MemoryMax=1200M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target
