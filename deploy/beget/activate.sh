@@ -12,10 +12,22 @@ flock -n 9
 [[ -f "$release/.next/BUILD_ID" && -f "$root/shared/.env.production" ]]
 previous=$(readlink "$root/current" || true)
 [[ -z "$previous" || "$previous" == "$root/releases/"* ]]
+rollback() {
+  trap - ERR
+  if [[ -n "$previous" ]]; then
+    ln -s "$previous" "$root/current.rollback"
+    mv -Tf "$root/current.rollback" "$root/current"
+    systemctl restart aistart360 || true
+  else
+    systemctl stop aistart360 || true
+  fi
+  exit 1
+}
 printf '{"sha":"%s"}\n' "$sha" > "$release/public/deployment.txt"
 chown aistart360:aistart360 "$release/public/deployment.txt"
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
+trap rollback ERR
 systemctl restart aistart360
 ready=0
 for attempt in {1..12}; do
@@ -23,13 +35,7 @@ for attempt in {1..12}; do
   sleep 3
 done
 if [[ "$ready" != 1 ]]; then
-  if [[ -n "$previous" ]]; then
-    ln -s "$previous" "$root/current.rollback"
-    mv -Tf "$root/current.rollback" "$root/current"
-    systemctl restart aistart360
-  else
-    systemctl stop aistart360
-  fi
-  exit 1
+  rollback
 fi
 systemctl enable aistart360
+trap - ERR
