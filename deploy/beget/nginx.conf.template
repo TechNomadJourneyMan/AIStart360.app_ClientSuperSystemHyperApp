@@ -1,0 +1,31 @@
+server {
+    listen 80;
+    server_name __HOST__;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name __HOST__;
+    ssl_certificate /etc/letsencrypt/live/aistart360/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/aistart360/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 20m;
+    # Local Workflow dispatch uses loopback directly; public writes are forbidden.
+    location ^~ /.well-known/workflow/ {
+        limit_except HEAD { deny all; }
+        proxy_pass http://127.0.0.1:3100;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}

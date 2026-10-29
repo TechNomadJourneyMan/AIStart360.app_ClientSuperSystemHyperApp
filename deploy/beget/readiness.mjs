@@ -1,0 +1,15 @@
+const sha = process.argv[2]
+const base = process.argv[3] || 'http://127.0.0.1:3100'
+if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Expected full release SHA')
+const request = path => fetch(new URL(path, base), { redirect: 'manual', signal: AbortSignal.timeout(30000) })
+const login = await request('/login')
+if (login.status !== 200) throw new Error(`Login HTTP ${login.status}`)
+const meta = await request('/deployment.txt')
+if (!meta.ok || (await meta.json()).sha !== sha) throw new Error('Deployed SHA mismatch')
+const health = await request('/api/health')
+if (!health.ok) throw new Error(`Health HTTP ${health.status}`)
+const data = await health.json()
+if (!Array.isArray(data.missingEnv) || data.missingEnv.length || !data.services?.length || data.services.some(s => s.status === 'offline')) throw new Error('Configuration or database health failed')
+const workflow = await fetch(new URL('/.well-known/workflow/v1/flow?__health', base), {method:'HEAD',redirect:'manual',signal:AbortSignal.timeout(15000)})
+if (!workflow.ok) throw new Error(`Workflow health HTTP ${workflow.status}`)
+console.log(JSON.stringify({sha,base,login:login.status,database:'reachable',workflow:workflow.status}))
