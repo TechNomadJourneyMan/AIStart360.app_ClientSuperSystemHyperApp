@@ -67,6 +67,7 @@
     "croner": "11.0.0",
     "date-fns": "^3.6.0",
     "framer-motion": "^11.18.2",
+    "geoip-country": "5.0.202610310241",
     "inngest": "^4.1.0",
     "langfuse": "^3.38.6",
     "lucide-react": "^0.368.0",

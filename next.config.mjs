@@ -181,7 +181,9 @@ const nextConfig = {
     // Runs instrumentation.ts at boot. On Vercel its register() returns at once; on a persistent
     // server (Railway) it starts the Workflow queue, the in-process cron and the SIGTERM handler.
     instrumentationHook: true,
-    serverComponentsExternalPackages: ['pdfkit', 'tesseract.js', 'pdf-parse'],
+    // geoip-country (lib/geo/country.ts: landing-page currency by visitor IP) reads its .dat files
+    // relative to its own __dirname, so like the packages above it must not be bundled.
+    serverComponentsExternalPackages: ['pdfkit', 'tesseract.js', 'pdf-parse', 'geoip-country'],
     outputFileTracingIncludes: {
       '/api/export/report': ['./public/fonts/**'],
       // pdf-parse (text extraction) is reachable from many API routes.

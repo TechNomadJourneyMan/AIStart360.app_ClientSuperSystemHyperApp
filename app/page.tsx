@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { headers } from 'next/headers'
 import CheckoutButton from '@/app/_components/CheckoutButton'
 import { getPlan } from '@/lib/payments'
+import { countryFromHeaders } from '@/lib/geo/country'
+import { currencyForCountry, type GeoCurrency } from '@/lib/geo/currency'
 
 // Public landing — рассказывает о AIStart360 и ведёт на /login
 // Auth'd users всё равно увидят landing; кликают «Войти» → middleware вернёт их в их панель.
@@ -99,32 +101,13 @@ function pickVariant(v: string | string[] | undefined): HeroVariant {
   return VARIANTS['2'] // default — «GRI Health Check» (Option 2, решение ПО)
 }
 
-// ── ГЕО-ВАЛЮТА (№18) ──────────────────────────────────────────────────────
-// Каталог PLANS хранит цены в USD (minor units). Для витрины конвертируем в
-// валюту региона по заголовку `x-vercel-ip-country`: KZ → ₸, RU/BY → ₽,
-// остальные страны → $. Нет заголовка (локально/не-Vercel) → fallback ₸.
-// Курсы — статические витринные ориентиры (не биржевые), суммы для не-USD
-// показываются с «≈»; списание в USD по курсу на день оплаты (см. сноску).
-type GeoCurrency = { code: 'USD' | 'KZT' | 'RUB'; symbol: string; perUsd: number }
-
-const GEO_CURRENCIES: Record<GeoCurrency['code'], GeoCurrency> = {
-  USD: { code: 'USD', symbol: '$', perUsd: 1 },
-  KZT: { code: 'KZT', symbol: '₸', perUsd: 520 },
-  RUB: { code: 'RUB', symbol: '₽', perUsd: 95 },
-}
-
+// Валюта витрины — по стране посетителя (lib/geo/currency.ts, lib/geo/country.ts).
 function resolveGeoCurrency(): GeoCurrency {
-  let country: string | null = null
   try {
-    country = headers().get('x-vercel-ip-country')
+    return currencyForCountry(countryFromHeaders(headers()))
   } catch {
-    country = null
+    return currencyForCountry(null) // fallback — ₸
   }
-  if (!country) return GEO_CURRENCIES.KZT // fallback — ₸
-  const c = country.toUpperCase()
-  if (c === 'KZ') return GEO_CURRENCIES.KZT
-  if (c === 'RU' || c === 'BY') return GEO_CURRENCIES.RUB
-  return GEO_CURRENCIES.USD
 }
 
 // Human-readable amount from PLANS in the visitor's currency.
