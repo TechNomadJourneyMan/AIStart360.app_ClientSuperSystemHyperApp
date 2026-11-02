@@ -5,6 +5,8 @@ import type { PointAPageState } from '@/hooks/usePointAState'
 import { getMetricById } from '@/lib/metrics/registry'
 import { DEFAULT_KEY_METRICS, blockMetricIds, keyMetricCatalog, toMetricView, type BlockDetail, type MetricView } from '@/lib/point-a/v4/metric-views'
 import type { BlockKey } from '@/lib/point-a/v4/config'
+import { summarizeAuthors, type AnswerAttribution } from '@/lib/survey/attribution-label'
+import { lastAnswerChange } from '@/lib/point-a/v4/answer-authors'
 
 /** value, period, source, recent values (oldest first) */
 const VALUES: Record<string, [number, string, string, number[]]> = {
@@ -41,7 +43,24 @@ export function previewDetails(blocks: PointAPageState['snapshot'] extends infer
   return out
 }
 
-const ANSWERS: Record<string, unknown> = {
+/** Who answered (client, AI chat, documents, expert, admin) — the author lines of the page. */
+const day = (d: number) => new Date(Date.now() - d * 864e5).toISOString()
+export const PREVIEW_ATTRIBUTION: Record<string, AnswerAttribution> = {
+  s1_current_revenue_year: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(2), updatedByName: null, updatedVia: 'express' },
+  s1_current_revenue_month: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(2), updatedByName: null, updatedVia: 'express' },
+  s9n_revenue_2024: { updatedBy: 'e1', updatedByRole: 'expert', updatedAt: day(1), updatedByName: 'Айгерим Ахметова' },
+  s9n_change_vs_2023: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(9), updatedByName: null },
+  s9n_net_margin: { updatedBy: null, updatedByRole: 'ai', updatedAt: day(5), updatedByName: null },
+  s9n_breakeven_point: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(9), updatedByName: null, updatedVia: 'chat' },
+  s12_crm_tool: { updatedBy: 'a1', updatedByRole: 'admin', updatedAt: day(3), updatedByName: 'Админ AIStart360' },
+  s3_deal_cycle_days: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(9), updatedByName: null },
+  s4m_control_method: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(4), updatedByName: null },
+  s4m_report_automated: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(4), updatedByName: null },
+  s6_main_pain: { updatedBy: 'owner', updatedByRole: 'user', updatedAt: day(9), updatedByName: null, updatedVia: 'chat' },
+  s4m_hours_on_ops: { updatedBy: 'e1', updatedByRole: 'expert', updatedAt: day(1), updatedByName: 'Айгерим Ахметова' },
+}
+
+export const PREVIEW_ANSWERS: Record<string, unknown> = {
   s1_current_revenue_year: 66_000_000, s9n_revenue_2024: 52_000_000, s9n_change_vs_2023: '+18%', s9n_net_margin: 22,
   s9n_debts_amount: 0, s9n_breakeven_point: 3_500_000, s12_crm_tool: 'amocrm', s3_deal_cycle_days: 21,
   s4m_control_method: 'kpi', s4m_report_automated: 'excel', s12_project_mgmt: 'notion',
@@ -50,16 +69,22 @@ const ANSWERS: Record<string, unknown> = {
   s1_employee_count: 18, s3_product_count: 4, s5n_product_locomotive: 'Курс «Старт»', s7_nps_score: 41,
 }
 
-export function previewState(): PointAPageState {
+/** `preliminary`: the full questionnaire is not sent yet — findings only, no numbers. */
+export function previewState(mode: 'full' | 'preliminary' = 'full'): PointAPageState {
   const now = new Date()
-  const v4 = calculatePointAV4({ answers: ANSWERS, blocks: effectiveBlocks(DEFAULT_TEMPLATE), conflictMetrics: new Set(['biz.finansy.vyruchka_god']) })
+  const v4 = calculatePointAV4({ answers: PREVIEW_ANSWERS, blocks: effectiveBlocks(DEFAULT_TEMPLATE), conflictMetrics: new Set(['biz.finansy.vyruchka_god']), surveyComplete: mode === 'full' })
   v4.blocks = v4.blocks.map((b) => (b.key === 'marketing' ? { ...b, hypothesis: { score: 42, confidence: 0.3, rationale: 'Есть CRM и цикл сделки 21 день, но нет данных о бюджете и каналах — оценка ориентировочная.', generatedAt: now.toISOString() } } : b))
   const goal: Goal = { id: 'g1', metricId: 'biz.finansy.vyruchka_god', label: 'Выручка через 12 мес.', unit: '₸', targetValue: 100_000_000, direction: 'higher_is_better', periodLabel: '12m', deadline: null, baselineValue: 60_000_000, baselinePeriod: '2026', source: 'owner', note: null, createdAt: new Date(now.getTime() - 90 * 864e5).toISOString() }
   const iso = (d: number) => new Date(now.getTime() - d * 864e5).toISOString()
+  const history = [
+    { id: 's3', createdAt: iso(0.02), overall: v4.overall, confidence: v4.confidence, changes: ['Выручка (год): 60 млн → 66 млн · 10.2026 · анкета', 'Финансы: +6 (41 → 47)', 'Найдено расхождений: 1'] },
+    { id: 's2', createdAt: iso(3), overall: (v4.overall ?? 50) - 6, confidence: 0.4, changes: ['Анкета, шаг 4: изменено ответов — 5', 'Команда: появился балл 61'] },
+    { id: 's1', createdAt: iso(9), overall: (v4.overall ?? 50) - 11, confidence: 0.3, changes: ['Первый расчёт Точки А'] },
+  ]
   return {
-    companyId: 'preview', canManage: true, role: 'owner',
+    companyId: 'preview', canManage: true, role: 'owner', viewerIsOwner: true, answerAttribution: PREVIEW_ATTRIBUTION,
     snapshot: {
-      id: 's3', createdAt: iso(0.02), engine: 'v4', trigger: 'event', overall: v4.overall, confidence: v4.confidence, coverage: v4.coverage,
+      id: 's3', createdAt: iso(0.02), engine: 'v4', assessment: v4.assessment, trigger: 'event', overall: v4.overall, confidence: v4.confidence, coverage: v4.coverage,
       stage: v4.stage, healthIndex: v4.health_index, blocks: v4.blocks, strengths: v4.strengths, uploadChecklist: v4.upload_checklist,
       changeReasons: [], reviewedBy: null, reviewedAt: null, reviewedByName: null,
       metrics: [
@@ -68,11 +93,7 @@ export function previewState(): PointAPageState {
         { id: 'biz.prodazhi.tsikl_zakrytiya_sdelki', label: 'Цикл сделки', unit: 'days', value: 21, source: 'анкета', period: '2026' },
       ],
     },
-    history: [
-      { id: 's3', createdAt: iso(0.02), overall: v4.overall, confidence: v4.confidence, changes: ['Выручка (год): 60 млн → 66 млн · 10.2026 · анкета', 'Финансы: +6 (41 → 47)', 'Найдено расхождений: 1'] },
-      { id: 's2', createdAt: iso(3), overall: (v4.overall ?? 50) - 6, confidence: 0.4, changes: ['Анкета, шаг 4: изменено ответов — 5', 'Команда: появился балл 61'] },
-      { id: 's1', createdAt: iso(9), overall: (v4.overall ?? 50) - 11, confidence: 0.3, changes: ['Первый расчёт Точки А'] },
-    ],
+    history: mode === 'preliminary' ? history.map((h) => ({ ...h, overall: null, changes: h.changes.filter((c) => !/балл|\(\d+ → \d+\)/.test(c)) })) : history,
     discrepancies: [{
       id: 'd1', metricKey: 'biz.finansy.vyruchka_god', metricLabel: 'Выручка (год)', periodKey: '2024', periodLabel: '2024', kind: 'conflict',
       detail: null, chosenValue: 52_000_000,
@@ -90,7 +111,10 @@ export function previewState(): PointAPageState {
         return { key: k, title: BLOCK_LIBRARY[k].title, benchmark: 55, score: b?.score ?? null, rating: b?.score == null ? null : b.score >= 60 ? 'Выше среднего' : 'На уровне' }
       }),
     },
-    sources: { survey: { percent: 58, completed: 7, total: 12 }, documents: { parsed: 2, processing: 1, failed: 0 }, metrics: 41 },
+    sources: {
+      survey: { percent: 58, completed: 7, total: 12, authors: summarizeAuthors(Object.keys(PREVIEW_ANSWERS), PREVIEW_ATTRIBUTION), lastChangedAt: lastAnswerChange(PREVIEW_ATTRIBUTION) },
+      documents: { parsed: 2, processing: 1, failed: 0 }, metrics: 41,
+    },
     recalculation: 'idle',
     config: { template: 'default', templateTitle: 'Универсальный', added: [], blocks: effectiveBlocks(DEFAULT_TEMPLATE).map((b) => ({ key: b.key, title: b.title, weight: b.weight, hiddenForClient: false, informational: b.informational, order: b.order })) },
     library: BLOCK_KEYS.map((k) => ({ key: k, title: BLOCK_LIBRARY[k].title, description: BLOCK_LIBRARY[k].description })),

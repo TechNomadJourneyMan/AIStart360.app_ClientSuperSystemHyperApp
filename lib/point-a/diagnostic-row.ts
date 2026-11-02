@@ -17,12 +17,17 @@ export type StoreResult =
   | { ok: true; diag: Record<string, unknown> & { id: string } }
   | { ok: false; error: string }
 
-/** Retire the current row(s) of the user, insert `result` as current; on a failed insert put the previous one back. */
+/**
+ * Retire the current row(s) of the user, insert `result` as current; on a failed insert put the previous one back.
+ * `preliminary` (the full questionnaire is not sent yet, PO 2026-11-02): no
+ * score, health, stage or block scores in the row — only findings.
+ */
 export async function storeCurrentDiagnostic(
   db: SupabaseClient,
-  opts: { userId: string; companyId: string | null; result: PointA; aiStatus: 'processing' | 'none' },
+  opts: { userId: string; companyId: string | null; result: PointA; aiStatus: 'processing' | 'none'; preliminary?: boolean },
 ): Promise<StoreResult> {
   const { userId, companyId, result } = opts
+  const p = opts.preliminary === true
   const { data: currentRows, error: currentErr } = await db
     .from('diagnostics')
     .select('id')
@@ -47,14 +52,14 @@ export async function storeCurrentDiagnostic(
     .insert({
       user_id: userId,
       company_id: companyId,
-      overall_score: result.overall_score,
-      health_index: result.health_index,
-      stage: result.stage,
-      finance_score: result.blocks.finance,
-      marketing_score: result.blocks.marketing,
-      operations_score: result.blocks.operations,
-      strategy_score: result.blocks.strategy,
-      sales_score: result.blocks.sales,
+      overall_score: p ? null : result.overall_score,
+      health_index: p ? null : result.health_index,
+      stage: p ? null : result.stage,
+      finance_score: p ? null : result.blocks.finance,
+      marketing_score: p ? null : result.blocks.marketing,
+      operations_score: p ? null : result.blocks.operations,
+      strategy_score: p ? null : result.blocks.strategy,
+      sales_score: p ? null : result.blocks.sales,
       risks: result.risks,
       insights: result.insights,
       quick_wins: result.quick_wins,

@@ -281,8 +281,9 @@ const TIER_ORDER: Record<ChatTier, number> = { light: 0, standard: 1, premium: 2
  *      OpenRouter, when it has a key;
  *   4. any other usable model of the capability on any enabled provider with a
  *      key — for chat the ones whose tier_hint matches first, then unhinted,
- *      then the other tiers; routed and manually entered models before
- *      discovered ones;
+ *      then the other tiers, nearer first and, at the same distance, the
+ *      stronger tier first (a standard call falls back to premium before
+ *      light); routed and manually entered models before discovered ones;
  *   5. the built-in OpenRouter with `fallbackModel` (chat / embeddings), when
  *      it has a key.
  * Healthy targets come before ones that failed in the last 5 minutes
@@ -351,7 +352,10 @@ export async function resolveCandidates(capability: AiCapability, opts: ResolveO
     const hint = m.tier_hint ?? null
     if (hint === tier) return 0
     if (hint === null) return 1
-    return 1 + Math.abs(TIER_ORDER[hint] - TIER_ORDER[tier])
+    // Nearer tiers first; at the same distance the stronger one, so a fallback
+    // keeps quality when it can (standard: premium 2, light 3).
+    const d = TIER_ORDER[hint] - TIER_ORDER[tier]
+    return 2 * Math.abs(d) + (d > 0 ? 0 : 1)
   }
   const rank = (m: ModelRow): number[] => [
     tierRank(m),

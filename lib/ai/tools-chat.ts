@@ -16,8 +16,10 @@
  * OpenRouter privacy fields (lib/ai/privacy.ts, added by the client for the
  * openrouter kind only), the spend ledger (ai_usage_ledger, including the
  * worst case of a timed-out attempt) and per-user ai_usage with a required
- * `feature`. Candidates fail over on 401/403/404/408/429/5xx/timeout/network
- * (lib/ai/providers/failover.ts). Never throws; never logs prompts or keys.
+ * `feature`. Candidates fail over on 401/402/403/404/408/429/5xx/timeout/network
+ * (lib/ai/providers/failover.ts); chat steps also on a 400 that rejects the
+ * model, its tools / image support or the output format. Never throws; never
+ * logs prompts or keys.
  */
 import { modelForTier, type LlmErrorCode } from './gateway'
 import {
@@ -37,7 +39,7 @@ import {
   type ToolChoice,
   type ToolDefinition,
 } from './providers/client'
-import { runWithFailover } from './providers/failover'
+import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { providerBudgetRefusal, resolveCandidates } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
@@ -151,9 +153,10 @@ export async function chatWithTools(opts: ChatWithToolsOptions): Promise<ChatWit
     }),
     {
       budgetCheck: providerBudgetRefusal,
-      // A model that cannot take tools / images often answers 400: try the next one.
-      alsoFailoverOn: (target, f) => f.status === 400
-        && ((withTools && target.supportsTools !== true) || (vision && target.supportsVision !== true)),
+      // A model that cannot take tools / images often answers 400: try the next
+      // one; so does a 400 that rejects the model id or the output format.
+      alsoFailoverOn: (target, f) => isModelOrFormatRejection(f) || (f.status === 400
+        && ((withTools && target.supportsTools !== true) || (vision && target.supportsVision !== true))),
       onFailure: async (target, f) => {
         if (f.code === 'TIMEOUT') {
           await recordUsage({

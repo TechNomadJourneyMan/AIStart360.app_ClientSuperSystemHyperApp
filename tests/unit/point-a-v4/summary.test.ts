@@ -17,4 +17,12 @@ describe('overviewSummary', () => {
     expect(o.risks.length).toBeGreaterThan(0)
     expect(o.risks.every((x) => typeof x.text === 'string' && x.text.length > 0)).toBe(true)
   })
+  it('preliminary (PO 2026-11-02): findings, never a number', () => {
+    const r = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE), surveyComplete: false })
+    const o = overviewSummary(r)
+    expect(o.headline).toMatch(/^Это предварительный снимок/)
+    expect(o.headline).toMatch(/находок: \d+/)
+    expect(`${o.headline} ${o.strengths.map((x) => x.text).join(' ')}`).not.toMatch(/из 100|балл|стади[яи] «/)
+    expect(o.risks.length).toBeGreaterThan(0)
+  })
 })

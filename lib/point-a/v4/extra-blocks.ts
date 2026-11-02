@@ -98,7 +98,12 @@ export function productChecks(a: A, resolved: PointAResolvedInputs = {}): PointA
   checks.push(namedCheck('moat', 15, ['s3n_cannot_copy'], 'Не описано, что конкуренты не могут скопировать', 'Нет защиты от копирования', 'Сформулировать, что отличает продукт и сложно повторить'))
 
   const nps = typeof resolved.nps === 'number' && Number.isFinite(resolved.nps) ? resolved.nps : num(a, 's7_nps_score')
+  // The questionnaire asks «по 10-балльной шкале»: 0..10 is that score, not an NPS.
+  const tenScale = nps !== null && nps >= 0 && nps <= 10
   if (nps === null) checks.push({ id: 'nps', max: 20, earned: 0, missing: 'NPS не измерен', rec: 'Запустить NPS-опрос клиентов' })
+  else if (tenScale && nps >= 9) checks.push({ id: 'nps', max: 20, earned: 20 })
+  else if (tenScale && nps >= 7) checks.push({ id: 'nps', max: 20, earned: 10, issue: `Клиенты оценивают вас на ${nps}/10 — есть недовольные`, rec: 'Спросить клиентов с оценкой ниже 9, чего им не хватило' })
+  else if (tenScale) checks.push({ id: 'nps', max: 20, earned: 0, issue: `Клиенты оценивают вас на ${nps}/10 — много недовольных`, rec: 'Разобрать причины недовольства с 10 клиентами' })
   else if (nps >= 50) checks.push({ id: 'nps', max: 20, earned: 20 })
   else if (nps >= 0) checks.push({ id: 'nps', max: 20, earned: 10, issue: `NPS ${nps} — клиенты довольны умеренно` })
   else checks.push({ id: 'nps', max: 20, earned: 0, issue: `NPS ${nps} — недовольных больше, чем сторонников`, rec: 'Разобрать причины недовольства с 10 клиентами' })

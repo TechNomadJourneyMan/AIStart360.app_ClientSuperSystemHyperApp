@@ -20,10 +20,16 @@ import { BTN_GHOST, CARD, CHIP, ConfidenceBar, Icon, SectionTitle, fmtValue, ton
 import { cn } from '@/lib/utils'
 import { BodyPortal } from '@/components/ui/body-portal'
 import { actionLabel, isPendingKey } from '@/lib/ui/pending'
+import { blockFindingsText } from '@/lib/point-a/v4/primary'
+import { latestBlockAuthor } from '@/lib/point-a/v4/answer-authors'
 
 type Metric = NonNullable<PointAPageState['snapshot']>['metrics'][number]
 
-function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving, toggling, comments }: {
+function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving, toggling, comments, preliminary, lastChange }: {
+  /** Before the full questionnaire: findings, no score (PO 2026-11-02). */
+  preliminary: boolean
+  /** The latest answer change of the block: «Изменил эксперт Иван · 01.11.2026». */
+  lastChange: string | null
   saving?: boolean
   /** This card's «Скрыть / Показать» is being saved. */
   toggling?: boolean
@@ -48,7 +54,9 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
           <p className="text-[11px] text-on-surface-variant line-clamp-2">{BLOCK_LIBRARY[block.key].description}</p>
         </div>
         <div className="text-right flex-shrink-0">
-          {insufficient ? (
+          {preliminary ? (
+            <span className={cn(CHIP, block.coverage < 0.4 ? 'bg-amber-300/10 text-amber-200' : 'bg-white/[0.04] text-on-surface-variant')}>{blockFindingsText(block)}</span>
+          ) : insufficient ? (
             block.hypothesis ? (
               <div>
                 <span className="font-mono text-2xl font-bold text-on-surface-variant">~{block.hypothesis.score}</span>
@@ -68,7 +76,7 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
 
       <div className="grid grid-cols-2 gap-3">
         <ConfidenceBar value={block.coverage} label="Полнота" />
-        <ConfidenceBar value={block.confidence} label="Достоверность" />
+        {!preliminary && <ConfidenceBar value={block.confidence} label="Достоверность" />}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -77,14 +85,14 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
         {!block.informational && <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')}>вес {Math.round(block.weight * 100)}%</span>}
       </div>
 
-      {(insufficient || block.basis === 'inferred') && block.hypothesis && <p className="text-xs text-on-surface-variant">{block.hypothesis.rationale}</p>}
+      {!preliminary && (insufficient || block.basis === 'inferred') && block.hypothesis && <p className="text-xs text-on-surface-variant">{block.hypothesis.rationale}</p>}
       {comments[0] && (
         <p className="rounded-lg border border-sky-300/15 bg-sky-300/[0.05] px-2.5 py-1.5 text-xs text-on-surface">
           <span className="font-mono text-[10px] uppercase tracking-wider text-sky-200">Эксперт{comments[0].authorName ? ` · ${comments[0].authorName}` : ''}:</span> <span className="line-clamp-2">{comments[0].body}</span>
           {comments.length > 1 && <span className="text-[10px] text-on-surface-variant"> ещё {comments.length - 1}</span>}
         </p>
       )}
-      {!insufficient && block.top_issues.length > 0 && (
+      {(preliminary || !insufficient) && block.top_issues.length > 0 && (
         <ul className="space-y-1">
           {block.top_issues.map((t, i) => <li key={i} className="flex gap-1.5 text-xs text-on-surface"><Icon name="arrow_right" className="text-[14px] text-amber-300" />{t}</li>)}
         </ul>
@@ -99,6 +107,10 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
             </li>
           ))}
         </ul>
+      )}
+
+      {lastChange && (
+        <p className="flex items-center gap-1 text-[11px] text-on-surface-variant"><Icon name="history_edu" className="text-[14px]" />{lastChange}</p>
       )}
 
       {customize ? (
@@ -124,6 +136,9 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
   // Which button is saving (`toggle:<block>`, `add:<block>`): it says «Сохраняем…», the others wait disabled.
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const snapshot = state.snapshot
+  const preliminary = snapshot?.assessment === 'preliminary'
+  // The owner reads «вы»; staff read «пользователь».
+  const viewer = { viewerIsOwner: state.viewerIsOwner }
   const cfg = state.config.blocks
   const hidden = useMemo(() => new Set(cfg.filter((b) => b.hiddenForClient).map((b) => b.key)), [cfg])
   const order = useMemo(() => cfg.slice().sort((a, b) => a.order - b.order).map((b) => b.key), [cfg])
@@ -169,12 +184,12 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
       )}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((b, i) => (
-          <BlockCard key={b.key} block={b} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
+          <BlockCard key={b.key} block={b} preliminary={preliminary} lastChange={latestBlockAuthor(b.key, state.answerAttribution ?? {}, viewer)} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
             onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} toggling={isPendingKey(pendingKey, `toggle:${b.key}`)} comments={commentsOf(b.key)} />
         ))}
       </div>
       {openKey && (
-        <BodyPortal><BlockDetailPanel blockKey={openKey} title={BLOCK_LIBRARY[openKey].title} onClose={() => setOpenKey(null)} preview={previewDetails?.[openKey]} comments={commentsOf(openKey)} /></BodyPortal>
+        <BodyPortal><BlockDetailPanel blockKey={openKey} title={BLOCK_LIBRARY[openKey].title} onClose={() => setOpenKey(null)} preview={previewDetails?.[openKey]} comments={commentsOf(openKey)} preliminary={preliminary} attribution={state.answerAttribution ?? {}} viewer={viewer} /></BodyPortal>
       )}
       {customize && notInConfig.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">

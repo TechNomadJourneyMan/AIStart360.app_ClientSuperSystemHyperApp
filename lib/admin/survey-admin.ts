@@ -126,5 +126,25 @@ export async function adminEditSurvey(
     const { error } = await writer.from('survey_answers').delete().eq('user_id', userId).in('question_key', deletes)
     if (error) throw new SurveyEditError('Не удалось удалить ответы', 500)
   }
+  // An expert / GIGA edit (or a deleted questionnaire) changes Point A like the owner's own.
+  await announceSurveyChange(userId, actor.id, [...upserts.map((r) => r.question_key), ...deletes])
   return { updated: upserts.length, deleted: deletes.length, ignored }
+}
+
+/** Recalculate the client's Point A after a staff edit. Never fails the edit. */
+async function announceSurveyChange(userId: string, actorId: string, keys: string[]): Promise<void> {
+  try {
+    const { data } = await createServiceClient().from('companies').select('id').eq('user_id', userId).maybeSingle()
+    const companyId = (data as { id?: string } | null)?.id
+    if (!companyId) return
+    const { emitPlatformEventSafely } = await import('@/lib/events/platform')
+    emitPlatformEventSafely({
+      name: 'SURVEY_ANSWER_CHANGED', companyId: String(companyId), subjectType: 'survey', subjectId: userId,
+      actor: actorId.includes(':') ? actorId : `user:${actorId}`,
+      payload: { keys: keys.slice(0, 50), by: 'staff' },
+      dedupeKey: `survey_changed:${companyId}:staff:${new Date().toISOString().slice(0, 16)}`,
+    })
+  } catch (err) {
+    console.error('[admin/survey-edit] Point A recalculation not requested', err instanceof Error ? err.message : err)
+  }
 }

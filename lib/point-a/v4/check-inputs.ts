@@ -8,7 +8,9 @@
  *   • a check with `missing` set is not answered;
  *   • a check listed below is answered when one of its keys was answered —
  *     or, for a form toggle (`toggle`), when the owner saved the step it is
- *     on (an untouched toggle on a saved step is a deliberate «нет»);
+ *     on AND sent the full questionnaire (then every toggle was on screen, so
+ *     an untouched one is a deliberate «нет»; before it, express screens of
+ *     one step differ and the toggle may never have been shown);
  *   • any other check is answered when it earned points or found an issue.
  */
 import { present, type PointACheck, type PointAResolvedInputs } from '@/lib/point-a-engine'
@@ -36,6 +38,7 @@ export function isAnswered(
   answers: Record<string, unknown>,
   steps: ReadonlySet<number>,
   resolved: PointAResolvedInputs = {},
+  opts: { surveyComplete?: boolean } = {},
 ): boolean {
   if (check.excluded) return false
   if (check.missing) return false
@@ -50,7 +53,7 @@ export function isAnswered(
     return !Number.isFinite(n) || n > 0
   }
   if (input.keys.some(answered)) return true
-  if (input.toggle) return input.keys.some((k) => {
+  if (input.toggle && opts.surveyComplete !== false) return input.keys.some((k) => {
     const s = stepForQuestionKey(k)
     return s !== null && steps.has(s)
   })

@@ -65,17 +65,33 @@ export function present(v: unknown): boolean {
   if (v === undefined || v === null) return false
   // «Не знаю» is «нет данных» (lib/survey/answer-value.ts); readers normally see it as null already.
   if (isUnknownAnswer(v)) return false
-  if (typeof v === 'string') return v.trim().length > 0
+  // A typed «не знаю» / «не считали» is the same «нет данных» as the button (PO 2026-11-02).
+  if (typeof v === 'string') return v.trim().length > 0 && textAnswerKind(v) !== 'unknown'
   if (Array.isArray(v)) return v.length > 0
   return true
 }
 
-const NO_ANSWER_RE = /^(нет|no|none|-|—|отсутствует|не\s*используем|не\s*используется)$/i
+const NO_ANSWER_RE = /^(нет|нету|no|none|-|—|ничего|никак(ой|ая|ое|ие|их)?|отсутству(ет|ют)|не\s*используем|не\s*используется|пока\s+нет|в\s+тетради|тетрадь|в\s+блокноте|на\s+бумаге|в\s+голове)$/i
+const UNKNOWN_TEXT_RE = /^((я\s+)?(пока\s+|точно\s+)?не\s*(знаю|знаем|помню|уверен[аы]?)(\s+точно)?|(пока\s+)?не\s*(считали|считал[аи]?|рассчитывали|рассчитывал[аи]?|посчитали|измеряли)|неизвестно|нет\s+данных|затрудняюсь(\s+ответить)?|\?+)$/i
 const UNKNOWN_RE = /^(нет|no|none|-|—|не\s*знаю|не\s*считали|неизвестно|не\s*рассчитывали)$/i
 
-/** A text answer that names something (not blank, not «нет»). Presence is the criterion. */
+/**
+ * What a text answer says (PO 2026-11-02): `unknown` — «не знаю», «не считали»
+ * (no data, like the «Не знаю» button); `none` — «нет», «ничего», «в тетради»
+ * (an answer that names nothing — a finding); `named` — a real answer.
+ */
+export function textAnswerKind(v: unknown): 'empty' | 'unknown' | 'none' | 'named' {
+  if (typeof v !== 'string') return 'empty'
+  const s = v.trim().replace(/[.!…]+$/, '').replace(/\s+/g, ' ').trim()
+  if (s === '') return 'empty'
+  if (UNKNOWN_TEXT_RE.test(s)) return 'unknown'
+  if (NO_ANSWER_RE.test(s)) return 'none'
+  return 'named'
+}
+
+/** A text answer that names something (not blank, not «нет», not «не знаю»). Presence is the criterion. */
 export function namesSomething(v: unknown): boolean {
-  return typeof v === 'string' && v.trim() !== '' && !NO_ANSWER_RE.test(v.trim())
+  return textAnswerKind(v) === 'named'
 }
 
 function finite(v: number | null | undefined): v is number {
@@ -142,14 +158,14 @@ function tableValue(inp: Inputs, row: MetricsTableRow, column: MetricsTableColum
 }
 
 /**
- * Annual revenue for `year`.
+ * Revenue of the full calendar `year`.
  *  2023 → resolved · s2_revenue_2023 · metrics table «Сумма продаж» 2023
  *  2024 → resolved · s2_revenue_2024 · s9n_revenue_2024 · table 2024
- *  2025 → resolved · s2_revenue_2025 · table 2025 · s1_current_revenue_year
- *         (current annual run-rate from step 1 — the latest year we can know)
+ *  2025 → resolved · s2_revenue_2025 · table 2025
+ * The current monthly run-rate (step 1) is not a year — see currentRevenuePace.
  * Percentage-change strings («±15%») are never read as revenue.
  */
-function revenue(inp: Inputs, year: 2023 | 2024 | 2025): number | null {
+function revenue(inp: Inputs, year: FullYear): number | null {
   const r = inp.resolved.revenue?.[year]
   if (finite(r) && r > 0) return r
   const col = year === 2023 ? 'y2023' : year === 2024 ? 'y2024' : 'y2025'
@@ -160,11 +176,42 @@ function revenue(inp: Inputs, year: 2023 | 2024 | 2025): number | null {
   if (legacy !== null && legacy !== 0) return legacy
   const fromTable = tableValue(inp, 'sales_amount', col)
   if (fromTable !== null) return fromTable
-  if (year === 2025) {
-    const runRate = firstNumber(inp.a, ['s1_current_revenue_year'])
-    if (runRate !== null && runRate !== 0) return runRate
-  }
   return legacy // 0 when explicitly answered 0, else null
+}
+
+type FullYear = 2023 | 2024 | 2025
+const FULL_YEARS_LATEST_FIRST: readonly FullYear[] = [2025, 2024, 2023]
+
+/** The latest full year with revenue. */
+function latestFullYearRevenue(inp: Inputs): { year: FullYear; value: number } | null {
+  for (const year of FULL_YEARS_LATEST_FIRST) {
+    const value = revenue(inp, year)
+    if (value !== null && value > 0) return { year, value }
+  }
+  return null
+}
+
+/** Current annual pace: step-1 «Текущая выручка / год» (= month × 12), else month × 12. */
+function currentRevenuePace(inp: Inputs): number | null {
+  const year = firstNumber(inp.a, ['s1_current_revenue_year'])
+  if (year !== null && year > 0) return year
+  const month = firstNumber(inp.a, ['s1_current_revenue_month'])
+  return month !== null && month > 0 ? month * 12 : null
+}
+
+/**
+ * Year-on-year revenue growth, % — the latest pair of full years (2025/2024,
+ * else 2024/2023), else the declared change of 2024 vs 2023 (step 9).
+ */
+function revenueGrowth(inp: Inputs): number | null {
+  for (const [y1, y0] of [[2025, 2024], [2024, 2023]] as const) {
+    const r1 = revenue(inp, y1)
+    const r0 = revenue(inp, y0)
+    if (r1 !== null && r1 > 0 && r0 !== null && r0 > 0) return ((r1 - r0) / r0) * 100
+  }
+  const rev24 = revenue(inp, 2024)
+  const declared = parsePercentChange(inp.a['s9n_change_vs_2023'])
+  return rev24 !== null && rev24 > 0 && declared !== null ? declared : null
 }
 
 /** 12-month goal text from legacy + current goal-step keys. */
@@ -211,15 +258,24 @@ function ltvCac(inp: Inputs): { ltv: number | null; cac: number | null; ratio: n
   return { ltv, cac, ratio }
 }
 
-/** New vs repeat sales of one year: legacy client counts, else the step-8 table (counts of sales). */
+/** New vs repeat sales of the latest year: the step-8 table (2025, then 2024), else legacy 2024 client counts. */
 function newVsRepeat(inp: Inputs): { newCount: number; repeatCount: number } | null {
-  const ln = numAnswer(inp.a, 's2_new_clients_2024')
-  const lr = numAnswer(inp.a, 's2_repeat_clients_2024')
-  if ((ln ?? 0) + (lr ?? 0) > 0) return { newCount: ln ?? 0, repeatCount: lr ?? 0 }
-  for (const col of ['y2024', 'y2025'] as const) {
+  for (const col of ['y2025', 'y2024'] as const) {
     const n = tableValue(inp, 'new_sales_count', col)
     const r = tableValue(inp, 'repeat_count', col)
     if ((n ?? 0) + (r ?? 0) > 0 && n !== null && r !== null) return { newCount: n, repeatCount: r }
+  }
+  const ln = numAnswer(inp.a, 's2_new_clients_2024')
+  const lr = numAnswer(inp.a, 's2_repeat_clients_2024')
+  if ((ln ?? 0) + (lr ?? 0) > 0) return { newCount: ln ?? 0, repeatCount: lr ?? 0 }
+  return null
+}
+
+/** Deals of the latest year that has them: step 3 «Завершённых сделок», else the table of the same year. */
+function latestDeals(inp: Inputs): { year: FullYear; deals: number } | null {
+  for (const year of FULL_YEARS_LATEST_FIRST) {
+    const deals = numAnswer(inp.a, `s3_deals_${year}`) || tableValue(inp, 'sales_count', `y${year}`)
+    if (deals && deals > 0) return { year, deals }
   }
   return null
 }
@@ -241,16 +297,18 @@ function debtLoad(inp: Inputs): 'none' | 'moderate' | 'high' | null {
   const debts = numAnswer(inp.a, 's9n_debts_amount')
   if (debts === null) return null
   if (debts <= 0) return 'none'
-  const rev = revenue(inp, 2024) ?? revenue(inp, 2025)
+  const rev = latestFullYearRevenue(inp)?.value ?? currentRevenuePace(inp)
   if (rev !== null && rev > 0 && debts >= rev * 0.5) return 'high'
   return 'moderate'
 }
 
-function crmState(a: Record<string, unknown>): 'yes' | 'none' | null {
+function crmState(a: Record<string, unknown>): 'yes' | 'spreadsheet' | 'none' | null {
   const v = a.s3_has_crm // already aliased from s12_crm_tool by withCurrentAliases
   if (!present(v)) return null
   const s = String(v).trim()
-  return s === 'none' || NO_ANSWER_RE.test(s) ? 'none' : 'yes'
+  if (s === 'none' || textAnswerKind(s) === 'none') return 'none'
+  // «Excel / Google Sheets» is a table, not a CRM: deals and touches get lost.
+  return s === 'excel' || /^(excel|эксель|google\s*(sheets|таблиц[аы]))$/i.test(s) ? 'spreadsheet' : 'yes'
 }
 
 function channelCount(a: Record<string, unknown>): number | null {
@@ -321,25 +379,31 @@ function financeChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
-  // Revenue growth YoY — two absolute years, else the declared % change vs 2023.
-  const rev23 = revenue(inp, 2023)
-  const rev24 = revenue(inp, 2024)
-  const changeVs2023 = parsePercentChange(a['s9n_change_vs_2023'])
-  let growth: number | null = null
-  if (rev24 !== null && rev24 > 0 && rev23 !== null && rev23 > 0) growth = ((rev24 - rev23) / rev23) * 100
-  else if (rev24 !== null && rev24 > 0 && changeVs2023 !== null) growth = changeVs2023
-  if (growth === null) checks.push({ id: 'growth', max: 20, earned: 0, missing: 'Нет данных по выручке за 2023/2024' })
+  // Revenue growth YoY — the latest pair of full years, else the declared % change vs 2023.
+  const growth = revenueGrowth(inp)
+  if (growth === null) checks.push({ id: 'growth', max: 20, earned: 0, missing: 'Нет данных по выручке за два последних полных года' })
   else if (growth > 20) checks.push({ id: 'growth', max: 20, earned: 20 })
   else if (growth > 0) checks.push({ id: 'growth', max: 20, earned: 10 })
   else checks.push({ id: 'growth', max: 20, earned: 0, issue: 'Выручка не растёт или падает', rec: 'Проанализировать причины стагнации выручки' })
 
-  // Margin (net margin from step 9 is a conservative proxy for gross).
-  const margin = finite(inp.resolved.grossMargin) ? inp.resolved.grossMargin : firstNumber(a, ['s2_gross_margin', 's9n_net_margin'])
-  if (margin === null) checks.push({ id: 'margin', max: 15, earned: 0, missing: 'Маржинальность не указана', rec: 'Рассчитать маржинальность по каждому продукту' })
-  else if (margin > 30) checks.push({ id: 'margin', max: 15, earned: 15 })
-  else if (margin > 15) checks.push({ id: 'margin', max: 15, earned: 8 })
-  else if (margin > 0) checks.push({ id: 'margin', max: 15, earned: 3, issue: 'Низкая маржинальность (<30%)' })
-  else checks.push({ id: 'margin', max: 15, earned: 0, issue: 'Маржинальность нулевая или отрицательная', rec: 'Рассчитать маржинальность по каждому продукту' })
+  // Margin: gross (document / step 2) on gross bands; else the net margin of
+  // step 9 on its own bands — 8 % net is a normal retail result, not «<30 %».
+  // Net bands are interim until the expert approves them (2026-11-02 proposal).
+  const gross = finite(inp.resolved.grossMargin) ? inp.resolved.grossMargin : firstNumber(a, ['s2_gross_margin'])
+  const net = gross === null ? firstNumber(a, ['s9n_net_margin']) : null
+  if (gross !== null) {
+    if (gross > 30) checks.push({ id: 'margin', max: 15, earned: 15 })
+    else if (gross > 15) checks.push({ id: 'margin', max: 15, earned: 8 })
+    else if (gross > 0) checks.push({ id: 'margin', max: 15, earned: 3, issue: 'Низкая валовая маржа (<15%)', rec: 'Пересмотреть цены и закупку по самым продаваемым позициям' })
+    else checks.push({ id: 'margin', max: 15, earned: 0, issue: 'Маржинальность нулевая или отрицательная', rec: 'Рассчитать маржинальность по каждому продукту' })
+  } else if (net !== null) {
+    if (net >= 15) checks.push({ id: 'margin', max: 15, earned: 15 })
+    else if (net >= 8) checks.push({ id: 'margin', max: 15, earned: 10 })
+    else if (net > 0) checks.push({ id: 'margin', max: 15, earned: 5, issue: `Чистая маржа ${net}% — ниже 8%`, rec: 'Найти статьи расходов, которые съедают прибыль' })
+    else checks.push({ id: 'margin', max: 15, earned: 0, issue: 'Бизнес работает в ноль или в убыток', rec: 'Посчитать прибыль по каждому продукту и убрать убыточные' })
+  } else {
+    checks.push({ id: 'margin', max: 15, earned: 0, missing: 'Маржинальность не указана', rec: 'Рассчитать маржинальность по каждому продукту' })
+  }
 
   // LTV/CAC — asked in the step-8 metrics table (rows «LTV», «CAC», «LTV:CAC»).
   const { ratio } = ltvCac(inp)
@@ -348,11 +412,13 @@ function financeChecks(inp: Inputs): Check[] {
   else if (ratio >= 2) checks.push({ id: 'ltv_cac', max: 15, earned: 8, issue: `LTV/CAC = ${ratio.toFixed(1)} (норма ≥ 3)` })
   else checks.push({ id: 'ltv_cac', max: 15, earned: 0, issue: `LTV/CAC = ${ratio.toFixed(1)} — маркетинг убыточен`, rec: 'Снизить CAC или увеличить LTV через апсейл' })
 
-  // Break-even known.
+  // Break-even known («не считали» is no data; «нет» is the finding).
   const be = knowsBreakeven(a)
-  checks.push(be
-    ? { id: 'breakeven', max: 10, earned: 10 }
-    : { id: 'breakeven', max: 10, earned: 0, issue: 'Точка безубыточности неизвестна', rec: 'Рассчитать точку безубыточности' })
+  checks.push(be === null
+    ? { id: 'breakeven', max: 10, earned: 0, missing: 'Точка безубыточности не указана', rec: 'Рассчитать точку безубыточности' }
+    : be
+      ? { id: 'breakeven', max: 10, earned: 10 }
+      : { id: 'breakeven', max: 10, earned: 0, issue: 'Точка безубыточности неизвестна', rec: 'Рассчитать точку безубыточности' })
 
   // Debt load.
   const debt = debtLoad(inp)
@@ -361,12 +427,15 @@ function financeChecks(inp: Inputs): Check[] {
   else if (debt === 'moderate') checks.push({ id: 'debt', max: 10, earned: 5 })
   else checks.push({ id: 'debt', max: 10, earned: 0, issue: 'Высокая долговая нагрузка', rec: 'Разработать план снижения долговой нагрузки' })
 
-  // Revenue not declining in the latest year (2025 or current run-rate vs 2024).
-  const rev25 = revenue(inp, 2025)
-  if (rev25 !== null && rev25 > 0 && rev24 !== null && rev24 > 0) {
-    checks.push(rev25 >= rev24
+  // The current pace (monthly run-rate × 12) against the latest full year. One
+  // month is seasonal: only a drop of more than 10 % is a finding.
+  const pace = currentRevenuePace(inp)
+  const last = latestFullYearRevenue(inp)
+  if (pace !== null && last !== null) {
+    const drop = (1 - pace / last.value) * 100
+    checks.push(drop <= 10
       ? { id: 'revenue_trend', max: 15, earned: 15 }
-      : { id: 'revenue_trend', max: 15, earned: 0, issue: 'Снижение выручки в последнем году' })
+      : { id: 'revenue_trend', max: 15, earned: 0, issue: `Текущий темп выручки ниже ${last.year} года на ${Math.round(drop)}%`, rec: 'Разобрать, какие продукты и каналы просели в этом году' })
   } else {
     checks.push({ id: 'revenue_trend', max: 15, earned: 0 })
   }
@@ -386,6 +455,7 @@ function salesChecks(inp: Inputs): Check[] {
 
   const crm = crmState(a)
   if (crm === 'yes') checks.push({ id: 'crm', max: 20, earned: 20 })
+  else if (crm === 'spreadsheet') checks.push({ id: 'crm', max: 20, earned: 8, issue: 'CRM в таблицах — сделки и касания теряются', rec: 'Перенести воронку в amoCRM или Bitrix24' })
   else if (crm === 'none') checks.push({ id: 'crm', max: 20, earned: 0, issue: 'CRM-система отсутствует — потери лидов ~30%', rec: 'Внедрить amoCRM или Bitrix24 (базовый тариф)' })
   else checks.push({ id: 'crm', max: 20, earned: 0, missing: 'Не указано, есть ли CRM' })
 
@@ -410,14 +480,16 @@ function salesChecks(inp: Inputs): Check[] {
       : { id: 'repeat_share', max: 15, earned: 0, issue: `Повторных клиентов ${repeatPct.toFixed(0)}% (норма ≥30%)`, rec: 'Запустить программу лояльности' })
   }
 
-  // Pipeline size and refusal rate (deals of 2024; table «Количество продаж» as fallback).
-  const deals = numAnswer(a, 's3_deals_2024') || tableValue(inp, 'sales_count', 'y2024')
+  // Pipeline size and refusal rate — the latest year with deals (step 3, else
+  // the table «Количество продаж» of the same year).
+  const dealsYear = latestDeals(inp)
+  const deals = dealsYear?.deals ?? null
   if (!deals || deals <= 0) checks.push({ id: 'pipeline', max: 10, earned: 0, missing: 'Количество сделок не указано' })
   else if (deals > 50) checks.push({ id: 'pipeline', max: 10, earned: 10 })
   else if (deals > 20) checks.push({ id: 'pipeline', max: 10, earned: 5 })
   else checks.push({ id: 'pipeline', max: 10, earned: 0, issue: 'Маленькая воронка продаж' })
 
-  const rejections = numAnswer(a, 's3_rejections_2024')
+  const rejections = dealsYear ? numAnswer(a, `s3_rejections_${dealsYear.year}`) : null
   const resolvedRefusal = finite(inp.resolved.refusalPct) && inp.resolved.refusalPct >= 0 ? inp.resolved.refusalPct : null
   const surveyRefusal = deals && deals > 0 && rejections !== null && rejections >= 0 ? (rejections / (deals + rejections)) * 100 : null
   const refusal = resolvedRefusal ?? surveyRefusal
@@ -576,18 +648,22 @@ function generateRisks(inp: Inputs, blocks: PointA['blocks']): Risk[] {
   if (String(a.s4_reporting_tool ?? 'none') === 'excel') {
     risks.push({ level: 'important', area: 'Операции', text: 'Отчётность в Excel — слепые зоны в данных', impact: 'Ошибки в управленческих решениях' })
   }
-  if (blocks.operations.score < 30) {
+  // A risk needs an answer behind it: unanswered questions are «нет данных»,
+  // not a weak block (v1 scores them 0 — its block score alone is no evidence).
+  const opsAnswered = ['s4_management_method', 's4_has_org_chart', 's4_has_regular_meetings', 's4_has_dept_kpi'].some((k) => present(a[k]))
+  if (blocks.operations.score < 30 && opsAnswered) {
     risks.push(String(a.s4_management_method ?? '') === 'manual'
       ? { level: 'critical', area: 'Операции', text: 'Ручное управление — высокий операционный риск', impact: 'Масштабирование невозможно' }
       : { level: 'critical', area: 'Операции', text: 'Управленческие процессы не выстроены', impact: 'Масштабирование невозможно' })
   }
-  if (blocks.marketing.score < 40) {
+  const marketingAnswered = ['s5_marketing_budget_pct', 's5_marketing_channels', 's3_promo_channels', 's5_target_audience', 's3n_client_portrait'].some((k) => present(a[k]))
+  if (blocks.marketing.score < 40 && marketingAnswered) {
     const budgetPct = numAnswer(a, 's5_marketing_budget_pct') ?? 0
     risks.push(budgetPct < 5
       ? { level: 'important', area: 'Маркетинг', text: 'Маркетинговый бюджет ниже нормы или не определён', impact: 'Замедление роста клиентской базы' }
       : { level: 'important', area: 'Маркетинг', text: 'Маркетинг не выстроен в систему', impact: 'Замедление роста клиентской базы' })
   }
-  if (knowsBreakeven(a) !== true) {
+  if (knowsBreakeven(a) === false) {
     risks.push({ level: 'moderate', area: 'Финансы', text: 'Точка безубыточности неизвестна', impact: 'Риск работы в убыток' })
   }
 
@@ -619,14 +695,9 @@ function generateInsights(inp: Inputs): Insight[] {
     }
   }
 
-  const rev24 = revenue(inp, 2024)
-  const rev23 = revenue(inp, 2023)
-  const changeVs2023 = parsePercentChange(a['s9n_change_vs_2023'])
-  if (rev23 !== null && rev23 > 0 && rev24 !== null && rev24 > rev23) {
-    const g = Math.round(((rev24 - rev23) / rev23) * 100)
-    insights.push({ text: `Выручка растёт на ${g}% г/г — фиксируйте драйверы роста`, area: 'Финансы', kind: 'strength' })
-  } else if (rev24 !== null && rev24 > 0 && changeVs2023 !== null && changeVs2023 > 0) {
-    insights.push({ text: `Выручка растёт на ${Math.round(changeVs2023)}% г/г — фиксируйте драйверы роста`, area: 'Финансы', kind: 'strength' })
+  const growth = revenueGrowth(inp)
+  if (growth !== null && growth > 0) {
+    insights.push({ text: `Выручка растёт на ${Math.round(growth)}% г/г — фиксируйте драйверы роста`, area: 'Финансы', kind: 'strength' })
   }
 
   const channels = Array.isArray(a['s5_marketing_channels']) ? a['s5_marketing_channels'] : []

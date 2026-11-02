@@ -16,7 +16,7 @@ export interface UserHomeData {
   surveyUpdatedAt: string | null
   summary: UserProfileSummary
   /** `primary`: Point A v4 with a block without data — «Первичная · по быстрым данным» (survey Ф5). */
-  diagnostics: { overallScore: number | null; stage: string | null; calculatedAt: string | null; primary?: boolean } | null
+  diagnostics: { overallScore: number | null; stage: string | null; calculatedAt: string | null; primary?: boolean; preliminary?: boolean } | null
   gri: { index: number; assessedAt: string } | null
   documentsCount: number
   sections: Array<{ key: string; title: string; description: string | null; icon: string | null; href: string }>

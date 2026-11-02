@@ -3,7 +3,7 @@
  * breaker, part A1 of docs/superpowers/specs/2026-10-08-ai-providers-automation-bot-brain-design.md).
  *
  * A target (provider + model + key) that failed with a failover-worthy error
- * (401/403/404/408/429/5xx, timeout, network) is "unhealthy" for
+ * (401/402/403/404/408/429/5xx, timeout, network) is "unhealthy" for
  * UNHEALTHY_FOR_MS: the router moves it behind healthy candidates. A success
  * clears it. Per server instance, never persisted — a cold instance simply
  * starts with everything healthy. The last error is kept for the GIGA

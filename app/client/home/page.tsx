@@ -9,7 +9,7 @@ import UserHome, { type UserHomeData } from '@/components/user-dashboard/UserHom
 import { visibleSectionsFor } from '@/lib/platform/sections'
 import { visiblePagesFor } from '@/lib/cms/server'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
-import { snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
+import { snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
@@ -29,8 +29,8 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     const companyId = (companyRes.data as { id?: unknown } | null)?.id
     if (companyId == null) return null
     // `blocks`: a block without data → «Первичная · по быстрым данным» (survey Ф5).
-    const snapshotRes = await sb.from('point_a_snapshots').select('overall, stage, created_at, blocks').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
-    return snapshotRes.error ? null : (snapshotRes.data as { overall: unknown; stage: string | null; created_at: string; blocks?: unknown } | null)
+    const snapshotRes = await sb.from('point_a_snapshots').select('overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    return snapshotRes.error ? null : (snapshotRes.data as { overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
   })
   const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
@@ -68,6 +68,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
           stage: snapshot.stage ?? null,
           calculatedAt: snapshot.created_at ?? null,
           primary: snapshotIsPrimary(snapshot),
+          preliminary: snapshotIsPreliminary(snapshot),
         }
       : diagnosticsRes.data
       ? {
