@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 // terminate a batch halfway through multiple sequential jobs.
 export const maxDuration = 300;
 
-import { waitUntil } from "@vercel/functions";
 import { NextResponse, type NextRequest } from "next/server";
+import { trackBackground } from "@/lib/background";
 import { drainOmnichannelProcessingJobs } from "@/lib/omnichannel/process-job-queue";
 import { shouldUseOmnichannelPostgres } from "@/lib/omnichannel/postgres-runtime";
 import {
@@ -149,10 +149,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // The next signed kick retries due jobs. No exception/customer prose is
     // logged or returned from this endpoint.
   });
-  try {
-    waitUntil(work);
-  } catch {
-    // The promise has already started in a non-Vercel Node runtime.
-  }
+  // Vercel: kept alive past the response via waitUntil. Persistent server: counted, so a SIGTERM waits for it.
+  trackBackground(work);
   return response(202);
 }

@@ -178,6 +178,9 @@ const nextConfig = {
   //     computed createRequire) and runs pdf.worker.mjs via import(workerSrc)
   //     relative to its own file — so pdf-parse stays external too.
   experimental: {
+    // Runs instrumentation.ts at boot. On Vercel its register() returns at once; on a persistent
+    // server (Railway) it starts the Workflow queue, the in-process cron and the SIGTERM handler.
+    instrumentationHook: true,
     serverComponentsExternalPackages: ['pdfkit', 'tesseract.js', 'pdf-parse'],
     outputFileTracingIncludes: {
       '/api/export/report': ['./public/fonts/**'],

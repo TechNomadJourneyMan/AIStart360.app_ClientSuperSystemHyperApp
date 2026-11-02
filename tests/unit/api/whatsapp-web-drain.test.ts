@@ -6,14 +6,13 @@ import {
 } from "@/lib/omnichannel/whatsapp-web-signature";
 
 const worker = vi.hoisted(() => ({ drain: vi.fn() }));
-const vercel = vi.hoisted(() => ({ waitUntil: vi.fn() }));
+const background = vi.hoisted(() => ({ trackBackground: vi.fn() }));
 
 vi.mock("@/lib/omnichannel/process-job-queue", () => ({
   drainOmnichannelProcessingJobs: worker.drain,
 }));
-vi.mock("@vercel/functions", () => ({
-  attachDatabasePool: vi.fn(),
-  waitUntil: vercel.waitUntil,
+vi.mock("@/lib/background", () => ({
+  trackBackground: background.trackBackground,
 }));
 
 import { POST } from "@/app/api/webhooks/whatsapp-web/drain/route";
@@ -70,7 +69,19 @@ describe("/api/webhooks/whatsapp-web/drain", () => {
 
     expect(result.status).toBe(202);
     expect(worker.drain).toHaveBeenCalledWith({ limit: 1 });
-    expect(vercel.waitUntil).toHaveBeenCalledWith(expect.any(Promise));
+    expect(background.trackBackground).toHaveBeenCalledWith(
+      expect.any(Promise),
+    );
+  });
+
+  it("answers 202 when the drain fails, and the tracked work still settles quietly", async () => {
+    worker.drain.mockRejectedValueOnce(new Error("db down"));
+
+    const result = await POST(request({ version: 1, session_id: "primary" }));
+
+    expect(result.status).toBe(202);
+    const [tracked] = background.trackBackground.mock.calls[0];
+    await expect(tracked).resolves.toBeUndefined();
   });
 
   it("rejects an invalid signature before running the worker", async () => {
