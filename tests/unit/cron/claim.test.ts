@@ -10,6 +10,7 @@ const pg = vi.hoisted(() => ({ Pool: vi.fn() }))
 vi.mock('pg', () => ({ Pool: pg.Pool, default: { Pool: pg.Pool } }))
 
 import { createPgCronClaim } from '@/lib/cron/claim'
+import { CREATE_CRON_RUNS_TABLE } from '@/lib/cron/cron-runs-table.mjs'
 
 const MINUTE = new Date('2026-11-02T04:00:00Z')
 const PATH = '/api/cron/crm-digest'
@@ -46,6 +47,8 @@ describe('createPgCronClaim', () => {
     expect(String(create[0])).toMatch(/CREATE TABLE IF NOT EXISTS cron_runs/i)
     expect(String(create[0])).toMatch(/PRIMARY KEY \(path, minute\)/i)
     expect(String(create[0])).toMatch(/claimed_at timestamptz NOT NULL DEFAULT now\(\)/i)
+    // the very statement Railway's pre-deploy step runs (scripts/railway/predeploy.mjs)
+    expect(create[0]).toBe(CREATE_CRON_RUNS_TABLE)
 
     // the table exists before the first insert
     const firstInsertAt = pool.query.mock.calls.findIndex(([text]) => /^\s*INSERT/i.test(String(text)))
@@ -117,6 +120,8 @@ describe('createPgCronClaim', () => {
 
     expect(pg.Pool).toHaveBeenCalledTimes(1)
     expect(pg.Pool.mock.calls[0][0]).toMatchObject({ connectionString: 'postgres://user:pw@db.invalid:5432/app', max: 2 })
+    // an unreachable host fails the claim in 10 s instead of hanging the tick on the OS connect timeout
+    expect(pg.Pool.mock.calls[0][0]).toMatchObject({ connectionTimeoutMillis: 10_000 })
     // an idle client dropping must not become an unhandled 'error' that kills the server
     expect(created[0].on).toHaveBeenCalledWith('error', expect.any(Function))
   })
@@ -159,6 +164,25 @@ describe('createPgCronClaim', () => {
       expect(lines[0]).not.toContain(URL)
       expect(lines[0]).not.toContain('hunter2-secret')
       expect(lines[0]).not.toContain('claimuser')
+    })
+
+    it('masks the raw password and the user even when the password has a malformed %', async () => {
+      // decodeURIComponent throws on it; that must not leave the raw values unmasked
+      const created: { on: ReturnType<typeof vi.fn> }[] = []
+      pg.Pool.mockImplementation(function () {
+        const pool = { ...fakePool(), on: vi.fn() }
+        created.push(pool)
+        return pool
+      })
+      const lines: string[] = []
+      await createPgCronClaim('postgres://someuser:bad%zzpass@db.invalid:5432/app', { log: (line) => { lines.push(line) } })(PATH, MINUTE)
+      const onError = created[0].on.mock.calls.find(([event]) => event === 'error')![1] as (error: Error) => void
+
+      onError(new Error('password bad%zzpass for someuser rejected'))
+
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).not.toContain('bad%zzpass')
+      expect(lines[0]).not.toContain('someuser')
     })
 
     it('copes with something that is not an Error', async () => {

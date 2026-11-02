@@ -6,6 +6,8 @@
  * With the Postgres Workflow world it creates the queue tables: it runs the `bootstrap` command of
  * @workflow/world-postgres (the documented `npx --package=@workflow/world-postgres bootstrap`,
  * here taken from node_modules so a deploy never fetches anything). Bootstrap is idempotent.
+ * After a successful bootstrap it also creates the scheduler's claim table `cron_runs` in the same
+ * database (ensure-cron-runs.mjs, the statement lib/cron/claim.ts uses; idempotent as well).
  * With any other world there is nothing to prepare and the script steps aside with exit 0.
  *
  * The database is only ever the one named in WORKFLOW_POSTGRES_URL. Bootstrap would otherwise fall
@@ -15,6 +17,7 @@
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { ensureCronRunsTable } from './ensure-cron-runs.mjs'
 
 const WORLD = '@workflow/world-postgres'
 
@@ -38,4 +41,8 @@ if (result.error) {
   console.error(`predeploy: bootstrap не запустился: ${result.error.message}`)
   process.exit(1)
 }
-process.exit(result.status ?? 1)
+if (result.status !== 0) {
+  process.exit(result.status ?? 1)
+}
+
+process.exit((await ensureCronRunsTable(process.env.WORKFLOW_POSTGRES_URL)) ? 0 : 1)
