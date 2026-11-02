@@ -292,12 +292,14 @@
 - [ ] **Step 2: Несекретные переменные `portal`:**
   - `PERSISTENT_SERVER=1`;
   - `CRON_RUNNER_ENABLED=0`;
-  - `INTERNAL_BASE_URL=http://127.0.0.1:${{PORT}}` — или явный порт `8080` вместе с `PORT=8080`;
+  - `PORT=8080` и `INTERNAL_BASE_URL=http://127.0.0.1:8080` (порт задан явно: планировщик берёт `PORT`, внутренние вызовы — `INTERNAL_BASE_URL`, они должны совпадать);
   - `NEXT_MANUAL_SIG_HANDLE=true`;
   - `WORKFLOW_TARGET_WORLD=@workflow/world-postgres`;
   - `WORKFLOW_POSTGRES_URL=${{workflow-db.DATABASE_URL}}`;
   - `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=60`;
-  - `RAILPACK_NODE_VERSION` — та же основная версия, что у прод-деплоймента Vercel (`vercel inspect` последнего production-деплоймента).
+  - `RAILPACK_NODE_VERSION` — та же основная версия, что у прод-деплоймента Vercel (`vercel inspect` последнего production-деплоймента), но не ниже 22.12: мир Workflow — ESM-пакет, его загружают через `require`;
+  - `PRISMA_CONNECTION_LIMIT` — размер пула Prisma на постоянном сервере (по умолчанию 5);
+  - если в логах `ECONNREFUSED ::1` от очереди — `WORKFLOW_LOCAL_BASE_URL=http://127.0.0.1:8080`.
 - [ ] **Step 3: Перенос секретов. СТОП: спросить PO «да» на перенос секретов.** После «да»:
   1. Создать токен проекта Railway для окружения `production` (GraphQL `projectTokenCreate` или панель).
   2. Записать `RAILWAY_ENV_SYNC_TOKEN` в Vercel (Production, sensitive) через `vercel env add`, значение передать через stdin, не через аргумент.
@@ -313,7 +315,7 @@
 - [ ] **Step 5: Проверка тестового адреса.**
   - Автоматически: `/`, `/login`, `/api/health`, `/api/og/gri`, `/api/v1/point-a/state` (401).
   - Вручную, вместе с PO: вход по паролю, `/client/home`, Точка А с пересчётом, Точка Б, дашборды GIGA, запуск агента, OCR документа.
-- [ ] **Step 6: Замер.** Медиана из 10 запросов для публичных страниц и API, Vercel и Railway, одинаковые запросы. Если Railway медленнее больше чем на 30 % — остановиться и обсудить с PO. Результат записать в спеку, §7.
+- [ ] **Step 6: Замер.** Медиана из 10 запросов для публичных страниц и API, Vercel и Railway, одинаковые запросы; плюс 10 одновременных запросов к API, который ходит в базу через Prisma (проверка пула). Если Railway медленнее больше чем на 30 % — остановиться и обсудить с PO. Результат записать в спеку, §7.
 
 ### Task 10: PR в main
 
@@ -349,8 +351,10 @@
   - запуски Workflow и Inngest.
 - [ ] **Step 7: Через 7 дней стабильной работы** спросить PO, можно ли отключить у проекта Vercel сборки из git. Деплойменты не удалять: на них дорабатывают потоки Workflow, начатые до переключения.
 
-**Откат:**
-1. Вернуть домен в Vercel, удалить CNAME.
-2. Вернуть crons в `vercel.json` (revert коммита шага 2).
-3. На Railway `CRON_RUNNER_ENABLED=0`.
+**Откат** (порядок важен — иначе задачи по расписанию сработают дважды; не попадать на минуты задач: 22:00, 00:15, 01:30, 03:00–06:00 UTC):
+1. На Railway `CRON_RUNNER_ENABLED=0`, дождаться в логах, что старый экземпляр получил SIGTERM и завершился.
+2. Вернуть домен в Vercel, удалить CNAME.
+3. Вернуть crons в `vercel.json` (revert коммита шага 2), прод-деплой Vercel — Ready.
 4. Пересинхронизировать Inngest.
+
+**Деплои на Railway** не делать в 03:00–06:00 UTC: SIGTERM обрывает задачу по расписанию через 55 с, а отметка в `cron_runs` не даёт её повторить.
