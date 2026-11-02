@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { checkPlatformHealth } from '@/lib/health/platform'
+import { isPersistentServer } from '@/lib/runtime/platform'
+import { getWorkflowQueueStatus, type WorkflowQueueState } from '@/lib/runtime/workflow-queue-status'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +14,11 @@ export const dynamic = 'force-dynamic'
  * missing environment variables are not disclosed publicly (audit S20; staff
  * see them in GIGA → Настройки → Система, /api/giga-admin/system/health).
  * Responds 503 when a check fails, so uptime probes can rely on the status.
+ *
+ * On a persistent server (PERSISTENT_SERVER=1, Railway) the Workflow queue is a third entry: it
+ * starts in the background and retries while its database is down (lib/runtime/server-start.ts).
+ * A queue that has failed to start, or is not set up at all, fails the check; the error text stays
+ * in the server log. On Vercel the output is unchanged.
  */
 interface ServiceResult {
   name: string
@@ -21,6 +28,13 @@ interface ServiceResult {
 }
 
 const NOT_MEASURED = 'не измеряется'
+
+const QUEUE_STATUS: Record<WorkflowQueueState, ServiceResult['status']> = {
+  running: 'online',
+  starting: 'degraded',
+  retrying: 'offline',
+  off: 'offline',
+}
 
 export async function GET() {
   const health = await checkPlatformHealth()
@@ -32,15 +46,23 @@ export async function GET() {
     latencyMs: 0,
     uptime: NOT_MEASURED,
   }
-  const services = [db, config]
+  const queue: ServiceResult | null = isPersistentServer()
+    ? { name: 'Очередь Workflow', status: QUEUE_STATUS[getWorkflowQueueStatus().state], latencyMs: 0, uptime: NOT_MEASURED }
+    : null
+  const services = queue ? [db, config, queue] : [db, config]
   const degradedCount = services.filter((s) => s.status !== 'online').length
   const dbOk = db.status !== 'offline'
   const configOk = missing === 0
-  const ok = dbOk && configOk
+  const queueOk = queue ? queue.status !== 'offline' : true
+  const ok = dbOk && configOk && queueOk
 
   return NextResponse.json({
     ok,
-    checks: { db: dbOk ? 'ok' : 'fail', config: configOk ? 'ok' : 'fail' },
+    checks: {
+      db: dbOk ? 'ok' : 'fail',
+      config: configOk ? 'ok' : 'fail',
+      ...(queue ? { queue: queueOk ? 'ok' : 'fail' } : {}),
+    },
     services,
     allOnline: degradedCount === 0,
     degradedCount,
@@ -49,7 +71,9 @@ export async function GET() {
       ? 'Все проверки пройдены'
       : missing > 0
         ? 'Конфигурация сервера неполная — подробности в GIGA → Система'
-        : 'База данных отвечает медленно или недоступна',
+        : db.status !== 'online' || !queue
+          ? 'База данных отвечает медленно или недоступна'
+          : 'Очередь Workflow не запущена или ещё запускается — подробности в логах сервера',
     timestamp: new Date().toISOString(),
   }, {
     status: ok ? 200 : 503,

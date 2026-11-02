@@ -3,6 +3,9 @@
  * Workflow queue, the in-process cron, and the SIGTERM handler that lets after-response work
  * finish before the process exits. Every dependency is a stub; nothing here touches a database.
  */
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const runtime = vi.hoisted(() => ({
@@ -17,7 +20,8 @@ vi.mock('workflow/runtime', () => ({
   },
 }))
 
-import { startPersistentServer } from '@/lib/runtime/server-start'
+import { queueRetryDelayMs, startPersistentServer } from '@/lib/runtime/server-start'
+import { getWorkflowQueueStatus } from '@/lib/runtime/workflow-queue-status'
 import { trackBackground, waitForBackgroundWork } from '@/lib/background'
 
 type Handler = () => void
@@ -46,27 +50,60 @@ function deferred() {
   return { promise, resolve }
 }
 
-function setup() {
+/** A directory per test: with or without a vercel.json (the cron guard reads it from the cwd). */
+function dirWith(vercelJson?: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'server-start-'))
+  if (vercelJson !== undefined) fs.writeFileSync(path.join(dir, 'vercel.json'), vercelJson)
+  return dir
+}
+const VERCEL_WITH_CRONS = JSON.stringify({
+  regions: ['dub1'],
+  crons: [{ path: '/api/cron/billing-expiry', schedule: '15 0 * * *' }],
+})
+
+function setup(opts: { cwd?: string } = {}) {
   const lines: string[] = []
+  const errors: string[] = []
   const stopCron = vi.fn()
   const handlers = new Map<string, Handler>()
   const startWorld = vi.fn(async () => {})
   const startCron = vi.fn((_opts: unknown) => ({ stop: stopCron }))
   const onSignal = vi.fn((sig: 'SIGTERM' | 'SIGINT', handler: Handler) => { handlers.set(sig, handler) })
   const exit = vi.fn((_code: number) => {})
+  const cwd = opts.cwd ?? dirWith() // no vercel.json: the cron guard lets the runner start
   const deps = {
     startWorld,
     startCron: startCron as unknown as NonNullable<Parameters<typeof startPersistentServer>[1]>['startCron'],
     onSignal,
     exit,
+    cwd: () => cwd,
     log: (line: string) => { lines.push(line) },
+    logError: (line: string) => { lines.push(line); errors.push(line) },
   }
-  return { deps, lines, stopCron, handlers, startWorld, startCron, onSignal, exit, text: () => lines.join('\n') }
+  return { deps, lines, errors, stopCron, handlers, startWorld, startCron, onSignal, exit, text: () => lines.join('\n') }
 }
+
+/** Boots with the queue and waits until its (background) start has gone through. */
+async function bootRunning(t: ReturnType<typeof setup>, env: Partial<NodeJS.ProcessEnv> = FULL_ENV) {
+  const result = await startPersistentServer(env, t.deps)
+  await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
+  return result
+}
+
+/** The same under fake timers: the stub resolves at once, so flushing the microtasks is enough. */
+async function bootRunningFake(t: ReturnType<typeof setup>, env: Partial<NodeJS.ProcessEnv> = FULL_ENV) {
+  const result = await startPersistentServer(env, t.deps)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(getWorkflowQueueStatus().state).toBe('running')
+  return result
+}
+
+const QUEUE_STATUS_KEY = Symbol.for('aistart360.workflow.queue.status')
 
 afterEach(async () => {
   // a test must not leave tracked work behind for the next one
   await waitForBackgroundWork(1000)
+  delete (globalThis as Record<symbol, unknown>)[QUEUE_STATUS_KEY]
 })
 
 describe('startPersistentServer: what it starts', () => {
@@ -135,21 +172,316 @@ describe('startPersistentServer: what it starts', () => {
     expect(t.startCron).not.toHaveBeenCalled()
   })
 
-  it('a queue that cannot start fails the boot: it is logged and rethrown, and nothing else starts', async () => {
-    const t = setup()
-    t.startWorld.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:5432'))
-
-    await expect(startPersistentServer(FULL_ENV, t.deps)).rejects.toThrow('ECONNREFUSED')
-
-    expect(t.text()).toContain('ECONNREFUSED')
-    expect(t.startCron).not.toHaveBeenCalled()
-    expect(t.onSignal).not.toHaveBeenCalled()
-  })
 
   it('never logs the cron secret', async () => {
     const t = setup()
     await startPersistentServer({ ...FULL_ENV, CRON_SECRET: 'very-secret-value' }, t.deps)
     expect(t.text()).not.toContain('very-secret-value')
+  })
+})
+
+// A Workflow database that is down must not take the whole portal down: Next awaits register()
+// before it serves, so the queue starts in the background and keeps retrying with a backoff.
+describe('startPersistentServer: the Workflow queue starts in the background', () => {
+  const WF_URL = 'postgres://wfuser:hunter2-secret@workflow-db.invalid:5432/railway'
+
+  it('the boot does not wait for a queue start that hangs', async () => {
+    const t = setup()
+    t.startWorld.mockImplementation(() => new Promise<void>(() => {})) // never settles
+
+    await expect(startPersistentServer(FULL_ENV, t.deps)).resolves.toEqual({ world: true, cron: true })
+
+    expect(t.startWorld).toHaveBeenCalledTimes(1)
+    expect(t.startCron).toHaveBeenCalledTimes(1)
+    expect([...t.handlers.keys()].sort()).toEqual(['SIGINT', 'SIGTERM'])
+    expect(getWorkflowQueueStatus()).toMatchObject({ state: 'starting', attempts: 1 })
+  })
+
+  it('a queue that cannot start does not fail the boot: one loud, masked line, and the rest starts', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockRejectedValue(new Error(`connect ECONNREFUSED via ${WF_URL} (user wfuser, password hunter2-secret)`))
+
+      await expect(startPersistentServer({ ...FULL_ENV, WORKFLOW_POSTGRES_URL: WF_URL }, t.deps)).resolves.toEqual({ world: true, cron: true })
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(t.startCron).toHaveBeenCalledTimes(1)
+      expect(t.errors).toHaveLength(1)
+      expect(t.errors[0]).toContain('ECONNREFUSED')
+      expect(t.errors[0]).toMatch(/попытка 1/)
+      expect(t.errors[0]).toMatch(/5 с/)
+      expect(t.text()).not.toContain('hunter2-secret')
+      expect(t.text()).not.toContain('wfuser')
+      expect(t.text()).not.toContain(WF_URL)
+      const status = getWorkflowQueueStatus()
+      expect(status).toMatchObject({ state: 'retrying', attempts: 1 })
+      expect(status.lastError).toContain('ECONNREFUSED')
+      expect(status.lastError).not.toContain('hunter2-secret')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a start() that throws synchronously is retried like a rejection', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockImplementationOnce(() => { throw new Error('boom') })
+
+      await expect(startPersistentServer(FULL_ENV, t.deps)).resolves.toEqual({ world: true, cron: true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getWorkflowQueueStatus()).toMatchObject({ state: 'retrying', attempts: 1 })
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(t.startWorld).toHaveBeenCalledTimes(2)
+      expect(getWorkflowQueueStatus()).toMatchObject({ state: 'running', attempts: 2 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries with an exponential backoff (5 s, 10 s, 20 s ...) until it starts', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld
+        .mockRejectedValueOnce(new Error('down 1'))
+        .mockRejectedValueOnce(new Error('down 2'))
+        .mockRejectedValueOnce(new Error('down 3'))
+      await startPersistentServer(FULL_ENV, t.deps)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(t.startWorld).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(4_999)
+      expect(t.startWorld).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(t.startWorld).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(t.startWorld).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(t.startWorld).toHaveBeenCalledTimes(3)
+
+      await vi.advanceTimersByTimeAsync(19_999)
+      expect(t.startWorld).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(t.startWorld).toHaveBeenCalledTimes(4) // this one succeeds
+
+      expect(getWorkflowQueueStatus()).toEqual({ state: 'running', attempts: 4 })
+      expect(t.errors).toHaveLength(3) // one line per failed attempt
+      expect(t.errors.map((line) => /попытка (\d+)/.exec(line)?.[1])).toEqual(['1', '2', '3'])
+      expect(t.text()).toMatch(/Workflow queue started/)
+
+      // started: no more attempts
+      await vi.advanceTimersByTimeAsync(3_600_000)
+      expect(t.startWorld).toHaveBeenCalledTimes(4)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the backoff doubles from 5 s and is capped at 5 min, with no limit on attempts', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 50, 1000].map(queueRetryDelayMs)).toEqual([
+      5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000, 300_000, 300_000,
+    ])
+  })
+
+  it('keeps retrying every 5 min past the cap', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockRejectedValue(new Error('still down'))
+      await startPersistentServer(FULL_ENV, t.deps)
+      // 5 + 10 + 20 + 40 + 80 + 160 s = 315 s brings the 7th attempt; then one every 300 s
+      await vi.advanceTimersByTimeAsync(315_000)
+      expect(t.startWorld).toHaveBeenCalledTimes(7)
+      await vi.advanceTimersByTimeAsync(299_999)
+      expect(t.startWorld).toHaveBeenCalledTimes(7)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(t.startWorld).toHaveBeenCalledTimes(8)
+      await vi.advanceTimersByTimeAsync(300_000 * 10)
+      expect(t.startWorld).toHaveBeenCalledTimes(18)
+      expect(getWorkflowQueueStatus()).toMatchObject({ state: 'retrying', attempts: 18 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('status: off before the boot, starting during the first attempt, retrying after a failure, running once started', async () => {
+    vi.useFakeTimers()
+    try {
+      expect(getWorkflowQueueStatus()).toEqual({ state: 'off', attempts: 0 })
+      const t = setup()
+      let failFirst!: (e: Error) => void
+      let succeedSecond!: () => void
+      t.startWorld
+        .mockImplementationOnce(() => new Promise<void>((_, reject) => { failFirst = reject }))
+        .mockImplementationOnce(() => new Promise<void>((resolve) => { succeedSecond = resolve }))
+
+      await startPersistentServer(FULL_ENV, t.deps)
+      expect(getWorkflowQueueStatus()).toEqual({ state: 'starting', attempts: 1 })
+
+      failFirst(new Error('ECONNREFUSED'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getWorkflowQueueStatus()).toMatchObject({ state: 'retrying', attempts: 1, lastError: 'ECONNREFUSED' })
+
+      await vi.advanceTimersByTimeAsync(5_000) // the second attempt is in flight
+      expect(getWorkflowQueueStatus()).toMatchObject({ state: 'retrying', attempts: 2, lastError: 'ECONNREFUSED' })
+
+      succeedSecond()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getWorkflowQueueStatus()).toEqual({ state: 'running', attempts: 2 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('without the Postgres world the status stays off', async () => {
+    const t = setup()
+    await startPersistentServer(NO_QUEUE_ENV, t.deps)
+    expect(getWorkflowQueueStatus()).toEqual({ state: 'off', attempts: 0 })
+  })
+
+  it('SIGTERM while retrying: stops the retries and exits without waiting for the queue', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockRejectedValue(new Error('ECONNREFUSED'))
+      await startPersistentServer(FULL_ENV, t.deps)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(getWorkflowQueueStatus().state).toBe('retrying')
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // no re-sent signal is coming from a queue that never ran: exit at once
+      expect(t.exit).toHaveBeenCalledWith(0)
+      expect(t.exit).toHaveBeenCalledTimes(1)
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+      expect(t.text()).toMatch(/очередь Workflow не запущена/)
+
+      // and no more attempts after the stop
+      await vi.advanceTimersByTimeAsync(3_600_000)
+      expect(t.startWorld).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('SIGTERM while the first attempt still hangs: exits after the tracked work, without the queue wait', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockImplementation(() => new Promise<void>(() => {}))
+      const work = deferred()
+      trackBackground(work.promise)
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(t.exit).not.toHaveBeenCalled() // the tracked work still runs
+
+      work.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(t.exit).toHaveBeenCalledWith(0)
+      expect(t.text()).not.toMatch(/не подтвердила остановку/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('an attempt that fails after SIGTERM schedules no retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      let fail!: (e: Error) => void
+      t.startWorld.mockImplementation(() => new Promise<void>((_, reject) => { fail = reject }))
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(t.exit).toHaveBeenCalledWith(0)
+
+      fail(new Error('ECONNREFUSED'))
+      await vi.advanceTimersByTimeAsync(3_600_000)
+      expect(t.startWorld).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('once the queue is running, SIGTERM still waits for its own stop (the re-sent signal)', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      t.startWorld.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      await startPersistentServer(FULL_ENV, t.deps)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(getWorkflowQueueStatus().state).toBe('running')
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(t.exit).not.toHaveBeenCalled()
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(t.exit).toHaveBeenCalledWith(0)
+      expect(t.text()).toMatch(/очередь Workflow остановлена/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+// While Vercel's crons are still in the deployed vercel.json, Vercel runs those jobs; a runner here
+// would run every one of them a second time.
+describe('startPersistentServer: the cron runner is refused while vercel.json still has crons', () => {
+  it('crons in vercel.json: the runner is not started, and the log says why', async () => {
+    const t = setup({ cwd: dirWith(VERCEL_WITH_CRONS) })
+
+    await expect(startPersistentServer(NO_QUEUE_ENV, t.deps)).resolves.toEqual({ world: false, cron: false })
+
+    expect(t.startCron).not.toHaveBeenCalled()
+    expect(t.errors.join('\n')).toMatch(/vercel\.json/)
+    expect(t.errors.join('\n')).toMatch(/crons/)
+    // the shutdown handler is still there on a persistent server
+    expect([...t.handlers.keys()].sort()).toEqual(['SIGINT', 'SIGTERM'])
+  })
+
+  it('the queue still starts when the runner is refused', async () => {
+    const t = setup({ cwd: dirWith(VERCEL_WITH_CRONS) })
+    await expect(startPersistentServer(FULL_ENV, t.deps)).resolves.toEqual({ world: true, cron: false })
+    expect(t.startWorld).toHaveBeenCalledTimes(1)
+  })
+
+  it('vercel.json without crons: the runner starts', async () => {
+    const t = setup({ cwd: dirWith(JSON.stringify({ regions: ['dub1'] })) })
+    await expect(startPersistentServer(NO_QUEUE_ENV, t.deps)).resolves.toEqual({ world: false, cron: true })
+    expect(t.startCron).toHaveBeenCalledTimes(1)
+  })
+
+  it('an empty crons array: the runner starts', async () => {
+    const t = setup({ cwd: dirWith(JSON.stringify({ regions: ['dub1'], crons: [] })) })
+    await expect(startPersistentServer(NO_QUEUE_ENV, t.deps)).resolves.toEqual({ world: false, cron: true })
+  })
+
+  it('no vercel.json at all: the runner starts', async () => {
+    const t = setup({ cwd: dirWith() })
+    await expect(startPersistentServer(NO_QUEUE_ENV, t.deps)).resolves.toEqual({ world: false, cron: true })
+  })
+
+  it('a vercel.json that cannot be read or parsed: the runner starts', async () => {
+    const t = setup({ cwd: dirWith('{ not json') })
+    await expect(startPersistentServer(NO_QUEUE_ENV, t.deps)).resolves.toEqual({ world: false, cron: true })
+  })
+
+  it('crons in vercel.json do not matter when the runner is not enabled', async () => {
+    const t = setup({ cwd: dirWith(VERCEL_WITH_CRONS) })
+    await startPersistentServer({ PERSISTENT_SERVER: '1' }, t.deps)
+    expect(t.text()).not.toMatch(/vercel\.json/)
   })
 })
 
@@ -296,7 +628,7 @@ describe('startPersistentServer: signals', () => {
   describe('with the Workflow queue running', () => {
     it('does not exit on the first signal, even with no tracked work: it waits for the re-sent one', async () => {
       const t = setup()
-      await startPersistentServer(FULL_ENV, t.deps)
+      await bootRunning(t)
 
       t.handlers.get('SIGTERM')!()
       expect(t.stopCron).toHaveBeenCalledTimes(1)
@@ -314,7 +646,7 @@ describe('startPersistentServer: signals', () => {
       const t = setup()
       const work = deferred()
       trackBackground(work.promise)
-      await startPersistentServer(FULL_ENV, t.deps)
+      await bootRunning(t)
 
       t.handlers.get('SIGTERM')!()
       t.handlers.get('SIGTERM')!() // the queue is stopped, the work is not
@@ -330,7 +662,7 @@ describe('startPersistentServer: signals', () => {
       const t = setup()
       const work = deferred()
       trackBackground(work.promise)
-      await startPersistentServer(FULL_ENV, t.deps)
+      await bootRunning(t)
 
       t.handlers.get('SIGTERM')!()
       work.resolve() // the work is done, the queue is not
@@ -344,7 +676,7 @@ describe('startPersistentServer: signals', () => {
 
     it('a re-sent signal of the other kind counts too (SIGINT first, SIGTERM after)', async () => {
       const t = setup()
-      await startPersistentServer(FULL_ENV, t.deps)
+      await bootRunning(t)
 
       t.handlers.get('SIGINT')!()
       await flush()
@@ -356,7 +688,7 @@ describe('startPersistentServer: signals', () => {
 
     it('further signals after the exit decision do not exit again or stop the cron again', async () => {
       const t = setup()
-      await startPersistentServer(FULL_ENV, t.deps)
+      await bootRunning(t)
 
       t.handlers.get('SIGTERM')!()
       t.handlers.get('SIGTERM')!()
@@ -373,7 +705,7 @@ describe('startPersistentServer: signals', () => {
       vi.useFakeTimers()
       try {
         const t = setup()
-        await startPersistentServer(FULL_ENV, t.deps)
+        await bootRunningFake(t)
 
         t.handlers.get('SIGTERM')!()
         await vi.advanceTimersByTimeAsync(54_999)
@@ -394,7 +726,7 @@ describe('startPersistentServer: signals', () => {
         const t = setup()
         const work = deferred()
         trackBackground(work.promise)
-        await startPersistentServer(FULL_ENV, t.deps)
+        await bootRunningFake(t)
 
         t.handlers.get('SIGTERM')!()
         await vi.advanceTimersByTimeAsync(30_000)
@@ -414,7 +746,7 @@ describe('startPersistentServer: signals', () => {
       try {
         const t = setup()
         trackBackground(new Promise<void>(() => {}))
-        await startPersistentServer(FULL_ENV, t.deps)
+        await bootRunningFake(t)
 
         t.handlers.get('SIGTERM')!()
         t.handlers.get('SIGTERM')!()
@@ -434,7 +766,7 @@ describe('startPersistentServer: signals', () => {
       vi.useFakeTimers()
       try {
         const t = setup()
-        await startPersistentServer(FULL_ENV, t.deps)
+        await bootRunningFake(t)
 
         t.handlers.get('SIGTERM')!()
         t.handlers.get('SIGTERM')!()
@@ -497,6 +829,7 @@ describe('startPersistentServer: defaults', () => {
 
     await expect(startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)).resolves.toEqual({ world: true, cron: false })
 
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
     expect(start).toHaveBeenCalledTimes(1)
   })
 
@@ -508,6 +841,7 @@ describe('startPersistentServer: defaults', () => {
 
     await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
 
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
     expect(runtime.concurrencySeen).toEqual(['2'])
   })
 
@@ -518,6 +852,7 @@ describe('startPersistentServer: defaults', () => {
 
     await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
 
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
     expect(runtime.concurrencySeen).toEqual(['2'])
   })
 
@@ -528,6 +863,7 @@ describe('startPersistentServer: defaults', () => {
 
     await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
 
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
     expect(runtime.concurrencySeen).toEqual(['5'])
   })
 
@@ -548,6 +884,7 @@ describe('startPersistentServer: defaults', () => {
     const { startWorld: _stub, ...deps } = t.deps
 
     await expect(startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)).resolves.toEqual({ world: true, cron: false })
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
   })
 
   it('the signal handlers are permanent process listeners, not once-only', async () => {
@@ -562,5 +899,32 @@ describe('startPersistentServer: defaults', () => {
 
     expect(on.mock.calls.map(([event]) => event).sort()).toEqual(['SIGINT', 'SIGTERM'])
     expect(once).not.toHaveBeenCalled()
+  })
+
+  it('reads vercel.json from process.cwd()', async () => {
+    vi.spyOn(process, 'cwd').mockReturnValue(dirWith(VERCEL_WITH_CRONS))
+    const t = setup()
+    const { cwd: _stub, ...deps } = t.deps
+
+    await expect(startPersistentServer(NO_QUEUE_ENV, deps)).resolves.toEqual({ world: false, cron: false })
+    expect(t.startCron).not.toHaveBeenCalled()
+  })
+
+  it('a failed queue start goes to console.error', async () => {
+    vi.useFakeTimers()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const t = setup()
+      t.startWorld.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432'))
+      const { logError: _stub, ...deps } = t.deps
+
+      await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(error).toHaveBeenCalledTimes(1)
+      expect(String(error.mock.calls[0][0])).toContain('ECONNREFUSED')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
