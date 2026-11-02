@@ -57,6 +57,10 @@ function publicIp(raw: string): string | null {
  * The default lookup: the offline `geoip-country` database. Loaded on first use, not at import — it
  * reads ~10 MB of data files from its package directory (so it must stay external to the Next bundle,
  * see serverComponentsExternalPackages) and nothing that never reaches this path should pay for that.
+ *
+ * On Vercel the `.dat` files are not traced into the function, so this lookup always throws there and
+ * the caller falls back to unknown. That is by design: on Vercel the `x-vercel-ip-country` header is
+ * the source. Do not "fix" it by tracing the files in — ~10 MB per function for nothing.
  */
 function geoipCountryLookup(ip: string): string | null {
   const geoip = require('geoip-country') as { lookup(ip: string): { country?: string } | null }

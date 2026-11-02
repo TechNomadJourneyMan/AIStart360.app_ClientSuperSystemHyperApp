@@ -20,16 +20,17 @@ describe('deferOrAwait on a persistent server', () => {
   it('answers at once and keeps the work in the background set', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '1')
     const done = vi.fn()
-    const work = sleep(50).then(done)
+    let finish!: () => void
+    // settles only when the test says so: if deferOrAwait waited for it, the await below would never return
+    const work = new Promise<void>((resolve) => { finish = resolve }).then(done)
 
-    const started = Date.now()
     const mode = await deferOrAwait(work)
 
     expect(mode).toBe('deferred')
-    expect(Date.now() - started).toBeLessThan(20)
-    expect(done).not.toHaveBeenCalled()
+    expect(done).not.toHaveBeenCalled() // answered while the work is still pending
     expect(pendingBackgroundCount()).toBe(1)
 
+    finish()
     await expect(waitForBackgroundWork(1000)).resolves.toEqual({ finished: true, pending: 0 })
     expect(done).toHaveBeenCalledTimes(1)
   })
