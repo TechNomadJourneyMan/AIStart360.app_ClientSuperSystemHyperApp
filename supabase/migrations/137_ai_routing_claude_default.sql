@@ -27,7 +27,9 @@
 --
 -- Embeddings / rerank / OCR / transcribe routes are not touched. No keys, no
 -- schema change. Idempotent; does nothing when the `openrouter` provider row
--- is missing. Apply (on push to main, PO rule):
+-- is missing. Steps 2–4 run only where chat is already routed by the owner
+-- (production: light / standard / premium → AlemLLM); a database without
+-- chat routes gets only the `Claude` id fix. Apply (on push to main, PO rule):
 --   node scripts/apply-migration.js supabase/migrations/137_ai_routing_claude_default.sql
 
 DO $$
@@ -37,6 +39,7 @@ DECLARE
   v_haiku  uuid;
   v_light  uuid;
   v_bad    record;
+  v_routed boolean;
 BEGIN
   SELECT id INTO v_or FROM public.ai_providers WHERE key = 'openrouter';
   IF v_or IS NULL THEN
@@ -71,6 +74,22 @@ BEGIN
       DELETE FROM public.ai_models WHERE id = v_bad.id;
     END IF;
   END LOOP;
+
+  -- Chat routing is the owner's (GIGA → «AI-провайдеры»). A database where
+  -- nobody routes chat (a fresh / test database) keeps the built-in routing —
+  -- there an explicit model of a feature (Opus for the report narrative,
+  -- Sonnet 5 for omnichannel) goes out as asked, and a seeded route would
+  -- take it over. Only the invalid `Claude` id above is fixed there.
+  SELECT EXISTS (SELECT 1 FROM public.ai_routes WHERE capability = 'chat') INTO v_routed;
+  IF NOT v_routed THEN
+    IF v_sonnet IS NOT NULL THEN
+      UPDATE public.ai_models
+         SET label = 'Claude Sonnet 4.5', tier_hint = 'premium', updated_at = now()
+       WHERE id = v_sonnet;
+    END IF;
+    RAISE NOTICE '137: no chat routes — routing unchanged';
+    RETURN;
+  END IF;
 
   IF v_sonnet IS NULL THEN
     INSERT INTO public.ai_models (provider_id, model_id, capability, label, tier_hint, source, enabled)
