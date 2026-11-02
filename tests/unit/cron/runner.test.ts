@@ -11,6 +11,12 @@ const SECRET = 's3cr3t'
 const BASE = 'https://portal.test'
 const paths = (jobs: { path: string }[]) => jobs.map((job) => job.path).sort()
 
+// The one-runner-per-process guard lives on globalThis (see lib/cron/runner.ts). A test that fails
+// before its stop() must not leave it set for the next one.
+const RUNNER_GUARD = Symbol.for('aistart360.cron.runner')
+const clearGuard = () => { delete (globalThis as Record<symbol, unknown>)[RUNNER_GUARD] }
+afterEach(clearGuard)
+
 describe('dueJobs', () => {
   it('Monday 04:00 UTC: the CRM, agents and client digests', () => {
     expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z')))).toEqual([
@@ -359,5 +365,252 @@ describe('startCronRunner (injected clock and timer)', () => {
     expect(lines.some((line) => line.includes('clock failure'))).toBe(true)
     expect(timers).toHaveLength(2)
     runner.stop()
+  })
+})
+
+describe('startCronRunner (claim across instances)', () => {
+  // Two instances overlap during a redeploy: both tick at 04:00:00. The claim is the only thing
+  // standing between that and two digests per client.
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+  const log = (line: string) => { lines.push(line) }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    lines = []
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function start(claim: (path: string, minute: Date) => Promise<boolean>, extra: Partial<Parameters<typeof startCronRunner>[0]> = {}) {
+    vi.setSystemTime(new Date('2026-11-02T03:59:30Z'))
+    return startCronRunner({ baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log, claim, ...extra })
+  }
+
+  /** What the Postgres table does: the first caller for a (path, minute) wins, everyone after loses. */
+  const sharedClaim = () => {
+    const taken = new Set<string>()
+    return async (path: string, minute: Date) => {
+      const key = `${path}@${minute.toISOString()}`
+      if (taken.has(key)) return false
+      taken.add(key)
+      return true
+    }
+  }
+
+  it('two runners sharing one claim fire each (path, minute) exactly once', async () => {
+    const claim = sharedClaim()
+    const first = start(claim)
+    clearGuard() // the second runner stands for another process, which has its own guard
+    const second = start(claim)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0])).sort()
+    expect(new Set(urls).size).toBe(3)
+    expect(lines.filter((line) => line.includes('уже запущено другим экземпляром'))).toHaveLength(3)
+
+    // a full day on: 3 at 04:00 Monday + Telegram sync, reminders, rollup, billing expiry,
+    // AI discovery, staff digest and the two Tuesday digests - each once, though both runners ticked
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(fetchImpl).toHaveBeenCalledTimes(11)
+    first.stop()
+    second.stop()
+  })
+
+  it('asks the claim for the path and the UTC minute it is about to run', async () => {
+    const claim = vi.fn(async () => true)
+    const runner = start(claim)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(claim).toHaveBeenCalledTimes(3)
+    expect(claim).toHaveBeenCalledWith('/api/cron/crm-digest', new Date('2026-11-02T04:00:00Z'))
+    expect(claim).toHaveBeenCalledWith('/api/cron/agents-digest', new Date('2026-11-02T04:00:00Z'))
+    expect(claim).toHaveBeenCalledWith('/api/cron/client-digest', new Date('2026-11-02T04:00:00Z'))
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    runner.stop()
+  })
+
+  it('a lost claim means no fetch, and the log says another instance has it', async () => {
+    const runner = start(async () => false)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).not.toHaveBeenCalled()
+    const skipped = lines.filter((line) => line.includes('уже запущено другим экземпляром'))
+    expect(skipped).toHaveLength(3)
+    expect(skipped.some((line) => line.includes('/api/cron/crm-digest'))).toBe(true)
+    runner.stop()
+  })
+
+  it('a claim that throws means no fetch (never fire without a claim) and an error line, secret masked', async () => {
+    const runner = start(async () => { throw new Error(`connection to db refused (token ${SECRET})`) })
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).not.toHaveBeenCalled()
+    const failure = lines.filter((line) => line.includes('connection to db refused'))
+    expect(failure).toHaveLength(3)
+    expect(failure.every((line) => /claim/i.test(line))).toBe(true)
+    expect(lines.join('\n')).not.toContain(SECRET)
+
+    // the runner survives it: the next due minute asks again
+    await vi.advanceTimersByTimeAsync(60 * 60_000) // 05:00:00
+    expect(lines.filter((line) => line.includes('/api/telegram/personal/sync')).length).toBeGreaterThan(0)
+    runner.stop()
+  })
+
+  it('a rejected claim for one job does not hold back the others', async () => {
+    const claim = vi.fn(async (path: string) => {
+      if (path === '/api/cron/crm-digest') throw new Error('boom')
+      return true
+    })
+    const runner = start(claim)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl.mock.calls.map((call) => String(call[0]))).not.toContain(`${BASE}/api/cron/crm-digest`)
+    runner.stop()
+  })
+
+  it('does not claim a job once the runner is stopped', async () => {
+    const gates: (() => void)[] = []
+    fetchImpl.mockImplementation(() => new Promise<Response>((resolve) => {
+      gates.push(() => resolve(new Response('{}', { status: 200 })))
+    }))
+    const claim = vi.fn(async () => true)
+    const runner = start(claim)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(claim).toHaveBeenCalledTimes(2) // two slots; the third job waits
+
+    runner.stop()
+    gates.splice(0).forEach((open) => open())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(claim).toHaveBeenCalledTimes(2) // a claim taken and then not fired would lose that run
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('startCronRunner (fetch timeout)', () => {
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    lines = []
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  function start() {
+    vi.setSystemTime(new Date('2026-11-02T03:59:30Z'))
+    return startCronRunner({ baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log: (line) => { lines.push(line) } })
+  }
+
+  it('every call carries an abort signal that fires after 300 s', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(timeout).toHaveBeenCalledWith(300_000)
+    for (const [, init] of fetchImpl.mock.calls) {
+      expect(init.signal).toBeInstanceOf(AbortSignal)
+    }
+    runner.stop()
+  })
+
+  it('a call that times out is logged like any other failure and does not stop the runner', async () => {
+    fetchImpl.mockImplementationOnce(async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    })
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(lines.some((line) => /error/.test(line) && /timeout/i.test(line))).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000) // 05:00:00
+    expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain(`${BASE}/api/telegram/personal/sync`)
+    runner.stop()
+  })
+})
+
+describe('startCronRunner (one per process)', () => {
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+  const log = (line: string) => { lines.push(line) }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    lines = []
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function start(extra: Partial<Parameters<typeof startCronRunner>[0]> = {}) {
+    vi.setSystemTime(new Date('2026-11-02T03:59:30Z'))
+    return startCronRunner({ baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log, ...extra })
+  }
+
+  it('a second start returns the first handle, warns, and starts no second ticker', async () => {
+    const first = start()
+    const second = start()
+
+    expect(second).toBe(first)
+    expect(vi.getTimerCount()).toBe(1)
+    expect(lines.filter((line) => /already running|уже запущен/i.test(line))).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fetchImpl).toHaveBeenCalledTimes(3) // once, not twice
+    first.stop()
+  })
+
+  it('the warning goes to the log of the call that was refused', () => {
+    const first = start()
+    const refusedLines: string[] = []
+    start({ log: (line) => { refusedLines.push(line) } })
+
+    expect(refusedLines.length).toBe(1)
+    expect(refusedLines[0]).toMatch(/cron/)
+    first.stop()
+  })
+
+  it('stop() clears the guard, so a new runner can start afterwards', () => {
+    const first = start()
+    first.stop()
+    expect(vi.getTimerCount()).toBe(0)
+
+    const second = start()
+    expect(second).not.toBe(first)
+    expect(vi.getTimerCount()).toBe(1)
+    second.stop()
+  })
+
+  it('a stale handle stopped again does not clear the guard of the runner that replaced it', () => {
+    const first = start()
+    first.stop()
+    const second = start()
+    first.stop() // called twice, late
+
+    const third = start()
+    expect(third).toBe(second)
+    expect(vi.getTimerCount()).toBe(1)
+    second.stop()
+  })
+
+  it('the guard is on globalThis, so another copy of the module sees it', () => {
+    const first = start()
+    expect((globalThis as Record<symbol, unknown>)[RUNNER_GUARD]).toBe(first)
+    first.stop()
+    expect((globalThis as Record<symbol, unknown>)[RUNNER_GUARD]).toBeUndefined()
   })
 })
