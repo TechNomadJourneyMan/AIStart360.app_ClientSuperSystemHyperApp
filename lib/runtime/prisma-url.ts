@@ -1,0 +1,44 @@
+/**
+ * lib/runtime/prisma-url.ts — the Prisma connection URL on a persistent server.
+ *
+ * On Vercel each function instance holds its own small pool (DATABASE_URL carries connection_limit=1
+ * for the Supabase pooler). A long-lived Railway process serves every request through one client, so
+ * one connection would queue them all: there the limit comes from PRISMA_CONNECTION_LIMIT (an integer
+ * 1..50, default 5) instead. Everything else in the URL is kept byte for byte (pgbouncer=true and the
+ * rest). Elsewhere nothing is overridden. The URL is never logged.
+ */
+import { isPersistentServer } from '@/lib/runtime/platform'
+
+// Partial, like lib/runtime/platform.ts: Next's typings make NODE_ENV mandatory in ProcessEnv.
+type Env = Partial<NodeJS.ProcessEnv>
+
+export const DEFAULT_PRISMA_CONNECTION_LIMIT = 5
+const MAX_PRISMA_CONNECTION_LIMIT = 50
+
+/** PRISMA_CONNECTION_LIMIT as a pool size: an integer 1..50, anything else is the default. */
+export function prismaConnectionLimit(raw: string | undefined): number {
+  const text = raw?.trim() ?? ''
+  if (!/^\d+$/.test(text)) return DEFAULT_PRISMA_CONNECTION_LIMIT
+  const limit = Number(text)
+  return limit >= 1 && limit <= MAX_PRISMA_CONNECTION_LIMIT ? limit : DEFAULT_PRISMA_CONNECTION_LIMIT
+}
+
+/**
+ * `url` with connection_limit=`limit`: every existing connection_limit is dropped and the new one
+ * appended. Plain string work on the query, so the other params are not re-encoded.
+ */
+export function withConnectionLimit(url: string, limit: number): string {
+  const queryAt = url.indexOf('?')
+  const base = queryAt === -1 ? url : url.slice(0, queryAt)
+  const params = queryAt === -1 ? [] : url.slice(queryAt + 1).split('&')
+  const kept = params.filter((param) => param !== '' && param.split('=')[0] !== 'connection_limit')
+  return `${base}?${[...kept, `connection_limit=${limit}`].join('&')}`
+}
+
+/** The datasource URL for PrismaClient on a persistent server; undefined (no override) anywhere else. */
+export function persistentPrismaDatasourceUrl(env: Env = process.env): string | undefined {
+  if (!isPersistentServer(env)) return undefined
+  const url = env.DATABASE_URL?.trim()
+  if (!url) return undefined
+  return withConnectionLimit(url, prismaConnectionLimit(env.PRISMA_CONNECTION_LIMIT))
+}
