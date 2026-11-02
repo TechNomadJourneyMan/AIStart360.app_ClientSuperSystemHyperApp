@@ -19,7 +19,12 @@
  *     boot hook cannot double the ticker;
  *   - with `claim`, one runner per (path, minute) across processes: during a redeploy the old and
  *     the new instance both tick, and only the one that wins the claim calls the route.
+ *
+ * Every job is tracked as background work (lib/background.ts) from the moment it is due until its
+ * call settles, so the shutdown on SIGTERM waits for it: the claim of a call cut short is already
+ * spent, and no other instance would run that minute again.
  */
+import { trackBackground } from '@/lib/background'
 import { dueJobs, type CronJob } from '@/lib/cron/schedule'
 
 const MINUTE_MS = 60_000
@@ -154,8 +159,8 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
         lastHandled = minute
         const minuteStart = new Date(minute * MINUTE_MS)
         for (const job of dueJobs(minuteStart)) {
-          // fire and forget: a slow job must not delay the next tick
-          void runJob(job, minuteStart).catch((error) => write(`cron: ${job.path} not run: ${messageOf(error)}`))
+          // fire and forget: a slow job must not delay the next tick, but a shutdown must see it
+          trackBackground(runJob(job, minuteStart).catch((error) => write(`cron: ${job.path} not run: ${messageOf(error)}`)))
         }
       }
     } catch (error) {

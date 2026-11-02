@@ -5,8 +5,17 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const runtime = vi.hoisted(() => ({ world: { start: vi.fn(async () => {}) } as { start?: () => Promise<void> } }))
-vi.mock('workflow/runtime', () => ({ getWorld: () => runtime.world }))
+const runtime = vi.hoisted(() => ({
+  world: { start: vi.fn(async () => {}) } as { start?: () => Promise<void> },
+  // what WORKFLOW_POSTGRES_WORKER_CONCURRENCY said at each getWorld() call (createWorld reads it right then)
+  concurrencySeen: [] as (string | undefined)[],
+}))
+vi.mock('workflow/runtime', () => ({
+  getWorld: () => {
+    runtime.concurrencySeen.push(process.env.WORKFLOW_POSTGRES_WORKER_CONCURRENCY)
+    return runtime.world
+  },
+}))
 
 import { startPersistentServer } from '@/lib/runtime/server-start'
 import { trackBackground, waitForBackgroundWork } from '@/lib/background'
@@ -15,11 +24,21 @@ type Handler = () => void
 
 const FULL_ENV: Partial<NodeJS.ProcessEnv> = {
   PERSISTENT_SERVER: '1',
+  NEXT_MANUAL_SIG_HANDLE: 'true',
   WORKFLOW_TARGET_WORLD: '@workflow/world-postgres',
   CRON_RUNNER_ENABLED: '1',
   CRON_SECRET: 'x',
   PORT: '8080',
 }
+// The same without the Workflow queue: nothing for graphile-worker to stop, so nothing to wait for.
+const NO_QUEUE_ENV: Partial<NodeJS.ProcessEnv> = {
+  PERSISTENT_SERVER: '1',
+  NEXT_MANUAL_SIG_HANDLE: 'true',
+  CRON_RUNNER_ENABLED: '1',
+  CRON_SECRET: 'x',
+  PORT: '8080',
+}
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 20))
 
 function deferred() {
   let resolve!: () => void
@@ -179,94 +198,285 @@ describe('startPersistentServer: signals', () => {
     expect([...t.handlers.keys()].sort()).toEqual(['SIGINT', 'SIGTERM'])
   })
 
-  it('SIGTERM: stops the cron first, waits for tracked work, then exits 0', async () => {
-    const t = setup()
-    const work = deferred()
-    trackBackground(work.promise)
-    await startPersistentServer(FULL_ENV, t.deps)
-
-    t.handlers.get('SIGTERM')!()
-
-    // synchronous: the cron stops before anything is waited for
-    expect(t.stopCron).toHaveBeenCalledTimes(1)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(t.exit).not.toHaveBeenCalled() // the task is still running
-
-    work.resolve()
-    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
-    expect(t.exit).toHaveBeenCalledTimes(1)
-    expect(t.text()).toContain('ждали 1 задач')
-  })
-
-  it('SIGINT does the same', async () => {
-    const t = setup()
-    await startPersistentServer(FULL_ENV, t.deps)
-
-    t.handlers.get('SIGINT')!()
-
-    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
-    expect(t.stopCron).toHaveBeenCalledTimes(1)
-    expect(t.text()).toContain('ждали 0 задач')
-  })
-
-  it('waits at most 55 s for the work', async () => {
-    vi.useFakeTimers()
-    try {
+  describe('without the Workflow queue', () => {
+    it('SIGTERM: stops the cron first, waits for tracked work, then exits 0', async () => {
       const t = setup()
-      trackBackground(new Promise<void>(() => {})) // never settles
+      const work = deferred()
+      trackBackground(work.promise)
+      await startPersistentServer(NO_QUEUE_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+
+      // synchronous: the cron stops before anything is waited for
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+      await flush()
+      expect(t.exit).not.toHaveBeenCalled() // the task is still running
+
+      work.resolve()
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.exit).toHaveBeenCalledTimes(1)
+      expect(t.text()).toContain('ждали 1 задач')
+    })
+
+    it('SIGINT does the same', async () => {
+      const t = setup()
+      await startPersistentServer(NO_QUEUE_ENV, t.deps)
+
+      t.handlers.get('SIGINT')!()
+
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+      expect(t.text()).toContain('ждали 0 задач')
+    })
+
+    it('waits at most 55 s for the work', async () => {
+      vi.useFakeTimers()
+      try {
+        const t = setup()
+        trackBackground(new Promise<void>(() => {})) // never settles
+        await startPersistentServer(NO_QUEUE_ENV, t.deps)
+
+        t.handlers.get('SIGTERM')!()
+        await vi.advanceTimersByTimeAsync(54_999)
+        expect(t.exit).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(1)
+        expect(t.exit).toHaveBeenCalledWith(0)
+        expect(t.text()).toContain('ждали 1 задач')
+        expect(t.text()).toMatch(/не завершено 1/)
+      } finally {
+        vi.useRealTimers()
+        // the promise above never settles; clear the shared set so the next test starts clean
+        delete (globalThis as Record<symbol, unknown>)[Symbol.for('aistart360.background.pending')]
+      }
+    })
+
+    it('a second signal while shutting down waits and exits only once', async () => {
+      const t = setup()
+      const work = deferred()
+      trackBackground(work.promise)
+      await startPersistentServer(NO_QUEUE_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      t.handlers.get('SIGINT')!()
+      t.handlers.get('SIGTERM')!()
+      work.resolve()
+
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      await flush()
+      expect(t.exit).toHaveBeenCalledTimes(1)
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+    })
+
+    it('a cron that will not stop does not keep the process from exiting', async () => {
+      const t = setup()
+      t.stopCron.mockImplementation(() => { throw new Error('stop failed') })
+      await startPersistentServer(NO_QUEUE_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.text()).toContain('stop failed')
+    })
+
+    it('without a cron there is nothing to stop and the handler still waits and exits', async () => {
+      const t = setup()
+      await startPersistentServer({ PERSISTENT_SERVER: '1', NEXT_MANUAL_SIG_HANDLE: 'true' }, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.stopCron).not.toHaveBeenCalled()
+    })
+  })
+
+  // graphile-worker (inside the Postgres world) handles the same SIGTERM on its own: it stops taking
+  // jobs, lets the running ones finish (or fails them so they are retried at once) and only then
+  // re-sends the signal to the process. Exiting before that leaves the running jobs locked for 4 h.
+  describe('with the Workflow queue running', () => {
+    it('does not exit on the first signal, even with no tracked work: it waits for the re-sent one', async () => {
+      const t = setup()
       await startPersistentServer(FULL_ENV, t.deps)
 
       t.handlers.get('SIGTERM')!()
-      await vi.advanceTimersByTimeAsync(54_999)
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+      await flush()
       expect(t.exit).not.toHaveBeenCalled()
 
-      await vi.advanceTimersByTimeAsync(1)
-      expect(t.exit).toHaveBeenCalledWith(0)
-      expect(t.text()).toContain('ждали 1 задач')
-      expect(t.text()).toMatch(/не завершено 1|не успели/i)
-    } finally {
-      vi.useRealTimers()
-      // the promise above never settles; clear the shared set so the next test starts clean
-      delete (globalThis as Record<symbol, unknown>)[Symbol.for('aistart360.background.pending')]
+      t.handlers.get('SIGTERM')!() // graphile-worker's process.kill(process.pid, 'SIGTERM')
+
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.exit).toHaveBeenCalledTimes(1)
+      expect(t.text()).toMatch(/очередь Workflow остановлена/)
+    })
+
+    it('exits only when BOTH the tracked work is done and the re-sent signal has arrived (signal first)', async () => {
+      const t = setup()
+      const work = deferred()
+      trackBackground(work.promise)
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      t.handlers.get('SIGTERM')!() // the queue is stopped, the work is not
+      await flush()
+      expect(t.exit).not.toHaveBeenCalled()
+
+      work.resolve()
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.exit).toHaveBeenCalledTimes(1)
+    })
+
+    it('exits only when BOTH the tracked work is done and the re-sent signal has arrived (work first)', async () => {
+      const t = setup()
+      const work = deferred()
+      trackBackground(work.promise)
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      work.resolve() // the work is done, the queue is not
+      await flush()
+      expect(t.exit).not.toHaveBeenCalled()
+
+      t.handlers.get('SIGTERM')!()
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      expect(t.exit).toHaveBeenCalledTimes(1)
+    })
+
+    it('a re-sent signal of the other kind counts too (SIGINT first, SIGTERM after)', async () => {
+      const t = setup()
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGINT')!()
+      await flush()
+      expect(t.exit).not.toHaveBeenCalled()
+
+      t.handlers.get('SIGTERM')!()
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+    })
+
+    it('further signals after the exit decision do not exit again or stop the cron again', async () => {
+      const t = setup()
+      await startPersistentServer(FULL_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      t.handlers.get('SIGTERM')!()
+      await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
+      t.handlers.get('SIGTERM')!()
+      t.handlers.get('SIGINT')!()
+      await flush()
+
+      expect(t.exit).toHaveBeenCalledTimes(1)
+      expect(t.stopCron).toHaveBeenCalledTimes(1)
+    })
+
+    it('the shared 55 s deadline still forces exit(0) when the re-sent signal never comes', async () => {
+      vi.useFakeTimers()
+      try {
+        const t = setup()
+        await startPersistentServer(FULL_ENV, t.deps)
+
+        t.handlers.get('SIGTERM')!()
+        await vi.advanceTimersByTimeAsync(54_999)
+        expect(t.exit).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(1)
+        expect(t.exit).toHaveBeenCalledWith(0)
+        expect(t.exit).toHaveBeenCalledTimes(1)
+        expect(t.text()).toMatch(/не подтвердила остановку|не дождались/)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('the deadline is shared: work that ends at 30 s does not extend the wait for the signal past 55 s', async () => {
+      vi.useFakeTimers()
+      try {
+        const t = setup()
+        const work = deferred()
+        trackBackground(work.promise)
+        await startPersistentServer(FULL_ENV, t.deps)
+
+        t.handlers.get('SIGTERM')!()
+        await vi.advanceTimersByTimeAsync(30_000)
+        work.resolve()
+        await vi.advanceTimersByTimeAsync(24_999)
+        expect(t.exit).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(1) // 55 s after the first signal
+        expect(t.exit).toHaveBeenCalledWith(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('the deadline also forces exit when the work never ends although the signal came', async () => {
+      vi.useFakeTimers()
+      try {
+        const t = setup()
+        trackBackground(new Promise<void>(() => {}))
+        await startPersistentServer(FULL_ENV, t.deps)
+
+        t.handlers.get('SIGTERM')!()
+        t.handlers.get('SIGTERM')!()
+        await vi.advanceTimersByTimeAsync(54_999)
+        expect(t.exit).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(1)
+        expect(t.exit).toHaveBeenCalledWith(0)
+        expect(t.text()).toMatch(/не завершено 1/)
+      } finally {
+        vi.useRealTimers()
+        delete (globalThis as Record<symbol, unknown>)[Symbol.for('aistart360.background.pending')]
+      }
+    })
+
+    it('leaves no timer behind once it has exited', async () => {
+      vi.useFakeTimers()
+      try {
+        const t = setup()
+        await startPersistentServer(FULL_ENV, t.deps)
+
+        t.handlers.get('SIGTERM')!()
+        t.handlers.get('SIGTERM')!()
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(t.exit).toHaveBeenCalledWith(0)
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+})
+
+describe('startPersistentServer: the Next signal handler', () => {
+  // Next's own handler is server.close(() => process.exit(0)); left on, it would race the wait above.
+  it('warns on a persistent server when NEXT_MANUAL_SIG_HANDLE is not set', async () => {
+    const t = setup()
+
+    await startPersistentServer({ PERSISTENT_SERVER: '1' }, t.deps)
+
+    expect(t.text()).toContain('NEXT_MANUAL_SIG_HANDLE')
+  })
+
+  it('does not warn when it is set (Next only looks at whether it is non-empty)', async () => {
+    for (const value of ['true', '1']) {
+      const t = setup()
+      await startPersistentServer({ PERSISTENT_SERVER: '1', NEXT_MANUAL_SIG_HANDLE: value }, t.deps)
+      expect(t.text(), `value=${value}`).not.toContain('NEXT_MANUAL_SIG_HANDLE')
     }
   })
 
-  it('a second signal while shutting down waits and exits only once', async () => {
+  it('warns when it is empty', async () => {
     const t = setup()
-    const work = deferred()
-    trackBackground(work.promise)
-    await startPersistentServer(FULL_ENV, t.deps)
-
-    t.handlers.get('SIGTERM')!()
-    t.handlers.get('SIGINT')!()
-    t.handlers.get('SIGTERM')!()
-    work.resolve()
-
-    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(t.exit).toHaveBeenCalledTimes(1)
-    expect(t.stopCron).toHaveBeenCalledTimes(1)
+    await startPersistentServer({ PERSISTENT_SERVER: '1', NEXT_MANUAL_SIG_HANDLE: '' }, t.deps)
+    expect(t.text()).toContain('NEXT_MANUAL_SIG_HANDLE')
   })
 
-  it('a cron that will not stop does not keep the process from exiting', async () => {
+  it('says nothing when this is not a persistent server', async () => {
     const t = setup()
-    t.stopCron.mockImplementation(() => { throw new Error('stop failed') })
-    await startPersistentServer(FULL_ENV, t.deps)
-
-    t.handlers.get('SIGTERM')!()
-
-    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
-    expect(t.text()).toContain('stop failed')
-  })
-
-  it('without a cron there is nothing to stop and the handler still waits and exits', async () => {
-    const t = setup()
-    await startPersistentServer({ PERSISTENT_SERVER: '1' }, t.deps)
-
-    t.handlers.get('SIGTERM')!()
-
-    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0))
-    expect(t.stopCron).not.toHaveBeenCalled()
+    await startPersistentServer({}, t.deps)
+    expect(t.text()).not.toContain('NEXT_MANUAL_SIG_HANDLE')
   })
 })
 
@@ -274,7 +484,9 @@ describe('startPersistentServer: defaults', () => {
   // The production wiring: no stubs, only the logger and exit are kept out of the real process.
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
     runtime.world = { start: vi.fn(async () => {}) }
+    runtime.concurrencySeen = []
   })
 
   it('starts the queue through getWorld().start() from workflow/runtime', async () => {
@@ -286,6 +498,48 @@ describe('startPersistentServer: defaults', () => {
     await expect(startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)).resolves.toEqual({ world: true, cron: false })
 
     expect(start).toHaveBeenCalledTimes(1)
+  })
+
+  // The queue's own default is 10 concurrent jobs; the project rule for background work is at most 2.
+  it('limits the queue to 2 concurrent jobs when WORKFLOW_POSTGRES_WORKER_CONCURRENCY is unset, before getWorld()', async () => {
+    vi.stubEnv('WORKFLOW_POSTGRES_WORKER_CONCURRENCY', undefined)
+    const t = setup()
+    const { startWorld: _stub, ...deps } = t.deps
+
+    await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
+
+    expect(runtime.concurrencySeen).toEqual(['2'])
+  })
+
+  it('treats an empty WORKFLOW_POSTGRES_WORKER_CONCURRENCY as unset', async () => {
+    vi.stubEnv('WORKFLOW_POSTGRES_WORKER_CONCURRENCY', '')
+    const t = setup()
+    const { startWorld: _stub, ...deps } = t.deps
+
+    await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
+
+    expect(runtime.concurrencySeen).toEqual(['2'])
+  })
+
+  it('respects an explicit WORKFLOW_POSTGRES_WORKER_CONCURRENCY', async () => {
+    vi.stubEnv('WORKFLOW_POSTGRES_WORKER_CONCURRENCY', '5')
+    const t = setup()
+    const { startWorld: _stub, ...deps } = t.deps
+
+    await startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' }, deps)
+
+    expect(runtime.concurrencySeen).toEqual(['5'])
+  })
+
+  it('leaves the variable alone when the queue is not started', async () => {
+    vi.stubEnv('WORKFLOW_POSTGRES_WORKER_CONCURRENCY', undefined)
+    const t = setup()
+    const { startWorld: _stub, ...deps } = t.deps
+
+    await startPersistentServer({ PERSISTENT_SERVER: '1' }, deps)
+
+    expect(process.env.WORKFLOW_POSTGRES_WORKER_CONCURRENCY).toBeUndefined()
+    expect(runtime.concurrencySeen).toEqual([])
   })
 
   it('a world without a start() is not an error', async () => {

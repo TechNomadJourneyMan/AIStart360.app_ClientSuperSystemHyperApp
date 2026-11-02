@@ -24,16 +24,37 @@ const CLAIM = 'INSERT INTO cron_runs (path, minute) VALUES ($1, $2) ON CONFLICT 
  */
 export function createPgCronClaim(
   connectionString: string,
-  deps: { pool?: Pick<Pool, 'query'> } = {},
+  deps: { pool?: Pick<Pool, 'query'>; log?: (line: string) => void } = {},
 ): (path: string, minute: Date) => Promise<boolean> {
   let pool = deps.pool
   let ready: Promise<void> | undefined
+
+  // An error message can echo the connection string (or its user and password); none of it may reach the log.
+  const masked = (text: string): string => {
+    const secrets = [connectionString]
+    try {
+      const url = new URL(connectionString)
+      secrets.push(url.password, decodeURIComponent(url.password), url.username, decodeURIComponent(url.username))
+    } catch {
+      // not a URL: the whole string is masked above
+    }
+    return secrets.filter(Boolean).reduce((out, secret) => out.split(secret).join('***'), text)
+  }
 
   const poolOf = (): Pick<Pool, 'query'> => {
     if (!pool) {
       const own = new Pool({ connectionString, max: 2, application_name: 'aistart360-cron-claim' })
       // An idle client dropped by the server emits 'error' on the pool; unhandled, that kills the process.
-      own.on('error', () => {})
+      // The pool recovers by itself on the next query, so it is only worth a line in the log.
+      own.on('error', (error: unknown) => {
+        try {
+          const code = (error as { code?: unknown } | null)?.code
+          const message = error instanceof Error ? error.message : String(error)
+          ;(deps.log ?? console.error)(`cron: claim pool error: ${typeof code === 'string' ? `${code} ` : ''}${masked(message)}`)
+        } catch {
+          // a broken logger must not turn a pool error into an uncaught one
+        }
+      })
       pool = own
     }
     return pool

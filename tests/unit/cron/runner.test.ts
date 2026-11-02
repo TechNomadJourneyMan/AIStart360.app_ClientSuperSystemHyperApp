@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dueJobs } from '@/lib/cron/schedule'
 import { startCronRunner } from '@/lib/cron/runner'
+import { pendingBackgroundCount } from '@/lib/background'
 
 const SECRET = 's3cr3t'
 const BASE = 'https://portal.test'
@@ -14,7 +15,12 @@ const paths = (jobs: { path: string }[]) => jobs.map((job) => job.path).sort()
 // The one-runner-per-process guard lives on globalThis (see lib/cron/runner.ts). A test that fails
 // before its stop() must not leave it set for the next one.
 const RUNNER_GUARD = Symbol.for('aistart360.cron.runner')
-const clearGuard = () => { delete (globalThis as Record<symbol, unknown>)[RUNNER_GUARD] }
+// Same for the set of unfinished background work: a call gated forever must not count in the next test.
+const PENDING_WORK = Symbol.for('aistart360.background.pending')
+const clearGuard = () => {
+  delete (globalThis as Record<symbol, unknown>)[RUNNER_GUARD]
+  delete (globalThis as Record<symbol, unknown>)[PENDING_WORK]
+}
 afterEach(clearGuard)
 
 describe('dueJobs', () => {
@@ -612,5 +618,89 @@ describe('startCronRunner (one per process)', () => {
     expect((globalThis as Record<symbol, unknown>)[RUNNER_GUARD]).toBe(first)
     first.stop()
     expect((globalThis as Record<symbol, unknown>)[RUNNER_GUARD]).toBeUndefined()
+  })
+})
+
+describe('startCronRunner (in-flight calls are tracked as background work)', () => {
+  // A deploy during a digest sends SIGTERM to the old instance: the shutdown waits for tracked work,
+  // and the (path, minute) claim of a call cut short is already spent, so that run would be lost.
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let gates: (() => void)[]
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    gates = []
+    fetchImpl = vi.fn(() => new Promise<Response>((resolve) => {
+      gates.push(() => resolve(new Response('{}', { status: 200 })))
+    }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function start(extra: Partial<Parameters<typeof startCronRunner>[0]> = {}) {
+    vi.setSystemTime(new Date('2026-11-02T03:59:30Z'))
+    return startCronRunner({ baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log: () => {}, ...extra })
+  }
+
+  it('a started cron call keeps the pending count above zero until its fetch settles', async () => {
+    const runner = start()
+    expect(pendingBackgroundCount()).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(30_000) // 04:00:00 - three jobs, two slots
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(pendingBackgroundCount()).toBe(3) // two in flight and the one waiting for a slot
+
+    gates.splice(0).forEach((open) => open())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(pendingBackgroundCount()).toBe(1) // the third one is the only one left
+
+    gates.splice(0).forEach((open) => open())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(pendingBackgroundCount()).toBe(0)
+    runner.stop()
+  })
+
+  it('a call that fails still leaves the set (and the runner is not told)', async () => {
+    fetchImpl.mockImplementation(async () => { throw new Error('connect refused') })
+    const runner = start()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(pendingBackgroundCount()).toBe(0)
+    runner.stop()
+  })
+
+  it('a job that loses the claim is not left pending', async () => {
+    const runner = start({ claim: async () => false })
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(pendingBackgroundCount()).toBe(0)
+    runner.stop()
+  })
+
+  it('after stop() the queued jobs end without a fetch, so the shutdown wait is only for calls already made', async () => {
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(pendingBackgroundCount()).toBe(3)
+
+    runner.stop()
+    gates.splice(0).forEach((open) => open())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2) // the queued third call never started
+    expect(pendingBackgroundCount()).toBe(0)
+  })
+
+  it('stays clear of the count when nothing is due', async () => {
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(pendingBackgroundCount()).toBe(0)
+    runner.stop()
   })
 })

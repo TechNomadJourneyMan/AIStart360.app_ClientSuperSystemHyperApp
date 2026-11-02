@@ -4,7 +4,9 @@
  *   - the Workflow queue (the Postgres world needs a long-lived process to poll for jobs);
  *   - the in-process cron (Vercel Cron's replacement, lib/cron/runner.ts);
  *   - the SIGTERM/SIGINT handler: a redeploy stops the old instance, and it first stops the cron and
- *     waits for after-response work (lib/background.ts) so a bot answer or a queue drain is not cut.
+ *     waits for after-response work (lib/background.ts, which includes the cron calls in flight) so a
+ *     bot answer, a queue drain or a digest is not cut. With the Workflow queue running it also waits
+ *     for graphile-worker to finish its own stop (see the shutdown below).
  *
  * Next's own signal handler is turned off with NEXT_MANUAL_SIG_HANDLE=true, so this one is the only one.
  */
@@ -15,6 +17,8 @@ import { isPersistentServer } from '@/lib/runtime/platform'
 
 /** The deploy's grace period is longer than this; past it the work is abandoned rather than hang the stop. */
 const SHUTDOWN_WAIT_MS = 55_000
+/** The project rule for background work is at most two at a time; the queue's own default is 10. */
+const QUEUE_CONCURRENCY = '2'
 
 type Signal = 'SIGTERM' | 'SIGINT'
 // Partial, like lib/runtime/platform.ts: Next's typings make NODE_ENV mandatory in ProcessEnv.
@@ -30,6 +34,11 @@ export interface ServerStartDeps {
 }
 
 async function startWorldDefault(): Promise<void> {
+  // The world reads this when getWorld() first builds it (and is cached after that), so it is set
+  // before. A value someone put there on purpose stays; an empty one counts as unset, as the world reads it.
+  if (!process.env.WORKFLOW_POSTGRES_WORKER_CONCURRENCY) {
+    process.env.WORKFLOW_POSTGRES_WORKER_CONCURRENCY = QUEUE_CONCURRENCY
+  }
   const { getWorld } = await import('workflow/runtime')
   await getWorld().start?.()
 }
@@ -75,7 +84,7 @@ export async function startPersistentServer(
     if (!env.CRON_SECRET) {
       log('server: CRON_RUNNER_ENABLED=1, но CRON_SECRET не задан - планировщик не запущен')
     } else {
-      const claim = env.WORKFLOW_POSTGRES_URL ? createPgCronClaim(env.WORKFLOW_POSTGRES_URL) : undefined
+      const claim = env.WORKFLOW_POSTGRES_URL ? createPgCronClaim(env.WORKFLOW_POSTGRES_URL, { log }) : undefined
       if (!claim) {
         log('server: WORKFLOW_POSTGRES_URL не задан - при перекрытии деплоев задачи планировщика могут запуститься дважды')
       }
@@ -90,15 +99,30 @@ export async function startPersistentServer(
 
   // Needed whenever this is the long-lived process or something was started that has to be stopped.
   if (isPersistentServer(env) || world || cron) {
+    // Next only looks at whether it is set. Left unset, Next's own handler (server.close, then
+    // process.exit(0)) runs next to this one and can end the process before the wait below is over.
+    if (isPersistentServer(env) && !env.NEXT_MANUAL_SIG_HANDLE) {
+      log('server: NEXT_MANUAL_SIG_HANDLE не задан - собственный обработчик SIGTERM у Next может завершить процесс раньше ожидания фоновых задач (задайте true)')
+    }
+
     let shuttingDown = false
+    // graphile-worker, inside the Postgres world, handles the same SIGTERM itself: it stops taking
+    // jobs, waits for the running ones (or fails them so they are retried at once) and only then
+    // re-sends the signal to the process. Exiting before that leaves the jobs locked for hours. That
+    // second signal lands here (process.on is permanent), and is what `queueStopped` waits for.
+    let resentSignal!: () => void
+    const queueStopped = new Promise<void>((resolve) => { resentSignal = resolve })
+
     const shutdown = (sig: Signal) => {
       if (shuttingDown) {
-        log(`server: ${sig} получен, остановка уже идёт`)
+        log(`server: ${sig} получен повторно, остановка уже идёт`)
+        resentSignal()
         return
       }
       shuttingDown = true
       log(`server: ${sig} получен, остановка`)
       void (async () => {
+        let queueTimer: ReturnType<typeof setTimeout> | undefined
         try {
           try {
             cron?.stop() // first: no new cron call may start while the work below is awaited
@@ -106,11 +130,22 @@ export async function startPersistentServer(
             log(`server: cron stop failed: ${messageOf(error)}`)
           }
           const waited = pendingBackgroundCount()
-          const { finished, pending } = await waitForBackgroundWork(SHUTDOWN_WAIT_MS)
+          // One deadline for both waits: they start together, so the stop takes 55 s at most.
+          const queue = world
+            ? Promise.race([
+                queueStopped.then(() => true),
+                new Promise<boolean>((resolve) => { queueTimer = setTimeout(() => resolve(false), SHUTDOWN_WAIT_MS) }),
+              ])
+            : Promise.resolve(true)
+          const [{ finished, pending }, queueDone] = await Promise.all([waitForBackgroundWork(SHUTDOWN_WAIT_MS), queue])
           log(`server: ждали ${waited} задач${finished ? '' : `, не завершено ${pending}`}`)
+          if (world) {
+            log(queueDone ? 'server: очередь Workflow остановлена' : 'server: очередь Workflow не подтвердила остановку за отведённое время')
+          }
         } catch (error) {
           log(`server: shutdown wait failed: ${messageOf(error)}`)
         } finally {
+          clearTimeout(queueTimer)
           exit(0)
         }
       })()

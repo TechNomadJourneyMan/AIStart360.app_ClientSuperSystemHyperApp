@@ -120,4 +120,80 @@ describe('createPgCronClaim', () => {
     // an idle client dropping must not become an unhandled 'error' that kills the server
     expect(created[0].on).toHaveBeenCalledWith('error', expect.any(Function))
   })
+
+  describe('the pool error listener', () => {
+    const URL = 'postgres://claimuser:hunter2-secret@db.invalid:5432/app'
+
+    /** Builds the claim on a fake pg Pool and hands back the 'error' listener it registered. */
+    async function listenerOf(log: (line: string) => void) {
+      const created: { on: ReturnType<typeof vi.fn> }[] = []
+      pg.Pool.mockImplementation(function () {
+        const pool = { ...fakePool(), on: vi.fn() }
+        created.push(pool)
+        return pool
+      })
+      const claim = createPgCronClaim(URL, { log })
+      await claim(PATH, MINUTE) // the pool is created on first use
+      return created[0].on.mock.calls.find(([event]) => event === 'error')![1] as (error: Error) => void
+    }
+
+    it('logs one line per error instead of swallowing it, and does not throw', async () => {
+      const lines: string[] = []
+      const onError = await listenerOf((line) => { lines.push(line) })
+
+      expect(() => onError(Object.assign(new Error('Connection terminated unexpectedly'), { code: 'ECONNRESET' }))).not.toThrow()
+
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toMatch(/cron/i)
+      expect(lines[0]).toContain('Connection terminated unexpectedly')
+      expect(lines[0]).toContain('ECONNRESET')
+    })
+
+    it('never puts the connection string or the password in the line, even if the error message echoes it', async () => {
+      const lines: string[] = []
+      const onError = await listenerOf((line) => { lines.push(line) })
+
+      onError(new Error(`could not connect using ${URL}: password hunter2-secret rejected`))
+
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).not.toContain(URL)
+      expect(lines[0]).not.toContain('hunter2-secret')
+      expect(lines[0]).not.toContain('claimuser')
+    })
+
+    it('copes with something that is not an Error', async () => {
+      const lines: string[] = []
+      const onError = await listenerOf((line) => { lines.push(line) })
+
+      expect(() => onError('boom' as unknown as Error)).not.toThrow()
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain('boom')
+    })
+
+    it('a logger that throws does not turn the pool error into an uncaught one', async () => {
+      const onError = await listenerOf(() => { throw new Error('logger down') })
+      expect(() => onError(new Error('x'))).not.toThrow()
+    })
+
+    it('defaults to console.error', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const created: { on: ReturnType<typeof vi.fn> }[] = []
+        pg.Pool.mockImplementation(function () {
+          const pool = { ...fakePool(), on: vi.fn() }
+          created.push(pool)
+          return pool
+        })
+        await createPgCronClaim(URL)(PATH, MINUTE)
+        const onError = created[0].on.mock.calls.find(([event]) => event === 'error')![1] as (error: Error) => void
+
+        onError(new Error('idle client lost'))
+
+        expect(spy).toHaveBeenCalledTimes(1)
+        expect(String(spy.mock.calls[0][0])).toContain('idle client lost')
+      } finally {
+        spy.mockRestore()
+      }
+    })
+  })
 })
