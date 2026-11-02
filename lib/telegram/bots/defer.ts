@@ -5,11 +5,15 @@
  * get a 2xx for; an assistant answer (model ↔ tools, voice, documents) takes
  * longer than that comfortably allows. On Vercel the route answers 200 at
  * once and keeps the function alive for the work with `waitUntil` from
- * `@vercel/functions`. Outside Vercel (next dev / start, tests) there is no
- * request context, so the work is simply awaited before answering — the old
- * synchronous behaviour.
+ * `@vercel/functions`. On a persistent server (PERSISTENT_SERVER=1, Railway)
+ * the route also answers at once: the process stays alive, and the work is
+ * tracked so a SIGTERM can wait for it. Anywhere else (next dev, tests) there
+ * is no request context, so the work is simply awaited before answering — the
+ * old synchronous behaviour.
  */
 import { waitUntil } from '@vercel/functions'
+import { trackBackground } from '@/lib/background'
+import { isPersistentServer } from '@/lib/runtime/platform'
 
 type ContextStore = { get?: () => { waitUntil?: unknown } | undefined }
 
@@ -25,11 +29,15 @@ export function hasWaitUntil(): boolean {
 
 export type DeferMode = 'deferred' | 'awaited'
 
-/** Hand `work` to waitUntil when possible; otherwise await it. Never rejects. */
+/** Hand `work` to waitUntil (Vercel) or the background set (persistent server); otherwise await it. Never rejects. */
 export async function deferOrAwait(work: Promise<unknown>): Promise<DeferMode> {
   const safe = work.then(() => undefined, () => undefined)
   if (hasWaitUntil()) {
     waitUntil(safe)
+    return 'deferred'
+  }
+  if (isPersistentServer()) {
+    trackBackground(safe)
     return 'deferred'
   }
   await safe

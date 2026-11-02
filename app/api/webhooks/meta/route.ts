@@ -6,7 +6,6 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 import { createHash, timingSafeEqual } from 'crypto'
-import { waitUntil } from '@vercel/functions'
 import { NextResponse, type NextRequest } from 'next/server'
 import { start } from 'workflow/api'
 import { applyMyHonorOrderNotificationDeliveryStatus } from '@/lib/integrations/myhonor/order-notification-repository'
@@ -28,6 +27,8 @@ import {
 import type { RecordedWebhookEvent } from '@/lib/omnichannel/repository'
 import { enqueueOmnichannelProcessingJob } from '@/lib/omnichannel/processing-jobs'
 import { drainOmnichannelProcessingJobs } from '@/lib/omnichannel/process-job-queue'
+import { trackBackground } from '@/lib/background'
+import { canRunAfterResponse } from '@/lib/runtime/platform'
 import { processOmnichannelMessageWorkflow } from '@/workflows/process-omnichannel-message'
 
 const MAX_FAST_PATH_DELAY_MS = 30_000
@@ -89,11 +90,12 @@ function sleep(milliseconds: number): Promise<void> {
 }
 
 /**
- * Best-effort low-latency serverless path. Enqueueing is the durability
- * boundary; a later invocation can recover the job if this work is stopped.
+ * Best-effort low-latency path (Vercel or a persistent server). Enqueueing is
+ * the durability boundary; a later invocation can recover the job if this work
+ * is stopped.
  */
 function scheduleDatabaseQueueFastPath(runAt: string): void {
-  if (process.env.VERCEL !== '1') return
+  if (!canRunAfterResponse()) return
   const runAtMs = new Date(runAt).getTime()
   if (!Number.isFinite(runAtMs)) return
   const delayMs = Math.max(0, runAtMs - Date.now())
@@ -105,11 +107,7 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
   })().catch(() => {
     // The durable job remains queued for recovery by a later invocation.
   })
-  try {
-    waitUntil(work)
-  } catch {
-    // The promise has already started in a local/non-Vercel runtime.
-  }
+  trackBackground(work)
 }
 
 /** Meta webhook endpoint verification (Instagram and WhatsApp). */

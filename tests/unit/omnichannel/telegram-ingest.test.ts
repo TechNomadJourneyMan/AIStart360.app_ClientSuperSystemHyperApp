@@ -2,9 +2,22 @@
  * Telegram → inbox ingest: same audit/claim/enqueue path as the other
  * channels; dedupe by update id (audit) and message id (message upsert).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ingestTelegramInboxUpdate, type TelegramIngestPersistence } from '@/lib/omnichannel/telegram-ingest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { waitForBackgroundWork } from '@/lib/background'
+import {
+  defaultTelegramIngestQueue,
+  ingestTelegramInboxUpdate,
+  type TelegramIngestPersistence,
+} from '@/lib/omnichannel/telegram-ingest'
 import { parseTelegramInboxUpdate } from '@/lib/omnichannel/telegram-webhook'
+
+// The database job queue's fast path: only record what is started, never reach a database.
+const jobs = vi.hoisted(() => ({
+  enqueue: vi.fn(),
+  drain: vi.fn(),
+}))
+vi.mock('@/lib/omnichannel/processing-jobs', () => ({ enqueueOmnichannelProcessingJob: jobs.enqueue }))
+vi.mock('@/lib/omnichannel/process-job-queue', () => ({ drainOmnichannelProcessingJobs: jobs.drain }))
 
 const NOW = Date.UTC(2026, 9, 16, 12, 0, 0)
 const parsed = parseTelegramInboxUpdate(
@@ -92,5 +105,40 @@ describe('ingestTelegramInboxUpdate', () => {
     queue.enqueue.mockRejectedValueOnce(new Error('queue down'))
     await expect(ingestTelegramInboxUpdate(parsed, { persistence: store, queue })).rejects.toThrow('queue down')
     expect(store.transitionWebhookEvent).toHaveBeenCalledWith('audit-1', 'failed', 'queue_enqueue_failed')
+  })
+})
+
+describe('defaultTelegramIngestQueue (database backend fast path)', () => {
+  beforeEach(() => {
+    jobs.enqueue.mockReset().mockResolvedValue({ id: 'job-1', runAt: new Date(Date.now() - 1_000).toISOString() })
+    jobs.drain.mockReset().mockResolvedValue({ completed: 1 })
+    vi.stubEnv('OMNICHANNEL_PROCESSING_BACKEND', 'database')
+    vi.stubEnv('VERCEL', '')
+    vi.stubEnv('PERSISTENT_SERVER', '')
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('drains the due job in the background on a persistent server', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    await defaultTelegramIngestQueue.enqueue({ messageId: 'msg-1', conversationId: 'conv-1' })
+    await expect(waitForBackgroundWork(1000)).resolves.toEqual({ finished: true, pending: 0 })
+    expect(jobs.enqueue).toHaveBeenCalledWith({ messageId: 'msg-1', forceDraft: false })
+    expect(jobs.drain).toHaveBeenCalledWith({ limit: 1 })
+  })
+
+  it('drains the due job in the background on Vercel', async () => {
+    vi.stubEnv('VERCEL', '1')
+    await defaultTelegramIngestQueue.enqueue({ messageId: 'msg-1', conversationId: 'conv-1' })
+    await waitForBackgroundWork(1000)
+    expect(jobs.drain).toHaveBeenCalledWith({ limit: 1 })
+  })
+
+  it('only enqueues without a flag (tests, local dev): the durable queue recovers the job', async () => {
+    await defaultTelegramIngestQueue.enqueue({ messageId: 'msg-1', conversationId: 'conv-1' })
+    await waitForBackgroundWork(1000)
+    expect(jobs.enqueue).toHaveBeenCalledTimes(1)
+    expect(jobs.drain).not.toHaveBeenCalled()
   })
 })

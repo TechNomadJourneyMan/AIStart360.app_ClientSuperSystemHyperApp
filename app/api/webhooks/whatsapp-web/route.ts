@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { createHash } from "crypto";
-import { waitUntil } from "@vercel/functions";
 import { NextResponse, type NextRequest } from "next/server";
 import { inngest } from "@/lib/inngest";
 import { processOmnichannelMessageDirect } from "@/lib/functions/process-omnichannel-message";
@@ -37,7 +36,8 @@ import {
 import { shouldUseOmnichannelPostgres } from "@/lib/omnichannel/postgres-runtime";
 import { enqueueOmnichannelProcessingJob } from "@/lib/omnichannel/processing-jobs";
 import { drainOmnichannelProcessingJobs } from "@/lib/omnichannel/process-job-queue";
-import { runInBackground } from "@/lib/background";
+import { runInBackground, trackBackground } from "@/lib/background";
+import { canRunAfterResponse } from "@/lib/runtime/platform";
 import { mirrorWhatsAppInbound } from "@/lib/comm/inbound";
 
 const WEBHOOK_PATH = "/api/webhooks/whatsapp-web";
@@ -99,12 +99,12 @@ function sleep(milliseconds: number): Promise<void> {
 }
 
 /**
- * Best-effort low-latency path for Vercel. The durable database job remains
- * the source of truth; the bridge kicker will recover it if this invocation
- * ends before the promise runs.
+ * Best-effort low-latency path for Vercel or a persistent server. The durable
+ * database job remains the source of truth; the bridge kicker will recover it
+ * if this invocation ends before the promise runs.
  */
 function scheduleDatabaseQueueFastPath(runAt: string): void {
-  if (process.env.VERCEL !== "1") return;
+  if (!canRunAfterResponse()) return;
   const runAtMs = new Date(runAt).getTime();
   if (!Number.isFinite(runAtMs)) return;
   const delayMs = Math.max(0, runAtMs - Date.now());
@@ -116,12 +116,7 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
   })().catch(() => {
     // The durable job remains queued and the signed bridge kicker retries it.
   });
-  try {
-    waitUntil(work);
-  } catch {
-    // Local/non-Vercel runtimes may not provide an execution context. The
-    // promise has already started; database durability still covers failure.
-  }
+  trackBackground(work);
 }
 
 /**
