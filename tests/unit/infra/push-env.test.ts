@@ -3,7 +3,8 @@
  * pushes the project's environment variables into the Railway service.
  *
  * What these tests guard, in order of how bad the failure would be:
- *   - a value (or the Railway token) reaching the build log, in the report or in an error;
+ *   - a value (or the Railway token) reaching the build log, in the report or in an error - including
+ *     the values Railway sends back when the script checks the write, and any free text of Railway's;
  *   - a multi-line secret (a private key) arriving altered;
  *   - the build ever finishing with exit 0 (that would create a Vercel deployment);
  *   - the script silently not running at all.
@@ -17,10 +18,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RAILWAY_ENDPOINT,
   buildUpsertBody,
+  buildVariablesQueryBody,
   formatReport,
   isExcluded,
   main,
-  redactValues,
   selectVariables,
   syncEnv,
 } from '../../../scripts/railway/push-env.mjs'
@@ -155,27 +156,17 @@ describe('buildUpsertBody', () => {
   })
 })
 
-describe('redactValues', () => {
-  it('removes a value in the raw, JSON-escaped and \\u-escaped forms', () => {
-    const value = 'пароль-LEAK\nвторая "строка"'
-    const raw = `echo: ${value}`
-    const jsonForm = `echo: ${JSON.stringify(value).slice(1, -1)}`
-    const asciiForm = `echo: ${JSON.stringify(value).slice(1, -1).replace(/[\u0080-￿]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)}`
-    for (const text of [raw, jsonForm, asciiForm]) {
-      const out = redactValues(text, [value])
-      expect(out).not.toContain('LEAK')
-      expect(out).toContain('[скрыто]')
-    }
+describe('buildVariablesQueryBody', () => {
+  const body = buildVariablesQueryBody(IDS)
+
+  it('is the documented variables query for the service, with the ids as GraphQL variables', () => {
+    expect(body.query).toMatch(/^\s*query variables\b/)
+    expect(body.query).toContain('variables(')
+    expect(body.variables).toMatchObject(IDS)
   })
 
-  it('removes the longer of two overlapping values first, so no tail of it is left', () => {
-    const out = redactValues('seen: abcd-efgh-ijkl', ['abcd', 'abcd-efgh-ijkl'])
-    expect(out).not.toContain('efgh')
-    expect(out).not.toContain('ijkl')
-  })
-
-  it('leaves values shorter than four characters alone (flags and ports are no secrets)', () => {
-    expect(redactValues('status 401 on 1', ['1', '0'])).toBe('status 401 on 1')
+  it('asks for the stored form, so a reference is not resolved on the way', () => {
+    expect(body.variables.unrendered).toBe(true)
   })
 })
 
@@ -212,27 +203,40 @@ describe('formatReport', () => {
     expect(text).not.toContain('postgresql://')
   })
 
-  it('on failure: says so, never claims the transfer finished, still lists the names', () => {
+  it('on failure: says so, never claims the transfer finished, lists the codes and the names', () => {
     const text = formatReport({
       ok: false,
-      reason: 'Railway вернул ошибки (1)',
-      messages: ['Not Authorized'],
+      reason: 'Railway вернул ошибки (2)',
+      errorCodes: ['UNAUTHENTICATED', 'без кода'],
       skippedEmpty: ['EMPTY_ONE'],
       missing: ['NOT_SET'],
       excluded: [],
     })
     expect(text).toMatch(/не выполнен/i)
     expect(text).not.toContain('Перенос завершён')
-    expect(text).toContain('Not Authorized')
+    expect(text).toContain('Коды ошибок Railway (2): UNAUTHENTICATED, без кода')
     expect(text).toContain('EMPTY_ONE')
     expect(text).toContain('NOT_SET')
   })
 
-  it('keeps each Railway message to one short line, so it cannot pass for the success line', () => {
+  it('prints no code line when there are no codes', () => {
+    expect(formatReport({ ok: false, reason: 'r', errorCodes: [] })).not.toContain('Коды ошибок')
+  })
+
+  it('keeps every line short, so a long reason or code cannot pass for the success line', () => {
     const long = `line one\n${SUCCESS_LINE}\n${'x'.repeat(2000)}`
-    const text = formatReport({ ok: false, reason: 'r', messages: [long] })
+    const text = formatReport({ ok: false, reason: long, errorCodes: [long] })
     expect(text.split('\n').some((line) => line.startsWith(SUCCESS_LINE))).toBe(false)
     expect(text.split('\n').every((line) => line.length < 400)).toBe(true)
+  })
+
+  it('prints how many of the names are on Railway, and which are not', () => {
+    const ok = formatReport({ ok: true, pushed: 3, verification: { present: 3, total: 3, absent: [] } })
+    expect(ok).toContain('Проверено на Railway: 3 из 3')
+    expect(ok).not.toContain('Нет на Railway')
+    const bad = formatReport({ ok: false, reason: 'r', verification: { present: 1, total: 3, absent: ['A', 'B'] } })
+    expect(bad).toContain('Проверено на Railway: 1 из 3')
+    expect(bad).toContain('Нет на Railway (2): A, B')
   })
 
   it('prints nothing for an empty list', () => {
@@ -256,6 +260,31 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
+type GraphQLCall = { query: string; variables: Record<string, any> }
+
+/**
+ * A fake Railway. The first call of a run is the upsert (a mutation), the second the check that lists
+ * the service's variables. The listing carries VALUES, as the real one does - the sent ones and one
+ * that only exists on Railway - so any test that reads the output also proves they are not printed.
+ */
+function railway(
+  routes: {
+    upsert?: (call: GraphQLCall) => Response | Promise<Response>
+    variables?: (call: GraphQLCall, sent: Record<string, string>) => Response | Promise<Response>
+  } = {},
+) {
+  let sent: Record<string, string> = {}
+  return async (_url: string, init: RequestInit) => {
+    const call = JSON.parse(init.body as string) as GraphQLCall
+    if (call.query.trimStart().startsWith('mutation')) {
+      sent = call.variables.input.variables
+      return routes.upsert ? routes.upsert(call) : jsonResponse({ data: { variableCollectionUpsert: true } })
+    }
+    if (routes.variables) return routes.variables(call, sent)
+    return jsonResponse({ data: { variables: { ...sent, PERSISTENT_SERVER: '1', RAILWAY_ONLY: `${MARKER}-railway-only` } } })
+  }
+}
+
 function files(overrides: Record<string, string | undefined> = {}) {
   const all: Record<string, string | undefined> = {
     'names.json': JSON.stringify(NAMES),
@@ -277,7 +306,7 @@ function run(opts: {
 }) {
   const log = vi.fn()
   const exit = vi.fn()
-  const fetchImpl = vi.fn(opts.fetchImpl ?? (async () => jsonResponse({ data: { variableCollectionUpsert: true } })))
+  const fetchImpl = vi.fn(opts.fetchImpl ?? railway())
   const done = main({
     env: opts.env ?? BUILD_ENV,
     fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -291,10 +320,9 @@ function run(opts: {
 }
 
 describe('main - success', () => {
-  it('posts one request to Railway with the project token and the full mutation', async () => {
+  it('posts the upsert to Railway with the project token and the full mutation', async () => {
     const { done, fetchImpl } = run({})
     await done
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('https://backboard.railway.com/graphql/v2')
     expect(url).toBe(RAILWAY_ENDPOINT)
@@ -310,6 +338,20 @@ describe('main - success', () => {
       DATABASE_URL: BUILD_ENV.DATABASE_URL,
       PRIVATE_KEY: BUILD_ENV.PRIVATE_KEY,
     })
+  })
+
+  it('then checks the write with a second request: the variables query, same token, same ids', async () => {
+    const { done, fetchImpl } = run({})
+    await done
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    const [url, init] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit]
+    expect(url).toBe(RAILWAY_ENDPOINT)
+    expect((init.headers as Record<string, string>)['Project-Access-Token']).toBe(TOKEN)
+    const body = JSON.parse(init.body as string)
+    expect(body.query).toMatch(/^\s*query variables\b/)
+    expect(body.variables).toMatchObject(IDS)
+    // the check sends no value
+    expect(init.body as string).not.toContain(MARKER)
   })
 
   it('does not send the token to Railway as a variable', async () => {
@@ -328,13 +370,18 @@ describe('main - success', () => {
     expect(log.mock.calls[0][0]).toContain(SUCCESS_LINE)
   })
 
-  it('prints the count and the names of the empty and missing ones, and no value or token', async () => {
+  it('prints the counts and the names, and no value, token or fetched variable', async () => {
     const { done, output } = run({})
     await done
     const text = output()
     expect(text).toMatch(/Перенесено переменных: 2\b/)
+    expect(text).toContain('Проверено на Railway: 2 из 2')
+    expect(text).not.toContain('Нет на Railway')
     expect(text).toContain('EMPTY_ONE')
     expect(text).toContain('NOT_SET')
+    // the listing held PERSISTENT_SERVER and RAILWAY_ONLY, which were not sent: not even their names
+    expect(text).not.toContain('PERSISTENT_SERVER')
+    expect(text).not.toContain('RAILWAY_ONLY')
     expect(text).not.toContain(MARKER)
     expect(text).not.toContain(TOKEN)
     expect(text).not.toContain('BEGIN')
@@ -348,51 +395,203 @@ describe('main - success', () => {
   })
 })
 
-describe('main - failure', () => {
-  it('a GraphQL error that echoes the input does not leak the values: raw, JSON or \\u-escaped', async () => {
-    const value = BUILD_ENV.PRIVATE_KEY
-    const echoes = [
-      `Variable "$input" got invalid value ${JSON.stringify(BUILD_ENV)}`,
-      `bad value ${value}`,
-      `bad value ${JSON.stringify(value)}`,
-      `bad value ${JSON.stringify(value).replace(/[A-Z]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)}`,
-      `bad url ${BUILD_ENV.DATABASE_URL} and token ${TOKEN}`,
-    ]
+describe('main - checking the write on Railway', () => {
+  it('finds every name sent: the missing list is empty', async () => {
+    const result = await syncEnv({
+      env: BUILD_ENV, names: NAMES, ids: IDS, token: TOKEN,
+      fetchImpl: railway() as unknown as typeof fetch,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.verification).toEqual({ present: 2, total: 2, absent: [] })
+  })
+
+  it('lists the name that is not on Railway, fails with exit 2 and does not claim success', async () => {
     const { done, exit, output } = run({
-      fetchImpl: async () => jsonResponse({ errors: echoes.map((message) => ({ message })), data: null }),
+      fetchImpl: railway({
+        variables: (_call, sent) => {
+          const { PRIVATE_KEY: _gone, ...rest } = sent
+          return jsonResponse({ data: { variables: { ...rest, RAILWAY_ONLY: `${MARKER}-railway-only` } } })
+        },
+      }),
+    })
+    await done
+    expect(exit).toHaveBeenCalledTimes(1)
+    expect(exit).toHaveBeenCalledWith(2)
+    const text = output()
+    expect(text).toContain('Нет на Railway (1): PRIVATE_KEY')
+    expect(text).toContain('Проверено на Railway: 1 из 2')
+    expect(text).not.toContain('Перенос завершён')
+    expect(text).not.toContain('RAILWAY_ONLY')
+    expect(text).not.toContain(MARKER)
+  })
+
+  it('a name counts as present only by its exact spelling', async () => {
+    const result = await syncEnv({
+      env: BUILD_ENV, names: NAMES, ids: IDS, token: TOKEN,
+      fetchImpl: railway({
+        variables: (_call, sent) => jsonResponse({ data: { variables: Object.fromEntries(Object.keys(sent).map((name) => [name.toLowerCase(), 'x'])) } }),
+      }) as unknown as typeof fetch,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.verification?.absent).toEqual(['DATABASE_URL', 'PRIVATE_KEY'])
+  })
+
+  it('keeps nothing of the fetched listing in the result: no value, no name that was not sent', async () => {
+    const result = await syncEnv({
+      env: BUILD_ENV, names: NAMES, ids: IDS, token: TOKEN,
+      fetchImpl: railway() as unknown as typeof fetch,
+    })
+    const dump = JSON.stringify(result)
+    expect(dump).not.toContain(MARKER)
+    expect(dump).not.toContain('RAILWAY_ONLY')
+    expect(dump).not.toContain('PERSISTENT_SERVER')
+  })
+
+  it.each([
+    ['an HTTP error whose JSON body echoes values', () => jsonResponse({ errors: [{ message: `echo ${BUILD_ENV.PRIVATE_KEY}`, extensions: { code: 'INTERNAL_SERVER_ERROR' } }] }, 500), 'HTTP 500'],
+    ['an HTTP error with a body that is not JSON', () => new Response(`<html>${BUILD_ENV.PRIVATE_KEY} ${TOKEN}</html>`, { status: 502 }), 'HTTP 502'],
+    ['GraphQL errors', () => jsonResponse({ errors: [{ message: `echo ${BUILD_ENV.DATABASE_URL}`, extensions: { code: 'NOT_AUTHORIZED' } }], data: null }), 'NOT_AUTHORIZED'],
+    ['an answer without the variables object', () => jsonResponse({ data: {} }), 'без списка переменных'],
+    ['an answer whose variables is null', () => jsonResponse({ data: { variables: null } }), 'без списка переменных'],
+    ['an answer whose variables is a list', () => jsonResponse({ data: { variables: [MARKER] } }), 'без списка переменных'],
+  ])('a failing check - %s - is exit 2, says the write was done, and prints nothing from the answer', async (_label, answer, expected) => {
+    const { done, exit, output, fetchImpl } = run({ fetchImpl: railway({ variables: answer }) })
+    await done
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(exit).toHaveBeenCalledTimes(1)
+    expect(exit).toHaveBeenCalledWith(2)
+    const text = output()
+    expect(text).toContain('запись выполнена, но проверить её на Railway не удалось')
+    expect(text).toContain(expected)
+    expect(text).not.toContain('Перенос завершён')
+    expect(text).not.toContain(MARKER)
+    expect(text).not.toContain('LEAK')
+    expect(text).not.toContain(TOKEN)
+    expect(text).not.toContain('echo')
+  })
+
+  it('a check that throws at the network level reports only the kind of error', async () => {
+    const { done, exit, output } = run({
+      fetchImpl: railway({
+        variables: () => {
+          throw Object.assign(new TypeError(`fetch failed ${TOKEN} ${BUILD_ENV.DATABASE_URL}`), { cause: { code: 'ECONNRESET' } })
+        },
+      }),
     })
     await done
     expect(exit).toHaveBeenCalledWith(2)
     const text = output()
-    expect(text).not.toContain(MARKER)
-    expect(text).not.toContain('LEAK-MARKER')
+    expect(text).toContain('ECONNRESET')
     expect(text).not.toContain(TOKEN)
-    expect(text).not.toContain('postgresql://')
-    expect(text).toMatch(/не выполнен/i)
-    expect(text).not.toContain('Перенос завершён')
-    expect(text).toContain('[скрыто]')
+    expect(text).not.toContain(MARKER)
   })
+})
 
-  it('reports an error message that echoes nothing, so a real problem can be diagnosed', async () => {
-    const { done, output } = run({
-      fetchImpl: async () => jsonResponse({ errors: [{ message: 'Not Authorized' }] }),
+describe('main - failure', () => {
+  it('prints no message of Railway\'s at all: nothing an error echoes - whole, cut, or re-wrapped - reaches the log', async () => {
+    const pem = BUILD_ENV.PRIVATE_KEY
+    const echoes = [
+      `Variable "$input" got invalid value ${JSON.stringify(BUILD_ENV)}`,
+      `bad value ${pem}`,
+      `bad value ${JSON.stringify(pem)}`,
+      // whitespace-normalised: the PEM's newlines became spaces, which no exact match would catch
+      `bad value ${pem.replace(/\s+/g, ' ')}`,
+      `cut after the first characters: ${BUILD_ENV.DATABASE_URL.slice(0, 24)}`,
+      `bad url ${BUILD_ENV.DATABASE_URL} and token ${TOKEN}`,
+    ]
+    const { done, exit, output, fetchImpl } = run({
+      fetchImpl: railway({
+        upsert: () => jsonResponse({ errors: echoes.map((message) => ({ message, extensions: { code: 'BAD_USER_INPUT' } })), data: null }),
+      }),
     })
     await done
-    expect(output()).toContain('Not Authorized')
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    const text = output()
+    for (const fragment of [MARKER, 'LEAK', TOKEN, 'postgresql', 'BEGIN', 'invalid value', 'bad value', 'bad url', 'cut after']) {
+      expect(text).not.toContain(fragment)
+    }
+    expect(text).toMatch(/не выполнен/i)
+    expect(text).not.toContain('Перенос завершён')
+    // what is printed: the number of errors and each code
+    expect(text).toContain('Railway вернул ошибки (6)')
+    expect(text).toContain('Коды ошибок Railway (6): BAD_USER_INPUT, BAD_USER_INPUT')
+  })
+
+  it('prints the error codes, which are the diagnosis', async () => {
+    const { done, output } = run({
+      fetchImpl: railway({
+        upsert: () => jsonResponse({ errors: [{ message: 'Not Authorized', extensions: { code: 'UNAUTHENTICATED' } }] }),
+      }),
+    })
+    await done
+    const text = output()
+    expect(text).toContain('UNAUTHENTICATED')
+    expect(text).not.toContain('Not Authorized')
+  })
+
+  it('an error without a usable code is «без кода»: a code that is free text is not trusted either', async () => {
+    const { done, output } = run({
+      fetchImpl: railway({
+        upsert: () =>
+          jsonResponse({
+            errors: [
+              { message: 'no extensions at all' },
+              { message: 'm', extensions: {} },
+              { message: 'm', extensions: { code: `bad value ${BUILD_ENV.PRIVATE_KEY}` } },
+              { message: 'm', extensions: { code: 42 } },
+            ],
+          }),
+      }),
+    })
+    await done
+    const text = output()
+    expect(text).toContain('Коды ошибок Railway (4): без кода, без кода, без кода, без кода')
+    expect(text).not.toContain('no extensions')
+    expect(text).not.toContain('LEAK')
+    expect(text).not.toContain('BEGIN')
+  })
+
+  it('an HTTP error with a JSON body reports the status and the codes, not the messages', async () => {
+    const { done, exit, output } = run({
+      fetchImpl: railway({
+        upsert: () => jsonResponse({ errors: [{ message: `denied for ${BUILD_ENV.PRIVATE_KEY}`, extensions: { code: 'UNAUTHENTICATED' } }] }, 401),
+      }),
+    })
+    await done
+    expect(exit).toHaveBeenCalledWith(2)
+    const text = output()
+    expect(text).toContain('HTTP 401')
+    expect(text).toContain('UNAUTHENTICATED')
+    expect(text).not.toContain('denied')
+    expect(text).not.toContain(MARKER)
+  })
+
+  it('a very long list of errors is cut to a screenful of codes, with the true count', async () => {
+    const { done, output } = run({
+      fetchImpl: railway({ upsert: () => jsonResponse({ errors: Array.from({ length: 500 }, () => ({ message: 'm', extensions: { code: 'E' } })) }) }),
+    })
+    await done
+    const text = output()
+    expect(text).toContain('Railway вернул ошибки (500)')
+    expect(text).toContain('Коды ошибок Railway (500):')
+    expect(text.split('\n').every((line) => line.length < 400)).toBe(true)
   })
 
   it('GraphQL errors next to data are still a failure', async () => {
-    const { done, exit } = run({
-      fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: true }, errors: [{ message: 'partial' }] }),
+    const { done, exit, fetchImpl } = run({
+      fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: true }, errors: [{ message: 'partial', extensions: { code: 'PARTIAL' } }] }),
     })
     await done
     expect(exit).toHaveBeenCalledWith(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(1) // no check after a write that Railway reported as failed
   })
 
   it('an answer that is not an explicit true is a failure', async () => {
-    const { done, exit, output } = run({ fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: false } }) })
+    const { done, exit, output, fetchImpl } = run({ fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: false } }) })
     await done
     expect(exit).toHaveBeenCalledWith(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(output()).not.toContain('Перенос завершён')
   })
 
@@ -493,7 +692,7 @@ describe('syncEnv', () => {
       names: NAMES,
       ids: IDS,
       token: TOKEN,
-      fetchImpl: (async () => jsonResponse({ data: { variableCollectionUpsert: true } })) as unknown as typeof fetch,
+      fetchImpl: railway() as unknown as typeof fetch,
     })
     expect(result).toMatchObject({ ok: true, pushed: 2, skippedEmpty: ['EMPTY_ONE'], missing: ['NOT_SET'] })
     expect(result.excluded).toEqual(['VERCEL_URL', 'RAILWAY_ENV_SYNC_TOKEN'])

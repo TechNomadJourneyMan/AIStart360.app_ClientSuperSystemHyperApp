@@ -14,11 +14,17 @@
  *   1  the transfer was done (the log says «Перенос завершён, сборка остановлена намеренно»)
  *   2  it was not
  *
- * What the output may contain: counts and variable NAMES, nothing else. In particular never a value,
- * never the token and never a response body. Railway's error messages are the one text we do not
- * write ourselves and GraphQL errors can echo the request, so they are scrubbed of every value
- * (and of the token) before they reach the report; an HTTP error or a network error reports its
- * status or kind only.
+ * What the output may contain: counts, variable NAMES and Railway error CODES, nothing else. Never a
+ * value, never the token, and never any free text from Railway: a GraphQL error can echo the request
+ * in a form no filter can be sure to catch (truncated, re-wrapped, whitespace-normalised), so an
+ * error is reported by HTTP status, number of errors and each errors[].extensions.code - not by its
+ * message. A network error reports its kind only.
+ *
+ * After the upsert the script checks the write itself, with the same token: it asks Railway for the
+ * service's variables (the answer holds names AND values), compares the names with the ones it sent,
+ * in memory, and keeps only the names that are absent. The fetched object never leaves the function
+ * that compared it. Verifying by any other means (a listing that returns values) would put every
+ * secret in front of whoever reads it, which is what this script exists to avoid.
  *
  * Plain ESM, no dependencies, Node 20+ (global fetch, AbortSignal.timeout).
  */
@@ -49,23 +55,33 @@ const RAILWAY_OWNED = new Set([
   'RAILPACK_NODE_VERSION',
 ])
 
-/** What a name in names.json may look like. A value pasted there by mistake rarely does, and is never echoed. */
+/**
+ * What a name in names.json may look like. This only rejects content that is obviously not a name
+ * (a URL, a multi-line key, anything with punctuation); a token-shaped secret IS made of these
+ * characters, so names.json must be made from `vercel env ls` - names only - and never from values.
+ */
 const NAME_PATTERN = /^[A-Za-z0-9_]{1,256}$/
-const REDACTED = '[скрыто]'
-/** Shorter values (flags like 0 and 1, ports) are no secrets, and redacting them would shred the message. */
-const MIN_REDACT_LENGTH = 4
-const MAX_MESSAGES = 5
+/** An error code is a constant like UNAUTHENTICATED; anything else is not trusted to be a code. */
+const CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
+const NO_CODE = 'без кода'
+/** A kind of network error: a class name or a system code (TypeError, ECONNRESET, TimeoutError). */
+const KIND_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
+const MAX_CODES = 20
 const MAX_LINE_LENGTH = 200
 const REQUEST_TIMEOUT_MS = 60_000
 
 const MUTATION = `mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
   variableCollectionUpsert(input: $input)
 }`
+const VARIABLES_QUERY = `query variables($projectId: String!, $environmentId: String!, $serviceId: String, $unrendered: Boolean) {
+  variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId, unrendered: $unrendered)
+}`
 
 /**
  * @typedef {{ projectId: string, environmentId: string, serviceId: string }} RailwayIds
- * @typedef {{ ok: true, pushed: number, skippedEmpty?: string[], missing?: string[], excluded?: string[] }} SuccessResult
- * @typedef {{ ok: false, reason: string, messages?: string[], skippedEmpty?: string[], missing?: string[], excluded?: string[] }} FailureResult
+ * @typedef {{ present: number, total: number, absent: string[] }} Verification how many of the names sent are on Railway, and which are not
+ * @typedef {{ ok: true, pushed: number, verification?: Verification, skippedEmpty?: string[], missing?: string[], excluded?: string[] }} SuccessResult
+ * @typedef {{ ok: false, reason: string, errorCodes?: string[], verification?: Verification, skippedEmpty?: string[], missing?: string[], excluded?: string[] }} FailureResult
  */
 
 /** A problem with the input files or the token: its text is ours and safe to print. */
@@ -126,49 +142,30 @@ export function buildUpsertBody(ids, variables) {
   }
 }
 
-/** @type {Record<string, string>} */
-const SIMPLE_ESCAPES = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' }
-
-/** Undo JSON string escapes (\n, \", \\, \uXXXX) as they stand in a text that quotes a JSON document. */
-function decodeJsonEscapes(/** @type {string} */ text) {
-  return text.replace(/\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g, (_match, /** @type {string | undefined} */ hex, /** @type {string} */ simple) =>
-    hex ? String.fromCharCode(parseInt(hex, 16)) : SIMPLE_ESCAPES[simple],
-  )
-}
-
 /**
- * Replaces every value (and its JSON-escaped form) found in `text` by «[скрыто]». An error that
- * quotes the request may show a value as it is, as a JSON string (\n for a newline) or with \uXXXX
- * escapes; the text is therefore also decoded and checked again, up to three layers deep.
- * Longer values go first, so a value that contains a shorter one does not leave its tail behind.
- * @param {string} text
- * @param {string[]} values
- * @returns {string}
+ * The request that lists the service's variables: Railway answers with a JSON object of name -> value.
+ * `unrendered` keeps references like ${{Postgres.DATABASE_URL}} as they are stored; only names are used.
+ * @param {RailwayIds} ids
  */
-export function redactValues(text, values, depth = 0) {
-  const secrets = [...new Set(values)].filter((value) => typeof value === 'string' && value.length >= MIN_REDACT_LENGTH)
-  secrets.sort((a, b) => b.length - a.length)
-  let out = String(text)
-  for (const secret of secrets) {
-    for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) {
-      out = out.split(form).join(REDACTED)
-    }
+export function buildVariablesQueryBody(ids) {
+  return {
+    query: VARIABLES_QUERY,
+    variables: { projectId: ids.projectId, environmentId: ids.environmentId, serviceId: ids.serviceId, unrendered: true },
   }
-  const decoded = decodeJsonEscapes(out)
-  return decoded !== out && depth < 3 ? redactValues(decoded, secrets, depth + 1) : out
 }
 
 const oneLine = (/** @type {unknown} */ text) => String(text).replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_LENGTH)
 
-/** A text from outside (Railway), scrubbed of values and the token, on one line, short. */
-function cleanMessage(/** @type {unknown} */ text, /** @type {string[]} */ secrets) {
-  return typeof text === 'string' ? oneLine(redactValues(text, secrets)) : ''
+/** What went wrong with a request, by kind only. A network error's own message is never used. */
+function describeError(/** @type {any} */ error) {
+  const kind = [error?.name, error?.cause?.code ?? error?.code].filter((part) => typeof part === 'string' && KIND_PATTERN.test(part))
+  return kind.join(' ') || 'неизвестная ошибка'
 }
 
-/** What went wrong with a request, by kind only. A network error's own message is never used. */
-function describeError(/** @type {any} */ error, /** @type {string[]} */ secrets) {
-  const kind = [error?.name, error?.cause?.code ?? error?.code].filter((part) => typeof part === 'string' && part)
-  return cleanMessage(kind.join(' ') || 'неизвестная ошибка', secrets)
+/** The code of one GraphQL error, or «без кода». Its message is never read. */
+function codeOf(/** @type {any} */ error) {
+  const code = error?.extensions?.code
+  return typeof code === 'string' && CODE_PATTERN.test(code) ? code : NO_CODE
 }
 
 /**
@@ -181,8 +178,58 @@ function failure(reason, extra = {}) {
 }
 
 /**
- * Pushes the chosen variables to Railway. Returns a result for `formatReport`; never throws for a
- * problem with the input or the request.
+ * One GraphQL call. A problem is described without a word of Railway's free text: the HTTP status,
+ * the number of errors and each error's code. On success `data` is Railway's `data` object, which
+ * may hold values: the caller takes what it needs from it and lets go.
+ * @param {{ fetchImpl: typeof fetch, token: string, body: unknown, timeoutMs: number }} call
+ * @returns {Promise<{ data: any } | { failed: string, errorCodes?: string[] }>}
+ */
+async function callRailway({ fetchImpl, token, body, timeoutMs }) {
+  /** @type {Response} */
+  let response
+  try {
+    response = await fetchImpl(RAILWAY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Project-Access-Token': token },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (error) {
+    return { failed: `запрос к Railway не выполнен (${describeError(error)})` }
+  }
+
+  /** @type {any} */
+  let payload = null
+  try {
+    payload = JSON.parse(await response.text())
+  } catch {
+    // not JSON (a proxy's page, say): the status alone is reported
+  }
+  const errors = Array.isArray(payload?.errors) ? payload.errors : []
+  const errorCodes = errors.map(codeOf)
+
+  if (!response.ok) return { failed: `Railway ответил HTTP ${Number(response.status)}`, errorCodes }
+  if (errors.length > 0) return { failed: `Railway вернул ошибки (${errors.length})`, errorCodes }
+  return { data: payload?.data }
+}
+
+/**
+ * The names of the service's variables, from Railway. The answer carries the values too; they are
+ * dropped here, so nothing but names leaves this function.
+ * @param {{ fetchImpl: typeof fetch, token: string, ids: RailwayIds, timeoutMs: number }} options
+ * @returns {Promise<{ names: Set<string> } | { failed: string, errorCodes?: string[] }>}
+ */
+async function fetchStoredNames({ fetchImpl, token, ids, timeoutMs }) {
+  const answer = await callRailway({ fetchImpl, token, body: buildVariablesQueryBody(ids), timeoutMs })
+  if ('failed' in answer) return answer
+  const stored = answer.data?.variables
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return { failed: 'ответ без списка переменных' }
+  return { names: new Set(Object.keys(stored)) }
+}
+
+/**
+ * Pushes the chosen variables to Railway and checks, by name, that they are there. Returns a result
+ * for `formatReport`; never throws for a problem with the input or the requests.
  * @param {{
  *   env: Record<string, string | undefined>,
  *   names: unknown,
@@ -200,8 +247,8 @@ export async function syncEnv({ env, names, ids, token, fetchImpl = globalThis.f
   if (!Array.isArray(names)) return failure('names.json должен быть списком имён переменных')
   const badNames = names.filter((name) => typeof name !== 'string' || !NAME_PATTERN.test(name)).length
   if (badNames > 0) {
-    // not echoed: a value pasted into names.json by mistake must not reach the log
-    return failure(`в names.json ${badNames} записей, которые не похожи на имя переменной (буквы, цифры, _) - значений там быть не должно`)
+    // not echoed: whatever is in that entry must not reach the log
+    return failure(`в names.json ${badNames} записей, которые не похожи на имя переменной (буквы, цифры, _); там должны быть только имена из vercel env ls`)
   }
 
   /** @type {any} */
@@ -212,45 +259,29 @@ export async function syncEnv({ env, names, ids, token, fetchImpl = globalThis.f
   const { variables, skippedEmpty, missing } = selectVariables(env, names)
   const excluded = [...new Set(names)].filter(isExcluded)
   const lists = { skippedEmpty, missing, excluded }
-  if (Object.keys(variables).length === 0) return failure('нет ни одной переменной для переноса', lists)
+  const sent = Object.keys(variables)
+  if (sent.length === 0) return failure('нет ни одной переменной для переноса', lists)
 
-  const secrets = [...Object.values(variables), secretToken]
-  /** @type {Response} */
-  let response
-  try {
-    response = await fetchImpl(RAILWAY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Project-Access-Token': secretToken },
-      body: JSON.stringify(buildUpsertBody(target, variables)),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-  } catch (error) {
-    return failure(`запрос к Railway не выполнен (${describeError(error, secrets)})`, lists)
+  const upsert = await callRailway({ fetchImpl, token: secretToken, body: buildUpsertBody(target, variables), timeoutMs })
+  if ('failed' in upsert) return failure(upsert.failed, { errorCodes: upsert.errorCodes, ...lists })
+  if (upsert.data?.variableCollectionUpsert !== true) return failure('Railway не подтвердил запись переменных', lists)
+
+  // The write is done; now look at the service itself. The names come back in memory only.
+  const stored = await fetchStoredNames({ fetchImpl, token: secretToken, ids: target, timeoutMs })
+  if ('failed' in stored) {
+    return failure(`запись выполнена, но проверить её на Railway не удалось: ${stored.failed}`, { errorCodes: stored.errorCodes, ...lists })
   }
-
-  /** @type {any} */
-  let payload = null
-  try {
-    payload = JSON.parse(await response.text())
-  } catch {
-    // not JSON (a proxy's page, say): the status alone is reported
+  const absent = sent.filter((name) => !stored.names.has(name))
+  const verification = { present: sent.length - absent.length, total: sent.length, absent }
+  if (absent.length > 0) {
+    return failure(`запись выполнена, но на Railway не нашлось ${absent.length} из ${sent.length} переменных`, { verification, ...lists })
   }
-  const errors = Array.isArray(payload?.errors) ? payload.errors : []
-  const messages = errors
-    .map((/** @type {any} */ error) => cleanMessage(error?.message, secrets))
-    .filter(Boolean)
-    .slice(0, MAX_MESSAGES)
-
-  if (!response.ok) return failure(`Railway ответил HTTP ${Number(response.status)}`, { messages, ...lists })
-  if (errors.length > 0) return failure(`Railway вернул ошибки (${errors.length})`, { messages, ...lists })
-  if (payload?.data?.variableCollectionUpsert !== true) return failure('Railway не подтвердил запись переменных', lists)
-
-  return { ok: true, pushed: Object.keys(variables).length, ...lists }
+  return { ok: true, pushed: sent.length, verification, ...lists }
 }
 
 /**
- * The text of the report: all that is printed. It is built from counts and names only, so it cannot
- * carry a value; a Railway message in a failure was scrubbed by `syncEnv` and is cut to one short line.
+ * The text of the report: all that is printed. It is built from counts, variable names and error
+ * codes only, so it cannot carry a value or any text of Railway's.
  * @param {SuccessResult | FailureResult} result
  * @returns {string}
  */
@@ -261,10 +292,18 @@ export function formatReport(result) {
     lines.push(SUCCESS_LINE, `Перенесено переменных: ${Number(result.pushed) || 0}`)
   } else {
     lines.push(`Перенос НЕ выполнен: ${oneLine(result.reason)}`)
-    for (const message of (result.messages ?? []).slice(0, MAX_MESSAGES)) lines.push(`  Railway: ${oneLine(message)}`)
+    const codes = result.errorCodes ?? []
+    if (codes.length > 0) {
+      const shown = codes.slice(0, MAX_CODES).map(oneLine).join(', ')
+      lines.push(`Коды ошибок Railway (${codes.length}): ${shown}${codes.length > MAX_CODES ? ', ...' : ''}`)
+    }
   }
   const list = (/** @type {string} */ title, /** @type {string[] | undefined} */ names) => {
     if (names && names.length > 0) lines.push(`${title} (${names.length}): ${names.map(oneLine).join(', ')}`)
+  }
+  if (result.verification) {
+    lines.push(`Проверено на Railway: ${Number(result.verification.present) || 0} из ${Number(result.verification.total) || 0}`)
+    list('Нет на Railway', result.verification.absent)
   }
   list('Пропущено пустых', result.skippedEmpty)
   list('Нет в окружении сборки', result.missing)
@@ -324,7 +363,7 @@ export async function main(deps = {}) {
     result = await syncEnv({ env, names, ids, token: env[TOKEN_NAME], fetchImpl, timeoutMs })
   } catch (error) {
     // an unexpected error: only its class is named, its message might hold anything
-    result = failure(error instanceof InputError ? error.message : `непредвиденная ошибка (${describeError(error, [])}), текст скрыт`)
+    result = failure(error instanceof InputError ? error.message : `непредвиденная ошибка (${describeError(error)}), текст скрыт`)
   }
 
   const code = result.ok ? 1 : 2
