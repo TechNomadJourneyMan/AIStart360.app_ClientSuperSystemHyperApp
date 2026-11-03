@@ -18,12 +18,15 @@
 
 ## Что нужно заранее
 
-1. **Токен проекта Railway** (Project Token) только для окружения `production` проекта `aistart360-portal`. Создаётся в панели Railway (Project Settings → Tokens). Заголовок запроса: `Project-Access-Token`.
-2. **Токен как временная переменная Vercel** `RAILWAY_ENV_SYNC_TOKEN`: окружение Production, тип Sensitive. Значение подаётся через stdin, а не аргументом команды, например из буфера обмена:
+1. **Токен проекта Railway** (Project Token) только для окружения `production` проекта `aistart360-portal`. Создаётся в панели Railway (Project Settings → Tokens). Заголовок запроса: `Project-Access-Token`. Через `railway api` (мутация `projectTokenCreate`) создать его нельзя: вход Railway CLI на это не уполномочен, Railway отвечает «Not Authorized» (проверено 2026-11-03).
+2. **Токен как временная переменная Vercel** `RAILWAY_ENV_SYNC_TOKEN`: окружение Production, тип Sensitive. Значение подаётся через stdin, а не аргументом команды, например из буфера обмена, который сразу после этого очищается:
 
    ```bash
-   pbpaste | vercel env add RAILWAY_ENV_SYNC_TOKEN production --sensitive --project aistart360app-portal
+   pbpaste | vercel env add RAILWAY_ENV_SYNC_TOKEN production --sensitive --project aistart360app-portal --scope technomadjourneymans-projects
+   printf "" | pbcopy
    ```
+
+   `--scope` обязателен: у учётной записи две команды Vercel, и без него CLI спрашивает, какую взять.
 
 3. **Идентификаторы Railway**: `projectId`, `environmentId`, `serviceId` сервиса `portal` (не секреты; видны в `list-services` / панели).
 4. **Список имён**: `vercel env ls production`, только столбец имён, без значений.
@@ -62,12 +65,15 @@
 
 ## Запуск
 
-Из временной папки. Сначала привязать её к существующему проекту. Без этого `--yes` создаст новый проект с именем папки, где нет ни токена, ни переменных:
+Из временной папки. Сначала привязать её к существующему проекту. Без этого `--yes` создаст новый проект с именем папки, где нет ни токена, ни переменных.
+
+**Не использовать `vercel link`**: Vercel CLI 59 вместе с привязкой сам скачивает переменные окружения в `.env.local` этой папки, то есть значения оказываются на диске (и попали бы в загрузку деплоя). Привязка делается файлом с идентификаторами, вручную:
 
 ```bash
 cd ~/tmp/env-sync
-vercel link --yes --project aistart360app-portal      # при необходимости добавить --scope <команда>
-cat .vercel/project.json                              # сверить projectId и orgId, см. ниже
+mkdir .vercel
+printf '%s\n' '{"projectId":"prj_tkjFsWlGTPqUt6vOjlaJ6uxeC39x","orgId":"team_xdferxvA0jNPmQ0r90px4lVy","projectName":"aistart360app-portal"}' > .vercel/project.json
+ls -A                                                 # только .vercel и четыре файла, без .env*
 vercel deploy --prod --skip-domain --yes
 ```
 
@@ -76,7 +82,7 @@ vercel deploy --prod --skip-domain --yes
 - `projectId`: `prj_tkjFsWlGTPqUt6vOjlaJ6uxeC39x`
 - `orgId`: `team_xdferxvA0jNPmQ0r90px4lVy`
 
-Если хотя бы один отличается, **остановиться**: папка привязана не к проекту `aistart360app-portal`, деплой не запускать (удалить `.vercel` и повторить `vercel link`).
+Если в папке появился любой файл `.env*`, **остановиться**: удалить его не открывая и только потом запускать деплой.
 
 `--skip-domain` защищает боевой домен, даже если бы сборка прошла. Но она не пройдёт: скрипт завершается с кодом 1 или 2. В панели Vercel появится запись о деплойменте со статусом Error; трафик она не принимает, её можно удалить.
 
@@ -98,7 +104,7 @@ vercel deploy --prod --skip-domain --yes
 
 ## Уборка (сразу после переноса)
 
-1. Удалить временную переменную из Vercel: `vercel env rm RAILWAY_ENV_SYNC_TOKEN production --yes --project aistart360app-portal`.
+1. Удалить временную переменную из Vercel: `vercel env rm RAILWAY_ENV_SYNC_TOKEN production --yes --project aistart360app-portal --scope technomadjourneymans-projects`.
 2. Отозвать токен проекта Railway (Project Settings → Tokens → удалить).
 3. Удалить временную папку: `rm -rf ~/tmp/env-sync`. Вместе с ней уходит и `.vercel/project.json`.
 4. По желанию удалить запись об ошибочном деплойменте в Vercel.
