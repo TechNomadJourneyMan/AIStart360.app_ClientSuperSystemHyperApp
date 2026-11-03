@@ -17,6 +17,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RAILWAY_ENDPOINT,
+  buildTokenQueryBody,
   buildUpsertBody,
   buildVariablesQueryBody,
   formatReport,
@@ -263,12 +264,14 @@ function jsonResponse(body: unknown, status = 200) {
 type GraphQLCall = { query: string; variables: Record<string, any> }
 
 /**
- * A fake Railway. The first call of a run is the upsert (a mutation), the second the check that lists
- * the service's variables. The listing carries VALUES, as the real one does - the sent ones and one
- * that only exists on Railway - so any test that reads the output also proves they are not printed.
+ * A fake Railway. The first call of a run asks what the token is (by default a project token for
+ * IDS), the second is the upsert (a mutation), the third the check that lists the service's
+ * variables. The listing carries VALUES, as the real one does - the sent ones and one that only
+ * exists on Railway - so any test that reads the output also proves they are not printed.
  */
 function railway(
   routes: {
+    token?: (call: GraphQLCall) => Response | Promise<Response>
     upsert?: (call: GraphQLCall) => Response | Promise<Response>
     variables?: (call: GraphQLCall, sent: Record<string, string>) => Response | Promise<Response>
   } = {},
@@ -276,6 +279,11 @@ function railway(
   let sent: Record<string, string> = {}
   return async (_url: string, init: RequestInit) => {
     const call = JSON.parse(init.body as string) as GraphQLCall
+    if (/^\s*query projectToken\b/.test(call.query)) {
+      return routes.token
+        ? routes.token(call)
+        : jsonResponse({ data: { projectToken: { projectId: IDS.projectId, environmentId: IDS.environmentId } } })
+    }
     if (call.query.trimStart().startsWith('mutation')) {
       sent = call.variables.input.variables
       return routes.upsert ? routes.upsert(call) : jsonResponse({ data: { variableCollectionUpsert: true } })
@@ -320,10 +328,21 @@ function run(opts: {
 }
 
 describe('main - success', () => {
-  it('posts the upsert to Railway with the project token and the full mutation', async () => {
+  it('first asks Railway what the token is, sending nothing but the token', async () => {
     const { done, fetchImpl } = run({})
     await done
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(RAILWAY_ENDPOINT)
+    expect((init.headers as Record<string, string>)['Project-Access-Token']).toBe(TOKEN)
+    expect(JSON.parse(init.body as string)).toEqual(buildTokenQueryBody())
+    expect(buildTokenQueryBody().query).toMatch(/projectToken\s*{\s*projectId environmentId\s*}/)
+    expect(init.body as string).not.toContain(MARKER)
+  })
+
+  it('posts the upsert to Railway with the project token and the full mutation', async () => {
+    const { done, fetchImpl } = run({})
+    await done
+    const [url, init] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit]
     expect(url).toBe('https://backboard.railway.com/graphql/v2')
     expect(url).toBe(RAILWAY_ENDPOINT)
     expect(init.method).toBe('POST')
@@ -340,11 +359,11 @@ describe('main - success', () => {
     })
   })
 
-  it('then checks the write with a second request: the variables query, same token, same ids', async () => {
+  it('then checks the write with a third request: the variables query, same token, same ids', async () => {
     const { done, fetchImpl } = run({})
     await done
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
-    const [url, init] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit]
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    const [url, init] = fetchImpl.mock.calls[2] as unknown as [string, RequestInit]
     expect(url).toBe(RAILWAY_ENDPOINT)
     expect((init.headers as Record<string, string>)['Project-Access-Token']).toBe(TOKEN)
     const body = JSON.parse(init.body as string)
@@ -357,7 +376,7 @@ describe('main - success', () => {
   it('does not send the token to Railway as a variable', async () => {
     const { done, fetchImpl } = run({})
     await done
-    const init = fetchImpl.mock.calls[0][1] as RequestInit
+    const init = fetchImpl.mock.calls[1][1] as RequestInit
     expect(JSON.parse(init.body as string).variables.input.variables).not.toHaveProperty('RAILWAY_ENV_SYNC_TOKEN')
   })
 
@@ -457,7 +476,7 @@ describe('main - checking the write on Railway', () => {
   ])('a failing check - %s - is exit 2, says the write was done, and prints nothing from the answer', async (_label, answer, expected) => {
     const { done, exit, output, fetchImpl } = run({ fetchImpl: railway({ variables: answer }) })
     await done
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
     expect(exit).toHaveBeenCalledTimes(1)
     expect(exit).toHaveBeenCalledWith(2)
     const text = output()
@@ -506,7 +525,7 @@ describe('main - failure', () => {
     })
     await done
     expect(exit).toHaveBeenCalledWith(2)
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
     const text = output()
     for (const fragment of [MARKER, 'LEAK', TOKEN, 'postgresql', 'BEGIN', 'invalid value', 'bad value', 'bad url', 'cut after']) {
       expect(text).not.toContain(fragment)
@@ -580,19 +599,56 @@ describe('main - failure', () => {
 
   it('GraphQL errors next to data are still a failure', async () => {
     const { done, exit, fetchImpl } = run({
-      fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: true }, errors: [{ message: 'partial', extensions: { code: 'PARTIAL' } }] }),
+      fetchImpl: railway({
+        upsert: () => jsonResponse({ data: { variableCollectionUpsert: true }, errors: [{ message: 'partial', extensions: { code: 'PARTIAL' } }] }),
+      }),
     })
     await done
     expect(exit).toHaveBeenCalledWith(2)
-    expect(fetchImpl).toHaveBeenCalledTimes(1) // no check after a write that Railway reported as failed
+    expect(fetchImpl).toHaveBeenCalledTimes(2) // no check after a write that Railway reported as failed
   })
 
   it('an answer that is not an explicit true is a failure', async () => {
-    const { done, exit, output, fetchImpl } = run({ fetchImpl: async () => jsonResponse({ data: { variableCollectionUpsert: false } }) })
+    const { done, exit, output, fetchImpl } = run({
+      fetchImpl: railway({ upsert: () => jsonResponse({ data: { variableCollectionUpsert: false } }) }),
+    })
+    await done
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(output()).toContain('не подтвердил запись')
+    expect(output()).not.toContain('Перенос завершён')
+  })
+
+  it('a token Railway does not take as a project token stops before the write, with its codes and no message', async () => {
+    const { done, exit, output, fetchImpl } = run({
+      fetchImpl: railway({
+        token: () => jsonResponse({ errors: [{ message: `Not Authorized ${TOKEN}`, extensions: { code: 'INTERNAL_SERVER_ERROR' } }], data: null }),
+      }),
+    })
     await done
     expect(exit).toHaveBeenCalledWith(2)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
-    expect(output()).not.toContain('Перенос завершён')
+    const text = output()
+    expect(text).toContain('токен не принят Railway как токен проекта')
+    expect(text).toContain('INTERNAL_SERVER_ERROR')
+    expect(text).not.toContain('Not Authorized')
+    expect(text).not.toContain(TOKEN)
+    expect(text).not.toContain('Перенос завершён')
+  })
+
+  it.each([
+    ['another project', { projectId: 'other-project', environmentId: IDS.environmentId }, 'другого проекта'],
+    ['another environment', { projectId: IDS.projectId, environmentId: 'other-env' }, 'другого окружения'],
+    ['an answer without the token', null, 'другого проекта'],
+  ])('a token for %s stops before the write', async (_label, projectToken, expected) => {
+    const { done, exit, output, fetchImpl } = run({
+      fetchImpl: railway({ token: () => jsonResponse({ data: { projectToken } }) }),
+    })
+    await done
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(output()).toContain(expected)
+    expect(output()).toContain('запись не выполнялась')
   })
 
   it('an HTTP error reports the status and never the body, which might echo the request', async () => {

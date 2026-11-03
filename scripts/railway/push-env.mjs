@@ -20,6 +20,10 @@
  * error is reported by HTTP status, number of errors and each errors[].extensions.code - not by its
  * message. A network error reports its kind only.
  *
+ * Before the upsert the script asks Railway which project and environment the token belongs to, and
+ * writes nothing unless they are the ones in railway-target.json: Railway refuses a write made with an
+ * account token by a bare INTERNAL_SERVER_ERROR, so without this the reason stays unknown.
+ *
  * After the upsert the script checks the write itself, with the same token: it asks Railway for the
  * service's variables (the answer holds names AND values), compares the names with the ones it sent,
  * in memory, and keeps only the names that are absent. The fetched object never leaves the function
@@ -75,6 +79,9 @@ const MUTATION = `mutation variableCollectionUpsert($input: VariableCollectionUp
 }`
 const VARIABLES_QUERY = `query variables($projectId: String!, $environmentId: String!, $serviceId: String, $unrendered: Boolean) {
   variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId, unrendered: $unrendered)
+}`
+const TOKEN_QUERY = `query projectToken {
+  projectToken { projectId environmentId }
 }`
 
 /**
@@ -152,6 +159,14 @@ export function buildVariablesQueryBody(ids) {
     query: VARIABLES_QUERY,
     variables: { projectId: ids.projectId, environmentId: ids.environmentId, serviceId: ids.serviceId, unrendered: true },
   }
+}
+
+/**
+ * The request that asks Railway what the token is: a project token answers with its project and
+ * environment; any other token (an account or workspace one) is refused. Nothing is sent but the token.
+ */
+export function buildTokenQueryBody() {
+  return { query: TOKEN_QUERY }
 }
 
 const oneLine = (/** @type {unknown} */ text) => String(text).replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_LENGTH)
@@ -261,6 +276,16 @@ export async function syncEnv({ env, names, ids, token, fetchImpl = globalThis.f
   const lists = { skippedEmpty, missing, excluded }
   const sent = Object.keys(variables)
   if (sent.length === 0) return failure('нет ни одной переменной для переноса', lists)
+
+  // Before writing: is this a project token, and for this project and environment? Railway refuses
+  // a write with any other token by a bare INTERNAL_SERVER_ERROR, which says nothing about why.
+  const tokenAnswer = await callRailway({ fetchImpl, token: secretToken, body: buildTokenQueryBody(), timeoutMs })
+  if ('failed' in tokenAnswer) {
+    return failure(`токен не принят Railway как токен проекта (нужен токен из настроек проекта, не учётной записи): ${tokenAnswer.failed}`, { errorCodes: tokenAnswer.errorCodes, ...lists })
+  }
+  const scope = tokenAnswer.data?.projectToken
+  if (scope?.projectId !== target.projectId) return failure('токен выдан для другого проекта Railway, запись не выполнялась', lists)
+  if (scope?.environmentId !== target.environmentId) return failure('токен выдан для другого окружения Railway, запись не выполнялась', lists)
 
   const upsert = await callRailway({ fetchImpl, token: secretToken, body: buildUpsertBody(target, variables), timeoutMs })
   if ('failed' in upsert) return failure(upsert.failed, { errorCodes: upsert.errorCodes, ...lists })
