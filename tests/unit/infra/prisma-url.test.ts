@@ -22,6 +22,7 @@ import {
 } from '@/lib/runtime/prisma-url'
 
 const POOLER = 'postgresql://postgres.abc:p%40ss%2Fw0rd@aws-0-eu-west-1.pooler.supabase.invalid:6543/postgres'
+const SESSION = 'postgresql://postgres.abc:p%40ss%2Fw0rd@aws-0-eu-west-1.pooler.supabase.invalid:5432/postgres'
 
 describe('withConnectionLimit', () => {
   it('replaces an existing connection_limit and keeps the other params as they were', () => {
@@ -91,6 +92,36 @@ describe('persistentPrismaDatasourceUrl', () => {
     expect(persistentPrismaDatasourceUrl({ VERCEL: '1', DATABASE_URL: POOLER })).toBeUndefined()
     expect(persistentPrismaDatasourceUrl({ PERSISTENT_SERVER: '0', DATABASE_URL: POOLER })).toBeUndefined()
     expect(persistentPrismaDatasourceUrl({ DATABASE_URL: POOLER })).toBeUndefined()
+    expect(persistentPrismaDatasourceUrl({ VERCEL: '1', DATABASE_URL: POOLER, DIRECT_URL: SESSION, PRISMA_DATASOURCE: 'direct' })).toBeUndefined()
+  })
+
+  it('PRISMA_DATASOURCE=direct: DIRECT_URL (session mode) with the connection limit', () => {
+    expect(
+      persistentPrismaDatasourceUrl({
+        PERSISTENT_SERVER: '1',
+        DATABASE_URL: `${POOLER}?pgbouncer=true&connection_limit=1`,
+        DIRECT_URL: SESSION,
+        PRISMA_DATASOURCE: ' direct ',
+        PRISMA_CONNECTION_LIMIT: '6',
+      }),
+    ).toBe(`${SESSION}?connection_limit=6`)
+  })
+
+  it('PRISMA_DATASOURCE=direct without a DIRECT_URL keeps DATABASE_URL', () => {
+    for (const DIRECT_URL of [undefined, '', '  ']) {
+      expect(
+        persistentPrismaDatasourceUrl({ PERSISTENT_SERVER: '1', DATABASE_URL: `${POOLER}?pgbouncer=true`, DIRECT_URL, PRISMA_DATASOURCE: 'direct' }),
+      ).toBe(`${POOLER}?pgbouncer=true&connection_limit=5`)
+    }
+  })
+
+  it('any other PRISMA_DATASOURCE keeps DATABASE_URL', () => {
+    for (const PRISMA_DATASOURCE of [undefined, '', 'Direct', 'DIRECT_URL', '1', 'pooler']) {
+      expect(
+        persistentPrismaDatasourceUrl({ PERSISTENT_SERVER: '1', DATABASE_URL: `${POOLER}?pgbouncer=true`, DIRECT_URL: SESSION, PRISMA_DATASOURCE }),
+        `PRISMA_DATASOURCE=${String(PRISMA_DATASOURCE)}`,
+      ).toBe(`${POOLER}?pgbouncer=true&connection_limit=5`)
+    }
   })
 })
 

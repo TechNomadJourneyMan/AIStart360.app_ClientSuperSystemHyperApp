@@ -6,6 +6,11 @@
  * one connection would queue them all: there the limit comes from PRISMA_CONNECTION_LIMIT (an integer
  * 1..50, default 5) instead. Everything else in the URL is kept byte for byte (pgbouncer=true and the
  * rest). Elsewhere nothing is overridden. The URL is never logged.
+ *
+ * PRISMA_DATASOURCE=direct makes the persistent server use DIRECT_URL, the pooler in session mode: a
+ * long-lived pool keeps its connections there, so a query costs one network round trip instead of the
+ * several of transaction mode. Measured from Railway (ams) to Supabase (eu-west-1): SELECT 1 took
+ * 16 ms over DIRECT_URL and 92 ms over DATABASE_URL.
  */
 import { isPersistentServer } from '@/lib/runtime/platform'
 
@@ -38,7 +43,8 @@ export function withConnectionLimit(url: string, limit: number): string {
 /** The datasource URL for PrismaClient on a persistent server; undefined (no override) anywhere else. */
 export function persistentPrismaDatasourceUrl(env: Env = process.env): string | undefined {
   if (!isPersistentServer(env)) return undefined
-  const url = env.DATABASE_URL?.trim()
+  const direct = env.PRISMA_DATASOURCE?.trim() === 'direct' ? env.DIRECT_URL?.trim() : undefined
+  const url = direct || env.DATABASE_URL?.trim()
   if (!url) return undefined
   return withConnectionLimit(url, prismaConnectionLimit(env.PRISMA_CONNECTION_LIMIT))
 }
