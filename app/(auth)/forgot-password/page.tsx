@@ -5,12 +5,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/client'
-
-// Avoid static prerender: the Supabase browser client requires env vars that
-// are not present at build time. Forcing dynamic rendering prevents the
-// "@supabase/ssr: Your project's URL and API key are required" crash.
-export const dynamic = 'force-dynamic'
+import { Logo } from '@/components/ui/Logo'
 
 const schema = z.object({
   email: z.string().email('Введите корректный email'),
@@ -31,21 +26,25 @@ export default function ForgotPasswordPage() {
     setIsLoading(true)
     // Письмо отправляем сами: Supabase подменяет адрес возврата своим Site URL,
     // если он не в списке разрешённых, и ссылка уводит на чужой домен.
-    let failed = false
+    let failure: string | null = null
     try {
       const res = await fetch('/api/v1/auth/email-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: data.email, purpose: 'recovery' }),
       })
-      failed = !res.ok
+      if (!res.ok) {
+        // 429 / 422 приходят с понятным текстом — показываем его.
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        failure = body?.error || 'Не удалось отправить письмо. Попробуйте снова.'
+      }
     } catch {
-      failed = true
+      failure = 'Нет соединения. Проверьте интернет и попробуйте снова.'
     }
     setIsLoading(false)
 
-    if (failed) {
-      setRequestError('Не удалось отправить письмо. Попробуйте снова.')
+    if (failure) {
+      setRequestError(failure)
       return
     }
 
@@ -54,14 +53,17 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
+      <Shell>
       <div className="glass-card rounded-2xl p-8 shadow-modal text-center">
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <span className="material-symbols-outlined text-primary text-3xl">mark_email_read</span>
         </div>
         <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Письмо отправлено</h2>
         <p className="text-sm text-on-surface-variant mb-6">
-          Мы отправили ссылку для восстановления на{' '}
-          <span className="text-primary font-mono">{getValues('email')}</span>
+          Если аккаунт с адресом{' '}
+          <span className="text-primary font-mono break-all">{getValues('email')}</span>{' '}
+          существует, мы отправили на него ссылку для восстановления. Проверьте папку «Спам», если письма нет
+          в течение нескольких минут.
         </p>
         <Link
           href="/login"
@@ -70,10 +72,12 @@ export default function ForgotPasswordPage() {
           ← Вернуться ко входу
         </Link>
       </div>
+      </Shell>
     )
   }
 
   return (
+    <Shell>
     <div className="glass-card rounded-2xl p-8 shadow-modal">
       <Link href="/login" className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface mb-6 transition-colors">
         <span className="material-symbols-outlined text-sm">arrow_back</span>
@@ -120,6 +124,20 @@ export default function ForgotPasswordPage() {
           )}
         </button>
       </form>
+    </div>
+    </Shell>
+  )
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#0a0e17] flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex justify-center">
+          <Logo className="h-8" />
+        </div>
+        {children}
+      </div>
     </div>
   )
 }

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { GigaSidebar } from './GigaSidebar'
+import Link from 'next/link'
+import { GigaSidebar, useWorkspaceSwitchLinks } from './GigaSidebar'
 import { StaffProvider, useStaff } from './StaffContext'
 import { WorkspaceProvider, type Workspace } from './WorkspaceContext'
 
@@ -14,6 +15,7 @@ import { WorkspaceProvider, type Workspace } from './WorkspaceContext'
 function ShellBody({ workspace, children }: { workspace: Workspace; children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { error, me, loading } = useStaff()
+  const switchLinks = useWorkspaceSwitchLinks()
 
   return (
     <div
@@ -37,6 +39,21 @@ function ShellBody({ workspace, children }: { workspace: Workspace; children: Re
           <span className="material-symbols-outlined text-lg text-blue-400">menu</span>
         </button>
         <p className="text-xs font-semibold uppercase tracking-[0.15em] text-blue-400">{workspace.label}</p>
+        {switchLinks.length > 0 && (
+          <nav aria-label="Другие кабинеты" className="ml-auto flex items-center gap-1.5">
+            {switchLinks.map(({ href, label, Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                title={label}
+                aria-label={label}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+              >
+                <Icon size={16} />
+              </Link>
+            ))}
+          </nav>
+        )}
       </div>
 
       <GigaSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />

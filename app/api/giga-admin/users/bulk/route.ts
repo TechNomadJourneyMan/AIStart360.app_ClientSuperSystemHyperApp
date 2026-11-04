@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// Массовое удаление (до 50 человек, по двое параллельно) может идти дольше минуты.
+export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
@@ -9,8 +10,9 @@ import { BULK_PERMISSIONS, bulkSchema, runBulkUserAction, validateAssignee, type
 
 /**
  * POST /api/giga-admin/users/bulk
- *   { action: 'approve'|'reject'|'set_tier'|'assign'|'block'|'archive'|'remind_survey',
- *     ids: uuid[] (≤ 200), reason?, tier?, assigneeId? }
+ *   { action: 'approve'|'reject'|'set_tier'|'assign'|'block'|'unblock'|'archive'|'remind_survey'|'purge',
+ *     ids: uuid[] (≤ 200; для purge ≤ 50), reason?, tier?, assigneeId?, confirm? }
+ *   purge — только Super Admin (users.delete), confirm: 'УДАЛИТЬ' и reason ≥ 3 обязательны.
  * → { ok, results: [{ id, ok, error, skipped? }], done, failed }
  *
  * Право на действие — как у одиночного маршрута и проверяется ДО чтения
@@ -30,6 +32,9 @@ export async function POST(req: NextRequest) {
   }
   if (await isRateLimitedKey(guard.actor.id, 'users-bulk', { max: 20, windowMs: 10 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много массовых операций. Попробуйте позже.' }, { status: 429 })
+  }
+  if (parsed.data.action === 'purge' && await isRateLimitedKey(guard.actor.id, 'users-bulk-purge', { max: 5, windowMs: 10 * 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много массовых удалений. Попробуйте позже.' }, { status: 429 })
   }
   if (parsed.data.action === 'assign') {
     const bad = await validateAssignee(parsed.data.assigneeId)

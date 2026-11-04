@@ -11,7 +11,12 @@ import { isStaffRole } from '@/lib/admin/rbac'
 
 // POST /api/v1/impersonation/exit — «Выйти из режима пользователя».
 // Closes the DB session, signs the browser out of the user's account and sends
-// the admin back to the user's card in GIGA-CRM.
+// the admin back to the user's card in the cabinet they came from: a SuperExpert
+// cannot open GIGA-CRM, so their card lives in /super-expert.
+function panelBaseFor(actorRole: unknown): string {
+  return actorRole === 'super_expert' ? '/super-expert' : '/admin-giga-panel'
+}
+
 export async function POST(_req: NextRequest) {
   const jar = cookies()
   const v = await readImpersonation(jar.get(IMP_COOKIE_NAME)?.value)
@@ -36,5 +41,5 @@ export async function POST(_req: NextRequest) {
     )
     void trackEvent({ userId: claims.uid, name: 'IMPERSONATION_ENDED', entityType: 'impersonation', entityId: claims.sid, source: 'admin', impersonationSessionId: claims.sid })
   }
-  return NextResponse.json({ ok: true, redirect: `/admin-giga-panel/users/${claims.uid}` })
+  return NextResponse.json({ ok: true, redirect: `${panelBaseFor(claims.arole)}/users/${claims.uid}` })
 }

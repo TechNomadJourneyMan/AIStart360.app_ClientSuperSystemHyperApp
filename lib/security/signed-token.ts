@@ -14,7 +14,7 @@
  * staff  staff panel cookie
  * rv     link to one published report version (/r/v/<token>, lib/reports/version-link.ts)
  */
-export type SignedTokenType = 'imp' | 'staff' | 'rv'
+export type SignedTokenType = 'imp' | 'staff' | 'rv' | 'va'
 
 export interface SignedClaims {
   typ: SignedTokenType

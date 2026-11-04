@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Eye, EyeOff, Lock, Mail, MailCheck, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { SUPER_EXPERT_BASE } from '@/lib/admin/nav'
+import { loginNoticeFrom } from '@/app/auth/notices'
 
 /**
  * Отдельный вход в кабинет SuperExpert.
@@ -32,9 +33,14 @@ export default function SuperExpertLoginPage() {
   const [loading, setLoading] = useState(false)
   const [linkState, setLinkState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
-  // ?denied=1 — сюда приводят тех, у кого нет роли персонала.
+  // ?denied=1 — сюда приводят тех, у кого нет роли персонала;
+  // ?blocked=1 и ?error=link_expired|link_invalid — как на общем /login.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('denied') === '1') {
+    const q = new URLSearchParams(window.location.search)
+    const notice = loginNoticeFrom((k) => q.get(k))
+    if (notice) {
+      setError(notice.text)
+    } else if (q.get('denied') === '1') {
       setError('У этой учётной записи нет доступа к кабинету SuperExpert — попросите администратора выдать вам эту роль.')
     }
   }, [])

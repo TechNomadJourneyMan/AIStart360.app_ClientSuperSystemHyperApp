@@ -9,6 +9,8 @@ import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
+import { PanelSwitchLinks } from './PanelSwitchLinks'
+import { hasGigaPanelAccess } from '@/lib/panel-links'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 
@@ -39,7 +41,7 @@ export function Sidebar() {
   // least-privileged 'client' when missing (no more toUpperCase bridge).
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   // Sections switched off / hidden for this user in GIGA-CRM disappear from the menu.
-  const navAccess = { panelAccess: role === 'super_admin' || Boolean(user?.staffRole) }
+  const navAccess = { panelAccess: hasGigaPanelAccess({ role, staffRole: user?.staffRole, status: user?.status }) }
   const primaryNav = getPrimaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
   const secondaryNav = getSecondaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
 
@@ -385,6 +387,9 @@ export function Sidebar() {
             <span className="text-[10px] font-mono text-primary/70 tracking-wider">СИСТЕМА АКТИВНА</span>
           </div>
         )}
+
+        {/* Staff / experts only: jump to the admin or expert panel */}
+        <PanelSwitchLinks variant="sidebar" collapsed={sidebarCollapsed} />
 
         <Link
           href="/profile"

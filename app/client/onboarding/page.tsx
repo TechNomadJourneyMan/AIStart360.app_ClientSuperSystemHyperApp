@@ -57,6 +57,15 @@ const RETRY_DELAYS_MS = [4000, 12000, 30000]
 // Where a finished (or early-finished) survey lands.
 const AFTER_SURVEY_PATH = '/client/home'
 
+/** 422 CONTENT_REJECTED: фильтр контента отклонил текст — повтор не поможет, нужна правка. */
+class ContentRejectedError extends Error {}
+
+function contentRejection(status: number, body: unknown): ContentRejectedError | null {
+  const b = body as { code?: unknown; error?: unknown } | null
+  if (status === 422 && b?.code === 'CONTENT_REJECTED' && typeof b.error === 'string') return new ContentRejectedError(b.error)
+  return null
+}
+
 function OnboardingPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -201,6 +210,8 @@ function OnboardingPageInner() {
             }),
           })
           const compData = await compRes.json().catch(() => null)
+          const compRejected = contentRejection(compRes.status, compData)
+          if (compRejected) throw compRejected
           if (!compRes.ok || !compData?.ok) throw new Error(compData?.error || `HTTP ${compRes.status}`)
           if (compData.data?.id) {
             companyIdRef.current = String(compData.data.id)
@@ -217,6 +228,8 @@ function OnboardingPageInner() {
         })
         const json = await res.json().catch(() => null)
         if (res.status === 401) throw new Error('Сессия истекла — войдите заново. Ответы сохранены на этом устройстве.')
+        const surveyRejected = contentRejection(res.status, json)
+        if (surveyRejected) throw surveyRejected
         if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`)
 
         // Clear only the keys that did not change again while the request was in flight.
@@ -230,6 +243,15 @@ function OnboardingPageInner() {
         setSaveState(dirtyRef.current.size ? 'dirty' : 'saved')
         return true
       } catch (e) {
+        // Фильтр контента: показать причину всегда (и при автосохранении), без
+        // автоповтора — тот же текст будет отклонён снова. Правки остаются
+        // несохранёнными, следующее изменение поля отправит их заново.
+        if (e instanceof ContentRejectedError) {
+          setSaveError(e.message)
+          setSaveState('dirty')
+          persistDraft()
+          return false
+        }
         const msg = e instanceof Error ? e.message : String(e)
         // A background save fails quietly: the chip shows it and a retry is scheduled.
         if (!quiet || msg.startsWith('Сессия')) {

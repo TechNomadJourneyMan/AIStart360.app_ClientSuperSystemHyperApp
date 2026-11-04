@@ -5,6 +5,7 @@ import { isRateLimited } from '@/lib/rate-limit'
 import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
+import { moderateFields } from '@/lib/moderation/guard'
 
 // Public self-registration creates ONLY clients. The legacy 'owner' role was
 // removed from the product (2026-09-24); admin/expert/super_admin can NEVER be
@@ -36,6 +37,16 @@ export async function POST(request: Request) {
     }
 
     const { email, password, name, organization, position } = parsed.data
+
+    // Фильтр контента: имя / организация / должность с матом, оскорблениями
+    // или спамом не сохраняются — аккаунт не создаётся (userId ещё нет).
+    const rejected = await moderateFields({ userId: null, email, source: 'register' }, [
+      { field: 'full_name', label: 'Имя', value: name, kind: 'name' },
+      { field: 'organization', label: 'Организация', value: organization, kind: 'name' },
+      { field: 'position', label: 'Должность', value: position, kind: 'name' },
+    ])
+    if (rejected) return rejected
+
     const admin = createServiceClient()
 
     // Admin-controlled registration mode (fail-safe 'approval').

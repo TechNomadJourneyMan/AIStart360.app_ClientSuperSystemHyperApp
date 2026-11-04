@@ -69,6 +69,7 @@ function User360Inner({ id }: { id: string }) {
         title={<span className="flex flex-wrap items-center gap-2">{title}
           {u && <Badge tone={PROFILE_STATUS[u.profile.status]?.tone}>{PROFILE_STATUS[u.profile.status]?.label ?? u.profile.status}</Badge>}
           {u?.staffRole && <Badge tone="violet">{STAFF_ROLE_LABELS[u.staffRole]}</Badge>}
+          {u?.profile.is_test && <Badge tone="amber" title="Тестовый аккаунт (создан инструментами разработчика)">Тест</Badge>}
           {u?.impersonationActive && <Badge tone="amber">кабинет открыт админом</Badge>}
         </span>}
         description={u ? `${[u.profile.full_name, u.profile.email].filter(Boolean).join(' · ')} · активность ${fmtAgo(u.profile.last_seen_at)}` : undefined}

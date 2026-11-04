@@ -1,6 +1,7 @@
 'use client'
 
 import { WorkspaceShell } from '@/components/giga-panel/WorkspaceShell'
+import { ViewAsBanner } from '@/components/giga-panel/dev-tools/ViewAsBanner'
 import { SUPER_EXPERT_WORKSPACE } from '@/components/giga-panel/WorkspaceContext'
 
 /**
@@ -12,5 +13,11 @@ import { SUPER_EXPERT_WORKSPACE } from '@/components/giga-panel/WorkspaceContext
  * нет ни в меню, ни в правах роли, и каждый API-маршрут проверяет право сам.
  */
 export default function SuperExpertLayout({ children }: { children: React.ReactNode }) {
-  return <WorkspaceShell workspace={SUPER_EXPERT_WORKSPACE}>{children}</WorkspaceShell>
+  return (
+    <WorkspaceShell workspace={SUPER_EXPERT_WORKSPACE}>
+      {/* Режим «посмотреть как роль» (Dev-tools Super Admin): полоса с выходом. */}
+      <ViewAsBanner />
+      {children}
+    </WorkspaceShell>
+  )
 }

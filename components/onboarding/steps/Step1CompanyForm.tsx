@@ -9,6 +9,7 @@ import {
   BUSINESS_MODELS,
 } from '@/components/onboarding/constants/options'
 import { createClient } from '@/lib/supabase/client'
+import { contentHint } from '@/lib/moderation/hint'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step1CompanyFormProps {
@@ -43,6 +44,7 @@ export default function Step1CompanyForm({
   onChange,
   userId,
 }: Step1CompanyFormProps) {
+  const companyNameHint = contentHint(data.s1_company_name, 'name')
   const toggleRegion = (opt: string) => {
     const current = arr(data.s1_regions)
     onChange(
@@ -155,8 +157,11 @@ export default function Step1CompanyForm({
               value={str(data.s1_company_name)}
               onChange={(e) => onChange('s1_company_name', e.target.value)}
               placeholder="ООО «Компания»"
+              aria-describedby={companyNameHint ? 's1_company_name-hint' : undefined}
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
             />
+            {/* Фильтр контента: подсказка до сохранения (решает сервер). */}
+            {companyNameHint && <p id="s1_company_name-hint" role="alert" className="mt-1 text-xs text-error">{companyNameHint}</p>}
           </div>
           <div>
             <FieldLabel htmlFor="s1_industry">Отрасль</FieldLabel>

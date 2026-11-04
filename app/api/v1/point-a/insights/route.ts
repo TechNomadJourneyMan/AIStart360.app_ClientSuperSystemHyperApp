@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { moderateFields } from '@/lib/moderation/guard'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -164,6 +165,13 @@ export async function POST(req: NextRequest) {
   if (!staff && (body.type !== 'client' || !CLIENT_INITIAL_STATUS.has(body.status))) {
     return NextResponse.json({ ok: false, error: 'forbidden_insight_fields' }, { status: 403 })
   }
+
+  // Фильтр контента: вопрос к Точке А (и подпись автора) — свободный текст.
+  const rejected = await moderateFields({ userId, email: userData.user.email ?? null, source: 'insight' }, [
+    { field: 'question_text', label: 'Вопрос', value: body.question_text, kind: 'text' },
+    { field: 'author_name', label: 'Автор', value: staff ? body.author_name : undefined, kind: 'name' },
+  ])
+  if (rejected) return rejected
 
   const companyId = await resolveCompanyId(sb, userId)
 

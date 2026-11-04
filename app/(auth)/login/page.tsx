@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { postLoginPath } from '@/lib/role-landing'
+import { loginNoticeFrom } from '@/app/auth/notices'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -23,6 +24,8 @@ function LoginContent() {
   // Only honour internal `from` targets — never redirect off-origin.
   const rawFrom = searchParams.get('from')
   const from = safeInternalPath(rawFrom, '/dashboard')
+  // ?blocked=1 (middleware) and ?error=link_expired|link_invalid (/auth/verify).
+  const notice = loginNoticeFrom((k) => searchParams.get(k))
 
   useEffect(() => {
     if (user) {
@@ -234,6 +237,22 @@ function LoginContent() {
             </div>
           )}
           <div className="mb-6" />
+
+          {notice && !error && (
+            <div role="alert" className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
+              <span className="material-symbols-outlined text-error text-lg mt-0.5" aria-hidden>
+                {searchParams.get('blocked') === '1' ? 'block' : 'link_off'}
+              </span>
+              <div className="flex-1">
+                <p className="text-[13px] text-error font-medium">{notice.text}</p>
+                {notice.action && (
+                  <Link href={notice.action.href} className="mt-1 inline-block text-[12px] text-primary hover:underline">
+                    {notice.action.label}
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">

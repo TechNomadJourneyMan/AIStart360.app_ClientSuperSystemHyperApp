@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { checkRateLimitForRequest, isRateLimitedKey, rateLimitResponse } from '@/lib/rate-limit'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
+import { moderateFields } from '@/lib/moderation/guard'
 
 /**
  * POST /api/client/register
@@ -54,6 +55,13 @@ export async function POST(req: NextRequest) {
     if (await isRateLimitedKey(authUser.id, 'client-register', { max: 5, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
+
+    // Фильтр контента: имя и название компании проверяются до записи.
+    const rejected = await moderateFields({ userId: authUser.id, email: authUser.email ?? email, source: 'register' }, [
+      { field: 'full_name', label: 'Имя', value: name, kind: 'name' },
+      { field: 'company', label: 'Компания', value: company, kind: 'name' },
+    ])
+    if (rejected) return rejected
 
     // 1. Ensure profile exists (trigger on auth.users INSERT may have created
     //    it). Do NOT set status here — the handle_new_user trigger / column

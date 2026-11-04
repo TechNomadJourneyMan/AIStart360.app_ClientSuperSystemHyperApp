@@ -29,6 +29,9 @@ async function send(url: string, method: 'POST' | 'PATCH', body: unknown): Promi
   const json = (await res.json().catch(() => null)) as Envelope | null
   if (!res.ok || !json?.ok || !json.data) {
     if (res.status === 401) throw new Error('Сессия истекла — войдите заново')
+    // Фильтр контента: текст с матом / оскорблениями / спамом не сохраняется.
+    const rejected = json as { code?: string; error?: string } | null
+    if (res.status === 422 && rejected?.code === 'CONTENT_REJECTED' && rejected.error) throw new Error(rejected.error)
     if (res.status === 400) throw new Error('Проверьте текст: минимум 4 символа')
     throw new Error('Не удалось сохранить — попробуйте ещё раз')
   }

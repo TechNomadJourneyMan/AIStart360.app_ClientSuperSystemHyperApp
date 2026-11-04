@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { roleLandingPath } from '@/lib/role-landing'
 import { Logo } from '@/components/ui/Logo'
+import { contentHint } from '@/lib/moderation/hint'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -17,6 +18,9 @@ export default function RegisterPage() {
   const [agreeTerms, setAgreeTerms] = useState(false)
   const { register, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
+  // Фильтр контента: та же проверка, что на сервере, — подсказка до отправки.
+  const nameHint = useMemo(() => contentHint(name, 'name'), [name])
+  const organizationHint = useMemo(() => contentHint(organization, 'name'), [organization])
 
   useEffect(() => {
     if (user) {
@@ -40,6 +44,10 @@ export default function RegisterPage() {
       useAuthStore.setState({ error: 'Пароль должен быть не менее 8 символов' })
       return
     }
+    if (nameHint || organizationHint) {
+      useAuthStore.setState({ error: 'Имя или название компании содержат недопустимые слова (мат, оскорбления или спам). Исправьте и отправьте снова.' })
+      return
+    }
     try {
       // Self-registration is for clients only. AIStart360 employees get access
       // from a Super Admin in the GIGA panel (staff roles), not through a sign-up tab.
@@ -59,6 +67,11 @@ export default function RegisterPage() {
           })
           if (!res.ok) {
             console.warn('[register] /api/client/register returned', res.status, '— user created, admin request may be pending reconciliation')
+            // 422 — фильтр контента отклонил имя / компанию: показать причину.
+            if (res.status === 422) {
+              const j = await res.json().catch(() => null) as { error?: string } | null
+              if (j?.error) useAuthStore.setState({ error: j.error })
+            }
           }
         } catch (clientRegErr) {
           // Non-blocking: Supabase auth user is created, waiting-room will work.
@@ -154,8 +167,9 @@ export default function RegisterPage() {
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">person</span>
                 <input type="text" required value={name} onChange={(e) => setName(e.target.value)}
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-4 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
-                  placeholder="Иван Иванов" />
+                  placeholder="Иван Иванов" aria-invalid={!!nameHint} aria-describedby={nameHint ? 'register-name-hint' : undefined} />
               </div>
+              {nameHint && <p id="register-name-hint" role="alert" className="ml-1 text-[11px] text-error">{nameHint}</p>}
             </div>
 
             {/* Email */}
@@ -176,8 +190,9 @@ export default function RegisterPage() {
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">business</span>
                 <input type="text" required value={organization} onChange={(e) => setOrganization(e.target.value)}
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-4 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
-                  placeholder="ООО TechStart KZ" />
+                  placeholder="ООО TechStart KZ" aria-invalid={!!organizationHint} aria-describedby={organizationHint ? 'register-org-hint' : undefined} />
               </div>
+              {organizationHint && <p id="register-org-hint" role="alert" className="ml-1 text-[11px] text-error">{organizationHint}</p>}
             </div>
 
             {/* Password */}

@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
+import { PanelSwitchLinks } from './PanelSwitchLinks'
 import { DocumentUploadDialog } from '@/components/documents/DocumentUploadDialog'
 import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
 import type { UserRole } from '@/types'
@@ -292,6 +293,7 @@ export function Header() {
                   <p className="text-xs font-medium text-on-surface truncate">{user?.name}</p>
                   <p className="text-[10px] text-on-surface-variant truncate">{user?.email}</p>
                 </div>
+                <PanelSwitchLinks variant="menu" onNavigate={() => setShowUserMenu(false)} />
                 <Link href="/profile" onClick={() => setShowUserMenu(false)}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
                   <span className="material-symbols-outlined text-base">account_circle</span>

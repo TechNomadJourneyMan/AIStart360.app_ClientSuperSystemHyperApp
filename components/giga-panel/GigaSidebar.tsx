@@ -7,8 +7,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Bell, Bot, Filter, Wrench, Building2, ClipboardList, Coins, CopyCheck, Eye, FileBarChart, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
   Lightbulb, ListChecks, LogOut, Mail, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, Stamp,
-  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, type LucideIcon,
+  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, Home, Headset, type LucideIcon,
 } from 'lucide-react'
+import { MY_CABINET_HREF, panelLinksFor } from '@/lib/panel-links'
 import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
 import { useWorkspace } from './WorkspaceContext'
 import { createClient } from '@/lib/supabase/client'
@@ -71,6 +72,31 @@ function useCasesBadge(enabled: boolean): { open: number; overdue: number } | nu
   return v
 }
 
+export interface WorkspaceSwitchLink { href: string; label: string; Icon: LucideIcon }
+
+/**
+ * Переходы из рабочего кабинета: «Мой кабинет» (личный кабинет сотрудника) и
+ * другой кабинет персонала, если роль туда пускает (те же правила, что в
+ * middleware — lib/panel-links.ts).
+ *
+ * При impersonation (me.kind === 'staff_cookie') сессия в браузере — чужая,
+ * клиентская: «Мой кабинет» открыл бы кабинет клиента, поэтому его нет.
+ */
+export function useWorkspaceSwitchLinks(): WorkspaceSwitchLink[] {
+  const { me } = useStaff()
+  const { base } = useWorkspace()
+  if (!me) return []
+  const out: WorkspaceSwitchLink[] = []
+  if (me.kind === 'session') out.push({ href: MY_CABINET_HREF, label: 'Мой кабинет', Icon: Home })
+  // Доступ к кабинетам решает настоящая роль (middleware), а не режим
+  // «посмотреть как роль» из Dev-tools.
+  for (const l of panelLinksFor({ staffRole: me.realRole ?? me.role })) {
+    if (l.href === base || l.key === 'expert') continue
+    out.push({ href: l.href, label: l.label, Icon: l.key === 'giga' ? Shield : Headset })
+  }
+  return out
+}
+
 interface GigaSidebarProps { isOpen?: boolean; onClose?: () => void }
 
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
@@ -78,6 +104,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { me, can, loading } = useStaff()
   const { base, label, sublabel, nav, loginPath } = useWorkspace()
   const groups = loading ? [] : visibleNav(nav, can)
+  const switchLinks = useWorkspaceSwitchLinks()
   const activeHref = activeNavHref(groups, pathname)
   const badges = useNavBadges(groups, pathname)
 
@@ -179,6 +206,22 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
       </nav>
 
       <div className="px-3 pb-5">
+        {switchLinks.length > 0 && (
+          <ul className="mb-2 space-y-0.5" aria-label="Другие кабинеты">
+            {switchLinks.map(({ href, label: text, Icon }) => (
+              <li key={href}>
+                <Link
+                  href={href}
+                  onClick={onClose}
+                  className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-[13px] font-medium text-slate-400 transition-all hover:bg-white/[0.05] hover:text-slate-200"
+                >
+                  <Icon size={16} />
+                  <span className="min-w-0 flex-1 truncate">{text}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.03] px-3 py-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
             <Shield size={13} />

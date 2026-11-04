@@ -76,6 +76,16 @@ export async function GET(req: NextRequest) {
     rows = scoped.slice((page - 1) * pageSize, page * pageSize)
   }
 
+  // Признак тестового аккаунта (profiles.is_test, миграция 120) — отдельным
+  // терпимым запросом: пока колонки нет, список работает как раньше.
+  const testIds = new Set<string>()
+  if (rows.length) {
+    try {
+      const { data: tests, error: testErr } = await sb.from('profiles').select('id').in('id', rows.map((r) => r.id)).eq('is_test', true)
+      if (!testErr) for (const t of (tests ?? []) as Array<{ id: string }>) testIds.add(t.id)
+    } catch { /* колонки нет — без признака */ }
+  }
+
   const sensitive = hasPermission(guard.actor.role, 'users.sensitive')
   return NextResponse.json({
     ok: true,
@@ -85,6 +95,7 @@ export async function GET(req: NextRequest) {
       phone: sensitive ? r.phone : maskPhone(r.phone as string | null),
       gri_index: r.gri_index == null ? null : Number(r.gri_index),
       diag_score: r.diag_score == null ? null : Number(r.diag_score),
+      is_test: testIds.has(r.id),
     })),
     total,
     page,

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
+import { moderateFields } from '@/lib/moderation/guard'
 
 // Self-scoped profile read/write for the Settings › Профиль tab.
 // Mirrors the proven write pattern in app/api/expert/profile but WITHOUT the
@@ -56,6 +57,14 @@ export async function PATCH(request: Request) {
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ ok: false, error: 'no_fields' }, { status: 400 })
   }
+
+  // Фильтр контента: при мате / оскорблениях / спаме профиль не сохраняется.
+  const rejected = await moderateFields({ userId: user.id, email: user.email ?? null, source: 'profile' }, [
+    { field: 'full_name', label: 'Имя', value: parsed.data.full_name, kind: 'name' },
+    { field: 'position', label: 'Должность', value: parsed.data.position, kind: 'name' },
+    { field: 'organization', label: 'Организация', value: parsed.data.organization, kind: 'name' },
+  ])
+  if (rejected) return rejected
 
   try {
     const { data, error } = await supabase

@@ -149,6 +149,28 @@ async function recordAndNotify(ctx: ModerationContext, violations: FieldViolatio
   })
 }
 
+// Повторы одного и того же отказа (автосохранение анкеты шлёт текст каждые
+// несколько секунд) не пишутся в журнал заново: ключ — автор + источник +
+// поля + текст, окно 10 минут, в памяти инстанса.
+const RECENT_TTL_MS = 10 * 60_000
+const recentRejections = new Map<string, number>()
+
+function isRepeatRejection(ctx: ModerationContext, violations: readonly FieldViolation[]): boolean {
+  const now = Date.now()
+  if (recentRejections.size > 2000) {
+    for (const [k, at] of recentRejections) if (now - at > RECENT_TTL_MS) recentRejections.delete(k)
+  }
+  const key = [ctx.userId ?? ctx.email ?? 'anon', ctx.source, ...violations.map((v) => `${v.field}=${v.text}`)].join('\u0001')
+  const prev = recentRejections.get(key)
+  recentRejections.set(key, now)
+  return prev != null && now - prev < RECENT_TTL_MS
+}
+
+/** Только для тестов: сбросить память о недавних отказах. */
+export function resetRecentRejections(): void {
+  recentRejections.clear()
+}
+
 /**
  * Проверить поля; при нарушении — журнал + уведомление и готовый ответ 422.
  * null — всё чисто (или фильтр выключен), можно сохранять.
@@ -158,7 +180,7 @@ export async function moderateFields(ctx: ModerationContext, fields: readonly Mo
   const dict = await loadFilterDictionary()
   const violations = findViolations(fields, dict)
   if (!violations.length) return null
-  runInBackground('moderation-record', () => recordAndNotify(ctx, violations))
+  if (!isRepeatRejection(ctx, violations)) runInBackground('moderation-record', () => recordAndNotify(ctx, violations))
   return NextResponse.json({
     ok: false,
     code: CONTENT_REJECTED,

@@ -118,10 +118,14 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
         body: JSON.stringify({ full_name: `${form.firstName} ${form.lastName}`.trim(), position: form.position.trim(), organization: form.organization.trim(), phone: form.phone.trim() }),
       })
       const json = await res.json().catch(() => ({}))
+      // 422 CONTENT_REJECTED — фильтр контента: показать причину как есть.
+      if (json?.code === 'CONTENT_REJECTED' && typeof json.error === 'string') throw new Error(json.error)
       if (!res.ok || !json.ok) throw new Error()
       setBaseline(form)
       toast.success('Профиль сохранён')
-    } catch { toast.error('Не удалось сохранить профиль.') } finally { setSaving(false) }
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : 'Не удалось сохранить профиль.')
+    } finally { setSaving(false) }
   }
 
   return (

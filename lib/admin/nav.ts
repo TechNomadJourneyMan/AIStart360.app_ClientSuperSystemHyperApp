@@ -28,6 +28,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     // E-commerce integrations of client companies (W7, migration 105); changes need company.edit (checked by the API).
     { href: `${GIGA_BASE}/integrations`, label: 'Интеграции', icon: 'plug', permission: 'users.view' },
     { href: `${GIGA_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
+    // Rejected texts (мат / оскорбления / спам) + the editable dictionary (lib/moderation, migration 120).
+    { href: `${GIGA_BASE}/content-filter`, label: 'Фильтр контента', icon: 'filter', permission: 'moderation.content' },
     { href: `${GIGA_BASE}/leads`, label: 'Лиды', icon: 'sparkles', permission: 'leads.view' },
   ] },
   { label: 'Данные', items: [
@@ -53,10 +55,6 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/reports`, label: 'Отчёты', icon: 'reports', permission: 'agents.view' },
     { href: `${GIGA_BASE}/ai-review`, label: 'Проверка выводов ИИ', icon: 'review', permission: 'insights.moderate' },
     { href: `${GIGA_BASE}/moderation`, label: 'Модерация ИИ', icon: 'shieldcheck', permission: 'insights.moderate' },
-  ] },
-  { label: 'Модерация', items: [
-    // Rejected texts (мат / оскорбления / спам) + the editable dictionary (lib/moderation, migration 120).
-    { href: `${GIGA_BASE}/content-filter`, label: 'Фильтр контента', icon: 'filter', permission: 'moderation.content' },
   ] },
   { label: 'Платформа', items: [
     { href: `${GIGA_BASE}/content`, label: 'Контент и страницы', icon: 'file', permission: 'content.view' },

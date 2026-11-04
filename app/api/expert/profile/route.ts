@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { moderateFields } from '@/lib/moderation/guard'
 
 // Both handlers: approved expert/admin with the second factor where required
 // (resolveExpert); a refused caller gets the MFA code the UI acts on.
@@ -52,6 +53,13 @@ export async function PATCH(req: NextRequest) {
 
   if (Object.keys(update).length === 0)
     return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
+
+  // Фильтр контента: должность и имя эксперта видят клиенты.
+  const rejected = await moderateFields({ userId: auth.viewer.id, email: auth.viewer.email, source: 'expert_profile' }, [
+    { field: 'expert_title', label: 'Должность эксперта', value: update.expert_title, kind: 'name' },
+    { field: 'full_name', label: 'Имя', value: update.full_name, kind: 'name' },
+  ])
+  if (rejected) return rejected
 
   const { data, error } = await sb
     .from('profiles')

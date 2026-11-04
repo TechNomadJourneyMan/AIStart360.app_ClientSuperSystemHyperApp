@@ -18,6 +18,9 @@ const s = vi.hoisted(() => ({
   audits: [] as Array<Record<string, unknown>>,
   approvals: [] as Array<Record<string, unknown>>,
   dbTouched: 0,
+  /** Порядок шагов удаления: audit:<action>:<id>, rpc:preview|purge:<id>, storage:<bucket>. */
+  seq: [] as string[],
+  purgeFail: new Set<string>(),
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -25,7 +28,7 @@ vi.mock('@/lib/admin/giga-actor', async () => {
   return { requireGiga: makeRequireGiga(() => ({ id: s.actorId, kind: 'session', role: s.role as StaffRole, email: 'staff@x.io' })) }
 })
 vi.mock('@/lib/admin/audit', () => ({
-  recordAdminAction: async (_a: unknown, e: Record<string, unknown>) => { s.audits.push(e); return true },
+  recordAdminAction: async (_a: unknown, e: Record<string, unknown>) => { s.audits.push(e); s.seq.push(`audit:${e.action}:${e.targetUserId ?? ''}`); return true },
 }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/users/approval', () => ({
@@ -70,7 +73,13 @@ vi.mock('@/lib/supabase-service', () => ({
     s.dbTouched++
     return {
       from: (t: string) => query(t),
-      auth: { admin: { updateUserById: async (id: string) => { s.bans.push(id); return { error: null } } } },
+      auth: { admin: { updateUserById: async (id: string, attrs: { ban_duration?: string }) => { s.bans.push(attrs.ban_duration === 'none' ? `unban:${id}` : id); return { error: null } } } },
+      rpc: async (_fn: string, args: { p_user_id: string; p_dry_run: boolean }) => {
+        s.seq.push(`rpc:${args.p_dry_run ? 'preview' : 'purge'}:${args.p_user_id}`)
+        if (!args.p_dry_run && s.purgeFail.has(args.p_user_id)) return { data: null, error: { message: 'boom' } }
+        return { data: { found: true, counts: { documents: 1 }, storage: [{ bucket: 'documents', name: `${args.p_user_id}/a.pdf` }] }, error: null }
+      },
+      storage: { from: (bucket: string) => ({ remove: async () => { s.seq.push(`storage:${bucket}`); return { error: null } } }) },
     }
   },
 }))
@@ -101,6 +110,8 @@ beforeEach(() => {
   s.audits = []
   s.approvals = []
   s.dbTouched = 0
+  s.seq = []
+  s.purgeFail = new Set()
 })
 
 describe('POST /api/giga-admin/users/bulk — права на действие', () => {
@@ -186,5 +197,90 @@ describe('POST /api/giga-admin/users/bulk — ранг и частичный у�
     const ok = await (await post({ action: 'assign', ids: [C1], assigneeId: EXPERT })).json()
     expect(ok.results[0]).toMatchObject({ ok: true })
     expect(s.audits.some((a) => a.action === 'user.assigned' && a.targetUserId === C1)).toBe(true)
+  })
+})
+
+describe('POST /api/giga-admin/users/bulk — разблокировка', () => {
+  it('разблокирует только заблокированных, журнал до изменения', async () => {
+    s.profiles.find((p) => p.id === C1)!.status = 'blocked'
+    const body = await (await post({ action: 'unblock', ids: [C1, C2] })).json()
+    expect(body.results.find((r: { id: string }) => r.id === C1)).toMatchObject({ ok: true })
+    expect(body.results.find((r: { id: string }) => r.id === C2)).toMatchObject({ ok: false, skipped: true })
+    expect(s.updates.filter((u) => u.table === 'profiles').map((u) => u.id)).toEqual([C1])
+    expect(s.bans).toEqual([`unban:${C1}`])
+    expect(s.audits.some((a) => a.action === 'user.unblocked' && a.targetUserId === C1)).toBe(true)
+  })
+
+  it('право users.manage: support и SuperExpert — 403', async () => {
+    for (const role of ['support', 'super_expert', 'analyst']) {
+      s.role = role
+      expect((await post({ action: 'unblock', ids: [C1] })).status, role).toBe(403)
+    }
+    expect(s.dbTouched).toBe(0)
+  })
+})
+
+describe('POST /api/giga-admin/users/bulk — удаление навсегда (purge)', () => {
+  const SA = '66666666-6666-4666-8666-666666666666'
+  const purge = (ids: string[], extra: Record<string, unknown> = {}) =>
+    post({ action: 'purge', ids, confirm: 'УДАЛИТЬ', reason: 'чистка тестовых', ...extra })
+
+  beforeEach(() => {
+    s.role = 'super_admin'
+    s.profiles.push({ id: SA, role: 'super_admin', status: 'approved', tier: null })
+  })
+
+  it('Admin и остальные роли без users.delete — 403 до чтения данных', async () => {
+    for (const role of ['admin', 'crm_manager', 'super_expert', 'support']) {
+      s.role = role
+      expect((await purge([C1])).status, role).toBe(403)
+    }
+    expect(s.dbTouched).toBe(0)
+    expect(s.seq).toEqual([])
+  })
+
+  it('без слова «УДАЛИТЬ» или причины — 400, ничего не удалено', async () => {
+    expect((await purge([C1], { confirm: undefined })).status).toBe(400)
+    expect((await purge([C1], { confirm: 'удалить бы' })).status).toBe(400)
+    expect((await purge([C1], { reason: '' })).status).toBe(400)
+    expect(s.seq).toEqual([])
+  })
+
+  it('не больше 50 за раз', async () => {
+    const ids = Array.from({ length: 51 }, (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, '0')}`)
+    expect((await purge(ids)).status).toBe(400)
+    expect(s.dbTouched).toBe(0)
+  })
+
+  it('себя и Super Admin пропускает, остальных удаляет: журнал → транзакция → файлы', async () => {
+    s.profiles.push({ id: s.actorId, role: 'client', status: 'approved', tier: null })
+    const res = await purge([C1, SA, s.actorId])
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const byId = new Map(body.results.map((r: { id: string }) => [r.id, r]))
+    expect(byId.get(C1)).toMatchObject({ ok: true })
+    expect(byId.get(SA)).toMatchObject({ ok: false })
+    expect((byId.get(SA) as { error: string }).error).toMatch(/Super Admin/)
+    expect(byId.get(s.actorId)).toMatchObject({ ok: false, error: 'Нельзя удалить себя' })
+    expect(s.seq).toEqual([`rpc:preview:${C1}`, `audit:user.purged:${C1}`, `rpc:purge:${C1}`, 'storage:documents', 'audit:user.bulk_action:'])
+    const entry = s.audits.find((a) => a.action === 'user.purged')!
+    expect(entry.metadata).toMatchObject({ reason: 'чистка тестовых', bulk: true })
+    expect(s.audits.some((a) => a.action === 'user.bulk_action')).toBe(true)
+  })
+
+  it('каждый удаляемый — своя запись в журнале до своей транзакции; сбой одного не мешает другим', async () => {
+    s.purgeFail = new Set([C2])
+    const body = await (await purge([C1, C2])).json()
+    expect(body.results.find((r: { id: string }) => r.id === C1)).toMatchObject({ ok: true })
+    expect(body.results.find((r: { id: string }) => r.id === C2)).toMatchObject({ ok: false, error: 'Не удалось удалить' })
+    for (const id of [C1, C2]) {
+      expect(s.seq.indexOf(`audit:user.purged:${id}`)).toBeLessThan(s.seq.indexOf(`rpc:purge:${id}`))
+    }
+    expect(s.seq).toContain(`audit:user.purge_failed:${C2}`)
+  })
+
+  it('Super Admin может удалить сотрудников ниже себя (SuperExpert, Admin)', async () => {
+    const body = await (await purge([EXPERT, ADMIN2])).json()
+    expect(body.results.every((r: { ok: boolean }) => r.ok)).toBe(true)
   })
 })

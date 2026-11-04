@@ -22,6 +22,7 @@ import { evaluateGoal } from '@/lib/goals/evaluate'
 import { loadGoalsWithEvaluation, valuePeriod } from '@/lib/goals/current'
 import { upsertGoal } from '@/lib/goals/store'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { moderateFields } from '@/lib/moderation/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +66,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!parsed.success) return apiError('Неверный запрос', 400)
   const entry = getMetricById(parsed.data.metricId)
   if (!entry) return apiError('Неизвестная метрика', 400)
+
+  // Фильтр контента: подпись и заметка цели — свободный текст.
+  const rejected = await moderateFields({ userId: t.user.id, source: 'goal' }, [
+    { field: 'label', label: 'Название цели', value: parsed.data.label, kind: 'text' },
+    { field: 'note', label: 'Заметка к цели', value: parsed.data.note, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   const { companyId, role } = t.tenant
   try {

@@ -8,6 +8,7 @@ import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { e2eSeamEnabled } from '@/lib/admin/e2e-auth-seam-edge'
 import { canManageTarget, effectiveClientScope, hasPermission, isStaffRole, permissionsFor, type ClientScope, type Permission, type StaffRole } from '@/lib/admin/rbac'
+import { readViewAs, resolveViewAs, VIEW_AS_COOKIE_NAME } from '@/lib/devtools/view-as'
 
 /**
  * Actor resolution for /api/giga-admin/* routes (GIGA-CRM).
@@ -52,6 +53,13 @@ export interface GigaActor {
    * lib/admin/client-scope.ts на каждом маршруте с данными клиента.
    */
   clientScope: ClientScope
+  /**
+   * Set only while a Super Admin looks at the panel «как роль» (Dev-tools,
+   * lib/devtools/view-as.ts): `role` / `permissions` are then the viewed
+   * role's, `realRole` is 'super_admin' and `viewAs` the viewed role.
+   */
+  realRole?: StaffRole
+  viewAs?: StaffRole
 }
 
 interface StaffIdentity { role: StaffRole; clientScope: ClientScope }
@@ -125,7 +133,35 @@ interface GigaResolution {
   unavailable?: boolean
 }
 
-async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
+/**
+ * «Посмотреть как роль»: a Super Admin holding a valid view-as cookie bound to
+ * their own id gets the viewed role's permissions (downgrade only). Requests
+ * that need the real role (devtools.use — Dev-tools itself, leaving the mode)
+ * and everyone who is not super_admin are left untouched.
+ */
+async function applyViewAs(req: NextRequest, a: GigaActor, needed?: readonly Permission[]): Promise<GigaActor> {
+  if (a.role !== 'super_admin') return a
+  const token = req.cookies.get(VIEW_AS_COOKIE_NAME)?.value
+  if (!token) return a
+  const claims = await readViewAs(token).catch(() => null)
+  const role = resolveViewAs({ realRole: a.role, actorId: a.id, claims, needed })
+  if (!role) return a
+  return {
+    ...a,
+    role,
+    permissions: permissionsFor(role),
+    clientScope: effectiveClientScope(role, null),
+    realRole: a.role,
+    viewAs: role,
+  }
+}
+
+async function resolveGigaActor(req: NextRequest, needed?: readonly Permission[]): Promise<GigaResolution> {
+  const r = await resolveRealGigaActor(req)
+  return r.actor ? { ...r, actor: await applyViewAs(req, r.actor, needed) } : r
+}
+
+async function resolveRealGigaActor(req: NextRequest): Promise<GigaResolution> {
   // 0) Test-only E2E seam: `false` in production builds, so this branch and
   //    its module are never loaded there.
   if (e2eSeamEnabled()) {
@@ -238,7 +274,8 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
   if (!isSameOriginMutation(req)) {
     return { response: NextResponse.json({ ok: false, error: 'Cross-site request blocked' }, { status: 403 }) }
   }
-  const { actor: a, mfa, staff, unavailable } = await resolveGigaActor(req)
+  const needed = Array.isArray(permission) ? permission : [permission]
+  const { actor: a, mfa, staff, unavailable } = await resolveGigaActor(req, needed)
   if (!a && mfa) {
     return {
       staff: true,
@@ -255,7 +292,6 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
     return { staff: true, response: NextResponse.json({ ok: false, error: 'Не удалось проверить права' }, { status: 503 }) }
   }
   if (!a) return { staff, response: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }) }
-  const needed = Array.isArray(permission) ? permission : [permission]
   const missing = needed.filter((p) => !hasPermission(a.role, p))
   if (missing.length) {
     return {

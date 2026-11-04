@@ -48,3 +48,26 @@ describe('computeRiskFlags', () => {
     expect(r.flags).toContain('spam_terms')
   })
 })
+
+describe('computeRiskFlags — Unicode word boundaries (Cyrillic)', () => {
+  it('flags Cyrillic spam terms in name/org (\\b never matched Cyrillic)', () => {
+    expect(computeRiskFlags(candidate({ organization: 'Онлайн казино' })).flags).toContain('spam_terms')
+    expect(computeRiskFlags(candidate({ name: 'эскорт услуги' })).flags).toContain('spam_terms')
+  })
+
+  it('flags banned topics written in Cyrillic, including word forms', () => {
+    expect(computeRiskFlags(candidate({ aboutText: 'Продаём наркотики оптом' })).flags).toContain('banned_topic')
+    expect(computeRiskFlags(candidate({ aboutText: 'услуги: отмывание средств' })).flags).toContain('banned_topic')
+  })
+
+  it('does not match inside other words', () => {
+    expect(computeRiskFlags(candidate({ organization: 'Казиноград-Холдинг' })).flags).not.toContain('spam_terms')
+    expect(computeRiskFlags(candidate({ organization: 'Floans Ltd' })).flags).not.toContain('spam_terms')
+    expect(computeRiskFlags(candidate({ aboutText: 'Сеть аптек, контроль качества' })).flags).not.toContain('banned_topic')
+  })
+
+  it('still flags $$$ and earn-NNk spam', () => {
+    expect(computeRiskFlags(candidate({ name: 'Иван $$$' })).flags).toContain('spam_terms')
+    expect(computeRiskFlags(candidate({ organization: 'earn 10k per day' })).flags).toContain('spam_terms')
+  })
+})

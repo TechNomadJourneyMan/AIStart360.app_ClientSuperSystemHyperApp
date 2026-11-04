@@ -7,6 +7,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
 import type { EscalationTrigger } from '@/lib/assistant/types'
+import { moderateFields } from '@/lib/moderation/guard'
 
 /**
  * POST /api/v1/assistant/escalate
@@ -63,6 +64,12 @@ export async function POST(req: NextRequest) {
     typeof body.userMessage === 'string' && body.userMessage.trim()
       ? body.userMessage.trim()
       : undefined
+
+  // Фильтр контента: сообщение эксперту уходит в кейс и уведомления.
+  const rejected = await moderateFields({ userId: user.id, email: user.email ?? null, source: 'escalation' }, [
+    { field: 'userMessage', label: 'Сообщение эксперту', value: userMessage, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   try {
     const ctx = await buildAssistantContext(user.id, sb)

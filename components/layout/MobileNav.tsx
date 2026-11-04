@@ -8,6 +8,8 @@ import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
 import { getNavForRole } from '@/lib/navigation'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 import type { UserRole } from '@/types'
+import { hasGigaPanelAccess } from '@/lib/panel-links'
+import { PanelSwitchLinks } from './PanelSwitchLinks'
 
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
 const BOTTOM_TABS = [
@@ -82,7 +84,7 @@ export function MobileNav() {
   // FE-01/02: canonical lowercase role, default 'client' when missing.
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   const hiddenPaths = useHiddenSectionPaths()
-  const allowedNav = getNavForRole(role, { panelAccess: role === 'super_admin' || Boolean(user?.staffRole) }).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
+  const allowedNav = getNavForRole(role, { panelAccess: hasGigaPanelAccess({ role, staffRole: user?.staffRole, status: user?.status }) }).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
@@ -268,6 +270,9 @@ export function MobileNav() {
                 </span>
               )}
             </Link>
+
+            {/* Staff / experts only: the admin or expert panel */}
+            <PanelSwitchLinks variant="drawer" onNavigate={() => setDrawerOpen(false)} />
 
             {filteredDrawer.map((section) => (
               <div key={section.title}>

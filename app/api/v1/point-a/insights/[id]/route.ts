@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { isStaffRole } from '@/lib/api-identity'
+import { moderateFields } from '@/lib/moderation/guard'
 
 const ALLOWED_STATUS = [
   'pending_ai',
@@ -96,6 +97,13 @@ export async function PATCH(
   } else if (!staff && (body.answer_author_role !== undefined || body.answer_author_name !== undefined)) {
     return NextResponse.json({ ok: false, error: 'forbidden_author_role' }, { status: 403 })
   }
+
+  // Фильтр контента: ответ и формулировка вопроса — свободный текст.
+  const rejected = await moderateFields({ userId: userData.user.id, email: userData.user.email ?? null, source: 'insight' }, [
+    { field: 'answer_text', label: 'Ответ', value: body.answer_text, kind: 'text' },
+    { field: 'question_text', label: 'Вопрос', value: body.question_text, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   // Load existing row so we can decide whether to bump answered_at. RLS will
   // hide rows the caller can't see (returns null instead of error).

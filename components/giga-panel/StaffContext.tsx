@@ -13,18 +13,23 @@ export interface StaffMe {
   permissions: Permission[]
   /** 'assigned' — сотрудник видит только назначенных ему клиентов. */
   clientScope?: ClientScope
+  /** Настоящая роль (отличается от `role`, пока Super Admin смотрит панель «как роль»). */
+  realRole?: StaffRole
+  realRoleLabel?: string
+  /** Режим «посмотреть как роль» (Dev-tools): права и меню — этой роли. */
+  viewAs?: { role: StaffRole; label: string } | null
 }
 
-interface Ctx { me: StaffMe | null; loading: boolean; error: string | null; can: (p: Permission) => boolean }
+interface Ctx { me: StaffMe | null; loading: boolean; error: string | null; can: (p: Permission) => boolean; reload: () => void }
 
-const StaffCtx = createContext<Ctx>({ me: null, loading: true, error: null, can: () => false })
+const StaffCtx = createContext<Ctx>({ me: null, loading: true, error: null, can: () => false, reload: () => {} })
 
 export function StaffProvider({ children }: { children: ReactNode }) {
-  const { data, loading, error } = useGigaQuery<{ data: StaffMe }>('/api/giga-admin/me')
+  const { data, loading, error, reload } = useGigaQuery<{ data: StaffMe }>('/api/giga-admin/me')
   const me = data?.data ?? null
   const perms = new Set(me?.permissions ?? [])
   return (
-    <StaffCtx.Provider value={{ me, loading, error: error?.message ?? null, can: (p) => perms.has(p) }}>
+    <StaffCtx.Provider value={{ me, loading, error: error?.message ?? null, can: (p) => perms.has(p), reload: () => { void reload() } }}>
       {children}
     </StaffCtx.Provider>
   )

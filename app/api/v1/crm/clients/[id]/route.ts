@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateClient, type ClientStatus } from '@/lib/crm/client-validate'
+import { moderateFields } from '@/lib/moderation/guard'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -39,6 +40,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (Object.keys(parsed.value).length === 0) {
     return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 })
   }
+
+  const rejected = await moderateFields({ userId, email: userData.user.email ?? null, source: 'crm_client' }, [
+    { field: 'name', label: 'Имя клиента', value: parsed.value.name, kind: 'text' },
+    { field: 'note', label: 'Заметка о клиенте', value: parsed.value.note, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   // Текущее состояние (own) — нужно, чтобы понять, изменился ли статус.
   const { data: current, error: curErr } = await sb

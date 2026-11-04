@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { moderateFields } from '@/lib/moderation/guard'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -64,6 +65,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ ok: false, error: 'invalid kind' }, { status: 400 })
   }
   const comment = b.comment == null ? null : String(b.comment).trim().slice(0, COMMENT_MAX) || null
+
+  const rejected = await moderateFields({ userId, email: userData.user.email ?? null, source: 'crm_client' }, [
+    { field: 'interaction_comment', label: 'Комментарий к касанию', value: comment, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   // Клиент должен принадлежать пользователю.
   const { data: client, error: cErr } = await sb

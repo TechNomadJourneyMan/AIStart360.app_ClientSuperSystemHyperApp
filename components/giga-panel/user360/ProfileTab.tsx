@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Archive, Ban, KeyRound, LayoutGrid, RotateCcw, ShieldOff, Trash2, UserCog } from 'lucide-react'
+import { Archive, Ban, Check, KeyRound, LayoutGrid, Pencil, RotateCcw, ShieldOff, Trash2, UserCog, X } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, Field, GigaApiError, Panel, Select, Timeline, fmtAgo, fmtDateTime, gigaFetch, inputClass } from '../kit'
 import { AccessControls } from '../UserDetailPanel'
 import { UserSettingsModal } from '../UserSettingsModal'
@@ -27,6 +27,60 @@ const PURGE_COUNT_LABELS: Record<string, string> = {
   gri_assessments: 'прохождений GRI', diagnostics: 'диагностик', ai_conversations: 'ИИ-диалогов',
 }
 
+/** Имя в карточке с правкой на месте (PATCH /api/giga-admin/users/:id/profile). */
+function NameField({ userId, name, canEdit, onSaved }: { userId: string; name: string | null; canEdit: boolean; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(name ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const start = () => { setValue(name ?? ''); setEditing(true) }
+  const save = async () => {
+    const next = value.replace(/\s+/g, ' ').trim()
+    if (next.length < 2) { toast.error('Имя — от 2 символов'); return }
+    if (next === (name ?? '')) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await gigaFetch(`/api/giga-admin/users/${userId}/profile`, { method: 'PATCH', json: { full_name: next } })
+      toast.success('Имя изменено')
+      setEditing(false)
+      onSaved()
+    } catch (e) {
+      toast.error(e instanceof GigaApiError ? e.message : 'Имя не сохранено')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <span>{name || '—'}</span>
+        {canEdit && (
+          <button type="button" onClick={start} className="inline-flex items-center gap-1 text-[11px] text-blue-300 hover:text-blue-200" aria-label="Изменить имя">
+            <Pencil size={11} /> Изменить
+          </button>
+        )}
+      </span>
+    )
+  }
+  return (
+    <form className="flex flex-wrap items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); void save() }}>
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false) }}
+        className={`${inputClass} min-w-[12rem] flex-1`}
+        maxLength={160}
+        autoFocus
+        disabled={saving}
+        aria-label="Новое имя"
+      />
+      <Button type="submit" size="sm" variant="primary" icon={<Check size={12} />} loading={saving}>Сохранить</Button>
+      <Button type="button" size="sm" variant="ghost" icon={<X size={12} />} onClick={() => setEditing(false)} disabled={saving}>Отмена</Button>
+    </form>
+  )
+}
+
 export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile; onChanged: () => void; onPurged?: () => void }) {
   const p = data.profile
   const [pending, setPending] = useState<Pending>(null)
@@ -45,6 +99,7 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
   }
 
   const purge = async () => {
+    if (reason.trim().length < 3) { toast.error('Укажите причину удаления'); return }
     setBusy(true)
     try {
       const r = await gigaFetch<{ filesFailed: number }>(`/api/giga-admin/users/${p.id}/purge`, { method: 'POST', json: { confirmEmail: p.email, reason } })
@@ -75,13 +130,15 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
 
   const blocked = p.status === 'blocked'
   const archived = p.status === 'archived'
+  // Super Admin заблокировать нельзя (сервер ответит 403) — кнопку не показываем.
+  const targetIsSuper = p.role === 'super_admin' || data.staffRole === 'super_admin'
   const j = data.journey
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Panel title="Профиль" className="lg:col-span-2">
         <dl className="divide-y divide-white/[0.04]">
-          <Row label="Имя" value={p.full_name} />
+          <Row label="Имя" value={<NameField key={p.full_name ?? ''} userId={p.id} name={p.full_name} canEdit={data.can.manage} onSaved={onChanged} />} />
           <Row label="Email" value={p.email} />
           <Row label="Телефон" value={p.phone} />
           <Row label="Должность" value={p.position} />
@@ -113,7 +170,7 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
 
       <Panel title="Действия" description="Каждое действие записывается в журнал">
         <div className="flex flex-col gap-2">
-          {data.can.manage && !archived && (
+          {data.can.manage && !archived && (blocked || !targetIsSuper) && (
             blocked
               ? <Button variant="secondary" icon={<RotateCcw size={13} />} onClick={() => setPending('unblock')}>Разблокировать</Button>
               : <Button variant="danger" icon={<Ban size={13} />} onClick={() => setPending('block')}>Заблокировать</Button>
@@ -138,9 +195,12 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
         text="Вход будет закрыт немедленно: статус «заблокирован» и бан сессий. Данные сохраняются. Причина попадёт в журнал действий."
         confirmLabel="Заблокировать"
         loading={busy}
-        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: { reason } }), 'Пользователь заблокирован')}
+        onConfirm={() => {
+          if (reason.trim().length < 3) { toast.error('Укажите причину блокировки'); return }
+          void run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: { reason } }), 'Пользователь заблокирован')
+        }}
       >
-        <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} placeholder="Например: спам, нарушение правил" /></Field>
+        <Field label="Причина (обязательно)"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} placeholder="Например: спам, нарушение правил" /></Field>
       </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'unblock'}
@@ -199,7 +259,7 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
         loading={busy}
         onConfirm={purge}
       >
-        <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
+        <Field label="Причина (обязательно)"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
       </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'role'}

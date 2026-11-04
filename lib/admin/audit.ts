@@ -25,7 +25,7 @@ export interface AuditEntry {
  * 'telegram' — a linked staff member acting through the admin bot (lib/telegram/bots/admin).
  * 'system'   — no person: a scheduled job or a provider webhook (lib/payments/billing).
  */
-export type AuditActor = { id: string; kind: GigaActor['kind'] | 'telegram' | 'system' } & Partial<Pick<GigaActor, 'role' | 'email'>>
+export type AuditActor = { id: string; kind: GigaActor['kind'] | 'telegram' | 'system' } & Partial<Pick<GigaActor, 'role' | 'email' | 'realRole' | 'viewAs'>>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_JSON = 64 * 1024
@@ -57,7 +57,8 @@ export async function recordAdminAction(
   const row = {
     actor_id: actor.id,
     actor_kind: actor.kind,
-    actor_role: actor.role ?? null,
+    // «Посмотреть как роль» (dev-tools): в журнал пишется настоящая роль сотрудника.
+    actor_role: actor.realRole ?? actor.role ?? null,
     actor_email: actor.email ?? null,
     target_user_id: entry.targetUserId && UUID_RE.test(entry.targetUserId) ? entry.targetUserId : null,
     impersonation_session_id: entry.impersonationSessionId ?? null,
@@ -66,7 +67,7 @@ export async function recordAdminAction(
     entity_id: entry.entityId ?? null,
     old_value: clampJson(entry.oldValue),
     new_value: clampJson(entry.newValue),
-    metadata: (clampJson(entry.metadata ?? {}) as Record<string, unknown>) ?? {},
+    metadata: (clampJson(actor.viewAs ? { ...entry.metadata, view_as_role: actor.viewAs } : entry.metadata ?? {}) as Record<string, unknown>) ?? {},
     ip_address: ip,
     user_agent: ua,
   }

@@ -173,3 +173,58 @@ describe('ссылка из письма', () => {
     expect(r.status).toBe(200)
   })
 })
+
+describe('страница нового пароля и подтверждение ссылки', () => {
+  it('вошедший по ссылке восстановления видит форму, а не уводится в кабинет', async () => {
+    s.role = 'client'
+    const r = await get('/auth/reset-password')
+    expect(r.status).toBe(200)
+    expect(loc(r)).toBe('')
+  })
+
+  it('то же для персонала и приглашённого сотрудника', async () => {
+    s.role = 'client'
+    s.staffRow = { role: 'super_expert' }
+    expect((await get('/auth/reset-password')).status).toBe(200)
+    s.role = 'super_admin'
+    s.staffRow = null
+    expect((await get('/auth/reset-password')).status).toBe(200)
+  })
+
+  it('без сессии страница тоже открывается (сама скажет, что ссылка устарела)', async () => {
+    s.user = null
+    expect((await get('/auth/reset-password')).status).toBe(200)
+  })
+
+  it('с включённой 2FA пароль задать можно, но остальной кабинет по-прежнему за 2FA', async () => {
+    s.user = { id: 'u1', user_metadata: { mfa_totp: true } }
+    expect((await get('/auth/reset-password')).status).toBe(200)
+    expect(loc(await get('/client/home'))).toContain('/2fa')
+  })
+
+  it('прочие страницы входа по-прежнему уводят вошедшего в кабинет', async () => {
+    s.role = 'client'
+    expect(loc(await get('/login'))).toMatch(/\/dashboard$/)
+    expect(loc(await get('/forgot-password'))).toMatch(/\/dashboard$/)
+  })
+
+  it('/auth/confirm открыт и гостю, и вошедшему', async () => {
+    s.user = null
+    expect((await get('/auth/confirm?token_hash=abc&type=recovery')).status).toBe(200)
+    s.user = { id: 'u1', user_metadata: {} }
+    expect((await get('/auth/confirm?token_hash=abc&type=recovery')).status).toBe(200)
+  })
+})
+
+describe('«Мой кабинет» для персонала', () => {
+  it('super_admin и сотрудник со staff_roles открывают /client/home без возврата в панель', async () => {
+    s.role = 'super_admin'
+    expect((await get('/client/home')).status).toBe(200)
+    s.role = 'client'
+    s.staffRow = { role: 'admin' }
+    expect((await get('/client/home')).status).toBe(200)
+    s.role = 'expert'
+    s.staffRow = null
+    expect((await get('/client/home')).status).toBe(200)
+  })
+})

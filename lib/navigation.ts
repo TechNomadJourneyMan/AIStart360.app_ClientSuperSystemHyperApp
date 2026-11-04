@@ -52,17 +52,22 @@ export const SECONDARY_NAV: NavItem[] = [
   { label: 'Психопрофиль', href: '/profile/psych',icon: 'psychology',        roles: CLIENT_OK },
   // User management and registration requests live in the GIGA panel (the old
   // /users and /admin screens were removed).
-  // Shown only with panel access (super_admin or a staff_roles row): a legacy
-  // profiles.role 'admin' without one would bounce off the panel gate.
-  { label: 'Пользователи', href: '/admin-giga-panel/users',    icon: 'manage_accounts',      roles: STAFF_ROLES, panel: true },
-  { label: 'Заявки',       href: '/admin-giga-panel/requests', icon: 'admin_panel_settings', roles: STAFF_ROLES, panel: true },
+  // Gated ONLY by panel access (lib/panel-links.ts hasGigaPanelAccess), not by
+  // profiles.role: staff granted through staff_roles usually keep
+  // profiles.role 'client', while a legacy profiles.role 'admin' without a
+  // staff_roles row would bounce off the panel gate.
+  { label: 'Пользователи', href: '/admin-giga-panel/users',    icon: 'manage_accounts',      roles: CLIENT_OK, panel: true },
+  { label: 'Заявки',       href: '/admin-giga-panel/requests', icon: 'admin_panel_settings', roles: CLIENT_OK, panel: true },
 ]
 
 // Legacy flat list (for backward compat)
 export const NAV_ITEMS: NavItem[] = [...PRIMARY_NAV, ...SECONDARY_NAV]
 
 export interface NavAccess {
-  /** super_admin or a staff_roles member — may open the GIGA panel. */
+  /**
+   * May open the GIGA panel — compute with hasGigaPanelAccess (lib/panel-links.ts).
+   * When omitted only profiles.role 'super_admin' counts.
+   */
   panelAccess?: boolean
 }
 

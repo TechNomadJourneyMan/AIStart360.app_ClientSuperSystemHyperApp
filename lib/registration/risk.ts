@@ -15,8 +15,12 @@ const DISPOSABLE_DOMAINS = new Set([
   'throwawaymail.com', 'maildrop.cc', 'fakeinbox.com', 'dispostable.com',
 ])
 
-const SPAM_TERMS = /\b(free\s*crypto|casino|viagra|loan[s]?|forex|betting|porn|escort|\$\$\$|earn\s+\$?\d+k)\b/i
-const BANNED_TOPICS = /\b(weapon[s]?|наркотик|drugs|counterfeit|hacking\s+service|отмыв)/i
+// Границы слова — Unicode-aware: `\b` в JS понимает только [A-Za-z0-9_], поэтому
+// для кириллицы он не срабатывал никогда (как в lib/omnichannel/guardrails.ts).
+// `\$\$\$` стоит отдельно: у символов нет «буквенной» границы.
+const SPAM_TERMS = /(?:(?<![\p{L}\p{N}_])(?:free\s*crypto|casino|viagra|loans?|forex|betting|porn|escort|казино|порно|эскорт|earn\s+\$?\d+k)(?![\p{L}\p{N}_])|\$\$\$)/iu
+// Запрещённые темы — совпадение с началом слова («наркотики», «отмывание»).
+const BANNED_TOPICS = /(?<![\p{L}\p{N}_])(?:weapons?|наркотик|drugs|counterfeit|hacking\s+service|отмыв)/iu
 
 export interface RegistrationCandidate {
   email: string

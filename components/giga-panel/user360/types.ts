@@ -6,6 +6,8 @@ export interface User360Profile {
     id: string; email: string | null; full_name: string | null; role: string; status: string; organization: string | null
     position: string | null; phone: string | null; tier: string | null; feature_flags: Record<string, boolean> | null
     vertical: string | null; widget_config: unknown; created_at: string; approved_at: string | null; last_seen_at: string | null; avatar_url: string | null
+    /** Тестовый аккаунт (dev-tools, миграция 120); false, если колонки ещё нет. */
+    is_test?: boolean
   }
   staffRole: StaffRole | null
   company: { id: string; name: string; industry: string | null; business_model: string | null; employee_count: number | null; regions: string[] | null } | null

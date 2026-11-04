@@ -25,6 +25,8 @@ interface UserRow {
   gri_index: number | null; gri_runs: number; gri_draft: boolean; diag_score: number | null; staff_role: StaffRole | null
   /** Кто ведёт клиента (user_assignments, миграция 088). */
   assignee_id?: string | null
+  /** Тестовый аккаунт (dev-tools, миграция 120). */
+  is_test?: boolean
 }
 interface StaffRef { id: string; name: string; roleLabel: string }
 
@@ -157,6 +159,7 @@ function UsersInner() {
           <Badge>{PROFILE_ROLE[u.role] ?? u.role}</Badge>
           {u.staff_role && <Badge tone="violet">{STAFF_ROLE_LABELS[u.staff_role]}</Badge>}
           {u.tier === 'pro' && <Badge tone="blue">Pro</Badge>}
+          {u.is_test && <Badge tone="amber" title="Тестовый аккаунт (создан инструментами разработчика)">Тест</Badge>}
         </div>
       ),
     },
@@ -250,7 +253,7 @@ function UsersInner() {
       </Panel>
 
       <UsersBulkBar
-        users={chosen.map((u) => ({ id: u.id, label: u.company_name || u.full_name || u.email || u.id, status: u.status, staffRole: u.staff_role, surveySteps: u.survey_steps }))}
+        users={chosen.map((u) => ({ id: u.id, label: u.company_name || u.full_name || u.email || u.id, email: u.email, status: u.status, staffRole: u.staff_role, surveySteps: u.survey_steps, isTest: !!u.is_test }))}
         staff={staff.data?.data ?? []}
         remindable={remindChosen.length}
         onRemind={canRemind ? () => setRemindOpen(true) : undefined}

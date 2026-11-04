@@ -27,6 +27,8 @@ import { activeImpersonation } from '@/lib/impersonation/server'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { moderateFields } from '@/lib/moderation/guard'
+import { surveyModerationFields } from '@/lib/moderation/survey-fields'
 
 // GET /api/v1/onboarding/survey — the caller's own survey answers (session user).
 // SECURITY (audit 2026-07-02): identity is derived from the Supabase session,
@@ -102,6 +104,15 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(targetUserId, 'survey-save', { max: 120, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
   }
+
+  // Фильтр контента: свободные текстовые ответы (не числа и не выбор из
+  // списка) с матом / оскорблениями / спамом не сохраняются — весь запрос
+  // отклоняется, чтобы не записать часть ответов молча.
+  const rejected = await moderateFields(
+    { userId: targetUserId, source: 'survey' },
+    surveyModerationFields(Object.fromEntries(Object.entries(answers).filter(([k]) => isWritableSurveyKey(k)))),
+  )
+  if (rejected) return rejected
 
   // SECURITY: the company is resolved from the target user, never taken from
   // the body — a client could otherwise attach another tenant's company id.

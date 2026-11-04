@@ -25,10 +25,20 @@ const bodySchema = z.object({
   next: z.string().max(200).optional(),
 })
 
-const OK = NextResponse.json({
+// A fresh Response per request: a body stream can be sent only once, so one
+// module-level instance would break every request after the first.
+const ok = () => NextResponse.json({
   ok: true,
   message: 'Если аккаунт с таким адресом существует, мы отправили письмо со ссылкой для входа.',
 })
+
+/** Текст ошибки провайдера без адресов и ссылок (в ссылке — одноразовый токен). */
+function errorText(e: unknown): string {
+  if (!e) return 'unknown'
+  if (typeof e === 'string') return e.slice(0, 200)
+  const m = (e as { message?: unknown }).message
+  return typeof m === 'string' ? m.slice(0, 200) : 'unknown'
+}
 
 export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
@@ -53,15 +63,22 @@ export async function POST(req: NextRequest) {
       email,
     })
     const tokenHash = data?.properties?.hashed_token
-    // Нет такого пользователя — отвечаем так же, как при успехе.
-    if (error || !tokenHash) return OK
+    // Нет такого пользователя — отвечаем так же, как при успехе. Прочие сбои
+    // (ключ, сеть) пишем в журнал, но наружу ответ тот же.
+    if (error || !tokenHash) {
+      const status = (error as { status?: number } | null)?.status
+      if (error && status !== 404 && status !== 422) {
+        console.error(`[auth/email-link] generateLink failed (${purpose}): ${errorText(error)}`)
+      }
+      return ok()
+    }
 
     const url = new URL('/auth/verify', getSiteUrl())
     url.searchParams.set('token_hash', tokenHash)
     url.searchParams.set('type', purpose === 'recovery' ? 'recovery' : 'magiclink')
     url.searchParams.set('next', next)
 
-    await sendNotificationEmail({
+    const sent = await sendNotificationEmail({
       to: email,
       subject: purpose === 'recovery' ? 'Восстановление пароля — AIStart360' : 'Вход в AIStart360',
       title: purpose === 'recovery' ? 'Задайте новый пароль' : 'Вход по ссылке',
@@ -71,9 +88,15 @@ export async function POST(req: NextRequest) {
       ctaLabel: purpose === 'recovery' ? 'Задать новый пароль' : 'Войти в кабинет',
       ctaUrl: url.toString(),
     })
-    return OK
+    // Resend не бросает, а возвращает { error } — без этой проверки письмо
+    // «уходило» молча и человек ждал его впустую.
+    const sendError = (sent as { error?: unknown } | null | undefined)?.error
+    if (sendError) {
+      console.error(`[auth/email-link] email delivery failed (${purpose}): ${errorText(sendError)}`)
+    }
+    return ok()
   } catch (e) {
-    console.error('[auth/email-link]', e instanceof Error ? e.message : e)
-    return OK
+    console.error(`[auth/email-link] failed (${purpose}): ${errorText(e)}`)
+    return ok()
   }
 }

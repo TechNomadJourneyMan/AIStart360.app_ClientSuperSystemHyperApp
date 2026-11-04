@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateClient, CLIENT_STATUSES } from '@/lib/crm/client-validate'
+import { moderateFields } from '@/lib/moderation/guard'
 
 const MAX_CLIENTS = 500
 
@@ -53,6 +54,12 @@ export async function POST(request: NextRequest) {
 
   const parsed = validateClient(body)
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
+
+  const rejected = await moderateFields({ userId: userData.user.id, email: userData.user.email ?? null, source: 'crm_client' }, [
+    { field: 'name', label: 'Имя клиента', value: parsed.value.name, kind: 'text' },
+    { field: 'note', label: 'Заметка о клиенте', value: parsed.value.note, kind: 'text' },
+  ])
+  if (rejected) return rejected
 
   const value = { ...parsed.value }
   if (value.source == null) value.source = 'manual'

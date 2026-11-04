@@ -11,6 +11,7 @@ import { blockedSectionFor, loadEdgeSections } from '@/lib/platform/sections-edg
 import { edgeSettings } from '@/lib/settings/edge'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { roleLandingPath } from '@/lib/role-landing'
+import { SUPER_EXPERT_PANEL_ROLES } from '@/lib/panel-links'
 import { E2E_SEAM_COOKIE_NAME, verifyE2eSeamEdge } from '@/lib/admin/e2e-auth-seam-edge'
 
 const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
@@ -65,6 +66,13 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
   isJourneyPublicDemoEnabled()
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
+/**
+ * Страница нового пароля открывается и С сессией, и без неё: ссылка из письма
+ * (/auth/confirm → POST /auth/verify) приводит сюда уже вошедшего человека, и
+ * общее правило «вошедшего — со страниц входа в кабинет» уводило его прочь,
+ * так и не показав форму. Без сессии страница сама скажет, что ссылка устарела.
+ */
+const RESET_PASSWORD_PATH = '/auth/reset-password'
 
 const VALID_ROLES = ['admin', 'expert', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
@@ -73,8 +81,8 @@ const GIGA_PANEL_PATH = '/admin-giga-panel'
 const GIGA_LOGIN_PATH = '/giga-login'
 const SUPER_EXPERT_PATH = '/super-expert'
 const SUPER_EXPERT_LOGIN_PATH = '/super-expert/login'
-/** Роли персонала, которым открыт кабинет SuperExpert (см. lib/admin/rbac.ts). */
-const SUPER_EXPERT_ROLES = new Set(['super_admin', 'admin', 'super_expert', 'crm_manager'])
+/** Роли персонала, которым открыт кабинет SuperExpert (общие с lib/panel-links.ts). */
+const SUPER_EXPERT_ROLES = new Set(SUPER_EXPERT_PANEL_ROLES)
 
 const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b', '/simulator',
@@ -227,9 +235,12 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     pathname.startsWith('/terms') ||
     pathname.startsWith('/privacy') ||
     pathname === '/maintenance' ||
-    // Ссылка из нашего письма: токен обменивается на сессию в самом маршруте,
-    // поэтому пропускаем его до всех проверок — и для гостя, и для вошедшего.
+    // Ссылка из нашего письма: GET /auth/verify лишь ведёт на страницу
+    // подтверждения /auth/confirm, а токен меняется на сессию только по
+    // нажатию кнопки (POST /auth/verify). Оба адреса пропускаем до всех
+    // проверок — и для гостя, и для вошедшего.
     pathname === '/auth/verify' ||
+    pathname === '/auth/confirm' ||
     // Public read-only shared report links (/r/<token>) — no auth required.
     pathname === '/r' ||
     pathname.startsWith('/r/') ||
@@ -403,6 +414,15 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
         return NextResponse.redirect(url)
       }
     }
+    return response
+  }
+
+  // Новый пароль: пускаем и вошедшего (ссылка восстановления/приглашения как
+  // раз создаёт сессию). Владение почтой доказано письмом, поэтому шаг 2FA
+  // здесь не требуется; остальные страницы по-прежнему за 2FA (ниже).
+  // Администратор, управляющий чужим кабинетом, пароль клиента менять не может.
+  if (matchesRoute(pathname, RESET_PASSWORD_PATH)) {
+    if (impersonating) return redirectKeepingCookies(response, new URL('/client/home', request.url))
     return response
   }
 
