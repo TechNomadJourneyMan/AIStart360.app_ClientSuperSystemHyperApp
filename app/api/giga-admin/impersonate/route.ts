@@ -1,11 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 import { createServerClient } from '@/lib/supabase-server'
 
-function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
-}
 
 /**
  * POST /api/giga-admin/impersonate
@@ -13,7 +11,7 @@ function isSuperAdmin(req: NextRequest): boolean {
  * Admin opens the link in a new tab to see the platform as the client.
  */
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

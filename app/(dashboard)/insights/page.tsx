@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { createServerClient } from '@/lib/supabase-server'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { MarketEmptyState } from '@/components/intelligence/MarketEmptyState'
 
 export const metadata: Metadata = { title: 'Инсайты' }
 
@@ -29,8 +30,9 @@ const INSIGHT_CARDS = [
 ]
 
 export default async function InsightsPage() {
-  const session = await auth()
-  const data = getDashboardData(session?.user?.email)
+  const sb = createServerClient()
+  const { data: { user } } = await sb.auth.getUser()
+  const data = getDashboardData(user?.email)
 
   const [reportCount, avgScoreRes] = await Promise.all([
     prisma.griReport.count(),
@@ -74,7 +76,8 @@ export default async function InsightsPage() {
         </div>
       </section>
 
-      {/* Key Insight Cards */}
+      {/* Key Insight Cards — demo showcase only */}
+      {data.demo && (
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {INSIGHT_CARDS.map((card) => (
           <div key={card.title} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:bg-surface-container transition-colors cursor-pointer group">
@@ -95,13 +98,14 @@ export default async function InsightsPage() {
           </div>
         ))}
       </section>
+      )}
 
       {/* Signal Feed */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
           <div>
             <h2 className="font-headline text-lg font-bold text-on-surface">Все сигналы</h2>
-            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} активных событий в Choco Ecosystem</p>
+            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} активных событий</p>
           </div>
           <div className="hidden lg:flex gap-1.5">
             {['Все', 'Рынок', 'Финансы', 'Регуляторика', 'Конкуренты'].map((f, i) => (
@@ -112,6 +116,9 @@ export default async function InsightsPage() {
           </div>
         </div>
 
+        {data.SIGNALS.length === 0 ? (
+          <MarketEmptyState title="Сигналов пока нет" hint="Лента рыночных и финансовых сигналов появится после загрузки данных компании и подключения источников." />
+        ) : (
         <div className="grid grid-cols-1 gap-3">
           {data.SIGNALS.map((signal) => {
             const colors = PRIORITY_COLORS[signal.priority as keyof typeof PRIORITY_COLORS] ?? PRIORITY_COLORS.low
@@ -156,6 +163,7 @@ export default async function InsightsPage() {
             )
           })}
         </div>
+        )}
       </section>
     </div>
   )

@@ -1,11 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 import { createServerClient } from '@/lib/supabase-server'
 
-function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
-}
 
 /**
  * PATCH /api/giga-admin/requests/:id
@@ -13,7 +11,7 @@ function isSuperAdmin(req: NextRequest): boolean {
  * Uses Supabase directly. Hardened: tries multiple paths to update profile status.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -1,13 +1,11 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import { isPrivilegedViewer } from '@/lib/expert-auth'
 
-function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
-}
 
 /**
  * GET /api/giga-admin/requests/[id]/survey
@@ -19,8 +17,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   // Read access: super_admin cookie OR Supabase session with expert/admin role
-  const cookieRole = req.cookies.get('aistart360_role')?.value ?? null
-  if (!(await isPrivilegedViewer(cookieRole))) {
+  if (!(await isPrivilegedViewer(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -110,7 +107,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

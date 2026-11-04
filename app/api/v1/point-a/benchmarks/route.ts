@@ -117,7 +117,6 @@ export async function GET(req: NextRequest) {
     const url = req.nextUrl
     const industry = url.searchParams.get('industry')
     const stage = url.searchParams.get('stage')
-    const explicitUserId = url.searchParams.get('user_id')
 
     const benchmark = findBenchmark(industry, stage)
 
@@ -136,11 +135,8 @@ export async function GET(req: NextRequest) {
 
     const supabase = createServerClient()
 
-    let userId: string | null = explicitUserId
-    if (!userId) {
-      const { data: auth } = await supabase.auth.getUser()
-      userId = auth?.user?.id ?? null
-    }
+    const { data: auth } = await supabase.auth.getUser()
+    const userId: string | null = auth?.user?.id ?? null
 
     let comparison: ComparisonPayload | null = null
     if (userId) {

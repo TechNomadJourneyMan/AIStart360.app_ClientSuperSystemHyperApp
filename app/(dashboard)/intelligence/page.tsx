@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { createServerClient } from '@/lib/supabase-server'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { MarketEmptyState } from '@/components/intelligence/MarketEmptyState'
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
@@ -15,8 +16,9 @@ const priorityConfig = {
 }
 
 export default async function IntelligencePage() {
-  const session = await auth()
-  const data = getDashboardData(session?.user?.email)
+  const sb = createServerClient()
+  const { data: { user } } = await sb.auth.getUser()
+  const data = getDashboardData(user?.email)
 
   const [auditEvents, clientCount] = await Promise.all([
     prisma.auditLog.count(),
@@ -29,7 +31,7 @@ export default async function IntelligencePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
-          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности Choco Ecosystem</p>
+          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности рынка и индустрии</p>
         </div>
         <div className="flex items-center gap-3 bg-surface-container-low px-4 py-2 rounded-xl border border-white/[0.04]">
           <span className="status-dot-online after:animate-ping after:absolute after:inset-0 after:rounded-full after:bg-primary/50" />
@@ -42,7 +44,7 @@ export default async function IntelligencePage() {
         {[
           { label: 'События аудита', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
           { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
-          { label: 'AI Инсайты', value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
+          { label: 'AI Инсайты', value: String(data.SIGNALS.length), icon: 'auto_awesome', color: 'text-tertiary-container' },
           { label: 'Статус систем', value: 'Active', icon: 'cloud_done', color: 'text-success' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
@@ -72,6 +74,9 @@ export default async function IntelligencePage() {
       </div>
 
       {/* Signal Feed */}
+      {data.SIGNALS.length === 0 ? (
+        <MarketEmptyState title="Сигналов пока нет" hint="Лента рыночных сигналов и рисков появится после загрузки данных компании и подключения источников." />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {data.SIGNALS.map((signal) => {
           const cfg = priorityConfig[signal.priority as keyof typeof priorityConfig] ?? priorityConfig.low
@@ -118,6 +123,7 @@ export default async function IntelligencePage() {
           )
         })}
       </div>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isPrivilegedViewer } from '@/lib/expert-auth'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { calculatePointB } from '@/lib/point-b-engine'
 
@@ -9,7 +10,10 @@ import { calculatePointB } from '@/lib/point-b-engine'
  * GET /api/clients/:id/analysis/point-b
  * Calculates Point B for a specific client using Supabase data.
  */
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await isPrivilegedViewer(req))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const sb = createServerClient()
 

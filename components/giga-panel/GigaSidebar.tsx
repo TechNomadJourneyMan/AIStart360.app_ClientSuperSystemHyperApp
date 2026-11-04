@@ -30,9 +30,18 @@ interface GigaSidebarProps {
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
 
-  useEffect(() => {
-    document.cookie = 'aistart360_role=super_admin; path=/; max-age=604800; SameSite=Lax'
-  })
+  // NOTE: super-admin access is now a SIGNED httpOnly cookie set server-side by
+  // /api/giga-admin/auth. The old client-side cookie re-pin (which made the
+  // grant forgeable) has been removed.
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/giga-admin/logout', { method: 'POST' })
+    } catch {
+      /* best-effort */
+    }
+    window.location.href = '/giga-login'
+  }
 
   // Close mobile drawer on escape
   useEffect(() => {
@@ -149,7 +158,11 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
             <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
             <p className="text-[10px] text-slate-600 truncate">Системный доступ</p>
           </div>
-          <button className="text-slate-600 hover:text-red-400 transition-colors">
+          <button
+            onClick={handleLogout}
+            aria-label="Выйти из ГИГА-Панели"
+            className="text-slate-600 hover:text-red-400 transition-colors"
+          >
             <LogOut size={14} />
           </button>
         </div>

@@ -1,11 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 import { createServerClient } from '@/lib/supabase-server'
 
-function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
-}
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -19,7 +17,7 @@ function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' 
  * Reads directly from Supabase: profiles (clients) + admin_requests fallback.
  */
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden: super_admin cookie missing' }, { status: 403 })
   }
 
@@ -104,7 +102,7 @@ export async function GET(req: NextRequest) {
  * Creates a new request via Supabase.
  */
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUserId, INTERNAL_HEADERS } from '@/lib/api-auth'
 
 /**
  * POST /api/v1/diagnostics/retry-ai
@@ -30,6 +31,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
     }
 
+    // Only the owner of the diagnostic may retry its AI analysis.
+    const sessionUserId = await getSessionUserId()
+    if (!sessionUserId || sessionUserId !== diag.user_id) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Reset status
     await sb
       .from('diagnostics')
@@ -40,7 +47,7 @@ export async function POST(req: NextRequest) {
     const baseUrl = req.nextUrl.origin
     fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: INTERNAL_HEADERS,
       body: JSON.stringify({ diagnostic_id, user_id: diag.user_id }),
     }).catch(err => console.error('[retry-ai] Failed to fire ai-analyze:', err))
 

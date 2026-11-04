@@ -1,12 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 import { prisma } from '@/lib/db'
 
-function isSuperAdmin(req: NextRequest): boolean {
-  const role = req.cookies.get('aistart360_role')?.value
-  return role === 'super_admin'
-}
 
 /**
  * POST /api/giga-admin/users/:id/block
@@ -22,7 +19,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

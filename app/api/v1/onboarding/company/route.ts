@@ -2,14 +2,16 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUserId } from '@/lib/api-auth'
 
 // POST /api/v1/onboarding/company — upsert company record
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { user_id, ...companyData } = body
+    const user_id = await getSessionUserId()
+    if (!user_id) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    if (!user_id) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+    const companyData = { ...(await req.json()) } as Record<string, unknown>
+    delete companyData.user_id
 
     const sb = createServerClient()
 
@@ -47,9 +49,9 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/v1/onboarding/company?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+export async function GET() {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   const sb = createServerClient()
   const { data, error } = await sb

@@ -3,11 +3,12 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
+import { getSessionUserId } from '@/lib/api-auth'
 
 // GET /api/v1/onboarding/survey?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+export async function GET() {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   const sb = createServerClient()
   const { data, error } = await sb
@@ -40,11 +41,14 @@ export async function GET(req: NextRequest) {
 // Body: { user_id, company_id?, step, answers: Record<string, { value: unknown }> }
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { user_id, company_id, step, answers } = body
+    const user_id = await getSessionUserId()
+    if (!user_id) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    if (!user_id || !step || !answers) {
-      return NextResponse.json({ ok: false, error: 'user_id, step, answers required' }, { status: 400 })
+    const body = await req.json()
+    const { company_id, step, answers } = body
+
+    if (!step || !answers) {
+      return NextResponse.json({ ok: false, error: 'step, answers required' }, { status: 400 })
     }
 
     const sb = createServerClient()

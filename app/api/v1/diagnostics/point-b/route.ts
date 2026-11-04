@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUserId } from '@/lib/api-auth'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { calculatePointB } from '@/lib/point-b-engine'
 
@@ -9,9 +10,9 @@ import { calculatePointB } from '@/lib/point-b-engine'
  * GET /api/v1/diagnostics/point-b?user_id=xxx
  * Returns Point B calculation based on latest Point A + survey answers.
  */
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+export async function GET() {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   try {
     const sb = createServerClient()

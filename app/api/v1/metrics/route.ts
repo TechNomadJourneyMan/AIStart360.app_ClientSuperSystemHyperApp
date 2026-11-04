@@ -1,123 +1,65 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/db'
+import { getSessionUserId } from '@/lib/api-auth'
 import type { MetricSummary } from '@/types/metrics'
 
-const MOCK_METRICS: MetricSummary[] = [
-  {
-    id: 'revenue',
-    label: 'Доход',
-    displayValue: '₸84.2М',
-    rawValue: 84.2,
-    unit: '₸М',
-    unitPosition: 'before',
-    trend: 12.4,
-    trendAbs: 9.3,
-    trendDirection: 'up',
-    trendLabel: 'vs прошлый квартал',
-    icon: 'payments',
-    color: '#6effc0',
-    goalCategory: 'revenue',
-    isDefault: true,
-    isRemovable: false,
-  },
-  {
-    id: 'margin',
-    label: 'Маржа',
-    displayValue: '34.2%',
-    rawValue: 34.2,
-    unit: '%',
-    unitPosition: 'after',
-    trend: 2.4,
-    trendAbs: 2.4,
-    trendDirection: 'up',
-    trendLabel: 'чистая маржинальность',
-    icon: 'percent',
-    color: '#bcc7de',
-    goalCategory: 'margin',
-    isDefault: true,
-    isRemovable: false,
-  },
-  {
-    id: 'clients',
-    label: 'Клиенты',
-    displayValue: '48',
-    rawValue: 48,
-    unit: '',
-    unitPosition: 'after',
-    trend: 14.3,
-    trendAbs: 6,
-    trendDirection: 'up',
-    trendLabel: 'активных клиентов',
-    icon: 'groups',
-    color: '#ffbd60',
-    goalCategory: 'clients',
-    isDefault: true,
-    isRemovable: false,
-  },
-  {
-    id: 'avg_check',
-    label: 'Средний чек',
-    displayValue: '₸1.75М',
-    rawValue: 1.75,
-    unit: '₸М',
-    unitPosition: 'before',
-    trend: 0,
-    trendAbs: 0,
-    trendDirection: 'flat',
-    trendLabel: 'на клиента',
-    icon: 'receipt_long',
-    color: '#c9a6ff',
-    goalCategory: 'avg_check',
-    isDefault: true,
-    isRemovable: false,
-  },
-]
+/**
+ * GET /api/v1/metrics — legacy KPI summary for the Point A hero cards.
+ *
+ * Source of truth is the org-scoped `financial_snapshots` table (Prisma).
+ * IMPORTANT: this used to return a hardcoded MOCK_METRICS payload (₸84.2М …)
+ * whenever the table was empty — which is the normal case for Supabase
+ * tenants — and queried snapshots with NO tenant filter (cross-tenant leak).
+ * Both are removed. Real values come from the resolver (/api/v1/metrics/catalog);
+ * here we return an honest empty summary when there is no org-scoped snapshot,
+ * and the hero degrades to its "Нет данных" tiles.
+ */
+export async function GET() {
+  const [supaUserId, session] = await Promise.all([
+    getSessionUserId(),
+    auth().catch(() => null),
+  ])
+  const orgId = (session?.user as { orgId?: string } | undefined)?.orgId
 
-export async function GET(req: Request) {
-  // Accept (and echo) the standard Point A filter triplet so the cache key
-  // varies per filter. Server-side filtering of the snapshot rows is a TODO
-  // until financial_snapshots carries the product/manager dimensions.
-  const { searchParams } = new URL(req.url)
-  const _period = searchParams.get('period')
-  const _product = searchParams.get('product')
-  const _manager = searchParams.get('manager')
-  void _period; void _product; void _manager
+  // Must be authenticated through either auth source.
+  if (!supaUserId && !orgId) {
+    return NextResponse.json({ source: 'unauthorized', data: [] as MetricSummary[] }, { status: 401 })
+  }
+
+  // No org → no legacy snapshot to read. Honest empty (NOT mock, NOT cross-tenant).
+  if (!orgId) {
+    return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] })
+  }
+
   try {
-    const supabase = createServerClient()
+    const snapshots = await prisma.financialSnapshot.findMany({
+      where: { orgId },
+      orderBy: { recordedAt: 'desc' },
+      take: 2,
+    })
 
-    // Get the two most recent snapshots for trend calculation
-    const { data: snapshots, error } = await supabase
-      .from('financial_snapshots')
-      .select('*')
-      .order('recordedAt', { ascending: false })
-      .limit(2)
-
-    if (error || !snapshots || snapshots.length === 0) {
-      return NextResponse.json({ source: 'mock', data: MOCK_METRICS })
+    if (snapshots.length === 0) {
+      return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] })
     }
 
-    const snap = snapshots[0] as Record<string, any>
-    const prev = (snapshots[1] ?? null) as Record<string, any> | null
+    const snap = snapshots[0]
+    const prev = snapshots[1] ?? null
 
-    // Support both camelCase (Prisma) and snake_case (Supabase native) column names
-    const revenue = Number(snap.revenueKzt ?? snap.revenue_kzt ?? 0)
-    const margin = Number(snap.marginPct ?? snap.margin_pct ?? 0)
-    const clients = Number(snap.clientsCount ?? snap.clients_count ?? 0)
-    const expenses = Number(snap.expensesKzt ?? snap.expenses_kzt ?? 0)
-    const revenueChange = Number(snap.revenueChange ?? snap.revenue_change ?? 0)
-    const marginChange = Number(snap.marginChange ?? snap.margin_change ?? 0)
-    const clientsChange = Number(snap.clientsChange ?? snap.clients_change ?? 0)
+    const revenue = snap.revenueKzt
+    const margin = snap.marginPct
+    const clients = snap.clientsCount
+    const revenueChange = snap.revenueChange
+    const marginChange = snap.marginChange
+    const clientsChange = snap.clientsChange
 
-    const prevRevenue = prev ? Number(prev.revenueKzt ?? prev.revenue_kzt ?? 0) : 0
-    const prevClients = prev ? Number(prev.clientsCount ?? prev.clients_count ?? 0) : 0
+    const prevRevenue = prev?.revenueKzt ?? 0
+    const prevClients = prev?.clientsCount ?? 0
 
-    const avgCheck = clients > 0 ? revenue / clients : 1.75
+    const avgCheck = clients > 0 ? revenue / clients : 0
     const prevAvgCheck = prev && prevClients > 0 ? prevRevenue / prevClients : null
-
     const avgCheckChange =
-      prevAvgCheck && prevAvgCheck > 0
-        ? ((avgCheck - prevAvgCheck) / prevAvgCheck) * 100
-        : 0
+      prevAvgCheck && prevAvgCheck > 0 ? ((avgCheck - prevAvgCheck) / prevAvgCheck) * 100 : 0
 
     const metrics: MetricSummary[] = [
       {
@@ -180,8 +122,7 @@ export async function GET(req: Request) {
         unitPosition: 'before',
         trend: avgCheckChange,
         trendAbs: avgCheck - (prevAvgCheck ?? avgCheck),
-        trendDirection:
-          avgCheckChange > 0.1 ? 'up' : avgCheckChange < -0.1 ? 'down' : 'flat',
+        trendDirection: avgCheckChange > 0.1 ? 'up' : avgCheckChange < -0.1 ? 'down' : 'flat',
         trendLabel: 'на клиента',
         icon: 'receipt_long',
         color: '#c9a6ff',
@@ -191,9 +132,10 @@ export async function GET(req: Request) {
       },
     ]
 
-    return NextResponse.json({ source: 'supabase', data: metrics })
+    return NextResponse.json({ source: 'db', data: metrics })
   } catch (err) {
     console.error('[api/v1/metrics]', err)
-    return NextResponse.json({ source: 'error', data: MOCK_METRICS }, { status: 200 })
+    // Honest empty on error — never fabricated data.
+    return NextResponse.json({ source: 'error', data: [] as MetricSummary[] }, { status: 200 })
   }
 }

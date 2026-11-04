@@ -13,8 +13,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   // Read access: super_admin cookie OR Supabase session with expert/admin role
-  const cookieRole = req.cookies.get('aistart360_role')?.value ?? null
-  if (!(await isPrivilegedViewer(cookieRole))) {
+  if (!(await isPrivilegedViewer(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

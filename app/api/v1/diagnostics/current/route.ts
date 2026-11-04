@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUserId } from '@/lib/api-auth'
 
-// GET /api/v1/diagnostics/current?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+// GET /api/v1/diagnostics/current — current user's latest diagnostic (auth required)
+export async function GET() {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   const sb = createServerClient()
   const { data, error } = await sb

@@ -3,6 +3,7 @@ export const maxDuration = 60 // Allow up to 60s for AI generation
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { hasInternalToken } from '@/lib/api-auth'
 import { analyzePointA } from '@/lib/ai/point-a-analyzer'
 import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
@@ -16,6 +17,9 @@ import type { Company } from '@/types/onboarding'
  * Body: { diagnostic_id, user_id }
  */
 export async function POST(req: NextRequest) {
+  if (!hasInternalToken(req)) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { diagnostic_id, user_id } = await req.json()
     if (!diagnostic_id || !user_id) {

@@ -4,7 +4,9 @@
 // - expert role gate (reads viewer's role via service role, no session DB hit)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isGigaAdmin } from '@/lib/giga-auth'
 
 export const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 
@@ -64,8 +66,8 @@ export async function requireExpert(): Promise<ExpertViewer | null> {
  * (super_admin cookie) and Expert portal (Supabase session with expert role).
  * Returns true if the caller has EITHER credential.
  */
-export async function isPrivilegedViewer(cookieValue: string | null): Promise<boolean> {
-  if (cookieValue === 'super_admin') return true
+export async function isPrivilegedViewer(req: NextRequest): Promise<boolean> {
+  if (await isGigaAdmin(req)) return true
   const viewer = await requireExpert()
   return viewer !== null
 }

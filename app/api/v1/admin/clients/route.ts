@@ -2,9 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isAdmin } from '@/lib/api-auth'
 
 // POST /api/v1/admin/clients — admin-side client creation (bypasses email confirmation)
 export async function POST(req: Request) {
+    if (!(await isAdmin())) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+    }
   try {
     const sb = createServerClient()
     const { email, password, fullName, companyName, industry, stage } = await req.json()
@@ -71,6 +75,9 @@ export interface AdminClientRow {
 
 // GET /api/v1/admin/clients
 export async function GET() {
+    if (!(await isAdmin())) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+    }
   try {
     const sb = createServerClient()
 

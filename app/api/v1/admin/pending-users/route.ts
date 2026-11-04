@@ -2,9 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isAdmin } from '@/lib/api-auth'
 
 // GET /api/v1/admin/pending-users
 export async function GET() {
+    if (!(await isAdmin())) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+    }
   const sb = createServerClient()
 
   const { data, error } = await sb

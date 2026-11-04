@@ -4,13 +4,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { notifyAdmins } from '@/lib/notifications'
+import { getSessionUserId, INTERNAL_HEADERS } from '@/lib/api-auth'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id }
 export async function POST(req: NextRequest) {
   try {
-    const { user_id } = await req.json()
-    if (!user_id) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+    const user_id = await getSessionUserId()
+    if (!user_id) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
     const sb = createServerClient()
 
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
       const baseUrl = req.nextUrl.origin
       fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: INTERNAL_HEADERS,
         body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
       }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
     }

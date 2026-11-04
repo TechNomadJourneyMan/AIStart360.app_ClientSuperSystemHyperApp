@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isAdmin } from '@/lib/api-auth'
 
 export async function POST(req: Request) {
+    if (!(await isAdmin())) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+    }
   try {
     const sb = createServerClient()
     const { userId, status } = await req.json()

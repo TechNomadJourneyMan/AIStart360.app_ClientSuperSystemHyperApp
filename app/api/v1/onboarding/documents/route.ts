@@ -4,11 +4,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { inngest } from '@/lib/inngest'
+import { getSessionUserId } from '@/lib/api-auth'
 
 // GET /api/v1/onboarding/documents?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+export async function GET() {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   const sb = createServerClient()
   const { data, error } = await sb
@@ -24,10 +25,13 @@ export async function GET(req: NextRequest) {
 // POST /api/v1/onboarding/documents — register document after upload
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { user_id, company_id, file_name, file_url, file_size, mime_type, doc_type, period_quarter, period_year } = body
+    const user_id = await getSessionUserId()
+    if (!user_id) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    if (!user_id || !file_name || !file_url || !doc_type) {
+    const body = await req.json()
+    const { company_id, file_name, file_url, file_size, mime_type, doc_type, period_quarter, period_year } = body
+
+    if (!file_name || !file_url || !doc_type) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 })
     }
 

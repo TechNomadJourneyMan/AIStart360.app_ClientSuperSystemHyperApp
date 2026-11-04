@@ -7,24 +7,17 @@ export async function GET() {
     const session = await auth()
     const orgId = (session?.user as any)?.orgId
 
-    // Try to get real financial snapshot for the org
-    let snapshot = null
-    if (orgId) {
-      snapshot = await prisma.financialSnapshot.findFirst({
-        where: { orgId },
-        orderBy: { recordedAt: 'desc' },
-      })
-    }
-
-    // If no org-specific snapshot, get the latest one across all orgs
-    if (!snapshot) {
-      snapshot = await prisma.financialSnapshot.findFirst({
-        orderBy: { recordedAt: 'desc' },
-      })
-    }
+    // Org-scoped snapshot ONLY. No cross-tenant fallback (that leaked one
+    // org's financials to another). No org / no snapshot → honest empty.
+    const snapshot = orgId
+      ? await prisma.financialSnapshot.findFirst({
+          where: { orgId },
+          orderBy: { recordedAt: 'desc' },
+        })
+      : null
 
     if (!snapshot) {
-      return NextResponse.json({ source: 'mock', data: null })
+      return NextResponse.json({ source: 'empty', data: null })
     }
 
     return NextResponse.json({

@@ -2,10 +2,11 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { createServerClient } from '@/lib/supabase-server'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { MarketEmptyState } from '@/components/intelligence/MarketEmptyState'
 
 export const metadata: Metadata = { 
   title: 'Конкурентный Анализ | AIStart360',
@@ -19,8 +20,9 @@ const THREAT_LEVELS = {
 }
 
 export default async function CompetitorsPage() {
-  const session = await auth()
-  const data = getDashboardData(session?.user?.email)
+  const sb = createServerClient()
+  const { data: { user } } = await sb.auth.getUser()
+  const data = getDashboardData(user?.email)
   
   const [clientsCount, orgsCount] = await Promise.all([
     prisma.client.count(),
@@ -50,6 +52,7 @@ export default async function CompetitorsPage() {
             Мониторинг рыночных долей, технологического превосходства и стратегий роста основных игроков индустрии на Q1 2026.
           </p>
 
+          {data.demo && (
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-3 bg-surface/50 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/[0.05]">
               <span className="material-symbols-outlined text-primary">sensors</span>
@@ -66,10 +69,12 @@ export default async function CompetitorsPage() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </section>
 
-      {/* Snapshot Stats */}
+      {/* Snapshot Stats — demo showcase only (fabricated ARR / aggression index) */}
+      {data.demo && (
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
           { label: 'Мониторинг', value: data.COMPETITORS.length, icon: 'visibility', trend: '+2', color: 'text-primary' },
@@ -94,6 +99,7 @@ export default async function CompetitorsPage() {
           </Card>
         ))}
       </section>
+      )}
 
       {/* Competitor Grid */}
       <section>
@@ -108,6 +114,9 @@ export default async function CompetitorsPage() {
           </button>
         </div>
 
+        {data.COMPETITORS.length === 0 ? (
+          <MarketEmptyState title="Конкуренты не добавлены" hint="Конкурентный анализ появится после настройки рынка и загрузки данных о компании и её окружении." icon="groups" />
+        ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {data.COMPETITORS.map((comp) => {
             const threat = THREAT_LEVELS[comp.threat as keyof typeof THREAT_LEVELS] || THREAT_LEVELS.low
@@ -208,6 +217,7 @@ export default async function CompetitorsPage() {
             )
           })}
         </div>
+        )}
       </section>
 
       {/* Landscape Map (Premium Version) */}
