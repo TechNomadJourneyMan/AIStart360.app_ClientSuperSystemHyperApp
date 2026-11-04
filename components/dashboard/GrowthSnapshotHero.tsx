@@ -118,7 +118,7 @@ export default function GrowthSnapshotHero() {
         (mJ?.ok && Array.isArray(mJ.data?.items) ? mJ.data.items : []) ?? []
       const revenueItem = items.find((it) => {
         const v = typeof it.value === 'number' ? it.value : null
-        return v !== null && v > 0
+        return v !== null
       })
       if (revenueItem && typeof revenueItem.value === 'number') {
         setLiveMonthlyRevenue(revenueItem.value)
@@ -164,31 +164,28 @@ export default function GrowthSnapshotHero() {
   const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
   const monthlyPlan3y = target3y ? Math.round(target3y / 36) : null
 
-  // Prefer real revenue from the metrics resolver (documents/anketa);
-  // fall back to a 58%-of-plan heuristic only if the resolver hasn't
-  // produced a value yet. `isLiveRevenue` controls the "≈" prefix.
-  const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  // Revenue is shown only when it comes from the metrics resolver
+  // (documents/anketa). We never infer the current fact from a target.
+  const isLiveRevenue = liveMonthlyRevenue !== null
   const currentMonthly: number | null = isLiveRevenue
     ? Math.round(liveMonthlyRevenue!)
-    : monthlyPlan12
-      ? Math.round(monthlyPlan12 * 0.58)
-      : null
-  const runRate12 = currentMonthly ? currentMonthly * 12 : null
+    : null
+  const runRate12 = currentMonthly !== null ? currentMonthly * 12 : null
 
-  const progressToPlan = currentMonthly && monthlyPlan12
+  const progressToPlan = currentMonthly !== null && monthlyPlan12
     ? pct(currentMonthly, monthlyPlan12)
     : 0
-  const progressTo12 = currentMonthly && monthlyPlan12
+  const progressTo12 = currentMonthly !== null && monthlyPlan12
     ? pct(currentMonthly, monthlyPlan12)
     : 0
-  const progressTo3y = currentMonthly && monthlyPlan3y
+  const progressTo3y = currentMonthly !== null && monthlyPlan3y
     ? pct(currentMonthly, monthlyPlan3y)
     : 0
 
-  const gap12 = currentMonthly && monthlyPlan12
+  const gap12 = currentMonthly !== null && monthlyPlan12
     ? currentMonthly - monthlyPlan12
     : null
-  const gap3y = currentMonthly && monthlyPlan3y
+  const gap3y = currentMonthly !== null && monthlyPlan3y
     ? currentMonthly - monthlyPlan3y
     : null
 
@@ -327,7 +324,7 @@ export default function GrowthSnapshotHero() {
             </span>
           </div>
 
-          {!hasGoalsSet ? (
+          {!hasGoalsSet && !isLiveRevenue ? (
             <div className="bg-surface-container rounded-xl border border-dashed border-white/10 p-6 text-center">
               <span className="material-symbols-outlined text-3xl text-primary/30 block mb-2">
                 target
@@ -369,15 +366,10 @@ export default function GrowthSnapshotHero() {
                       )}
                     </div>
                     <p className="font-mono text-5xl font-black text-on-surface leading-[0.95] tracking-tight">
-                      {currentMonthly
-                        ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}`
-                        : '—'}
+                      {currentMonthly !== null ? formatKztCompact(currentMonthly) : '—'}
                     </p>
                     <p className="text-[11px] text-on-surface-variant font-mono mt-2">
                       выручка / мес · {monthLabel}
-                      {!isLiveRevenue && currentMonthly && (
-                        <span className="text-amber-400/80"> · оценка</span>
-                      )}
                     </p>
                   </div>
                   <div className="flex-1 min-w-[180px]">
@@ -666,7 +658,7 @@ export default function GrowthSnapshotHero() {
 
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
               <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
-                Текущая позиция: {currentMonthly ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}/мес` : '—'}
+                Текущая позиция: {currentMonthly !== null ? `${formatKztCompact(currentMonthly)}/мес` : '—'}
                 {' · '}Прогноз год: {runRate12 ? `~${formatKztCompact(runRate12)}` : '—'}
                 {' · '}Разрыв до 1Y: {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : '—'}
               </p>

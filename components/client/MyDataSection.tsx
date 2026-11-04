@@ -34,10 +34,12 @@ interface Props {
 
 const PARSE_LABEL: Record<string, { label: string; color: string }> = {
   queued:     { label: 'в очереди', color: 'text-on-surface-variant' },
+  processing: { label: 'обработка', color: 'text-amber-400' },
   parsing:    { label: 'обработка', color: 'text-amber-400' },
   ai_extract: { label: 'AI извлечение', color: 'text-violet-400' },
   parsed:     { label: 'готово',  color: 'text-primary' },
   failed:     { label: 'ошибка',  color: 'text-error' },
+  error:      { label: 'ошибка',  color: 'text-error' },
 }
 
 function fmtBytes(n?: number) {

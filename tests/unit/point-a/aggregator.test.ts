@@ -37,6 +37,7 @@ function makeMockSupabase(canned: CannedResponses = {}) {
     const builder: Record<string, unknown> = {
       select: vi.fn(() => builder),
       eq: vi.fn(() => builder),
+      in: vi.fn(() => builder),
       order: vi.fn(() => builder),
       limit: vi.fn(() => builder),
       maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),

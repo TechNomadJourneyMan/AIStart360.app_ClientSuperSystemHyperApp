@@ -5,12 +5,9 @@
  *
  * Data source: `useMetrics()` -> `/api/v1/metrics`.
  *
- * The live endpoint (`/api/v1/metrics`) currently returns 4 default metrics
- * (revenue, clients, avg_check, margin). LTV / CAC / no_show_rate are NOT yet
- * exposed by the resolver/catalog, so their tiles render an explicit EMPTY
- * state ("—" + «нет данных») — never a fabricated value. The moment the
- * endpoint starts returning an id matching the tile's `apiId`, the tile
- * hydrates automatically (see `byId.get(spec.apiId)` below).
+ * The live endpoint exposes only numeric facts projected from the canonical
+ * Point A model. If a comparable previous period is absent, the current value
+ * remains visible but its zone stays unknown instead of implying a trend.
  *
  * The <MetricModal/> is mounted globally on the page; this component opens
  * it by calling `setActiveMetric(id)` on the metrics Zustand store.
@@ -87,18 +84,21 @@ function pct(n: number, digits = 0): string {
   return `${sign}${n.toFixed(digits)}%`
 }
 
+function comparableTrend(m: MetricSummary | undefined): boolean {
+  return Boolean(m && !m.trendLabel.includes('сравнение недоступно'))
+}
+
 const HERO_METRICS: HeroSpec[] = [
   {
     apiId: 'revenue', // matches /api/v1/metrics summary
-    label: 'Выручка / мес',
+    label: 'Выручка',
     icon: 'payments',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
+      if (!comparableTrend(m)) return { zone: 'unknown', deltaLabel: 'текущее значение' }
       const trend = m.trend ?? 0
-      // Heuristic: trend == "к плану" approximation
-      // red <90% of plan, yellow 90-100%, green >100%
       const zone: Zone = trend < -10 ? 'red' : trend < 0 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: `${pct(trend, 1)} к прошлому периоду` }
     },
   },
   {
@@ -107,9 +107,10 @@ const HERO_METRICS: HeroSpec[] = [
     icon: 'groups',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
+      if (!comparableTrend(m)) return { zone: 'unknown', deltaLabel: 'текущее значение' }
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: `${pct(trend, 1)} к прошлому периоду` }
     },
   },
   {
@@ -118,14 +119,13 @@ const HERO_METRICS: HeroSpec[] = [
     icon: 'receipt_long',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
+      if (!comparableTrend(m)) return { zone: 'unknown', deltaLabel: 'текущее значение' }
       const trend = m.trend ?? 0
-      // Per spec: always yellow heuristic, show ±% к плану
-      return { zone: 'yellow', deltaLabel: `${pct(trend, 1)} к плану` }
+      const zone: Zone = trend < -10 ? 'red' : trend < 0 ? 'yellow' : 'green'
+      return { zone, deltaLabel: `${pct(trend, 1)} к прошлому периоду` }
     },
   },
   {
-    // TODO: replace `no_show_rate` once the resolver exposes a real id
-    // (e.g. `biz.sales.protsent_neyavok` or similar).
     apiId: 'no_show_rate',
     label: 'Процент неявок',
     icon: 'event_busy',
@@ -135,12 +135,15 @@ const HERO_METRICS: HeroSpec[] = [
       if (!m) return { zone: 'unknown', deltaLabel: 'нет данных' }
       const v = m.rawValue ?? 0
       const zone: Zone = v > 15 ? 'red' : v >= 8 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(m.trend ?? 0, 1)} к плану` }
+      return {
+        zone,
+        deltaLabel: comparableTrend(m)
+          ? `${pct(m.trend ?? 0, 1)} к прошлому периоду`
+          : 'по фактическому уровню',
+      }
     },
   },
   {
-    // TODO: replace `ltv` once the resolver exposes a real id and a
-    // companion `ltv_cac_ratio` so we can colour-code properly.
     apiId: 'ltv',
     label: 'LTV (доход с клиента)',
     icon: 'savings',
@@ -148,15 +151,13 @@ const HERO_METRICS: HeroSpec[] = [
     todo: true,
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: 'нет данных' }
-      // Without ltv/cac ratio in scope here, fall back to trend heuristic.
+      if (!comparableTrend(m)) return { zone: 'unknown', deltaLabel: 'текущее значение' }
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : trend < -5 ? 'red' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: `${pct(trend, 1)} к прошлому периоду` }
     },
   },
   {
-    // TODO: replace `cac` once the resolver exposes a real id and a
-    // companion payback-period metric.
     apiId: 'cac',
     label: 'CAC (цена нового)',
     icon: 'shopping_cart_checkout',
@@ -164,10 +165,10 @@ const HERO_METRICS: HeroSpec[] = [
     todo: true,
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: 'нет данных' }
+      if (!comparableTrend(m)) return { zone: 'unknown', deltaLabel: 'текущее значение' }
       const trend = m.trend ?? 0
-      // For CAC, falling cost is good — flip the sign meaning.
       const zone: Zone = trend < 0 ? 'green' : trend < 5 ? 'yellow' : 'red'
-      return { zone, deltaLabel: `${pct(trend, 1)} к плану` }
+      return { zone, deltaLabel: `${pct(trend, 1)} к прошлому периоду` }
     },
   },
 ]
@@ -268,7 +269,7 @@ export default function KeyMetricsHero() {
     [params],
   )
   const periodLabel = PERIOD_LABEL[filters.period ?? 'month'] ?? 'Месяц'
-  const { data: live = [], isLoading } = useMetrics(filters)
+  const { data: live = [], isLoading, isError, error, refetch } = useMetrics(filters)
   const setActiveMetric = useMetricsStore((s) => s.setActiveMetric)
 
   const byId = useMemo(() => {
@@ -284,6 +285,7 @@ export default function KeyMetricsHero() {
     let yellow = 0
     let green = 0
     for (const { spec, metric } of resolved) {
+      if (!metric) continue
       const { zone } = spec.rule(metric)
       if (zone === 'red') red += 1
       else if (zone === 'yellow') yellow += 1
@@ -291,6 +293,27 @@ export default function KeyMetricsHero() {
     }
     return { red, yellow, green }
   }, [resolved])
+
+  if (isError) {
+    return (
+      <section className="rounded-2xl border border-error/20 bg-error/5 p-5">
+        <div className="flex items-center gap-2 text-error">
+          <span className="material-symbols-outlined">error</span>
+          <h2 className="font-headline text-base font-bold">Не удалось загрузить ключевые метрики</h2>
+        </div>
+        <p className="mt-2 text-xs text-on-surface-variant">
+          {error instanceof Error ? error.message : 'Повторите запрос через несколько секунд.'}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mt-3 rounded-xl border border-white/10 px-3 py-1.5 text-xs text-on-surface hover:border-primary/30"
+        >
+          Повторить
+        </button>
+      </section>
+    )
+  }
 
   return (
     <section className="relative bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 sm:p-6 shadow-card">

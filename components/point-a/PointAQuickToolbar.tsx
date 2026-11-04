@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
+import { sha256File } from '@/lib/documents/client-hash'
 
 /**
  * PointAQuickToolbar — sticky multifunction action bar at the top of Точка А.
@@ -38,11 +39,15 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
       const sb = createClient()
       const ext = file.name.split('.').pop() || 'bin'
       const storagePath = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const { error: upErr } = await sb.storage
-        .from('user-documents')
+      const contentHash = await sha256File(file)
+      const { data: uploaded, error: upErr } = await sb.storage
+        .from('client-documents')
         .upload(storagePath, file, { cacheControl: '3600', upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data: pub } = sb.storage.from('user-documents').getPublicUrl(storagePath)
+      const { data: signed } = await sb.storage
+        .from('client-documents')
+        .createSignedUrl(uploaded.path, 60 * 60 * 24 * 365)
+      if (!signed?.signedUrl) throw new Error('Не удалось получить ссылку на файл')
       const res = await fetch('/api/v1/onboarding/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,13 +55,24 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         body: JSON.stringify({
           user_id: userId,
           file_name: file.name,
-          file_url: pub.publicUrl,
+          file_url: signed.signedUrl,
           file_size: file.size,
           mime_type: file.type,
           storage_path: storagePath,
+          doc_type: 'other',
+          content_hash: contentHash,
         }),
       })
-      if (!res.ok) throw new Error(await res.text())
+      const result = await res.json()
+      if (!res.ok || !result.ok) throw new Error(result.error ?? 'Ошибка регистрации файла')
+      if (result.deduplicated) {
+        await sb.storage.from('client-documents').remove([uploaded.path])
+      } else if (typeof result.data?.id === 'string') {
+        void fetch(`/api/v1/onboarding/documents/${result.data.id}/process`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+      }
       setUploadState('success')
       // Refresh server data so the new document appears
       router.refresh()
@@ -142,7 +158,7 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.xlsx,.xls,.csv,.docx,.doc"
+          accept=".pdf,.xlsx,.xls,.csv,.docx,.txt,.md,.png,.jpg,.jpeg,.pptx"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0]

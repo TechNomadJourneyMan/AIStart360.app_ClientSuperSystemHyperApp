@@ -33,13 +33,25 @@ export async function chunkDocument(
 
   const docs = await splitter.createDocuments([text]);
 
-  return docs.map((doc, index) => ({
-    content: doc.pageContent,
-    metadata: {
-      ...metadata,
-      startIndex: text.indexOf(doc.pageContent),
-      length: doc.pageContent.length,
-      chunkIndex: index,
-    },
-  }));
+  let searchFrom = 0;
+  return docs.map((doc, index) => {
+    // `indexOf(content)` always points at the first occurrence for repeated
+    // paragraphs. Search from the previous chunk while allowing the configured
+    // overlap so provenance offsets remain monotonic and useful.
+    const startIndex = text.indexOf(
+      doc.pageContent,
+      Math.max(0, searchFrom - chunkOverlap),
+    );
+    const resolvedStart = startIndex >= 0 ? startIndex : Math.max(0, searchFrom);
+    searchFrom = resolvedStart + doc.pageContent.length;
+    return {
+      content: doc.pageContent,
+      metadata: {
+        ...metadata,
+        startIndex: resolvedStart,
+        length: doc.pageContent.length,
+        chunkIndex: index,
+      },
+    };
+  });
 }

@@ -253,7 +253,8 @@ function mergeLatestRows(
   // metric_key then computed_at DESC NULLS LAST).
   const latest = new Map<string, MetricRow>()
   for (const row of rows) {
-    if (!latest.has(row.metric_key)) {
+    const existing = latest.get(row.metric_key)
+    if (!existing || (row.source === 'calculated' && existing.source !== 'calculated')) {
       latest.set(row.metric_key, row)
     }
   }
@@ -355,6 +356,7 @@ export async function GET(req: NextRequest) {
               'metric_key, metric_value, metric_unit, confidence, source, computed_at, recorded_at',
             )
             .eq('company_id', companyId)
+            .eq('scenario', 'fact')
             .in('metric_key', metricKeys)
             .order('metric_key', { ascending: true })
             .order('computed_at', { ascending: false, nullsFirst: false })

@@ -21,6 +21,10 @@ export const OPENROUTER_MODELS = {
   gpt4mini: 'openai/gpt-4o-mini',
 } as const
 
+/** One embedding contract shared by ingestion and retrieval. */
+export const OPENROUTER_EMBEDDING_MODEL = 'openai/text-embedding-3-large'
+export const OPENROUTER_EMBEDDING_DIMENSIONS = 1536
+
 /**
  * Quality/speed tiers for automatic model routing.
  *   fast  — Claude Haiku 4.5: ~2x faster than Sonnet, strong quality. Default
@@ -178,7 +182,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
  * any failure. Never throws.
  *
  * Defaults:
- *   - model: openai/text-embedding-3-small (1536 dims, cheap)
+ *   - model: openai/text-embedding-3-large projected to 1536 dimensions
  *   - dimensions: 1536 (matches the pgvector(1536) column on DocumentChunk)
  *
  * Note: not every OpenRouter-routed model honours the `dimensions` parameter.
@@ -192,8 +196,8 @@ export async function embedWithOpenRouter(
   if (!apiKey) return null
   if (!Array.isArray(texts) || texts.length === 0) return []
 
-  const model = opts?.model ?? 'openai/text-embedding-3-small'
-  const dimensions = opts?.dimensions ?? 1536
+  const model = opts?.model ?? OPENROUTER_EMBEDDING_MODEL
+  const dimensions = opts?.dimensions ?? OPENROUTER_EMBEDDING_DIMENSIONS
 
   try {
     const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
@@ -215,7 +219,18 @@ export async function embedWithOpenRouter(
     const json = (await res.json()) as {
       data?: Array<{ embedding?: number[] }>
     }
-    const data = json.data ?? []
+    const data = [...(json.data ?? [])]
+    // Providers normally return input order, but the OpenAI-compatible shape
+    // can include an explicit index. Honor it when present.
+    data.sort((a, b) => {
+      const ai = typeof (a as { index?: unknown }).index === 'number'
+        ? (a as unknown as { index: number }).index
+        : 0
+      const bi = typeof (b as { index?: unknown }).index === 'number'
+        ? (b as unknown as { index: number }).index
+        : 0
+      return ai - bi
+    })
     if (data.length !== texts.length) {
       console.warn(
         `[openrouter:embed] length mismatch: requested=${texts.length} got=${data.length}`

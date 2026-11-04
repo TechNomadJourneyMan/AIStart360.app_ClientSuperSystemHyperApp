@@ -143,6 +143,8 @@ export interface MaterializedRow {
   metric_unit: string | null
   period_year: number | null
   period_quarter: PeriodQuarter | null
+  period_month: number | null
+  scenario: 'fact' | 'plan' | 'forecast'
   source: string
   confidence: number | null
   provenance: unknown

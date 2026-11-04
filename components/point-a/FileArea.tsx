@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { sha256File } from '@/lib/documents/client-hash'
 
 interface DocFile {
   id: string
@@ -20,17 +21,25 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   'application/vnd.ms-excel': ['.xls'],
   'text/csv': ['.csv'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/msword': ['.doc'],
+  'text/plain': ['.txt'],
+  'text/markdown': ['.md'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
 }
 
 const ACCEPT_STRING = Object.values(ACCEPTED_TYPES).flat().join(',')
 
 const DOC_TYPE_OPTIONS = [
-  { value: 'financial_report', label: 'Фин. отчёт' },
-  { value: 'pl_statement',     label: 'P&L' },
+  { value: 'pl_report',        label: 'P&L (отчёт о прибыли)' },
   { value: 'balance_sheet',    label: 'Баланс' },
-  { value: 'business_plan',    label: 'Бизнес-план' },
-  { value: 'presentation',     label: 'Презентация' },
+  { value: 'marketing_report', label: 'Маркетинговый отчёт' },
+  { value: 'ops_report',       label: 'Операционный отчёт' },
+  { value: 'crm_export',       label: 'CRM-выгрузка' },
+  { value: 'sales_report',     label: 'Отчёт по продажам' },
+  { value: 'client_base',      label: 'Клиентская база' },
+  { value: 'patient_base',     label: 'База пациентов' },
+  { value: 'audit',            label: 'Аудит' },
   { value: 'other',            label: 'Другое' },
 ]
 
@@ -46,6 +55,8 @@ function fileIcon(mimeType: string | null): string {
   if (mimeType.includes('pdf')) return 'picture_as_pdf'
   if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) return 'table_chart'
   if (mimeType.includes('word') || mimeType.includes('document')) return 'article'
+  if (mimeType.includes('image')) return 'image'
+  if (mimeType.includes('presentation')) return 'slideshow'
   return 'description'
 }
 
@@ -53,14 +64,16 @@ function fileIconColor(mimeType: string | null): string {
   if (!mimeType) return 'text-on-surface-variant'
   if (mimeType.includes('pdf')) return 'text-red-400'
   if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('csv')) return 'text-green-400'
-  if (mimeType.includes('word') || mimeType.includes('document')) return 'text-blue-400'
+  if (mimeType.includes('word') || mimeType.includes('document')) return 'text-primary'
+  if (mimeType.includes('image')) return 'text-amber-400'
+  if (mimeType.includes('presentation')) return 'text-primary'
   return 'text-on-surface-variant'
 }
 
 const PARSE_STATUS: Record<string, { label: string; color: string }> = {
   queued:     { label: 'В очереди',   color: 'text-on-surface-variant' },
   processing: { label: 'Анализ...',   color: 'text-amber-400' },
-  done:       { label: 'Готово',      color: 'text-primary' },
+  parsed:     { label: 'Обработан',   color: 'text-primary' },
   error:      { label: 'Ошибка',      color: 'text-error' },
 }
 
@@ -128,8 +141,8 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
   const handleFilePick = (file: File) => {
     const validMimes = Object.keys(ACCEPTED_TYPES)
-    if (!validMimes.some(m => file.type === m || file.name.match(/\.(pdf|xlsx?|csv|docx?)$/i))) {
-      setError('Поддерживаются: PDF, Excel, CSV, Word')
+    if (!validMimes.some(m => file.type === m || file.name.match(/\.(pdf|xlsx?|csv|docx|txt|md|png|jpe?g|pptx)$/i))) {
+      setError('Поддерживаются: PDF, XLSX, XLS, CSV, DOCX, TXT, MD, PNG, JPG, JPEG, PPTX')
       return
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -137,7 +150,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
       return
     }
     setError(null)
-    setPendingFile({ file, docType: 'financial_report' })
+    setPendingFile({ file, docType: 'other' })
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -159,13 +172,13 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
     try {
       const sb = createClient()
-      const ext = pendingFile.file.name.split('.').pop()
       const storagePath = `${userId}/${Date.now()}_${pendingFile.file.name}`
+      const contentHash = await sha256File(pendingFile.file)
 
       setUploadProgress(20)
 
       const { data: uploadData, error: uploadError } = await sb.storage
-        .from('documents')
+        .from('client-documents')
         .upload(storagePath, pendingFile.file, {
           contentType: pendingFile.file.type || 'application/octet-stream',
           upsert: false,
@@ -175,7 +188,10 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
       setUploadProgress(70)
 
-      const { data: { publicUrl } } = sb.storage.from('documents').getPublicUrl(storagePath)
+      const { data: signed } = await sb.storage
+        .from('client-documents')
+        .createSignedUrl(uploadData.path, 60 * 60 * 24 * 365)
+      if (!signed?.signedUrl) throw new Error('Не удалось получить ссылку на файл')
 
       // Register in DB
       const res = await fetch('/api/v1/onboarding/documents', {
@@ -184,15 +200,24 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
         body: JSON.stringify({
           user_id: userId,
           file_name: pendingFile.file.name,
-          file_url: publicUrl,
+          file_url: signed.signedUrl,
           file_size: pendingFile.file.size,
           mime_type: pendingFile.file.type,
           doc_type: pendingFile.docType,
+          content_hash: contentHash,
         }),
       })
 
       const result = await res.json()
       if (!result.ok) throw new Error(result.error ?? 'Upload failed')
+      if (result.deduplicated) {
+        await sb.storage.from('client-documents').remove([uploadData.path])
+      } else if (typeof result.data?.id === 'string') {
+        void fetch(`/api/v1/onboarding/documents/${result.data.id}/process`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+      }
 
       setUploadProgress(100)
       setPendingFile(null)
@@ -206,12 +231,27 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
   }
 
   const handleDelete = async (file: DocFile) => {
+    if (!window.confirm(`Удалить «${file.file_name}»? Показатели Точки А будут пересчитаны.`)) {
+      return
+    }
     setDeletingId(file.id)
     try {
-      const res = await fetch(`/api/v1/onboarding/documents/${file.id}?user_id=${userId}`, {
+      let res = await fetch(`/api/v1/onboarding/documents/${file.id}`, {
         method: 'DELETE',
       })
-      const data = await res.json()
+      let data = await res.json()
+      if (res.status === 409 && data.requires_confirmation) {
+        const fields = Array.isArray(data.confirmed_fields)
+          ? `\n\nПодтверждённые поля: ${data.confirmed_fields.join(', ')}`
+          : ''
+        if (!window.confirm(`Документ содержит подтверждённые значения. После удаления они будут пересчитаны.${fields}`)) {
+          return
+        }
+        res = await fetch(`/api/v1/onboarding/documents/${file.id}?force=true`, {
+          method: 'DELETE',
+        })
+        data = await res.json()
+      }
       if (data.ok) {
         setFiles(prev => prev.filter(f => f.id !== file.id))
       } else {
@@ -230,7 +270,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-headline text-lg font-bold text-on-surface">Файловая область</h2>
-          <p className="text-xs text-on-surface-variant mt-0.5">PDF, Excel, CSV, Word — до 20 МБ</p>
+          <p className="text-xs text-on-surface-variant mt-0.5">PDF, таблицы, документы, изображения и PPTX — до 20 МБ</p>
         </div>
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -250,10 +290,19 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
       {/* Drop zone */}
       <div
+        role="button"
+        tabIndex={pendingFile ? -1 : 0}
+        aria-label="Выбрать документ для загрузки"
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => !pendingFile && fileInputRef.current?.click()}
+        onKeyDown={e => {
+          if (!pendingFile && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            fileInputRef.current?.click()
+          }
+        }}
         className={`
           relative rounded-2xl border-2 border-dashed transition-all cursor-pointer
           ${dragOver
@@ -273,7 +322,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
               Перетащите файл сюда или <span className="text-primary">выберите</span>
             </p>
             <p className="text-[10px] font-mono text-on-surface-variant/50 uppercase tracking-wider">
-              PDF · XLSX · CSV · DOCX
+              PDF · XLSX · XLS · CSV · DOCX · TXT · MD · PNG · JPG · JPEG · PPTX
             </p>
           </div>
         ) : (
@@ -428,7 +477,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                   </span>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 flex-shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
                     <a
                       href={file.file_url}
                       target="_blank"

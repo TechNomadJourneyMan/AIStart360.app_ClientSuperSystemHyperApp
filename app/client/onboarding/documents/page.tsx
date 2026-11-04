@@ -5,8 +5,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS } from '@/lib/survey-labels'
+import { sha256File } from '@/lib/documents/client-hash'
+import { useCanonicalPointA } from '@/hooks/useCanonicalPointA'
 
-type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
+type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'sales_report' | 'client_base' | 'patient_base' | 'audit' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
 
 interface UploadedDoc {
@@ -57,6 +59,9 @@ const DOC_TYPES: { value: DocType; label: string; icon: string; example: string 
   { value: 'marketing_report', label: 'Маркетинговый отчёт',     icon: 'campaign',      example: 'Шаблон маркетинга' },
   { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций' },
   { value: 'crm_export',       label: 'CRM-выгрузка',            icon: 'people',        example: 'Шаблон CRM' },
+  { value: 'sales_report',     label: 'Отчёт по продажам',        icon: 'sell',          example: '' },
+  { value: 'client_base',      label: 'Клиентская база',          icon: 'groups',        example: '' },
+  { value: 'patient_base',     label: 'База пациентов',           icon: 'medical_services', example: '' },
   { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита' },
   { value: 'other',            label: 'Другое',                  icon: 'folder',        example: '' },
 ]
@@ -322,10 +327,11 @@ function getParsedMeta(data: ParsedDocumentData | null, key: 'model_used' | 'ext
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-const ACCEPTED = '.pdf,.xlsx,.csv,.docx,.pptx'
-const MAX_SIZE = 50 * 1024 * 1024
+const ACCEPTED = '.pdf,.xlsx,.xls,.csv,.docx,.txt,.md,.png,.jpg,.jpeg,.pptx'
+const MAX_SIZE = 20 * 1024 * 1024
 
 export default function DocumentsPage() {
+  const { model: pointAModel, refresh: refreshPointA } = useCanonicalPointA()
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -376,7 +382,9 @@ export default function DocumentsPage() {
     )))
 
     try {
-      const res = await fetch(`/api/v1/onboarding/documents/${docId}/process`, { method: 'POST' })
+      const current = uploaded.find((doc) => doc.id === docId)
+      const force = current?.parse_status === 'parsed' ? '?force=true' : ''
+      const res = await fetch(`/api/v1/onboarding/documents/${docId}/process${force}`, { method: 'POST' })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error ?? 'Не удалось запустить обработку файла')
@@ -386,8 +394,9 @@ export default function DocumentsPage() {
     } finally {
       setProcessingDocId(null)
       await fetchDocs()
+      await refreshPointA()
     }
-  }, [fetchDocs])
+  }, [fetchDocs, refreshPointA, uploaded])
 
   // Initial load (and when the user id resolves).
   useEffect(() => {
@@ -407,15 +416,30 @@ export default function DocumentsPage() {
     return () => clearInterval(interval)
   }, [userId, hasPendingDocs, fetchDocs])
 
+  // Links from a canonical Point A field identify the exact source document.
+  // Open and scroll to it after the document list has loaded.
+  useEffect(() => {
+    if (uploaded.length === 0) return
+    const documentId = new URLSearchParams(window.location.search).get('document')
+    if (!documentId || !uploaded.some((doc) => doc.id === documentId)) return
+    setExpandedDocId(documentId)
+    requestAnimationFrame(() => {
+      document.getElementById(`document-${documentId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    })
+  }, [uploaded])
+
   const handleFile = (file: File) => {
     setUploadError(null)
     if (file.size > MAX_SIZE) {
-      setUploadError('Файл слишком большой. Максимум 50 МБ.')
+      setUploadError('Файл слишком большой. Максимум 20 МБ.')
       return
     }
     const ext = file.name.split('.').pop()?.toLowerCase()
-    if (!['pdf','xlsx','csv','docx','pptx'].includes(ext ?? '')) {
-      setUploadError('Формат не поддерживается. Используйте PDF, XLSX, CSV, DOCX, PPTX.')
+    if (!['pdf', 'xlsx', 'xls', 'csv', 'docx', 'txt', 'md', 'png', 'jpg', 'jpeg', 'pptx'].includes(ext ?? '')) {
+      setUploadError('Формат не поддерживается. Используйте PDF, XLSX, XLS, CSV, DOCX, TXT, MD, PNG, JPG, JPEG или PPTX.')
       return
     }
     setPending({ file, doc_type: '', period_quarter: '', period_year: new Date().getFullYear().toString() })
@@ -441,6 +465,7 @@ export default function DocumentsPage() {
     try {
       const sb = createClient()
       const path = `${userId}/${Date.now()}_${pending.file.name}`
+      const contentHash = await sha256File(pending.file)
 
       // Upload to Supabase Storage
       const { data: storageData, error: storageErr } = await sb.storage
@@ -468,14 +493,18 @@ export default function DocumentsPage() {
           doc_type: pending.doc_type,
           period_quarter: pending.period_quarter || null,
           period_year: pending.period_year ? parseInt(pending.period_year) : null,
+          content_hash: contentHash,
         }),
       })
       const result = await res.json()
       if (!result.ok) throw new Error(result.error)
+      if (result.deduplicated) {
+        await sb.storage.from('client-documents').remove([storageData.path])
+      }
 
       const docId = typeof result.data?.id === 'string' ? result.data.id : null
       setPending(null)
-      if (docId) {
+      if (docId && !result.deduplicated) {
         void processDocument(docId)
       } else {
         await fetchDocs()
@@ -527,11 +556,20 @@ export default function DocumentsPage() {
         {/* Drop Zone */}
         {!pending && (
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="Выбрать документ для загрузки"
             onDragEnter={e => { e.preventDefault(); setIsDragging(true) }}
             onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={onDrop}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                fileInputRef.current?.click()
+              }
+            }}
             className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
               isDragging
                 ? 'border-primary/60 bg-primary/5'
@@ -545,7 +583,7 @@ export default function DocumentsPage() {
             <p className="text-sm font-medium text-on-surface mb-1">
               {isDragging ? 'Отпустите файл' : 'Перетащите файл или нажмите'}
             </p>
-            <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV, DOCX, PPTX · Максимум 50 МБ</p>
+            <p className="text-xs text-on-surface-variant">PDF, XLSX, XLS, CSV, DOCX, TXT, MD, PNG, JPG, JPEG, PPTX · до 20 МБ</p>
           </div>
         )}
 
@@ -606,7 +644,9 @@ export default function DocumentsPage() {
                   onChange={e => setPending(p => p ? { ...p, period_year: e.target.value } : p)}
                   className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
                 >
-                  {[2023,2024,2025].map(y => <option key={y} value={y}>{y}</option>)}
+                  {[2023, 2024, 2025, new Date().getFullYear()]
+                    .filter((year, index, years) => years.indexOf(year) === index)
+                    .map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
             </div>
@@ -666,9 +706,34 @@ export default function DocumentsPage() {
                 const modelUsed = getParsedMeta(doc.parsed_data, 'model_used')
                 const extractedAt = getParsedMeta(doc.parsed_data, 'extracted_at')
                 const rawPreview = getParsedMeta(doc.parsed_data, 'raw_text_preview')
+                const pointAFields = (pointAModel?.fields ?? []).filter((field) => (
+                  field.candidates.some((candidate) => (
+                    candidate.point_a_sources?.source_type === 'document'
+                    && candidate.point_a_sources.native_source_id === doc.id
+                  ))
+                ))
+                const pointASummary = {
+                  added: pointAFields.filter((field) => (
+                    field.selected?.point_a_sources?.native_source_id === doc.id
+                    && field.candidates.length === 1
+                  )).length,
+                  changed: pointAFields.filter((field) => (
+                    field.selected?.point_a_sources?.native_source_id === doc.id
+                    && field.candidates.length > 1
+                    && field.resolutionStatus !== 'conflict'
+                  )).length,
+                  conflicts: pointAFields.filter((field) => field.resolutionStatus === 'conflict').length,
+                  needsConfirmation: pointAFields.filter((field) => (
+                    field.candidates.some((candidate) => (
+                      candidate.point_a_sources?.native_source_id === doc.id
+                      && candidate.status === 'needs_confirmation'
+                    ))
+                  )).length,
+                }
                 return (
                   <div
                     key={doc.id}
+                    id={`document-${doc.id}`}
                     className={`bg-surface-container-low rounded-xl border transition-all overflow-hidden ${
                       isExpanded ? 'border-primary/25' : 'border-white/[0.06]'
                     }`}
@@ -742,6 +807,28 @@ export default function DocumentsPage() {
                             <p className="text-xs leading-relaxed text-on-surface-variant">{summary}</p>
                           </div>
                         )}
+
+                        <div>
+                          <p className="mb-2 text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
+                            Результат для Точки А
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            {[
+                              ['Новые данные', pointASummary.added, 'add_circle', 'text-primary'],
+                              ['Изменения', pointASummary.changed, 'sync_alt', 'text-sky-300'],
+                              ['Конфликты', pointASummary.conflicts, 'difference', 'text-error'],
+                              ['Подтвердить', pointASummary.needsConfirmation, 'help', 'text-amber-300'],
+                            ].map(([label, count, icon, color]) => (
+                              <div key={String(label)} className="rounded-lg border border-white/[0.04] bg-black/15 px-3 py-2">
+                                <div className={`flex items-center gap-1 ${color}`}>
+                                  <span className="material-symbols-outlined text-sm">{icon}</span>
+                                  <span className="text-sm font-semibold">{count}</span>
+                                </div>
+                                <p className="mt-1 text-[10px] text-on-surface-variant">{label}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div className="rounded-lg bg-black/15 border border-white/[0.04] px-3 py-2">

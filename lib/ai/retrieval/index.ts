@@ -8,7 +8,10 @@
  * simply runs without documents. Spec: 01-ai-chat-rag.md §4.
  */
 
-import { embedWithOpenRouter } from '@/lib/ai/openrouter'
+import {
+  embedWithOpenRouter,
+  OPENROUTER_EMBEDDING_DIMENSIONS,
+} from '@/lib/ai/openrouter'
 import { createServiceClient } from '@/lib/supabase-service'
 
 export interface RetrievedChunk {
@@ -35,15 +38,18 @@ export async function retrieveUserChunks(
   } catch {
     return []
   }
-  if (!vector) return []
+  if (!vector || vector.length !== OPENROUTER_EMBEDDING_DIMENSIONS) return []
+  const vectorLiteral = `[${vector.map((value) =>
+    Number.isFinite(value) ? value.toString() : '0'
+  ).join(',')}]`
 
   try {
     const sb = createServiceClient()
     const { data, error } = await sb.rpc('match_user_document_chunks', {
       p_user_id: userId,
-      p_query: vector as unknown as string,
-      p_limit: opts.limit ?? 6,
-      p_min_similarity: opts.minSimilarity ?? 0.25,
+      p_query: vectorLiteral,
+      p_limit: Math.max(1, Math.min(20, opts.limit ?? 6)),
+      p_min_similarity: Math.max(0, Math.min(1, opts.minSimilarity ?? 0.25)),
     })
     if (error || !Array.isArray(data)) return []
 

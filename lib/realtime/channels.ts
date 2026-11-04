@@ -5,7 +5,8 @@
  * Migration 016 enabled the `supabase_realtime` publication on
  *   public.metrics, public.diagnostics, public.documents
  * with REPLICA IDENTITY FULL, so we can subscribe to INSERT/UPDATE/DELETE
- * events and receive the full row payload.
+ * events and receive the full row payload. Migration 070 does the same for
+ * the canonical Point A source/value/resolution tables.
  */
 
 export type WatchedTable =
@@ -14,6 +15,9 @@ export type WatchedTable =
   | 'documents'
   | 'gri_assessments'
   | 'companies'
+  | 'point_a_sources'
+  | 'point_a_values'
+  | 'point_a_resolutions'
 
 export type RealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*'
 

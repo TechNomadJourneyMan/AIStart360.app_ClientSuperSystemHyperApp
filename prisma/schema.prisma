@@ -538,14 +538,17 @@ model DiagnosticRun {
 
 model DocumentSummary {
   id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
+  clientId    String?
+  client      Client?  @relation(fields: [clientId], references: [id])
   reportId    String?
   report      Report?  @relation(fields: [reportId], references: [id])
 
   // Direct owner (Supabase documents.user_id) so RAG retrieval can scope by
-  // user without the fragile clientId -> clients.managerId chain (migration 046).
+  // user without the fragile clientId -> clients.managerId chain (migration 054).
   userId      String?  @map("user_id")
+  // Stable link to public.documents. This makes reprocessing idempotent and
+  // avoids duplicate summaries/chunks when inline + Inngest paths race.
+  sourceDocumentId String? @unique @map("source_document_id")
 
   // High-level parsed data from the document (e.g. key financial metrics, full text parsed)
   content     String   @db.Text

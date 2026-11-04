@@ -18,6 +18,7 @@ import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import { ShareButton } from '@/components/share/ShareButton'
+import CanonicalPointAModel from '@/components/dashboard/point-a/CanonicalPointAModel'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -173,6 +174,9 @@ export default async function PointAPage() {
       <section id="growth-snapshot">
         <GrowthSnapshotHero />
       </section>
+
+      {/* One source of truth shared with the dashboard and client cabinet. */}
+      <CanonicalPointAModel />
 
       {/* Filters — drive the KeyMetricsHero report below via URL params */}
       <PointAFilterSection />

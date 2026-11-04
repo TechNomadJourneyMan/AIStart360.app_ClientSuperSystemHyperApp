@@ -12,6 +12,7 @@ import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
 import { ShareButton } from '@/components/share/ShareButton'
 import NextBestActionCard from '@/components/nba/NextBestActionCard'
+import CanonicalPointAModel from '@/components/dashboard/point-a/CanonicalPointAModel'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -305,6 +306,9 @@ export default function PointAClientPage() {
 
         {/* Next Best Action — the single most important step right now */}
         <NextBestActionCard />
+
+        {/* Canonical facts are independent from the optional legacy diagnostic. */}
+        <CanonicalPointAModel />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">

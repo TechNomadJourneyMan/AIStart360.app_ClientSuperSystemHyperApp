@@ -6,6 +6,16 @@ import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
+import {
+  mergeSurveyAnswerSources,
+  normalizeSurveyAnswers,
+  RETIRED_SURVEY_KEYS,
+} from '@/components/onboarding/utils/answers'
+import {
+  sheetProjectionWarning,
+  surveySaveError,
+  type SurveySavePayload,
+} from '@/components/onboarding/utils/save-response'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
 
@@ -50,13 +60,44 @@ export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [hasDocs, setHasDocs] = useState(false)
+  const [isHydrating, setIsHydrating] = useState(true)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Bootstrap: load from localStorage → server
+  // Bootstrap: load the local draft first, then merge server-prefilled answers
+  // underneath it. Local/manual values win when both sources have the same key,
+  // including an intentionally cleared field.
   useEffect(() => {
+    let cancelled = false
+
     const bootstrap = async () => {
+      let localAnswers: Record<string, unknown> = {}
+      let localStep: number | null = null
+
       try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) {
+          const draft = JSON.parse(raw) as {
+            answers?: unknown
+            current_step?: unknown
+            company_id?: unknown
+          }
+          localAnswers = normalizeSurveyAnswers(draft.answers)
+          const parsedStep = Number(draft.current_step)
+          localStep = Number.isInteger(parsedStep)
+            ? Math.min(TOTAL_STEPS, Math.max(1, parsedStep))
+            : null
+
+          if (!cancelled) {
+            setSavedAnswers(localAnswers)
+            setStepData((current) => ({ ...localAnswers, ...current }))
+            if (localStep) setCurrentStep(localStep)
+            setCompanyId(typeof draft.company_id === 'string' ? draft.company_id : null)
+          }
+        }
+
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
+        if (cancelled) return
         setUserId(user?.id ?? null)
 
         // Note: medical-vertical users are NOT force-redirected to the short
@@ -72,19 +113,8 @@ export default function OnboardingPage() {
             .catch(() => {})
         }
 
-        // 1. Try localStorage
-        const raw = localStorage.getItem(STORAGE_KEY)
-        if (raw) {
-          const data = JSON.parse(raw)
-          const answers = data.answers ?? {}
-          setSavedAnswers(answers)
-          setStepData(answers)
-          setCurrentStep(data.current_step ?? 1)
-          setCompanyId(data.company_id ?? null)
-          return
-        }
-
-        // 2. Load from server
+        // Always load the server snapshot: document extraction and other
+        // backend prefill can add answers after the local draft was created.
         if (user?.id) {
           const [surveyRes, companyRes] = await Promise.all([
             fetch(`/api/v1/onboarding/survey?user_id=${user.id}`),
@@ -94,24 +124,35 @@ export default function OnboardingPage() {
           if (surveyRes.ok) {
             const surveyData = await surveyRes.json()
             if (surveyData.ok && surveyData.data) {
-              const { answers: serverAnswers } = surveyData.data
-              if (Object.keys(serverAnswers ?? {}).length > 0) {
-                setSavedAnswers(serverAnswers)
-                setStepData(serverAnswers)
-                // Do NOT auto-jump to the last unfilled step — start at step 1 and
-                // let the user move freely via the (now fully visible) step tabs.
+              const serverAnswers = normalizeSurveyAnswers(surveyData.data.answers)
+              if (!cancelled && Object.keys(serverAnswers).length > 0) {
+                const hydrated = mergeSurveyAnswerSources(serverAnswers, localAnswers)
+                setSavedAnswers((current) => ({ ...hydrated, ...current }))
+                // Preserve any edits made while the request was in flight.
+                setStepData((current) => ({ ...hydrated, ...current }))
+              }
+              if (!cancelled && !localStep) {
+                // Keep the start predictable for returning users while all step
+                // tabs remain directly accessible.
                 setCurrentStep(1)
               }
             }
           }
           if (companyRes.ok) {
             const companyData = await companyRes.json()
-            if (companyData.ok && companyData.data?.id) setCompanyId(companyData.data.id)
+            if (!cancelled && companyData.ok && companyData.data?.id) {
+              setCompanyId(companyData.data.id)
+            }
           }
         }
-      } catch { setUserId(null) }
+      } catch {
+        if (!cancelled) setUserId(null)
+      } finally {
+        if (!cancelled) setIsHydrating(false)
+      }
     }
     bootstrap()
+    return () => { cancelled = true }
   }, [])
 
   // Continuous autosave — persist the in-progress step to localStorage on every
@@ -134,17 +175,25 @@ export default function OnboardingPage() {
   }, [stepData, currentStep])
 
   const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {
-    const merged = { ...savedAnswers, ...answers }
+    const merged = normalizeSurveyAnswers({ ...savedAnswers, ...answers })
     setSavedAnswers(merged)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       current_step: step, answers: merged, company_id: companyId, saved_at: new Date().toISOString(),
     }))
   }, [savedAnswers, companyId])
 
-  const saveToServer = async (step: number, answers: Record<string, unknown>) => {
-    if (!userId) return
+  const saveToServer = async (
+    step: number,
+    answers: Record<string, unknown>,
+  ): Promise<boolean> => {
+    if (!userId) {
+      setSaveError('Не удалось определить пользователя. Обновите страницу и войдите снова.')
+      return false
+    }
+    setSaveError(null)
     setIsSaving(true)
     try {
+      let resolvedCompanyId = companyId
       // Step 1: also create/update company record
       if (step === 1) {
         const compRes = await fetch('/api/v1/onboarding/company', {
@@ -153,17 +202,26 @@ export default function OnboardingPage() {
           body: JSON.stringify({
             user_id: userId, name: answers['s1_company_name'], industry: answers['s1_industry'],
             employee_count: answers['s1_employee_count'],
-            founded_at: answers['s1_founded_at'], business_model: answers['s1_business_model'],
+            founded_at: answers['s1_founded_at'],
             regions: answers['s1_regions'], contact_name: answers['s1_contact_name'],
             contact_position: answers['s1_contact_position'], contact_phone: answers['s1_contact_phone'],
             contact_email: answers['s1_contact_email'],
           }),
         })
-        const compData = await compRes.json()
-        if (compData.ok && compData.data?.id) {
-          setCompanyId(compData.data.id)
+        const compData = await compRes.json() as {
+          ok?: boolean
+          error?: string
+          data?: { id?: string }
+        }
+        if (!compRes.ok || !compData.ok || !compData.data?.id) {
+          throw new Error(compData.error || 'Не удалось сохранить данные компании')
+        }
+        resolvedCompanyId = compData.data.id
+        setCompanyId(resolvedCompanyId)
+        if (resolvedCompanyId) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'), company_id: compData.data.id,
+            ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'),
+            company_id: resolvedCompanyId,
           }))
         }
       }
@@ -171,16 +229,41 @@ export default function OnboardingPage() {
       // Save survey answers
       const formatted: Record<string, { value: unknown }> = {}
       for (const [k, v] of Object.entries(answers)) {
+        if (RETIRED_SURVEY_KEYS.has(k)) continue
         formatted[k] = { value: v }
       }
-      await fetch('/api/v1/onboarding/survey', {
+      const surveyRes = await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),
+        body: JSON.stringify({
+          user_id: userId,
+          company_id: resolvedCompanyId,
+          step,
+          answers: formatted,
+        }),
       })
+      const surveyData = await surveyRes.json() as SurveySavePayload
+      const saveFailure = surveySaveError(surveyRes.ok, surveyData)
+      if (saveFailure) throw new Error(saveFailure)
+      const sheetWarning = sheetProjectionWarning(surveyData)
+      if (sheetWarning) {
+        console.warn(
+          '[onboarding] Google Sheets projection is not current',
+          sheetWarning,
+        )
+      }
+      return true
     } catch (e) {
       console.error('[onboarding] save error', e)
-    } finally { setIsSaving(false) }
+      setSaveError(
+        e instanceof Error
+          ? e.message
+          : 'Не удалось сохранить ответы. Черновик остался на этом устройстве.',
+      )
+      return false
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleFieldChange = (key: string, value: unknown) => {
@@ -189,7 +272,8 @@ export default function OnboardingPage() {
 
   const goNext = async () => {
     persistLocal(currentStep, stepData)
-    await saveToServer(currentStep, stepData)
+    const saved = await saveToServer(currentStep, stepData)
+    if (!saved) return
 
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep(currentStep + 1)
@@ -219,7 +303,8 @@ export default function OnboardingPage() {
   // stays in localStorage + server, so the user can come back any time.
   const finishEarly = async () => {
     persistLocal(currentStep, stepData)
-    await saveToServer(currentStep, stepData)
+    const saved = await saveToServer(currentStep, stepData)
+    if (!saved) return
     if (userId) {
       setIsSaving(true)
       try {
@@ -308,14 +393,17 @@ export default function OnboardingPage() {
             return (
               <button
                 key={stepN}
-                onClick={() => {
+                type="button"
+                disabled={isHydrating || isSaving}
+                onClick={async () => {
                   // Save current step before switching
                   persistLocal(currentStep, stepData)
-                  saveToServer(currentStep, stepData)
+                  const saved = await saveToServer(currentStep, stepData)
+                  if (!saved) return
                   setCurrentStep(stepN)
                 }}
                 className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-50
                   ${isActive ? 'bg-primary/15 text-primary border border-primary/20' :
                     isPast ? 'bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06]' :
                     'bg-white/[0.02] text-on-surface-variant/60 hover:text-on-surface-variant hover:bg-white/[0.05]'}
@@ -351,10 +439,23 @@ export default function OnboardingPage() {
 
         {/* Step form */}
         <div className="mb-8">
-          {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
+          {isHydrating ? (
+            <div
+              className="flex items-center justify-center gap-2 rounded-2xl border border-white/[0.04] bg-surface-container-low px-4 py-12 text-sm text-on-surface-variant"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="material-symbols-outlined animate-spin text-lg text-primary">
+                progress_activity
+              </span>
+              Загружаем сохранённые ответы…
+            </div>
+          ) : (
+            StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
+          )}
 
           {/* Inline validation hints — non-blocking, warns but never prevents navigation */}
-          {sectionId && (
+          {!isHydrating && sectionId && (
             <div className="mt-5">
               <InlineValidationHints section={sectionId} draftAnswers={stepData} />
             </div>
@@ -362,15 +463,32 @@ export default function OnboardingPage() {
         </div>
 
         {/* Navigation buttons */}
+        {saveError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-xl border border-red-400/25 bg-red-400/[0.08] px-4 py-3 text-sm text-red-200"
+          >
+            <span className="material-symbols-outlined mt-0.5 text-base" aria-hidden="true">
+              error
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold">Не удалось завершить сохранение</p>
+              <p className="mt-0.5 text-xs text-red-100/80">{saveError}</p>
+              <p className="mt-1 text-[10px] text-red-100/60">
+                Ваш черновик сохранён локально и не потеряется после обновления страницы.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-3 pb-8">
           {currentStep > 1 && (
-            <button onClick={goBack}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors">
+            <button onClick={goBack} disabled={isHydrating || isSaving}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors disabled:cursor-wait disabled:opacity-50">
               <span className="material-symbols-outlined text-base">arrow_back</span>
               Назад
             </button>
           )}
-          <button onClick={goNext} disabled={isSaving}
+          <button onClick={goNext} disabled={isHydrating || isSaving}
             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all disabled:opacity-50">
             {isSaving ? (
               <><span className="material-symbols-outlined text-base animate-spin">progress_activity</span> Сохранение...</>

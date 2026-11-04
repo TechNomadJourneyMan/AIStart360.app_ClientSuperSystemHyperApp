@@ -88,14 +88,6 @@ export const COMPANY_STAGES = [
   { value: 'Mature', label: 'Mature' },
 ] as const
 
-// ─── Business models ─────────────────────────────────────────────────────────
-export const BUSINESS_MODELS = [
-  { value: 'B2B', label: 'B2B' },
-  { value: 'B2C', label: 'B2C' },
-  { value: 'B2B2C', label: 'B2B2C' },
-  { value: 'Mixed', label: 'Mixed' },
-] as const
-
 // ─── CRM options ─────────────────────────────────────────────────────────────
 export const CRM_OPTIONS = [
   { value: 'none', label: 'Нет CRM' },

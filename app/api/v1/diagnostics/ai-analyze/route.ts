@@ -14,6 +14,13 @@ import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import {
+  buildDocumentPromptContext,
+  buildPointADocumentContext,
+  enrichSurveyAnswersWithDocuments,
+  type PointADocumentInput,
+} from '@/lib/documents/point-a-context'
+import { unwrapStoredSurveyAnswer } from '@/lib/survey/persistence'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -68,8 +75,25 @@ export async function POST(req: NextRequest) {
 
     const answers: Record<string, unknown> = {}
     for (const row of (rows ?? [])) {
-      answers[row.question_key] = (row.answer as { value: unknown }).value
+      answers[row.question_key] = unwrapStoredSurveyAnswer(row.answer)
     }
+
+    const { data: documentRows } = await sb
+      .from('documents')
+      .select('id, doc_type, parsed_data, period_year, uploaded_at')
+      .eq('user_id', user_id)
+      .in('parse_status', ['parsed', 'completed'])
+      .order('uploaded_at', { ascending: false })
+    const documents: PointADocumentInput[] = (documentRows ?? []).map((doc) => ({
+      id: doc.id as string,
+      docType: doc.doc_type as string,
+      parsedData: doc.parsed_data,
+      periodYear: (doc.period_year as number | null) ?? null,
+      uploadedAt: doc.uploaded_at as string,
+    }))
+    const documentContext = buildPointADocumentContext(documents)
+    const scoringAnswers = enrichSurveyAnswersWithDocuments(answers, documentContext)
+    const documentPromptContext = buildDocumentPromptContext(documents)
 
     // 3. Fetch company
     const { data: company } = await sb
@@ -96,10 +120,17 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Run rule-based engine to get PointA structure
-    const pointA = calculatePointA(answers)
+    const pointA = calculatePointA(scoringAnswers)
 
     // 6. Run AI analysis (with expert notes)
-    const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
+    const aiResult = await analyzePointA(
+      scoringAnswers,
+      pointA,
+      company as Company | null,
+      expertNotes,
+      locale,
+      documentPromptContext,
+    )
 
     if (aiResult) {
       // 7. Store result

@@ -1,44 +1,65 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { MetricSummary } from '@/types/metrics'
-
-// GET /api/v1/metrics — legacy KPI summary endpoint.
-//
-// DATA INTEGRITY (D3): never returns mock/fabricated numbers. When there is no
-// real per-user source we return an empty list and the UI renders an explicit
-// "—" empty state.
-//
-// MULTI-TENANT: this endpoint used to return the most-recent row of the legacy
-// Prisma `financial_snapshots` table (keyed by `orgId`, populated only by
-// `prisma/seed.ts`). That table is NOT linked to the Supabase auth user
-// (`profiles.organization` is free text, not an FK), so returning the latest row
-// leaked one org's seeded numbers (e.g. ₸84.2М) to EVERY user. Until a real,
-// per-user financial source is wired through the resolver (`public.metrics` via
-// `/api/v1/metrics/catalog`), this endpoint requires a session and returns an
-// empty list rather than an unattributable snapshot. See docs/metrics-data-lineage.md.
+import {
+  buildCanonicalMetricSummaries,
+  CANONICAL_KPI_ALIASES,
+  type CanonicalMetricRow,
+} from '@/lib/metrics/canonical-summary'
 
 export async function GET(req: Request) {
-  // Echo the standard Point A filter triplet so the client cache key varies per filter.
   const { searchParams } = new URL(req.url)
-  void searchParams.get('period')
-  void searchParams.get('product')
-  void searchParams.get('manager')
+  const product = searchParams.get('product')
+  const manager = searchParams.get('manager')
 
   try {
-    // Require an authenticated session — never serve metric data anonymously.
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] }, { status: 401 })
+      return NextResponse.json({ source: 'canonical-point-a', data: [] as MetricSummary[] }, { status: 401 })
     }
 
-    // No safely-attributable per-user financial snapshot source exists yet, so
-    // return an honest empty list rather than the global, org-keyed legacy rows.
-    return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] })
+    // Canonical scalar facts do not contain product/manager dimensions. An
+    // aggregate company value under an active dimension filter would be
+    // misleading, so return an explicit empty result for that combination.
+    if (product || manager) {
+      return NextResponse.json({
+        source: 'canonical-point-a',
+        data: [] as MetricSummary[],
+        limitation: 'dimension_not_available',
+      })
+    }
+
+    const { data: company, error: companyError } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('user_id', user.id)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (companyError) throw companyError
+    if (!company?.id) {
+      return NextResponse.json({ source: 'canonical-point-a', data: [] as MetricSummary[] })
+    }
+
+    const { data: rows, error: metricsError } = await supabase
+      .from('metrics')
+      .select(
+        'metric_key,metric_value,metric_unit,period_year,period_quarter,period_month,computed_at,recorded_at',
+      )
+      .eq('company_id', company.id)
+      .eq('scenario', 'fact')
+      .eq('source', 'calculated')
+      .in('metric_key', CANONICAL_KPI_ALIASES)
+      .order('computed_at', { ascending: false, nullsFirst: false })
+    if (metricsError) throw metricsError
+
+    return NextResponse.json({
+      source: 'canonical-point-a',
+      data: buildCanonicalMetricSummaries((rows ?? []) as CanonicalMetricRow[]),
+    })
   } catch (err) {
     console.error('[api/v1/metrics]', err)
-    // Return a real 5xx so the client (fetchMetrics throws on !res.ok) and
-    // monitoring can distinguish a server failure from an honestly-empty list.
     return NextResponse.json({ source: 'error', error: 'metrics_failed' }, { status: 500 })
   }
 }

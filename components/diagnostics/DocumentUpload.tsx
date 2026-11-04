@@ -49,7 +49,13 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'text/csv': ['.csv'],
       'text/plain': ['.txt'],
+      'text/markdown': ['.md'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
     }
   })
 
@@ -78,7 +84,7 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
                 </div>
                 <div className="space-y-1">
                   <p className="font-semibold text-lg">Перетащите файл или кликните</p>
-                  <p className="text-sm text-muted-foreground">PDF, Word, Excel до 10MB</p>
+                  <p className="text-sm text-on-surface-variant">PDF, XLSX, XLS, CSV, DOCX, TXT, MD, PNG, JPG, JPEG, PPTX</p>
                 </div>
               </>
             )}

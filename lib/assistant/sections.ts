@@ -78,7 +78,6 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
     recommended: [
       { key: 's1_employee_count', format: 'number' },
-      { key: 's1_business_model', format: 'enum' },
       { key: 's1_regions', format: 'list' },
       { key: 's1_contact_name', format: 'text', minLen: 2 },
       { key: 's1_contact_phone', format: 'text' },
@@ -225,10 +224,10 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
   },
 
-  // ── Step 10 — Диагностика потерь / Личные вопросы ─────────────────────────
+  // ── Step 10 — Готовность собственника / Личные вопросы ────────────────────
   {
     id: 'personal',
-    label: 'Диагностика потерь',
+    label: 'Готовность собственника',
     step: 10,
     required: [],
     recommended: [

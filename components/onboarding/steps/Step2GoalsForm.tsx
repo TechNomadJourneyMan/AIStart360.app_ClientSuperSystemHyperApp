@@ -199,20 +199,6 @@ export default function Step2GoalsForm({ data, onChange }: Step2GoalsFormProps) 
             </div>
           </div>
 
-          {/* s6_expectations */}
-          <div>
-            <label htmlFor="s6_expectations" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Ожидания от платформы
-            </label>
-            <textarea
-              id="s6_expectations"
-              rows={3}
-              value={str(data.s6_expectations)}
-              onChange={(e) => onChange('s6_expectations', e.target.value)}
-              placeholder="Что ожидаете от AIStart360..."
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
-            />
-          </div>
         </div>
       </section>
     </div>

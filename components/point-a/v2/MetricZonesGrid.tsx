@@ -20,7 +20,8 @@
  *       deviation ≤ −0.05  → yellow
  *       otherwise          → green
  *  3. Else, if value is missing → yellow (data gap), with a hint.
- *  4. Else → green (default healthy).
+ *  4. Else → yellow: a value without a target/status cannot honestly be
+ *     classified as healthy.
  */
 
 import Link from 'next/link'
@@ -158,8 +159,8 @@ function classify(item: CatalogItem): { zone: Zone; deviation: number | null } {
   // 3. Missing value → yellow (data gap).
   if (value === null) return { zone: 'yellow', deviation: null }
 
-  // 4. Default healthy.
-  return { zone: 'green', deviation: null }
+  // 4. A fact without a target/status is useful, but its health is unknown.
+  return { zone: 'yellow', deviation: null }
 }
 
 function formatValue(v: number | string | null, unit: string): string {
@@ -331,6 +332,7 @@ export default function MetricZonesGrid() {
     const buckets: Record<Zone, ZoneRow[]> = { red: [], yellow: [], green: [] }
     if (!data) return buckets
     for (const item of data) {
+      if (asNumber(item.value) === null) continue
       const { zone, deviation } = classify(item)
       buckets[zone].push({
         id: item.id,
@@ -375,6 +377,27 @@ export default function MetricZonesGrid() {
           Повторить
         </button>
       </div>
+    )
+  }
+
+  const hasMetrics = grouped.red.length + grouped.yellow.length + grouped.green.length > 0
+  if (!hasMetrics) {
+    return (
+      <section className="rounded-2xl border border-dashed border-white/10 bg-surface-container-low p-8 text-center">
+        <span className="material-symbols-outlined text-3xl text-primary/60">monitoring</span>
+        <h2 className="mt-3 font-headline text-lg font-bold text-on-surface">Показателей пока нет</h2>
+        <p className="mx-auto mt-1 max-w-lg text-sm text-on-surface-variant">
+          Заполните анкету или загрузите финансовый и продажный отчёт — найденные значения появятся здесь автоматически.
+        </p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <a href="/client/onboarding" className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-[#003824]">
+            Заполнить анкету
+          </a>
+          <a href="/client/onboarding/documents" className="rounded-xl border border-white/10 px-4 py-2 text-xs text-on-surface">
+            Загрузить документ
+          </a>
+        </div>
+      </section>
     )
   }
 

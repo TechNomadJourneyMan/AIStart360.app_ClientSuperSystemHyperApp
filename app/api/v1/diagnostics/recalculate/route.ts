@@ -8,6 +8,13 @@ import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { internalFetchHeaders } from '@/lib/internal-auth'
+import {
+  buildPointADocumentContext,
+  enrichSurveyAnswersWithDocuments,
+} from '@/lib/documents/point-a-context'
+import { materializeAll } from '@/lib/metrics/materialize'
+import type { PeriodQuarter, ResolverDocument } from '@/lib/metrics/types'
+import { unwrapStoredSurveyAnswer } from '@/lib/survey/persistence'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -34,23 +41,51 @@ export async function POST(req: NextRequest) {
     // fires below do NOT forward cookies, so we pass it explicitly in their bodies.
     const locale = localeFromRequestCookie(req)
 
-    // Fetch all survey answers for this user
-    const { data: rows, error: surveyErr } = await sb
-      .from('survey_answers')
-      .select('question_key, answer')
-      .eq('user_id', user_id)
+    // Fetch manual answers and parsed documents together. Documents remain a
+    // separate source; they are never copied into survey_answers.
+    const [surveyResult, documentsResult] = await Promise.all([
+      sb
+        .from('survey_answers')
+        .select('question_key, answer')
+        .eq('user_id', user_id),
+      sb
+        .from('documents')
+        .select('id, doc_type, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
+        .eq('user_id', user_id)
+        .in('parse_status', ['parsed', 'completed'])
+        .order('uploaded_at', { ascending: false }),
+    ])
+    const { data: rows, error: surveyErr } = surveyResult
 
     if (surveyErr) return NextResponse.json({ ok: false, error: 'Failed to load survey answers' }, { status: 500 })
 
     // Build flat answers map
     const answers: Record<string, unknown> = {}
     for (const row of (rows ?? [])) {
-      answers[row.question_key] = (row.answer as { value: unknown }).value
+      answers[row.question_key] = unwrapStoredSurveyAnswer(row.answer)
     }
 
-    if (Object.keys(answers).length === 0) {
-      return NextResponse.json({ ok: false, error: 'No survey answers found — complete the wizard first' }, { status: 422 })
+    const resolverDocuments: ResolverDocument[] = (documentsResult.data ?? []).map((doc) => ({
+      id: doc.id as string,
+      docType: doc.doc_type as string,
+      parsedData: (doc.parsed_data as ResolverDocument['parsedData']) ?? null,
+      periodYear: (doc.period_year as number | null) ?? null,
+      periodQuarter: (doc.period_quarter as PeriodQuarter | null) ?? null,
+      uploadedAt: doc.uploaded_at as string,
+    }))
+    if (Object.keys(answers).length === 0 && resolverDocuments.length === 0) {
+      return NextResponse.json({ ok: false, error: 'No survey answers or parsed documents found' }, { status: 422 })
     }
+    const documentContext = buildPointADocumentContext(
+      resolverDocuments.map((doc) => ({
+        id: doc.id,
+        docType: doc.docType,
+        parsedData: doc.parsedData,
+        periodYear: doc.periodYear,
+        uploadedAt: doc.uploadedAt,
+      })),
+    )
+    const scoringAnswers = enrichSurveyAnswersWithDocuments(answers, documentContext)
 
     // Get company_id
     const { data: company } = await sb
@@ -60,7 +95,24 @@ export async function POST(req: NextRequest) {
       .single()
 
     // Calculate Point A
-    const result = calculatePointA(answers)
+    const result = calculatePointA(scoringAnswers)
+
+    // Materialize resolver metrics with provenance. Source order declared in
+    // the registry keeps an explicit manual survey value ahead of a scalar
+    // document field; table-derived Point A v3 metrics use document rows first.
+    if (company?.id) {
+      try {
+        await materializeAll(sb, {
+          companyId: company.id,
+          userId: user_id,
+          surveyAnswers: answers,
+          documents: resolverDocuments,
+          now: new Date(),
+        })
+      } catch (error) {
+        console.warn('[recalculate] document metric materialization failed', error)
+      }
+    }
 
     // Retire any previous current diagnostics for this user before inserting the
     // new one, so exactly one row stays is_current=true. Without this, repeated

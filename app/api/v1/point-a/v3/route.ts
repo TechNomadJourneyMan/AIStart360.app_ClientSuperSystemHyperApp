@@ -7,6 +7,7 @@ import {
   resolveCompanyId,
 } from '@/lib/point-a/v3/route-helpers'
 import { aggregatePointAV3 } from '@/lib/point-a/v3/aggregator-v3'
+import { buildPointADocumentContext } from '@/lib/documents/point-a-context'
 import type { ApiResult } from '@/types/onboarding'
 import type { PointAV3 } from '@/types/point-a-v3'
 
@@ -46,8 +47,18 @@ export async function GET() {
 
   try {
     const { resolver } = await loadV3Context(supabase, user.id, companyId)
+    const documents = buildPointADocumentContext(
+      resolver.documents.map((doc) => ({
+        id: doc.id,
+        docType: doc.docType,
+        parsedData: doc.parsedData,
+        periodYear: doc.periodYear,
+        uploadedAt: doc.uploadedAt,
+      }))
+    )
     const payload = aggregatePointAV3({
       surveyAnswers: resolver.surveyAnswers,
+      documents,
       now: resolver.now,
     })
     return ok(payload)

@@ -6,7 +6,6 @@ import { FieldLabel } from '@/components/onboarding/shared'
 import {
   INDUSTRIES,
   REGIONS,
-  BUSINESS_MODELS,
 } from '@/components/onboarding/constants/options'
 import { createClient } from '@/lib/supabase/client'
 
@@ -186,22 +185,6 @@ export default function Step1CompanyForm({
               placeholder="10"
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
             />
-          </div>
-          <div>
-            <FieldLabel htmlFor="s1_business_model">Бизнес-модель</FieldLabel>
-            <select
-              id="s1_business_model"
-              value={str(data.s1_business_model)}
-              onChange={(e) => onChange('s1_business_model', e.target.value)}
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all appearance-none"
-            >
-              <option value="">— Выберите —</option>
-              {BUSINESS_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <FieldLabel htmlFor="s1_years_on_market">Лет на рынке</FieldLabel>

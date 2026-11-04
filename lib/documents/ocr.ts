@@ -7,8 +7,9 @@
  *   1. `shouldFallbackToOcr()` — cheap heuristic to decide whether to invoke
  *      OCR, based on the (likely empty) text returned by `pdf-parse` and the
  *      original file size.
- *   2. `ocrPdfBuffer()` — runs Tesseract.js over the PDF buffer and returns
- *      best-effort text. Never throws — returns `null` on any error.
+ *   2. `ocrPdfBuffer()` — rasterizes a bounded number of PDF pages with the
+ *      already-installed pdf-parse worker, then runs Tesseract.js over each
+ *      PNG. Never throws — returns `null` on any error.
  *
  * NOTE: OCR is slow (seconds-to-minutes per page). Callers must gate this
  * behind `shouldFallbackToOcr()` and respect `maxPages`. Default langs target
@@ -54,12 +55,9 @@ export function shouldFallbackToOcr(
 /**
  * Run Tesseract OCR over a PDF buffer.
  *
- * Tesseract.js can accept a buffer directly for single-image inputs; for
- * multi-page PDFs it internally rasterizes via its bundled worker. We pass
- * the buffer as-is and let the worker handle decoding. If rasterization
- * fails (older tesseract.js builds, missing native deps in certain
- * runtimes), we swallow and return `null` — the caller falls back to the
- * empty-text path.
+ * Tesseract.js does not decode PDF containers. Rasterize pages first, then
+ * recognize the resulting PNG buffers. The page cap prevents a scanned annual
+ * report from consuming an unbounded Vercel invocation.
  *
  * Returns `null` on any failure. Never throws.
  */
@@ -80,19 +78,39 @@ export async function ocrPdfBuffer(
       bytes: buf.byteLength,
     })
 
-    worker = await createWorker(langs)
+    const { PDFParse } = await import('pdf-parse')
+    const parser = new PDFParse({ data: buf })
+    let pageImages: Array<{ data: Uint8Array }> = []
+    try {
+      const screenshots = await parser.getScreenshot({
+        scale: 1.5,
+        first: Math.max(1, maxPages),
+        imageDataUrl: false,
+        imageBuffer: true,
+      })
+      pageImages = screenshots.pages.slice(0, maxPages)
+    } finally {
+      await parser.destroy().catch(() => undefined)
+    }
+    if (pageImages.length === 0) return null
 
-    // tesseract.js accepts Buffer / Uint8Array via the recognize API.
-    // For multi-page PDFs the worker rasterizes internally; we cannot
-    // easily enforce maxPages at the worker level, so it is honored
-    // primarily as documentation + a hook for future per-page splitting.
-    const result = await worker.recognize(buf)
+    worker = await createWorker(langStr)
 
-    const text = (result?.data?.text ?? '').trim()
-    const confidence =
-      typeof result?.data?.confidence === 'number'
-        ? result.data.confidence
-        : 0
+    const pageTexts: string[] = []
+    let confidenceTotal = 0
+    let confidenceCount = 0
+    for (const page of pageImages) {
+      const result = await worker.recognize(Buffer.from(page.data))
+      const pageText = (result?.data?.text ?? '').trim()
+      if (pageText) pageTexts.push(pageText)
+      if (typeof result?.data?.confidence === 'number') {
+        confidenceTotal += result.data.confidence
+        confidenceCount += 1
+      }
+    }
+
+    const text = pageTexts.join('\n\n').trim()
+    const confidence = confidenceCount > 0 ? confidenceTotal / confidenceCount : 0
 
     const elapsedMs = Date.now() - start
     console.info('[ocr] done', {
@@ -104,7 +122,7 @@ export async function ocrPdfBuffer(
     return {
       text,
       confidence,
-      pages: 0, // unknown from single recognize() call; left as 0 sentinel
+      pages: pageImages.length,
       engine: 'tesseract',
     }
   } catch (err) {
@@ -121,6 +139,38 @@ export async function ocrPdfBuffer(
       } catch {
         // ignore termination errors — worker may already be gone
       }
+    }
+  }
+}
+
+/** OCR a standalone PNG/JPEG upload. */
+export async function ocrImageBuffer(
+  buf: Buffer,
+  opts?: Pick<OcrOptions, 'langs'>,
+): Promise<OcrResult | null> {
+  const langs = opts?.langs ?? ['rus', 'eng']
+  let worker: Awaited<ReturnType<typeof createWorker>> | null = null
+  try {
+    worker = await createWorker(langs.join('+'))
+    const result = await worker.recognize(buf)
+    const text = (result?.data?.text ?? '').trim()
+    return {
+      text,
+      confidence:
+        typeof result?.data?.confidence === 'number'
+          ? result.data.confidence
+          : 0,
+      pages: 1,
+      engine: 'tesseract',
+    }
+  } catch (error) {
+    console.info('[ocr] image recognition failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  } finally {
+    if (worker) {
+      await worker.terminate().catch(() => undefined)
     }
   }
 }

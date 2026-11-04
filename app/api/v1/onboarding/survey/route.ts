@@ -4,6 +4,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { resolveTargetUserId } from '@/lib/api-identity'
+import {
+  isValidSurveyStep,
+  parseSurveyAnswers,
+  saveSurveyAnswers,
+  unwrapStoredSurveyAnswer,
+} from '@/lib/survey/persistence'
+import {
+  ingestSurveyAnswersToPointA,
+  ensureOwnedCompany,
+  pointARepositoryError,
+} from '@/lib/point-a/model/repository'
 
 // GET /api/v1/onboarding/survey — the caller's own survey answers (session user).
 // SECURITY (audit 2026-07-02): identity is derived from the Supabase session,
@@ -30,7 +41,7 @@ export async function GET(req: NextRequest) {
   const answers: Record<string, unknown> = {}
   const steps: Record<number, boolean> = {}
   for (const row of (data ?? [])) {
-    answers[row.question_key] = (row.answer as { value: unknown }).value
+    answers[row.question_key] = unwrapStoredSurveyAnswer(row.answer)
     steps[row.step] = true
   }
 
@@ -51,8 +62,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { user_id, company_id, step, answers } = body
 
-    if (!step || !answers) {
-      return NextResponse.json({ ok: false, error: 'step, answers required' }, { status: 400 })
+    const parsedAnswers = parseSurveyAnswers(answers)
+    if (!isValidSurveyStep(step) || !parsedAnswers) {
+      return NextResponse.json(
+        { ok: false, error: 'step must be 0..12 and answers must be a non-empty answer map' },
+        { status: 400 },
+      )
+    }
+    if (company_id != null && typeof company_id !== 'string') {
+      return NextResponse.json(
+        { ok: false, error: 'company_id must be a string or null' },
+        { status: 400 },
+      )
     }
 
     const sb = createServerClient()
@@ -63,31 +84,69 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: resolved.error }, { status: resolved.error === 'unauthorized' ? 401 : 403 })
     }
     const targetUserId = resolved.userId
+    let canonicalCompanyId: string | null = null
+    try {
+      canonicalCompanyId = await ensureOwnedCompany(
+        sb,
+        targetUserId,
+        company_id ?? null,
+      )
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: pointARepositoryError(error) },
+        { status: 400 },
+      )
+    }
 
-    const rows = Object.entries(answers).map(([question_key, answer]) => ({
-      user_id: targetUserId,
-      company_id: company_id ?? null,
+    const result = await saveSurveyAnswers(sb, {
+      userId: targetUserId,
+      companyId: canonicalCompanyId,
       step,
-      question_key,
-      answer,
-    }))
+      answers: parsedAnswers,
+    })
+    if (!result.ok) {
+      console.error('[survey] Supabase upsert failed', result.error)
+      return NextResponse.json(
+        { ok: false, error: 'Failed to save answers' },
+        { status: 500 },
+      )
+    }
 
-    // Upsert (insert or update on conflict user_id + question_key)
-    const { error } = await sb
-      .from('survey_answers')
-      .upsert(rows, { onConflict: 'user_id,question_key' })
-
-    if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+    const canonicalAnswers = Object.fromEntries(
+      Object.entries(parsedAnswers).map(([key, answer]) => [key, answer.value]),
+    )
+    let pointASync:
+      | Awaited<ReturnType<typeof ingestSurveyAnswersToPointA>>
+      | { error: string }
+    try {
+      pointASync = await ingestSurveyAnswersToPointA(sb, {
+        userId: targetUserId,
+        companyId: canonicalCompanyId,
+        answers: canonicalAnswers,
+        step,
+      })
+    } catch (error) {
+      const message = pointARepositoryError(error)
+      console.error('[survey] Point A sync failed after survey save', message)
+      pointASync = { error: message }
+    }
 
     // Notify admins when the final survey step is completed (step 12)
     if (step >= 12) {
       notifyAdmins('survey_completed', {
         step,
-        answersCount: rows.length,
+        answersCount: result.saved,
       }, targetUserId)
     }
 
-    return NextResponse.json({ ok: true, data: { saved: rows.length } })
+    return NextResponse.json({
+      ok: true,
+      data: {
+        saved: result.saved,
+        sheet_sync: result.sheetSync,
+        point_a_sync: pointASync,
+      },
+    })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Invalid request body' }, { status: 400 })
   }

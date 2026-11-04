@@ -30,6 +30,7 @@ import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
 import { ShareButton } from '@/components/share/ShareButton'
+import CanonicalPointAModel from '@/components/dashboard/point-a/CanonicalPointAModel'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -336,6 +337,8 @@ export default async function DashboardPage() {
                 GRI CTA, consultation link, and onboarding-progress shortcuts.
                 Replaces the previous AI-insights carousel + CTA stack. */}
             <GrowthSnapshotHero />
+
+            <CanonicalPointAModel />
 
             {pointA ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the

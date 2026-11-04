@@ -45,7 +45,7 @@ export async function gatherResolverContext(
       .from('documents')
       .select('id, doc_type, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
       .eq('user_id', opts.userId)
-      .eq('parse_status', 'parsed')
+      .in('parse_status', ['parsed', 'completed'])
       .order('uploaded_at', { ascending: false }),
   ])
 
@@ -107,6 +107,8 @@ export function toMaterializedRow(
     metric_unit: value.unit || null,
     period_year: value.periodYear,
     period_quarter: value.periodQuarter,
+    period_month: null,
+    scenario: 'fact',
     source: pickedSourceLabel(value.picked),
     confidence: value.picked ? value.confidence : null,
     provenance: {
@@ -134,7 +136,7 @@ export interface MaterializeResult {
  * source — those would just be NULL noise.
  *
  * The unique index on `(company_id, metric_key, period_year,
- * period_quarter, source)` is honored via on_conflict.
+ * period_quarter, period_month, scenario, source)` is honored via on_conflict.
  */
 export async function materializeAll(
   supabase: SupabaseClient,
@@ -164,7 +166,7 @@ export async function materializeAll(
   const { error } = await supabase
     .from('metrics')
     .upsert(rows, {
-      onConflict: 'company_id,metric_key,period_year,period_quarter,source',
+      onConflict: 'company_id,metric_key,period_year,period_quarter,period_month,scenario,source',
       ignoreDuplicates: false,
     })
 
@@ -197,7 +199,7 @@ export async function materializeMetric(
   const { error } = await supabase
     .from('metrics')
     .upsert([row], {
-      onConflict: 'company_id,metric_key,period_year,period_quarter,source',
+      onConflict: 'company_id,metric_key,period_year,period_quarter,period_month,scenario,source',
       ignoreDuplicates: false,
     })
 

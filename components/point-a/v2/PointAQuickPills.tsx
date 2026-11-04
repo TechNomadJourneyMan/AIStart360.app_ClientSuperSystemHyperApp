@@ -264,7 +264,6 @@ export default function PointAQuickPills() {
     <div
       className="
         fixed bottom-4 left-1/2 -translate-x-1/2 z-40
-        max-[379px]:hidden
         w-[min(100%-1rem,52rem)]
         pointer-events-none
       "

@@ -18,7 +18,7 @@ export function FileUploadField({
   label,
   fieldKey,
   userId,
-  accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.png',
+  accept = '.pdf,.xlsx,.xls,.csv,.docx,.txt,.md,.png,.jpg,.jpeg,.pptx',
   value,
   onChange,
 }: FileUploadFieldProps) {

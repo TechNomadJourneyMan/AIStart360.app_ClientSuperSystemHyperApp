@@ -286,8 +286,8 @@ export function MetricDrillDownModalV2({
   const showAnomalies = activeLayers.includes('anomalies')
   const showFact = activeLayers.includes('fact')
 
-  const factPoints = tsData?.data ?? []
-  const forecastPoints = fData?.data ?? []
+  const factPoints = useMemo(() => tsData?.data ?? [], [tsData?.data])
+  const forecastPoints = useMemo(() => fData?.data ?? [], [fData?.data])
 
   const chartData = useMemo(
     () => mergeFactForecast(factPoints, forecastPoints, showForecast),

@@ -13,7 +13,7 @@ export const SURVEY_STEP_LABELS: Record<number, string> = {
   7: 'Маркетинг',
   8: 'Ключевые метрики',
   9: 'Финансы',
-  10: 'Личные вопросы',
+  10: 'Готовность собственника',
   11: 'Карта влияния',
   12: 'Системы и инструменты',
 }
@@ -26,7 +26,6 @@ export const SURVEY_LABELS: Record<string, string> = {
   s1_stage: 'Стадия развития',
   s1_employee_count: 'Количество сотрудников',
   s1_regions: 'География присутствия',
-  s1_business_model: 'Бизнес-модель',
   s1_contact_name: 'Контактное лицо (ФИО)',
   s1_contact_position: 'Должность',
   s1_contact_phone: 'Телефон',
@@ -171,7 +170,6 @@ export const SURVEY_LABELS: Record<string, string> = {
   s6_goal_12months: 'Цель на 12 месяцев',
   s6_goal_3years: 'Цель на 3 года',
   s6_growth_blockers: 'Барьеры роста',
-  s6_expectations: 'Ожидания от платформы',
 
   // ── Step 6 new — CJM ───────────────────────────────────────────────────
   s6n_journey_table: 'Таблица пути клиента (CJM)',
@@ -263,7 +261,7 @@ export const SURVEY_LABELS: Record<string, string> = {
 
 /** Get the step number from a question key (e.g. "s2_revenue_2023" → 2) */
 export function getStepFromKey(key: string): number {
-  const match = key.match(/^s(\d+)_/)
+  const match = key.match(/^s(\d+)[a-z]*_/)
   return match ? parseInt(match[1], 10) : 0
 }
 

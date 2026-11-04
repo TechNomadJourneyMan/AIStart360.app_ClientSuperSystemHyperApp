@@ -17,6 +17,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import {
+  surveySaveError,
+  type SurveySavePayload,
+} from '@/components/onboarding/utils/save-response'
 
 interface StepDef {
   key: string
@@ -209,17 +213,20 @@ export default function OnboardingEcommercePage() {
     })
   }, [step, answers])
 
-  const persistRemote = useCallback(async (final: boolean) => {
+  const persistRemote = useCallback(async (final: boolean): Promise<boolean> => {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setError('Сессия истекла. Войдите снова — локальный черновик сохранён.')
+        return false
+      }
       // API contract: answers must be Record<string, { value: unknown }>
       // (GET unwraps row.answer.value — flat values would break the read path)
       const wrapped = Object.fromEntries(
         Object.entries(answers).map(([k, v]) => [k, { value: v }]),
       )
-      await fetch('/api/v1/onboarding/survey', {
+      const response = await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,8 +237,17 @@ export default function OnboardingEcommercePage() {
           answers: wrapped,
         }),
       })
-    } catch {
-      // best-effort — local draft already saved
+      const payload = await response.json() as SurveySavePayload
+      const saveFailure = surveySaveError(response.ok, payload)
+      if (saveFailure) throw new Error(saveFailure)
+      return true
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? `${saveError.message}. Локальный черновик сохранён.`
+          : 'Не удалось сохранить ответы. Локальный черновик сохранён.',
+      )
+      return false
     }
   }, [stepIdx, answers])
 
@@ -241,16 +257,21 @@ export default function OnboardingEcommercePage() {
       return
     }
     setError(null)
-    if (stepIdx < total - 1) {
-      await persistRemote(false)
-      setStepIdx((i) => i + 1)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } else {
-      // finish
-      setSubmitting(true)
-      await persistRemote(true)
-      sessionStorage.removeItem(STORAGE_KEY)
-      router.push('/client/dashboard-ecommerce')
+    setSubmitting(true)
+    try {
+      if (stepIdx < total - 1) {
+        const saved = await persistRemote(false)
+        if (!saved) return
+        setStepIdx((i) => i + 1)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } else {
+        const saved = await persistRemote(true)
+        if (!saved) return
+        sessionStorage.removeItem(STORAGE_KEY)
+        router.push('/client/dashboard-ecommerce')
+      }
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -292,9 +313,20 @@ export default function OnboardingEcommercePage() {
             return (
               <button
                 key={s.key}
-                onClick={() => setStepIdx(i)}
+                disabled={submitting}
+                onClick={async () => {
+                  if (i === stepIdx) return
+                  setError(null)
+                  setSubmitting(true)
+                  try {
+                    const saved = await persistRemote(false)
+                    if (saved) setStepIdx(i)
+                  } finally {
+                    setSubmitting(false)
+                  }
+                }}
                 className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-50
                   ${isActive ? 'bg-primary/15 text-primary border border-primary/20' :
                     isPast ? 'bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06]' :
                     'bg-white/[0.02] text-on-surface-variant/60 hover:text-on-surface-variant hover:bg-white/[0.05]'}

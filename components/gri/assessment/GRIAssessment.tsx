@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { motion, useReducedMotion } from 'framer-motion'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
@@ -385,7 +385,7 @@ export default function GRIAssessment() {
       completedSections: { ...s.completedSections, [sectionId]: true },
     }))
 
-  const sectionAvg = (sectionId: SectionId) => {
+  const sectionAvg = useCallback((sectionId: SectionId) => {
     const section = GRI_SECTIONS.find((s) => s.id === sectionId)
     if (!section) return 0
     const scores = state.scores[sectionId] || {}
@@ -394,7 +394,7 @@ export default function GRIAssessment() {
       .filter((v): v is number => typeof v === 'number')
     if (vals.length === 0) return 0
     return vals.reduce((a, b) => a + b, 0) / vals.length
-  }
+  }, [state.scores])
 
   const sectionAvgsMemo = useMemo(() => {
     const out: Record<string, number> = {}
@@ -402,7 +402,7 @@ export default function GRIAssessment() {
       out[sec.id] = sectionAvg(sec.id)
     })
     return out
-  }, [state.scores])
+  }, [sectionAvg])
 
   const griIndex = useMemo(() => {
     const positive = Object.values(sectionAvgsMemo).filter((v) => v > 0)

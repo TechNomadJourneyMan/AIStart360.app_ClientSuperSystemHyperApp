@@ -10,6 +10,7 @@ import { hasPermission } from '@/lib/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
+import { sha256File } from '@/lib/documents/client-hash'
 
 export function Header() {
   const { sidebarCollapsed } = useUIStore()
@@ -111,8 +112,12 @@ export function Header() {
       return
     }
     try {
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error('Файл превышает лимит 20 МБ')
+      }
       setUploadStatus('uploading')
       setUploadMessage(`Загрузка ${file.name}…`)
+      const contentHash = await sha256File(file)
       const sb = createClient()
       const storagePath = `${user.id}/${Date.now()}_${file.name}`
       const { error: uploadError } = await sb.storage
@@ -132,7 +137,8 @@ export function Header() {
           file_url: publicUrl,
           file_size: file.size,
           mime_type: file.type,
-          doc_type: 'financial_report',
+          doc_type: 'pl_report',
+          content_hash: contentHash,
         }),
       })
       const result = await res.json()
@@ -268,7 +274,7 @@ export function Header() {
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.png,.jpg,.jpeg"
+          accept=".pdf,.xlsx,.xls,.csv,.docx,.txt,.md,.png,.jpg,.jpeg,.pptx"
           onChange={handleFileSelected}
         />
 
