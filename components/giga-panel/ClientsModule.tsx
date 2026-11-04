@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useGigaPanelStore, type GigaClient } from '@/stores/gigaPanel.store'
 import { UserDetailPanel } from './UserDetailPanel'
+import { AskInsightForm } from '@/components/point-a/AskInsightForm'
 
 // ─── GRI Score ring ───────────────────────────────────────────────────────────
 
@@ -333,6 +334,11 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
             )}
           </div>
         )}
+
+        {/* Staff authoring: ask this client a clarifying question (Point A feed) */}
+        <div className="pt-3">
+          <AskInsightForm clientUserId={client.id} />
+        </div>
 
         {/* Survey + Diagnostics + Documents (editable) */}
         <div className="pt-2 -mx-5 border-t border-white/[0.07]">

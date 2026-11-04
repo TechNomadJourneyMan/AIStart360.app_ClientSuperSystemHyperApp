@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
+// Reads the auth session (cookies/headers), so it can never be statically
+// rendered. Declaring it explicitly avoids the build-time dynamic-server log.
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const session = await auth()

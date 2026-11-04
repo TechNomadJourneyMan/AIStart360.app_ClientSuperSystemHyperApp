@@ -91,12 +91,12 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/expert/dashboard')
   })
 
-  // Client cannot access admin paths
-  it('redirects client away from /dashboard to /client/waiting-room', async () => {
+  // Clients share the (dashboard) layout: /dashboard is their real cabinet now
+  // (see commit 91f2609 — "Просто посмотрю" opens /dashboard, not /client/*).
+  it('allows client to access /dashboard (shared cabinet)', async () => {
     const req = createRequest('/dashboard', 'client')
     const res = await middleware(req)
-    expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/waiting-room')
+    expect(res.status).toBe(200)
   })
 
   // Admin can access admin paths
@@ -121,10 +121,10 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
-  it('redirects authenticated client from /login to /client/waiting-room', async () => {
+  it('redirects authenticated client from /login to /dashboard (shared cabinet)', async () => {
     const req = createRequest('/login', 'client')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/waiting-room')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 })

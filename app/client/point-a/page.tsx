@@ -157,6 +157,10 @@ export default function PointAClientPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null)
   const [aiStatus, setAiStatus] = useState<AIStatus>('none')
+  const [obStatus, setObStatus] = useState<{
+    survey: { completed_steps: number; total_steps: number; percent: number; is_complete: boolean }
+    documents: { count: number; has_files: boolean }
+  } | null>(null)
 
   useEffect(() => {
     const sb = createClient()
@@ -172,12 +176,15 @@ export default function PointAClientPage() {
     if (!userId) return
     setIsLoading(true)
     try {
-      const [diagRes, compRes] = await Promise.all([
+      const [diagRes, compRes, statusRes] = await Promise.all([
         fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
         fetch(`/api/v1/onboarding/company?user_id=${userId}`),
+        fetch('/api/v1/onboarding/status'),
       ])
       const diagData = await diagRes.json()
       const compData = await compRes.json()
+      const statusData = await statusRes.json().catch(() => null)
+      if (statusData?.ok) setObStatus(statusData.data)
       if (diagData.ok) {
         setDiag(diagData.data)
         setAiStatus(diagData.data?.ai_status ?? 'none')
@@ -305,22 +312,72 @@ export default function PointAClientPage() {
             </div>
           </div>
         ) : !diag ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
-            </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Диагностика не рассчитана</h2>
-            <p className="text-sm text-on-surface-variant mb-6">Заполните анкету и нажмите «Пересчитать»</p>
-            <div className="flex gap-3 justify-center">
-              <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
-                Заполнить анкету
-              </Link>
-              <button onClick={recalculate} disabled={isRecalculating}
-                className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface transition-all">
-                Пересчитать
-              </button>
-            </div>
-          </div>
+          (() => {
+            const survey = obStatus?.survey
+            const docs = obStatus?.documents
+            const pct = survey?.percent ?? 0
+            const surveyComplete = survey?.is_complete ?? false
+            const hasData = (survey?.completed_steps ?? 0) > 0 || (docs?.count ?? 0) > 0
+            // Current state of the diagnostic for THIS client (no diagnostic row yet).
+            const state = !hasData
+              ? { chip: 'Не запущена', color: 'text-on-surface-variant', bg: 'bg-white/[0.05]', icon: 'radio_button_unchecked' }
+              : surveyComplete
+                ? { chip: 'Готова к расчёту', color: 'text-primary', bg: 'bg-primary/10', icon: 'play_circle' }
+                : { chip: 'Сбор данных', color: 'text-amber-400', bg: 'bg-amber-400/10', icon: 'hourglass_top' }
+            return (
+              <div className="max-w-xl mx-auto py-16">
+                <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-8 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
+                  </div>
+                  <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 mb-3 ${state.bg}`}>
+                    <span className={`material-symbols-outlined text-[15px] ${state.color}`}>{state.icon}</span>
+                    <span className={`text-xs font-mono font-semibold ${state.color}`}>Статус: {state.chip}</span>
+                  </div>
+                  <h2 className="font-headline text-xl font-bold text-on-surface mb-2">
+                    {surveyComplete ? 'Диагностика готова к расчёту' : 'Диагностика ещё формируется'}
+                  </h2>
+                  <p className="text-sm text-on-surface-variant mb-6">
+                    {surveyComplete
+                      ? 'Все данные собраны — нажмите «Пересчитать», чтобы получить отчёт по Точке А.'
+                      : 'Заполните анкету и прикрепите документы — диагностика рассчитается по вашим данным.'}
+                  </p>
+
+                  {/* Progress: survey + documents */}
+                  <div className="text-left space-y-3 mb-6">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-on-surface-variant">Анкета</span>
+                        <span className="text-xs font-mono text-on-surface">
+                          {survey?.completed_steps ?? 0} / {survey?.total_steps ?? 12} шагов · {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-primary to-[#00e29e] transition-all duration-700"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-on-surface-variant">Документы</span>
+                      <span className="text-xs font-mono text-on-surface">{docs?.count ?? 0} загружено</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-center flex-wrap">
+                    <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
+                      {surveyComplete ? 'Изменить анкету' : 'Заполнить анкету'}
+                    </Link>
+                    <button onClick={recalculate} disabled={isRecalculating}
+                      className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface transition-all disabled:opacity-60">
+                      {isRecalculating ? 'Считаем…' : 'Пересчитать'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()
         ) : (
           <>
             {/* 1. Welcome Hero — company name + health gauge at the very top */}

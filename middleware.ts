@@ -112,19 +112,31 @@ export async function middleware(request: NextRequest) {
 
   // Not authenticated, accessing protected page → redirect to login
   if (!isPublic && !user) {
-    // Check legacy cookie fallback
+    // Check legacy cookie fallback — only honor a recognized role. An unknown
+    // value (e.g. tampered cookie) must NOT grant access to protected pages.
     const legacyRole = request.cookies.get('aistart360_role')?.value
-    if (!legacyRole) {
+    if (!legacyRole || !VALID_ROLES.includes(legacyRole as ValidRole)) {
       const url = new URL('/login', request.url)
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    // Legacy session present — allow through for now
+    // Legacy session present with a valid role — allow through for now
     return response
   }
 
   // ── Role-based route protection ──
   if (user) {
+    // The client cabinet (/client/*) is for clients only. Any other role is
+    // redirected to its own dashboard.
+    if (role !== 'client' && CLIENT_PATHS.some((p) => pathname.startsWith(p))) {
+      const dest =
+        role === 'super_admin' ? '/admin-giga-panel' :
+        role === 'owner' ? '/owner/dashboard' :
+        role === 'expert' ? '/expert/dashboard' :
+        '/dashboard'
+      return NextResponse.redirect(new URL(dest, request.url))
+    }
+
     // Expert trying to access admin-only pages
     if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))

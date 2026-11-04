@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
+import { AskInsightForm } from '@/components/point-a/AskInsightForm'
 
 // Coerce any DB-returned value (number | string | null) to a safe display string
 function fmt(v: unknown): string {
@@ -110,6 +111,10 @@ export function PointATab({ clientId }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Staff authoring: ask the client a clarifying question (lands in their
+          Point A feed instantly via Realtime). */}
+      <AskInsightForm clientUserId={clientId} />
+
       {/* Hero — overall score gauge + title */}
       <Commentable targetId="pointa:hero:gauge">
         <section className="rounded-2xl border border-primary/20 bg-primary/5 p-6 flex items-center gap-6">
