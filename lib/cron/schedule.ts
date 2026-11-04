@@ -2,9 +2,8 @@
  * lib/cron/schedule.ts — what runs when, for the in-process scheduler (lib/cron/runner.ts).
  *
  * Vercel Cron called these paths on a UTC schedule; a persistent server (Railway) has no such
- * service, so the portal calls them itself. While Vercel still runs the crons (the test period)
- * this list must say exactly what `vercel.json` says — tests/unit/cron/schedule.test.ts enforces
- * it. At the domain switch the crons leave vercel.json and this file is the only copy.
+ * service, so the portal calls them itself. Since the domain switch (2026-11-04) the crons are no
+ * longer in `vercel.json`: this file is the only copy, pinned by tests/unit/cron/schedule.test.ts.
  */
 import { Cron } from 'croner'
 

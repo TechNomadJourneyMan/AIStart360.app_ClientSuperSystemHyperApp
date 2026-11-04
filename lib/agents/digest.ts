@@ -1,7 +1,7 @@
 /**
  * lib/agents/digest.ts — the daily agents digest for the admin bot.
  *
- * /api/cron/agents-digest runs it at 09:00 Asia/Almaty (vercel.json "0 4 * * *").
+ * /api/cron/agents-digest runs it at 09:00 Asia/Almaty (lib/cron/schedule.ts "0 4 * * *" UTC).
  * Switch: agents_daily_digest (default ON). Recipients: linked staff whose
  * role has agents.view — a scheduled digest they opted into, so level
  * thresholds and quiet hours do not hold it back; a personal mute does. The

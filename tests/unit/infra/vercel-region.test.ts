@@ -9,9 +9,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('vercel.json', () => {
-  it('pins the functions to dub1 (next to Supabase eu-west-1) and keeps the crons', () => {
-    const cfg = JSON.parse(readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8')) as { regions?: string[]; crons?: unknown[] }
+  it('pins the functions to dub1 (next to Supabase eu-west-1)', () => {
+    const cfg = JSON.parse(readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8')) as { regions?: string[] }
     expect(cfg.regions).toEqual(['dub1'])
-    expect(Array.isArray(cfg.crons) && cfg.crons.length).toBeGreaterThan(0)
   })
 })
