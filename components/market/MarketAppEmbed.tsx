@@ -27,6 +27,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { MarketAnalysisChecklist } from '@/components/market-analysis/MarketAnalysisChecklist'
 import MarketNewsTab from '@/components/market/MarketNewsTab'
+import { HelpButton } from '@/components/assistant/HelpButton'
 
 const APP_URL = process.env.NEXT_PUBLIC_MARKET_APP_URL || 'http://localhost:5173'
 
@@ -251,7 +252,7 @@ export default function MarketAppEmbed() {
         <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
           <span className="material-symbols-outlined text-xl text-primary">public</span>
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">
             Рынок · Mark-analytics
           </p>
@@ -259,6 +260,8 @@ export default function MarketAppEmbed() {
             Карта рынка и анализ конкурентов
           </h1>
         </div>
+        {/* Контекстная подсказка по разделу «Рынок» */}
+        <HelpButton topic="Анализ рынка" className="mt-1 shrink-0" />
       </div>
 
       {/* Объединённая навигация: портальные табы поверх встроенной SPA */}

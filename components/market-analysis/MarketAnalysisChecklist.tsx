@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast, Toaster } from 'sonner'
 import { MarketDataPanel, type ConfirmedAnswer } from './MarketDataPanel'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 // ── API contract types ──────────────────────────────────────────────────────
 
@@ -302,9 +303,15 @@ export function MarketAnalysisChecklist() {
           <p className="text-[11px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">
             Анализ рынка · Этап 02
           </p>
-          <h1 className="font-headline text-2xl lg:text-3xl font-extrabold text-on-surface tracking-tight">
-            Чек-лист оценки рынка
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-headline text-2xl lg:text-3xl font-extrabold text-on-surface tracking-tight">
+              Чек-лист оценки рынка
+            </h1>
+            <BlockInfo title="Чек-лист оценки рынка" align="left">
+              <p><b>Что это:</b> 50 вопросов в 6 блоках — оценка, можно ли вывести продукт на $2M.</p>
+              <p><b>Что делает:</b> собирает ответы AI и владельца, вы их подтверждаете или оспариваете.</p>
+            </BlockInfo>
+          </div>
           <p className="text-sm text-on-surface-variant mt-2 leading-relaxed max-w-2xl">
             50 вопросов · 6 блоков. Каждый ответ — сигнал: можно ли вывести продукт на $2M.
           </p>
@@ -324,6 +331,10 @@ export function MarketAnalysisChecklist() {
                 <span className="text-xs font-mono text-on-surface-variant/70">
                   · отвечено {progress.answered}
                 </span>
+                <BlockInfo title="Прогресс анализа рынка" align="left">
+                  <p><b>Что это:</b> сколько вопросов отвечено и сколько ответов подтверждено из 50.</p>
+                  <p><b>Что делает:</b> отслеживает готовность анализа; кнопка рядом генерирует AI-черновик.</p>
+                </BlockInfo>
               </div>
 
               {/* Progress bar: confirmed (teal) over answered (dimmer) */}
@@ -905,9 +916,15 @@ function buildInsights(blocks: Block[]): Insight[] {
 function InsightsStrip({ insights }: { insights: Insight[] }) {
   return (
     <section>
-      <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/70 mb-2">
-        Инсайты · динамичные ответы
-      </p>
+      <div className="flex items-center gap-2 mb-2">
+        <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/70">
+          Инсайты · динамичные ответы
+        </p>
+        <BlockInfo title="Инсайты · динамичные ответы" align="left">
+          <p><b>Что это:</b> подтверждённые ответы экспертов и AI с наибольшей уверенностью.</p>
+          <p><b>Что делает:</b> вытаскивает самые значимые выводы из чек-листа в короткие карточки.</p>
+        </BlockInfo>
+      </div>
       {insights.length === 0 ? (
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 text-center">
           <span className="material-symbols-outlined text-2xl text-on-surface-variant/40">lightbulb</span>

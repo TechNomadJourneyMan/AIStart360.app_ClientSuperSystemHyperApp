@@ -96,7 +96,16 @@ function sectionLabel(key: string): string {
   return getSection(key)?.label ?? key
 }
 
-export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AssistantChatPanel({
+  open,
+  onClose,
+  topic,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Optional contextual section label shown as a chip under the header. */
+  topic?: string
+}) {
   const [groups, setGroups] = useState<ScriptGroup[]>([])
   const [loadingScripts, setLoadingScripts] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -233,6 +242,16 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
             <span className="material-symbols-outlined text-lg">close</span>
           </button>
         </header>
+
+        {/* Contextual section chip (set when opened from a HelpButton) */}
+        {topic && (
+          <div className="px-5 pt-3 flex-shrink-0">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2.5 py-1 text-[11px] font-mono text-primary">
+              <span className="material-symbols-outlined text-sm">help</span>
+              {locale === 'en' ? 'Section' : 'Раздел'}: {topic}
+            </span>
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">

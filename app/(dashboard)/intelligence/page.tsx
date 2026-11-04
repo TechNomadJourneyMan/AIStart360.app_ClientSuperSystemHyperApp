@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { EmptyState } from '@/components/common/EmptyState'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
@@ -17,7 +18,13 @@ export default async function IntelligencePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
+            <BlockInfo title="Intelligence Hub" align="left">
+              <p><b>Что это:</b> центр рыночных сигналов, рисков и возможностей вашей компании.</p>
+              <p><b>Что делает:</b> собирает сигналы из источников данных и диагностики в единую ленту.</p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности вашей компании</p>
         </div>
       </div>

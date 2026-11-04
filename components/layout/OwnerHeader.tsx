@@ -2,6 +2,7 @@
 
 import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
+import { HelpButton } from '@/components/assistant/HelpButton'
 
 export function OwnerHeader() {
   const { user, logout } = useAuthStore()
@@ -23,6 +24,9 @@ export function OwnerHeader() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
+        {/* Help — opens the Smart Assistant */}
+        <HelpButton variant="chip" />
+
         <button className="relative w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.04] flex items-center justify-center transition-colors">
           <span className="material-symbols-outlined text-xl text-on-surface-variant">notifications</span>
         </button>

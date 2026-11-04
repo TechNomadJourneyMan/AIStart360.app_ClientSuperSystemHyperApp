@@ -28,6 +28,7 @@ import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -368,7 +369,13 @@ export default async function DashboardPage() {
             <>
               {pointA.risks.length > 0 && (
                 <section>
-                  <h2 className="text-xs font-mono text-error/80 uppercase tracking-[0.2em] mb-3">Риски</h2>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-xs font-mono text-error/80 uppercase tracking-[0.2em]">Риски</h2>
+                    <BlockInfo title="Риски" align="left">
+                      <p><b>Что это:</b> главные угрозы для роста, найденные AI по вашим данным анкеты и метрикам.</p>
+                      <p><b>Что делает:</b> подсвечивает, что может сломаться при ускорении, с оценкой влияния — чтобы устранить заранее.</p>
+                    </BlockInfo>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {pointA.risks.slice(0, 6).map((r, i) => (
                       <div key={i} className={`rounded-2xl border p-4 ${
@@ -387,7 +394,13 @@ export default async function DashboardPage() {
 
               {pointA.quick_wins.length > 0 && (
                 <section>
-                  <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Quick Wins</h2>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">Quick Wins</h2>
+                    <BlockInfo title="Quick Wins" align="left">
+                      <p><b>Что это:</b> быстрые победы — действия с высокой отдачей, которые можно сделать за дни.</p>
+                      <p><b>Что делает:</b> даёт короткий список шагов с горизонтом, чтобы получить результат уже сейчас, не дожидаясь большой стратегии.</p>
+                    </BlockInfo>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {pointA.quick_wins.slice(0, 6).map((qw, i) => (
                       <div key={i} className="bg-primary/[0.04] border border-primary/30 rounded-2xl p-4">
@@ -442,7 +455,13 @@ export default async function DashboardPage() {
 
           {/* Quick nav */}
           <section>
-            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="font-headline text-lg font-bold text-on-surface">Быстрый доступ</h2>
+              <BlockInfo title="Быстрый доступ" align="left">
+                <p><b>Что это:</b> ярлыки к ключевым разделам кабинета.</p>
+                <p><b>Что делает:</b> в один клик ведёт в Точку А, анкету, метрики и документы — чтобы быстро продолжить работу.</p>
+              </BlockInfo>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
@@ -582,7 +601,13 @@ export default async function DashboardPage() {
           <div className="lg:col-span-2 space-y-6">
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
+                    <BlockInfo title="Критические сигналы" align="left">
+                      <p><b>Что это:</b> сводка срочных событий по портфелю — новые заявки, риски, отклонения.</p>
+                      <p><b>Что делает:</b> собирает в одном месте то, что требует реакции прямо сейчас, со ссылкой на действие.</p>
+                    </BlockInfo>
+                  </div>
                   <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
                     {alerts.filter(a => a.severity === 'critical').length} алерта
                   </span>
@@ -621,7 +646,13 @@ export default async function DashboardPage() {
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
+                  <div className="flex items-center gap-2 mb-4">
+                    <h3 className="text-sm font-bold text-on-surface uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
+                    <BlockInfo title="Здоровье портфеля">
+                      <p><b>Что это:</b> распределение клиентов по уровням GRI (Excellent / Strong / Developing / Critical).</p>
+                      <p><b>Что делает:</b> показывает, какая доля портфеля готова к росту, а какая в зоне риска.</p>
+                    </BlockInfo>
+                  </div>
                   <div className="space-y-4">
                       {griDistRows.map(row => (
                            <div key={row.label}>

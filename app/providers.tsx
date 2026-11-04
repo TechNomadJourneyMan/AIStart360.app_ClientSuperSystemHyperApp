@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { ToastContainer } from '@/components/ui/Toast'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeProvider } from 'next-themes'
+import { AssistantProvider } from '@/components/assistant/AssistantProvider'
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { init } = useAuthStore()
@@ -33,7 +34,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <AuthProvider>
-          {children}
+          <AssistantProvider>
+            {children}
+          </AssistantProvider>
           <ToastContainer />
         </AuthProvider>
       </ThemeProvider>

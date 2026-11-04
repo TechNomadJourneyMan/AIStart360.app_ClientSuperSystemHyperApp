@@ -81,6 +81,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { Input } from "./ui/input"
+import { BlockInfo } from "@/components/assistant/BlockInfo"
 
 import {
   translations,
@@ -1075,7 +1076,19 @@ export default function GRICalculator() {
               <CardContent className="p-0 px-4 sm:px-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
-                    <h2 className="text-base font-semibold text-white/90">{t.growthReadinessIndex}</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-semibold text-white/90">{t.growthReadinessIndex}</h2>
+                      <BlockInfo title={t.growthReadinessIndex} align="left">
+                        <p>
+                          <b>Что это:</b> радар-профиль готовности к росту по 7 категориям против
+                          эталонного бенчмарка ниши.
+                        </p>
+                        <p>
+                          <b>Что делает:</b> наглядно показывает сильные и слабые категории и
+                          отставание от эталона для выбранной ниши и размера.
+                        </p>
+                      </BlockInfo>
+                    </div>
                     <p className="text-xs text-white/40 mt-0.5">{t.calculatorSubtitle}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1142,7 +1155,19 @@ export default function GRICalculator() {
               <CardContent className="p-0 px-4 sm:px-6 h-full flex flex-col">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                   <div>
-                    <h2 className="text-base font-semibold text-white/90">{t.calculatorTitle}</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-semibold text-white/90">{t.calculatorTitle}</h2>
+                      <BlockInfo title={t.calculatorTitle} align="left">
+                        <p>
+                          <b>Что это:</b> ползунки оценок по каждой из категорий готовности с
+                          разбивкой на подфакторы.
+                        </p>
+                        <p>
+                          <b>Что делает:</b> вы вручную выставляете баллы — итоговый GRI и радар
+                          пересчитываются мгновенно; есть режим планирования.
+                        </p>
+                      </BlockInfo>
+                    </div>
                     <p className="text-xs text-white/40 mt-0.5">{t.calculatorDesc}</p>
                   </div>
                   <Badge variant="outline" className="text-[0.6rem] w-fit">
@@ -1325,7 +1350,19 @@ export default function GRICalculator() {
                     <BarChart3 className="w-4 h-4 text-cyan-400" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white/90">{t.financialAnalyst}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white/90">{t.financialAnalyst}</h3>
+                      <BlockInfo title={t.financialAnalyst} align="left">
+                        <p>
+                          <b>Что это:</b> загрузка финансового отчёта или вставка данных для
+                          AI-разбора показателей.
+                        </p>
+                        <p>
+                          <b>Что делает:</b> извлекает ключевые метрики из отчёта и учитывает их в
+                          оценке готовности и стратегии.
+                        </p>
+                      </BlockInfo>
+                    </div>
                     <p className="text-[0.65rem] text-white/40">{t.financialAnalystDesc}</p>
                   </div>
                 </div>
@@ -1626,7 +1663,19 @@ export default function GRICalculator() {
                           <Sparkles className="w-4 h-4 text-purple-400" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-semibold text-white/90">{t.strategyTitle}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-white/90">{t.strategyTitle}</h3>
+                            <BlockInfo title={t.strategyTitle} align="left">
+                              <p>
+                                <b>Что это:</b> сгенерированная AI стратегия роста на основе ваших
+                                оценок GRI и финансовых данных.
+                              </p>
+                              <p>
+                                <b>Что делает:</b> предлагает приоритеты и шаги для усиления слабых
+                                категорий и повышения готовности к росту.
+                              </p>
+                            </BlockInfo>
+                          </div>
                           <p className="text-[0.65rem] text-white/40">{t.strategyDesc}</p>
                         </div>
                       </div>

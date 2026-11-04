@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import {
   PieChart,
   Pie,
@@ -126,6 +127,10 @@ function PanelShell({ accent, children }: { accent: string; children: React.Reac
         <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant">
           Данные рынка · live
         </span>
+        <BlockInfo title="Данные рынка · live" align="left">
+          <p><b>Что это:</b> реальные рыночные данные по блоку из сервиса аналитики рынка.</p>
+          <p><b>Что делает:</b> подтягивает выручку, отрасли и доли конкурентов; пусто — сервис недоступен.</p>
+        </BlockInfo>
       </div>
       {children}
     </div>

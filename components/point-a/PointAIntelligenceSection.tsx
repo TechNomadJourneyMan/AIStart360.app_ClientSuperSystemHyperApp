@@ -5,6 +5,7 @@ import type { PointA, Risk, QuickWin } from '@/types/onboarding'
 import { usePointAAggregate, useRecalculatePointA } from '@/hooks/usePointAAggregate'
 import { useRealtimePointA } from '@/hooks/useRealtimePointA'
 import PointAInsightCard from '@/components/point-a/PointAInsightCard'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 interface Props {
   userId: string
@@ -120,6 +121,10 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
             <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
               · Покрытие <span className="text-primary">{Math.round(intelligence.coverage.overall * 100)}%</span>
             </span>
+            <BlockInfo title="Интеллект-слой Точки А" align="left">
+              <p><b>Что это:</b> сводка по данным компании — сильные стороны, пробелы, разрез по департаментам, риски и быстрые победы.</p>
+              <p><b>Что делает:</b> показывает покрытие данных по бизнесу, KPI, GRI и целям; обновляется в реальном времени и пересчитывается по кнопке.</p>
+            </BlockInfo>
           </div>
           <button
             onClick={() => recalc.mutate()}

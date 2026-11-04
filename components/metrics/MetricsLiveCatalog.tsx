@@ -10,6 +10,7 @@ import { SORT_OPTIONS, NAMESPACE_TABS, type SortMode, type Namespace } from './_
 import MetricHealthCard from '@/components/dashboard/MetricHealthCard'
 import MetricDrillDownModalV2 from '@/components/dashboard/MetricDrillDownModalV2'
 import { useRealtimeMetrics } from '@/hooks/useRealtimeMetrics'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import { getBizDescription, getKpiDescription, getGriDescription } from '@/lib/metrics/descriptions'
 
 interface CatalogItem {
@@ -212,9 +213,15 @@ export default function MetricsLiveCatalog({ userId }: Props) {
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">
             Каталог метрик · Real-time
           </p>
-          <h2 className="font-headline text-xl font-bold text-on-surface">
-            Точка А: 122 показателя
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="font-headline text-xl font-bold text-on-surface">
+              Точка А: 122 показателя
+            </h2>
+            <BlockInfo title="Каталог метрик · Точка А" align="left">
+              <p><b>Что это:</b> полный live-каталог показателей Точки А из таблицы метрик.</p>
+              <p><b>Что делает:</b> ищет, фильтрует по разделу и отделу, пересчитывает значения.</p>
+            </BlockInfo>
+          </div>
           <p className="text-xs text-on-surface-variant mt-1 font-mono">
             Найдено: <span className="text-primary">{total}</span> · страница {page}/{totalPages}
           </p>

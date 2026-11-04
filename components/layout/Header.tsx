@@ -10,6 +10,7 @@ import { hasPermission } from '@/lib/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
+import { HelpButton } from '@/components/assistant/HelpButton'
 
 export function Header() {
   const { sidebarCollapsed } = useUIStore()
@@ -324,6 +325,9 @@ export function Header() {
         </button>
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
+
+        {/* Help — opens the Smart Assistant (always visible so users can ask) */}
+        <HelpButton variant="chip" />
 
         {/* Notifications */}
         <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-2.5 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg hover:bg-surface-container" aria-label="Уведомления">

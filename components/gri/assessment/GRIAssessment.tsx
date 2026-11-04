@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
   ssr: false,
@@ -587,7 +588,19 @@ export default function GRIAssessment() {
     return (
       <Shell>
         <div className="mb-8 text-center">
-          <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-teal-300">Оценка GRI Index</h3>
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <h3 className="text-2xl sm:text-3xl font-bold text-teal-300">Оценка GRI Index</h3>
+            <BlockInfo title="Оценка GRI Index" align="left">
+              <p>
+                <b>Что это:</b> структурированный тест готовности бизнеса к росту из 7 блоков GRI
+                Index.
+              </p>
+              <p>
+                <b>Что делает:</b> ведёт вас по блокам и рассчитывает итоговую оценку готовности к
+                выручке $2M/год.
+              </p>
+            </BlockInfo>
+          </div>
           <p className="text-white/60 max-w-xl mx-auto text-sm">
             Пройдите 7 блоков GRI Index и получите оценку готовности к росту $2M/год.
           </p>
@@ -825,7 +838,19 @@ export default function GRIAssessment() {
           <div className="inline-block bg-teal-900/30 text-teal-300 px-3 py-1 rounded-full text-[10px] font-bold mb-3 border border-teal-500/30">
             РЕЗУЛЬТАТ ГОТОВ
           </div>
-          <h3 className="text-3xl sm:text-4xl font-bold mb-1 text-white">Ваш GRI Индекс</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-3xl sm:text-4xl font-bold text-white">Ваш GRI Индекс</h3>
+            <BlockInfo title="Ваш GRI Индекс" align="left">
+              <p>
+                <b>Что это:</b> итог диагностики — общий балл готовности (0–10) и профиль по 7
+                блокам.
+              </p>
+              <p>
+                <b>Что делает:</b> показывает статус готовности, сильные стороны и зоны роста на
+                радаре по блокам.
+              </p>
+            </BlockInfo>
+          </div>
           <p className="text-white/60 text-sm max-w-xl">
             Теперь вы знаете свои сильные стороны и зоны роста.
           </p>
@@ -874,7 +899,19 @@ export default function GRIAssessment() {
 
         {top5.length > 0 && (
           <div className="mb-10">
-            <h4 className="text-lg font-bold mb-3 text-red-300">🔥 TOP-5 ограничений</h4>
+            <div className="flex items-center gap-2 mb-3">
+              <h4 className="text-lg font-bold text-red-300">🔥 TOP-5 ограничений</h4>
+              <BlockInfo title="TOP-5 ограничений" align="left">
+                <p>
+                  <b>Что это:</b> пять самых слабых критериев по всем блокам — с указанием блока и
+                  балла.
+                </p>
+                <p>
+                  <b>Что делает:</b> выделяет узкие места, которые сильнее всего сдерживают рост, для
+                  работы в первую очередь.
+                </p>
+              </BlockInfo>
+            </div>
             <div className="space-y-2.5">
               {top5.map((w, idx) => (
                 <div

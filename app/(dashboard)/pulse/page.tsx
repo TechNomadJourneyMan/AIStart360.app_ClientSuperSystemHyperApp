@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePulse } from '@/hooks/usePulse'
 import GriPulseWidget from '@/components/pulse/GriPulseWidget'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
@@ -453,10 +454,22 @@ function CrmIntegrationTab() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
         <div>
-          <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
-            <span className="material-symbols-outlined text-xl text-primary">sync</span>
-            CRM-интеграции
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-xl text-primary">sync</span>
+              CRM-интеграции
+            </h2>
+            <BlockInfo title="CRM-интеграции" align="left">
+              <p>
+                <b>Что это:</b> подключение Bitrix24 или AmoCRM к порталу для работы с реальными
+                сделками и контактами.
+              </p>
+              <p>
+                <b>Что делает:</b> автоматически синхронизирует данные CRM, чтобы монитор клиентов
+                опирался на актуальные сделки.
+              </p>
+            </BlockInfo>
+          </div>
           <p className="text-xs text-on-surface-variant mt-1">
             Подключите Bitrix24 или AmoCRM для автоматической синхронизации сделок и контактов
           </p>
@@ -864,10 +877,22 @@ function CrmMonitorSection() {
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
             CRM · Монитор клиентской базы
           </p>
-          <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-extrabold text-on-surface">
-            Кому звонить{' '}
-            <span className="text-gradient">сегодня</span>
-          </h1>
+          <div className="flex items-start gap-2">
+            <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-extrabold text-on-surface">
+              Кому звонить{' '}
+              <span className="text-gradient">сегодня</span>
+            </h1>
+            <BlockInfo title="Кому звонить сегодня" align="left" className="mt-1.5">
+              <p>
+                <b>Что это:</b> рабочий список менеджера — клиенты с риском оттока и падением
+                объёма по данным CRM.
+              </p>
+              <p>
+                <b>Что делает:</b> подсказывает, кому позвонить или написать прямо сейчас, и
+                фиксирует выполненные действия.
+              </p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
             Инструмент менеджера по продажам — видит кто уходит, у кого падает объём, и какое действие нужно прямо сейчас.
           </p>

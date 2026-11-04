@@ -13,6 +13,7 @@
 
 import Link from 'next/link'
 import { SURVEY_STEP_LABELS } from '@/lib/survey-labels'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import CompanyDataFooter from './CompanyDataFooter'
 
 interface SurveyAnswerRow {
@@ -151,6 +152,10 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
                 <h2 className="font-headline text-2xl sm:text-3xl font-extrabold text-on-surface tracking-tight">
                   Данные компании
                 </h2>
+                <BlockInfo title="Данные компании" align="left">
+                  <p><b>Что это:</b> профиль компании из анкеты — название, отрасль, город, финансы и цели на 12 месяцев и 3 года.</p>
+                  <p><b>Что делает:</b> показывает полноту анкеты, недостающие блоки и плановую выручку; ведёт к дозаполнению и к Точке Б.</p>
+                </BlockInfo>
                 <span className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.18em] px-2 py-0.5 rounded-md border border-primary/15 bg-primary/[0.04]">
                   Анкета · 7 блоков
                 </span>

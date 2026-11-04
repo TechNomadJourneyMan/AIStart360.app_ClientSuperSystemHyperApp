@@ -27,6 +27,7 @@ import { TrajectoryChart } from './TrajectoryChart'
 import { HorizonPlans } from './HorizonPlans'
 import { ActionPlanBoard } from '@/components/action-plan/ActionPlanBoard'
 import { AiStrategy } from './AiStrategy'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 export interface PointBViewProps {
   pointB: PointBV2 | null
@@ -245,9 +246,15 @@ function InsufficientPanel({
         </span>
         <div className="space-y-3 flex-1">
           <div>
-            <h2 className="font-headline text-lg font-bold text-on-surface">
-              Недостаточно данных для точного плана
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-headline text-lg font-bold text-on-surface">
+                Недостаточно данных для точного плана
+              </h2>
+              <BlockInfo title="Недостаточно данных" align="left">
+                <p><b>Что это:</b> предупреждение, что для точного плана не хватает части данных из анкеты или диагностики.</p>
+                <p><b>Что делает:</b> показывает уверенность расчёта и чего не хватает; недостающие цифры помечены «—», без выдумок.</p>
+              </BlockInfo>
+            </div>
             <p className="text-sm text-on-surface-variant mt-1">
               Уверенность расчёта: <span className="font-mono text-amber-400">{Math.round(confidence)}%</span>.
               Часть показателей ниже отмечена как «{DASH}» — мы не подставляем выдуманные цифры.
@@ -330,9 +337,15 @@ function Hero({ pointB }: { pointB: PointBV2 }) {
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
           Точка Б · Целевое состояние
         </p>
-        <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Куда вы идёте
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
+            Куда вы идёте
+          </h1>
+          <BlockInfo title="Точка Б — целевое состояние" align="left">
+            <p><b>Что это:</b> цель бизнеса — целевая выручка на 12 месяцев и 3 года рядом с текущей.</p>
+            <p><b>Что делает:</b> задаёт ориентир для всего плана и оценивает реалистичность достижения цели.</p>
+          </BlockInfo>
+        </div>
         {goals.goal_12m_text && (
           <p className="text-sm text-on-surface italic max-w-2xl">«{goals.goal_12m_text}»</p>
         )}
@@ -417,7 +430,17 @@ function ComparisonRow({
 function Comparison({ pointB }: { pointB: PointBV2 }) {
   const blocks = Object.entries(pointB.target_blocks)
   return (
-    <Section eyebrow="A → B" title="Сравнение текущего и целевого состояния" icon="compare_arrows">
+    <Section
+      eyebrow="A → B"
+      title="Сравнение текущего и целевого состояния"
+      icon="compare_arrows"
+      info={
+        <BlockInfo title="Сравнение А → Б" align="left">
+          <p><b>Что это:</b> разрыв между текущими и целевыми показателями — общий балл GRI, Health Index и блоки.</p>
+          <p><b>Что делает:</b> наглядно показывает, насколько и по каким блокам нужно вырасти до цели.</p>
+        </BlockInfo>
+      }
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ComparisonRow
           label="Общий балл (GRI)"
@@ -488,6 +511,12 @@ function GapAnalysis({ gap }: { gap: GapEntry[] }) {
       title="Разрыв между текущим и целевым"
       icon="trending_up"
       description="Что нужно, чтобы дойти от текущей выручки до цели на каждом горизонте."
+      info={
+        <BlockInfo title="GAP-анализ" align="left">
+          <p><b>Что это:</b> разрыв между текущей и целевой выручкой на горизонтах 12 месяцев и 3 года.</p>
+          <p><b>Что делает:</b> считает абсолютный и относительный разрыв, мультипликатор и нужный темп роста (CAGR, MoM, QoQ).</p>
+        </BlockInfo>
+      }
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {gap.map((g) => {
@@ -557,7 +586,17 @@ function RealismDetail({ pointB }: { pointB: PointBV2 }) {
   const r = realismStyle(pointB.realism.level)
   const { realism } = pointB
   return (
-    <Section eyebrow="Реалистичность" title="Оценка достижимости цели" icon="balance">
+    <Section
+      eyebrow="Реалистичность"
+      title="Оценка достижимости цели"
+      icon="balance"
+      info={
+        <BlockInfo title="Реалистичность цели" align="left">
+          <p><b>Что это:</b> оценка достижимости цели по 100-балльной шкале с обоснованием, факторами риска и слабыми блоками.</p>
+          <p><b>Что делает:</b> показывает, насколько цель реалистична, и на что обратить внимание, чтобы её достичь.</p>
+        </BlockInfo>
+      }
+    >
       <Card>
         <div className={`flex flex-wrap items-center gap-4 mb-5 pb-5 border-b border-white/[0.06]`}>
           <span className={`inline-flex items-center justify-center w-12 h-12 rounded-2xl ${r.bg} ${r.text}`}>
@@ -609,7 +648,17 @@ const SCENARIO_ICON: Record<Scenario['key'], string> = {
 
 function Scenarios({ scenarios }: { scenarios: Scenario[] }) {
   return (
-    <Section eyebrow="Сценарии" title="Три сценария роста" icon="alt_route">
+    <Section
+      eyebrow="Сценарии"
+      title="Три сценария роста"
+      icon="alt_route"
+      info={
+        <BlockInfo title="Сценарии роста" align="left">
+          <p><b>Что это:</b> три варианта развития — осторожный, базовый и агрессивный — с целевой выручкой и допущениями.</p>
+          <p><b>Что делает:</b> показывает диапазон результатов и уверенность по каждому сценарию для выбора стратегии.</p>
+        </BlockInfo>
+      }
+    >
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {scenarios.map((s) => {
           const isBase = s.key === 'base'
@@ -674,6 +723,12 @@ function Trajectory({ pointB }: { pointB: PointBV2 }) {
       title="Финансовая траектория"
       icon="show_chart"
       description="Помесячная динамика к цели на 12 месяцев и поквартальная — на 3 года."
+      info={
+        <BlockInfo title="Финансовая траектория" align="left">
+          <p><b>Что это:</b> график движения выручки к цели — по месяцам на год и по кварталам на три года.</p>
+          <p><b>Что делает:</b> показывает плановую динамику выручки, чтобы сверять факт с целевым темпом роста.</p>
+        </BlockInfo>
+      }
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
@@ -756,6 +811,12 @@ function Levers({ levers }: { levers: Lever[] }) {
       title="Точки приложения усилий"
       icon="tune"
       description="Конкретные метрики, влияющие на выручку. Заполните анкету, чтобы раскрыть недостающие."
+      info={
+        <BlockInfo title="Рычаги роста" align="left">
+          <p><b>Что это:</b> метрики, влияющие на выручку, с текущим и целевым значением и связанным блоком.</p>
+          <p><b>Что делает:</b> подсказывает, где приложить усилия — с ожидаемым эффектом, сложностью и приоритетом.</p>
+        </BlockInfo>
+      }
     >
       {sorted.length ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -774,7 +835,17 @@ function Levers({ levers }: { levers: Lever[] }) {
 
 function Top5Limits({ limits }: { limits: PointBV2['top5_limits'] }) {
   return (
-    <Section eyebrow="Ограничения" title="ТОП-5 ограничений роста" icon="block">
+    <Section
+      eyebrow="Ограничения"
+      title="ТОП-5 ограничений роста"
+      icon="block"
+      info={
+        <BlockInfo title="ТОП-5 ограничений роста" align="left">
+          <p><b>Что это:</b> пять главных факторов, которые сдерживают рост, с их критичностью и связанным блоком.</p>
+          <p><b>Что делает:</b> расставляет приоритеты — что устранить в первую очередь, чтобы открыть путь к цели.</p>
+        </BlockInfo>
+      }
+    >
       {limits.length ? (
         <div className="space-y-2.5">
           {limits.map((l) => {
@@ -811,7 +882,17 @@ function Top5Limits({ limits }: { limits: PointBV2['top5_limits'] }) {
 
 function HowToAchieve({ d }: { d: GrowthDecomposition }) {
   return (
-    <Section eyebrow="Как достичь" title="Как достичь цель за 12 месяцев" icon="trending_up">
+    <Section
+      eyebrow="Как достичь"
+      title="Как достичь цель за 12 месяцев"
+      icon="trending_up"
+      info={
+        <BlockInfo title="Как достичь цель" align="left">
+          <p><b>Что это:</b> декомпозиция роста — из каких шагов складывается путь к цели на 12 месяцев.</p>
+          <p><b>Что делает:</b> разбивает цель на конкретные шаги и показывает ожидаемый вклад каждого в прирост.</p>
+        </BlockInfo>
+      }
+    >
       <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-5 space-y-4">
         <p className="text-sm text-on-surface leading-relaxed">{d.summary}</p>
         {d.steps.length > 0 && (
@@ -917,6 +998,10 @@ export default function PointBView({
             <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
               Экспертная корректировка{expertNote.author_name ? ` · ${expertNote.author_name}` : ''}
             </p>
+            <BlockInfo title="Экспертная корректировка" align="left">
+              <p><b>Что это:</b> комментарий и правки эксперта к вашему плану Точки Б после ручной проверки.</p>
+              <p><b>Что делает:</b> уточняет автоматический расчёт экспертным взглядом — приоритеты, цели и допущения.</p>
+            </BlockInfo>
           </div>
           <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">{expertNote.expert_notes}</p>
         </div>
@@ -930,17 +1015,47 @@ export default function PointBView({
       <Scenarios scenarios={pointB.scenarios} />
       <Levers levers={pointB.levers} />
 
-      <Section eyebrow="План действий" title="Горизонты планирования" icon="route">
+      <Section
+        eyebrow="План действий"
+        title="Горизонты планирования"
+        icon="route"
+        info={
+          <BlockInfo title="Горизонты планирования" align="left">
+            <p><b>Что это:</b> цели и шаги по горизонтам — от трёх лет до недели — с фокусом, действиями и KPI.</p>
+            <p><b>Что делает:</b> разбивает путь к цели на горизонты, чтобы видеть, что делать прямо сейчас и дальше.</p>
+          </BlockInfo>
+        }
+      >
         <HorizonPlans horizons={pointB.horizons} />
       </Section>
 
-      <Section eyebrow="Карта роста" title="План действий (90 дней)" icon="checklist">
+      <Section
+        eyebrow="Карта роста"
+        title="План действий (90 дней)"
+        icon="checklist"
+        info={
+          <BlockInfo title="План действий на 90 дней" align="left">
+            <p><b>Что это:</b> доска конкретных задач на ближайшие 90 дней для движения к Точке Б.</p>
+            <p><b>Что делает:</b> помогает отслеживать и выполнять задачи, превращая стратегию в ежедневную работу.</p>
+          </BlockInfo>
+        }
+      >
         <ActionPlanBoard userId={actionPlanUserId} />
       </Section>
 
       <Top5Limits limits={pointB.top5_limits} />
 
-      <Section eyebrow={ai.eyebrow} title={ai.sectionTitle} icon="smart_toy">
+      <Section
+        eyebrow={ai.eyebrow}
+        title={ai.sectionTitle}
+        icon="smart_toy"
+        info={
+          <BlockInfo title="AI-стратегия" align="left">
+            <p><b>Что это:</b> развёрнутая стратегия достижения Точки Б, сгенерированная AI на основе Точки А и целей.</p>
+            <p><b>Что делает:</b> связывает текущее состояние с целью и предлагает план действий; обновляется по запросу.</p>
+          </BlockInfo>
+        }
+      >
         {generating ? (
           <div className="rounded-2xl border border-violet-500/15 bg-violet-500/[0.05] p-6">
             <div className="flex items-center gap-3">

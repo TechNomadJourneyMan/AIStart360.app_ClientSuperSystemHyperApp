@@ -10,7 +10,6 @@ import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashbo
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
-import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -618,9 +617,7 @@ export default function PointAClientPage() {
           </>
         )}
       </main>
-
-      {/* Floating assistant dock — opens the slide-over chat panel */}
-      <AssistantChatLauncher />
+      {/* Floating assistant dock is now provided globally (AssistantProvider) */}
     </div>
   )
 }

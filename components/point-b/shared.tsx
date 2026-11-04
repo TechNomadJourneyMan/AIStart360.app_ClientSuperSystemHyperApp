@@ -152,12 +152,15 @@ export function Section({
   title,
   description,
   icon,
+  info,
   children,
 }: {
   eyebrow?: string
   title: string
   description?: string
   icon?: string
+  /** Optional inline "?" explainer (BlockInfo) rendered next to the heading. */
+  info?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -173,6 +176,7 @@ export function Section({
             </span>
           )}
           <h2 className="font-headline text-lg lg:text-xl font-bold text-on-surface">{title}</h2>
+          {info}
         </div>
         {description && <p className="text-sm text-on-surface-variant max-w-2xl">{description}</p>}
       </div>

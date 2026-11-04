@@ -22,6 +22,7 @@ import { motion } from 'framer-motion'
 import { useSearchParams } from 'next/navigation'
 import { useMetrics } from '@/hooks/useMetrics'
 import { useMetricsStore } from '@/stores/metrics.store'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import type { MetricSummary } from '@/types/metrics'
 
 const PERIOD_LABEL: Record<string, string> = {
@@ -310,9 +311,15 @@ export default function KeyMetricsHero() {
             <span className="material-symbols-outlined text-[20px] text-primary">monitoring</span>
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="font-headline text-xl sm:text-2xl font-semibold text-on-surface leading-tight">
-              Ключевые метрики
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-headline text-xl sm:text-2xl font-semibold text-on-surface leading-tight">
+                Ключевые метрики
+              </h2>
+              <BlockInfo title="Ключевые метрики" align="left">
+                <p><b>Что это:</b> 6 главных KPI бизнеса — выручка, клиенты, средний чек, неявки, LTV и CAC.</p>
+                <p><b>Что делает:</b> показывает значение и зону каждой метрики; клик открывает детали. Бейджи считают красные, жёлтые и зелёные.</p>
+              </BlockInfo>
+            </div>
             <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
               6 главных показателей на дашборде · нажмите «Все метрики» для полного списка
             </p>

@@ -9,6 +9,7 @@ import {
   type MetricSource,
 } from '@/lib/metrics/descriptions'
 import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import { useRealtimeSync, type RealtimeSyncBinding } from '@/hooks/useRealtimeSync'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
 import type {
@@ -643,9 +644,15 @@ export default function MetricsPageClient({
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
             Система метрик · AIStart360
           </p>
-          <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-            Метрики <span className="text-gradient">роста</span>
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
+              Метрики <span className="text-gradient">роста</span>
+            </h1>
+            <BlockInfo title="Метрики роста" align="left">
+              <p><b>Что это:</b> единая система метрик: цели, KPI, 7 блоков GRI и каталог Точки А.</p>
+              <p><b>Что делает:</b> собирает все показатели бизнеса в реальном времени в одном месте.</p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
             Цели роста · KPI · 7 блоков GRI · полная бизнес-аналитика — в реальном времени
           </p>
@@ -740,7 +747,13 @@ export default function MetricsPageClient({
       {activeTab === 'kpi' && (
         <div className="space-y-5">
           <div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">KPI компании</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-headline text-xl font-bold text-on-surface">KPI компании</h2>
+              <BlockInfo title="KPI компании" align="left">
+                <p><b>Что это:</b> ключевые показатели на основе анкеты и целей собственника.</p>
+                <p><b>Что делает:</b> сопоставляет текущее и целевое значение по каждому KPI.</p>
+              </BlockInfo>
+            </div>
             <p className="text-xs text-on-surface-variant mt-1">
               Показатели на основе анкеты и целей собственника · обновляются в реальном времени
             </p>
@@ -795,7 +808,13 @@ export default function MetricsPageClient({
       {activeTab === 'biz' && (
         <div className="space-y-5">
           <div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">Все метрики бизнеса</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-headline text-xl font-bold text-on-surface">Все метрики бизнеса</h2>
+              <BlockInfo title="Все метрики бизнеса" align="left">
+                <p><b>Что это:</b> полный каталог показателей Точки А с live-значениями.</p>
+                <p><b>Что делает:</b> отправляет к каталогу выше с поиском, фильтром и пересчётом.</p>
+              </BlockInfo>
+            </div>
             <p className="text-xs text-on-surface-variant mt-1">
               Полный каталог Точки А · live-значения из таблицы metrics, обновляются в реальном времени
             </p>
@@ -855,9 +874,15 @@ export default function MetricsPageClient({
                     <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest mb-1">
                       GRI Score · Итоговый
                     </p>
-                    <h2 className="font-headline text-2xl font-bold text-on-surface mb-1">
-                      Индекс готовности к росту
-                    </h2>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h2 className="font-headline text-2xl font-bold text-on-surface">
+                        Индекс готовности к росту
+                      </h2>
+                      <BlockInfo title="Индекс готовности к росту (GRI)" align="left">
+                        <p><b>Что это:</b> итоговый GRI-индекс по 7 блокам диагностики, шкала 0–10.</p>
+                        <p><b>Что делает:</b> показывает общую зрелость бизнеса и баланс сильных и слабых блоков.</p>
+                      </BlockInfo>
+                    </div>
                     <p className="text-sm text-on-surface-variant mb-3">
                       Дата оценки:{' '}
                       {new Date(griAssessment.created_at).toLocaleDateString('ru-RU', {
@@ -922,6 +947,10 @@ export default function MetricsPageClient({
                   <div className="flex items-center gap-2 mb-4">
                     <span className="material-symbols-outlined text-primary text-base">tips_and_updates</span>
                     <h3 className="font-headline text-base font-bold text-on-surface">Инсайты и советы</h3>
+                    <BlockInfo title="Инсайты и советы" align="left">
+                      <p><b>Что это:</b> подсказки по слабым блокам GRI: что улучшить и что теряете.</p>
+                      <p><b>Что делает:</b> превращает низкие оценки в конкретные рекомендации к действию.</p>
+                    </BlockInfo>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {insights.map((insight, idx) => {
@@ -981,6 +1010,10 @@ export default function MetricsPageClient({
                   <div className="flex items-center gap-2 mb-4">
                     <span className="material-symbols-outlined text-error text-sm">warning</span>
                     <h3 className="font-headline text-base font-bold text-on-surface">Топ-5 ограничений роста</h3>
+                    <BlockInfo title="Топ-5 ограничений роста" align="left">
+                      <p><b>Что это:</b> пять критериев с самой низкой оценкой по всем блокам GRI.</p>
+                      <p><b>Что делает:</b> подсвечивает узкие места, которые сильнее всего тормозят рост.</p>
+                    </BlockInfo>
                   </div>
                   <div className="space-y-2">
                     {top5.map((item, i) => (

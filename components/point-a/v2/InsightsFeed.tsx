@@ -10,6 +10,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import { InsightItem, type InsightFeedItem } from './InsightItem'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
@@ -157,9 +158,15 @@ export function InsightsFeed({
           forum
         </span>
         <div className="min-w-0">
-          <h3 className="font-headline text-lg text-on-surface leading-tight">
-            Уточняющие вопросы
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-headline text-lg text-on-surface leading-tight">
+              Уточняющие вопросы
+            </h3>
+            <BlockInfo title="Уточняющие вопросы" align="left">
+              <p><b>Что это:</b> лента вопросов от ИИ, экспертов и клиента, которые уточняют данные Точки А.</p>
+              <p><b>Что делает:</b> листает вопросы по одному, фильтрует по источнику и ищет по тексту; ответы уточняют прогноз и стратегию.</p>
+            </BlockInfo>
+          </div>
           <p className="text-xs text-on-surface-variant mt-0.5">
             От ИИ, экспертов и клиента · ответы уточняют прогноз и стратегию роста
           </p>

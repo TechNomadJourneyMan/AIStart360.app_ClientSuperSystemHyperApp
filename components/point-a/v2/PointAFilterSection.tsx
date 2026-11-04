@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { PointAFilterBar } from '@/components/dashboard/PointAFilterBar'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 interface FilterOption {
   id: string
@@ -69,9 +70,15 @@ export default function PointAFilterSection() {
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
             Фильтры
           </p>
-          <h2 className="font-headline text-lg font-bold text-on-surface mt-1">
-            Период и срезы · отчёт обновится ниже
-          </h2>
+          <div className="flex items-center gap-2 mt-1">
+            <h2 className="font-headline text-lg font-bold text-on-surface">
+              Период и срезы · отчёт обновится ниже
+            </h2>
+            <BlockInfo title="Фильтры и срезы" align="left">
+              <p><b>Что это:</b> панель фильтров дашборда — период, продукт и менеджер.</p>
+              <p><b>Что делает:</b> меняет срез всех виджетов Точки А ниже; выбранные значения отражаются в активных чипах.</p>
+            </BlockInfo>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {activeChips.map((chip) => (

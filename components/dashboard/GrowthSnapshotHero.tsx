@@ -29,6 +29,7 @@ import {
   currentMonthLabel,
 } from '@/lib/format/kzt'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -319,9 +320,15 @@ export default function GrowthSnapshotHero() {
         {/* ── LEFT: Снимок ─────────────────────────────────────────────── */}
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">
-              Точка А · Снимок · {monthLabel}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">
+                Точка А · Снимок · {monthLabel}
+              </p>
+              <BlockInfo title="Точка А · Снимок" align="left">
+                <p><b>Что это:</b> текущая позиция бизнеса — выручка за месяц и разрыв до целей на 1 год и 3 года.</p>
+                <p><b>Что делает:</b> сравнивает факт с планом, показывает прогресс к целям; цели можно отредактировать прямо в плитках.</p>
+              </BlockInfo>
+            </div>
             <span className="material-symbols-outlined text-base text-primary/40">
               insights
             </span>
@@ -606,9 +613,15 @@ export default function GrowthSnapshotHero() {
               </span>
             )}
 
-            <p className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em] mb-1">
-              AI · Карта роста
-            </p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em]">
+                AI · Карта роста
+              </p>
+              <BlockInfo title="AI · Карта роста" align="left">
+                <p><b>Что это:</b> ввод целей по выручке на 1 год и 3 года для построения плана роста.</p>
+                <p><b>Что делает:</b> сохраняет цели и формирует карту роста в Точке Б; внизу показывает текущую позицию, прогноз и разрыв.</p>
+              </BlockInfo>
+            </div>
             <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-3 pr-24 tracking-tight">
               Укажите цели — получите карту роста на 1-3 года
             </h2>
@@ -680,12 +693,18 @@ export default function GrowthSnapshotHero() {
             className="relative rounded-2xl border bg-surface-container-low p-4"
             style={{ borderColor: 'rgba(232,122,53,0.35)' }}
           >
-            <p
-              className="text-[10px] font-mono uppercase tracking-[0.2em] mb-1"
-              style={{ color: '#e87a35' }}
-            >
-              Следующий шаг · GRI-диагностика
-            </p>
+            <div className="flex items-center gap-2 mb-1">
+              <p
+                className="text-[10px] font-mono uppercase tracking-[0.2em]"
+                style={{ color: '#e87a35' }}
+              >
+                Следующий шаг · GRI-диагностика
+              </p>
+              <BlockInfo title="GRI-диагностика" align="left">
+                <p><b>Что это:</b> тест Growth Readiness Index — 7 блоков и 62 критерия готовности бизнеса к росту.</p>
+                <p><b>Что делает:</b> запускает прохождение GRI и открывает результаты с топ-ограничениями и планом действий на 90 дней.</p>
+              </BlockInfo>
+            </div>
             <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-2 tracking-tight">
               Определи свою готовность к росту — пройди GRI
             </h2>

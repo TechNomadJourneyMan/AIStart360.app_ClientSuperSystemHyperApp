@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { getAnalyticsData } from '@/lib/analytics-data'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 export const metadata: Metadata = { title: 'Analytics' }
 
@@ -22,7 +23,13 @@ export default async function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-bold text-on-surface">Analytics</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-headline text-3xl font-bold text-on-surface">Analytics</h1>
+            <BlockInfo title="Analytics" align="left">
+              <p><b>Что это:</b> сводная аналитика по метрикам и производительности портфеля компаний.</p>
+              <p><b>Что делает:</b> показывает KPI, тренды GRI и выручки за выбранный период.</p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant text-sm mt-1">Метрики и производительность портфеля</p>
         </div>
         <div className="flex gap-1 bg-surface-container rounded-lg p-1">
@@ -64,7 +71,13 @@ export default async function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-surface-container rounded-xl p-6">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface">GRI Trend</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-headline text-lg font-bold text-on-surface">GRI Trend</h3>
+              <BlockInfo title="GRI Trend" align="left">
+                <p><b>Что это:</b> динамика среднего GRI-индекса по базе за выбранный период.</p>
+                <p><b>Что делает:</b> показывает, растёт или падает готовность к росту во времени.</p>
+              </BlockInfo>
+            </div>
             <span className="text-xs font-mono text-on-surface-variant">30 дней</span>
           </div>
           {data.trend.length === 0 ? (
@@ -91,7 +104,13 @@ export default async function AnalyticsPage() {
 
         <div className="bg-surface-container rounded-xl p-6">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface">GMV by Industry</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-headline text-lg font-bold text-on-surface">GMV by Industry</h3>
+              <BlockInfo title="GMV by Industry" align="left">
+                <p><b>Что это:</b> распределение оборота портфеля (GMV) по отраслям.</p>
+                <p><b>Что делает:</b> показывает, какие отрасли дают наибольшую долю выручки.</p>
+              </BlockInfo>
+            </div>
             <span className="text-xs font-mono text-on-surface-variant">Current</span>
           </div>
           {data.industryBreakdown.length === 0 ? (
@@ -123,7 +142,13 @@ export default async function AnalyticsPage() {
       {/* Client Performance Table */}
       <div className="bg-surface-container rounded-xl overflow-hidden">
         <div className="px-6 py-5 border-b border-outline-variant/10 flex justify-between items-center">
-          <h3 className="font-headline text-lg font-bold text-on-surface">Client Performance</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-headline text-lg font-bold text-on-surface">Client Performance</h3>
+            <BlockInfo title="Client Performance" align="left">
+              <p><b>Что это:</b> таблица клиентов с GRI, GMV, ростом и статусом по каждому.</p>
+              <p><b>Что делает:</b> помогает быстро увидеть сильных и проблемных клиентов портфеля.</p>
+            </BlockInfo>
+          </div>
           <button className="text-xs font-mono text-primary hover:underline uppercase tracking-wider">Export CSV</button>
         </div>
         <div className="overflow-x-auto">

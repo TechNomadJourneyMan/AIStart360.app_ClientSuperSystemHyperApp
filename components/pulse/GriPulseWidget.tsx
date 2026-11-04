@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 // ─── Types (mirror the /api/v1/gri/pulse envelope) ──────────────────────────
 type PulseScores = Record<string, number>
@@ -228,9 +229,21 @@ export default function GriPulseWidget() {
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">
             GRI Pulse · Пульс готовности к росту
           </p>
-          <h2 className="font-headline text-xl md:text-2xl font-extrabold text-on-surface">
-            Пульс недели
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="font-headline text-xl md:text-2xl font-extrabold text-on-surface">
+              Пульс недели
+            </h2>
+            <BlockInfo title="Пульс недели" align="left">
+              <p>
+                <b>Что это:</b> лёгкий еженедельный чек-ин — переоценка 7 блоков готовности к
+                росту по шкале 1–10.
+              </p>
+              <p>
+                <b>Что делает:</b> показывает динамику и дельту к полной GRI-диагностике в
+                промежутках между ней.
+              </p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant mt-1.5 text-sm max-w-2xl">
             Лёгкий еженедельный чек-ин: переоцените 7 блоков готовности (1–10), чтобы видеть динамику
             между полными GRI-диагностиками.

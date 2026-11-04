@@ -7,6 +7,7 @@ import { RetentionCurveWidget } from './RetentionCurveWidget'
 import { MetricBlockV3List } from './MetricBlockV3'
 import { RFMSegmentsGrid } from './RFMSegmentsGrid'
 import { LossMapCard } from './LossMapCard'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 // RevenueTargetsCard intentionally not rendered here — the new
 // GrowthSnapshotHero (mounted at the top of /dashboard, /point-a,
 // /client/dashboard, /client/point-a) now owns targets + period goals
@@ -52,9 +53,15 @@ export function PointADashboardSections() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
               Удержание
             </p>
-            <h2 className="font-headline text-lg font-bold text-on-surface mt-1">
-              Кривая удержания клиентов
-            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <h2 className="font-headline text-lg font-bold text-on-surface">
+                Кривая удержания клиентов
+              </h2>
+              <BlockInfo title="Кривая удержания клиентов" align="left">
+                <p><b>Что это:</b> график доли клиентов, которые остаются с компанией по месяцам после первой покупки.</p>
+                <p><b>Что делает:</b> показывает, как быстро уходит база, и помогает оценить эффект работы над удержанием.</p>
+              </BlockInfo>
+            </div>
           </div>
         </div>
         <RetentionCurveWidget />
@@ -70,9 +77,15 @@ export function PointADashboardSections() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
               Сегментация
             </p>
-            <h2 className="font-headline text-lg font-bold text-on-surface mt-1">
-              RFM-сегменты базы
-            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <h2 className="font-headline text-lg font-bold text-on-surface">
+                RFM-сегменты базы
+              </h2>
+              <BlockInfo title="RFM-сегменты базы" align="left">
+                <p><b>Что это:</b> разбивка клиентской базы на группы по давности, частоте и сумме покупок (RFM).</p>
+                <p><b>Что делает:</b> показывает ценные, спящие и уходящие сегменты, чтобы точнее планировать работу с базой.</p>
+              </BlockInfo>
+            </div>
           </div>
         </div>
         <RFMSegmentsGrid />
@@ -85,9 +98,15 @@ export function PointADashboardSections() {
             <p className="text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
               Потери
             </p>
-            <h2 className="font-headline text-lg font-bold text-on-surface mt-1">
-              Карта потерь выручки
-            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <h2 className="font-headline text-lg font-bold text-on-surface">
+                Карта потерь выручки
+              </h2>
+              <BlockInfo title="Карта потерь выручки" align="left">
+                <p><b>Что это:</b> разбор, на каких этапах воронки и по каким причинам бизнес теряет выручку.</p>
+                <p><b>Что делает:</b> подсвечивает крупнейшие точки утечки денег, чтобы расставить приоритеты в улучшениях.</p>
+              </BlockInfo>
+            </div>
           </div>
         </div>
         <LossMapCard />

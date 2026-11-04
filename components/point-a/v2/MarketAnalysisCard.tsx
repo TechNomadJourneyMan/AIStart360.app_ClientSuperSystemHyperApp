@@ -10,6 +10,7 @@
  */
 
 import Link from 'next/link'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 import MarketAnalysisFooter from './MarketAnalysisFooter'
 
 interface MarketSnapshotRow {
@@ -109,6 +110,10 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
                 <h2 className="font-headline text-2xl sm:text-3xl font-extrabold text-on-surface tracking-tight">
                   Анализ рынка
                 </h2>
+                <BlockInfo title="Анализ рынка" align="left">
+                  <p><b>Что это:</b> снимок рынка по вашей нише — объёмы TAM/SAM/SOM, главный тренд, слабость конкурента и микросегмент.</p>
+                  <p><b>Что делает:</b> собирается AI-агентами из ответов чек-листа; без данных показывает честный пустой статус. Ведёт в раздел «Рынок».</p>
+                </BlockInfo>
                 <span className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.18em] px-2 py-0.5 rounded-md border border-primary/15 bg-primary/[0.04]">
                   6 блоков · 50 параметров
                 </span>

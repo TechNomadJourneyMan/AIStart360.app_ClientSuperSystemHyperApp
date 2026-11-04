@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { EmptyState } from '@/components/common/EmptyState'
+import { BlockInfo } from '@/components/assistant/BlockInfo'
 
 export const metadata: Metadata = {
   title: 'Конкурентный Анализ | AIStart360',
@@ -18,10 +19,16 @@ export default async function CompetitorsPage() {
         </div>
 
         <div className="relative z-10 max-w-2xl">
-          <h1 className="text-4xl lg:text-5xl xl:text-6xl font-headline font-extrabold text-on-surface leading-[1.1] mb-6 tracking-tight">
-            Анализ <br/>
-            <span className="text-gradient">Конкурентной Среды</span>
-          </h1>
+          <div className="flex items-start gap-2 mb-6">
+            <h1 className="text-4xl lg:text-5xl xl:text-6xl font-headline font-extrabold text-on-surface leading-[1.1] tracking-tight">
+              Анализ <br/>
+              <span className="text-gradient">Конкурентной Среды</span>
+            </h1>
+            <BlockInfo title="Анализ конкурентной среды" align="left">
+              <p><b>Что это:</b> обзор основных игроков рынка, их долей и стратегий роста.</p>
+              <p><b>Что делает:</b> помогает найти слабые места конкурентов и точки входа для вас.</p>
+            </BlockInfo>
+          </div>
 
           <p className="text-lg text-on-surface-variant leading-relaxed">
             Мониторинг рыночных долей, технологического превосходства и стратегий роста основных игроков индустрии.
@@ -41,7 +48,13 @@ export default async function CompetitorsPage() {
           <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mx-auto mb-8 border border-primary/20">
             <span className="material-symbols-outlined text-4xl text-primary animate-pulse">explore</span>
           </div>
-          <h2 className="text-3xl font-headline font-extrabold text-on-surface">Рыночное Позиционирование</h2>
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-3xl font-headline font-extrabold text-on-surface">Рыночное Позиционирование</h2>
+            <BlockInfo title="Рыночное позиционирование" align="left">
+              <p><b>Что это:</b> интерактивная карта рыночного ландшафта и места компании на нём.</p>
+              <p><b>Что делает:</b> строит проекцию позиций по мере подключения источников данных.</p>
+            </BlockInfo>
+          </div>
           <p className="text-on-surface-variant leading-relaxed">
             Интерактивная карта рыночного ландшафта формируется по мере подключения источников данных.
             Подключите дополнительные источники для построения точной проекции.
