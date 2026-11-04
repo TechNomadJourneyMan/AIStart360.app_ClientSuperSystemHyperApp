@@ -4,8 +4,8 @@
     {
       "name": "dev",
       "runtimeExecutable": "/opt/homebrew/bin/node",
-      "runtimeArgs": ["/Users/ansarisenoff/AI-Portal/node_modules/.bin/next", "dev", "--port", "53000"],
-      "port": 53000,
+      "runtimeArgs": ["/Users/ansarisenoff/AI-Portal/node_modules/.bin/next", "dev", "--port", "53010"],
+      "port": 53010,
       "autoPort": false
     }
   ]
