@@ -16,9 +16,10 @@
  * ai_models → the owner's route for the tier in ai_routes → an unregistered
  * explicit model through OpenRouter → any other usable chat model (tier_hint
  * first, A1) → OpenRouter with AI_MODEL_LIGHT / AI_MODEL_STANDARD /
- * AI_MODEL_PREMIUM env → DEFAULT_TIER_MODELS. A failover-worthy error moves on
- * to the next candidate. With nothing configured every call goes to OpenRouter
- * with OPENROUTER_API_KEY, as before 094.
+ * AI_MODEL_PREMIUM env → DEFAULT_TIER_MODELS. A failover-worthy error (incl.
+ * 402 — no OpenRouter credits) or a 400 that rejects the model / JSON output
+ * format moves on to the next candidate. With nothing configured every call
+ * goes to OpenRouter with OPENROUTER_API_KEY, as before 094.
  *
  * Privacy: client data goes to providers that do not retain/train on it.
  * AI_PRIVACY_MODE = 'deny' (default: provider.data_collection = 'deny'),
@@ -36,7 +37,7 @@ import {
   TIER_ESTIMATE_PRICES_PER_MTOK,
   worstCaseCostUsd,
 } from './providers/client'
-import { runWithFailover } from './providers/failover'
+import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveCandidates } from './providers/router'
 import type { CostSource } from './providers/types'
 
@@ -147,7 +148,8 @@ export function estimateCostUsd(_tier: ModelTier, model: string, inputText: stri
  * by the owner; else the owner's route for the tier (ai_routes); else the
  * explicit model through OpenRouter; else any usable chat model (tier_hint
  * first); else the built-in OpenRouter fallback with modelForTier(). A
- * failover-worthy error (401/403/404/408/429/5xx, timeout, network) moves on
+ * failover-worthy error (401/402/403/404/408/429/5xx, timeout, network) or a
+ * 400 rejecting the model / output format (isModelOrFormatRejection) moves on
  * to the next candidate (failover.ts); a lone candidate is retried once on a
  * retryable error, as before A1. Without any configuration this is exactly the
  * pre-094 behaviour.
@@ -179,6 +181,7 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
     {
       budgetCheck: providerBudgetRefusal,
       retryAlone: true,
+      alsoFailoverOn: (_target, f) => isModelOrFormatRejection(f),
       onFailure: (target, f) => {
         if (f.code === 'TIMEOUT') {
           lostCostUsd += worstCaseCostUsd(recordingPrices(req.tier, target.model), req.system + req.user, req.maxTokens)

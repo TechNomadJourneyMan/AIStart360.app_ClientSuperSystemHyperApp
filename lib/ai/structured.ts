@@ -6,16 +6,21 @@
  * `ANTHROPIC_API_KEY` needed). We ask the model for JSON, extract it, and
  * validate against the caller's Zod schema. On any failure we return `null`,
  * preserving the platform's honest "no fabrication" fallback behaviour.
+ *
+ * Two attempts. When the first answer is not JSON or fails the schema, the
+ * second goes one chat tier up (escalateComplexity: low / medium → high), so a
+ * broken answer of the cheap light tier (Alem / Qwen) is redone by Claude.
+ * An explicit `model` is never escalated.
  */
 
 import type { ZodSchema } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
+import { autoComplexity, escalateComplexity, type Complexity } from './complexity'
 import {
   chatWithOpenRouter,
   extractJson,
   hasOpenRouterKey as hasConfiguredOpenRouterKey,
   type AiFeature,
-  type Complexity,
 } from './openrouter'
 
 interface GenerateObjectOptions<T> {
@@ -72,10 +77,23 @@ export async function generateObjectViaOpenRouter<T>(
     : undefined
 
   let validationFeedback = ''
+  const maxTokens = opts.maxTokens ?? 3000
+  let complexity = opts.complexity
+  // After a broken answer: the next attempt one chat tier up (never with an
+  // explicit model — that is the caller's decision).
+  const escalate = (attempt: number) => {
+    if (attempt > 0 || opts.model) return
+    const from = complexity ?? autoComplexity({ user: opts.user, system: opts.system, maxTokens })
+    const next = escalateComplexity(from)
+    if (next === from) return
+    console.warn(`[${label}] retrying one tier up: complexity ${from} → ${next}`)
+    complexity = next
+  }
 
   // One retry: structured JSON is occasionally malformed or schema-invalid on
-  // the first try. A single retry with a firm nudge recovers most of those for
-  // a small latency cost, instead of degrading to the honest null fallback.
+  // the first try. A single retry with a firm nudge (on a stronger model when
+  // the first one was a light-tier one) recovers most of those for a small
+  // latency cost, instead of degrading to the honest null fallback.
   for (let attempt = 0; attempt < 2; attempt++) {
     const useProviderSchema = Boolean(strictSchema) &&
       opts.strictJsonSchema !== 'prompt' &&
@@ -98,8 +116,8 @@ export async function generateObjectViaOpenRouter<T>(
       system: opts.system,
       user,
       model: opts.model,
-      complexity: opts.complexity,
-      maxTokens: opts.maxTokens ?? 3000,
+      complexity,
+      maxTokens,
       temperature: opts.temperature === undefined ? 0.4 : opts.temperature,
       jsonMode: !useProviderSchema,
       jsonSchema: useProviderSchema ? strictSchema : undefined,
@@ -116,6 +134,7 @@ export async function generateObjectViaOpenRouter<T>(
           ? `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length})`
           : `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length}); tail="${raw.slice(-160).replace(/\n/g, ' ')}"`,
       )
+      escalate(attempt)
       continue
     }
 
@@ -140,6 +159,7 @@ export async function generateObjectViaOpenRouter<T>(
         `[${label}] attempt ${attempt + 1}: schema validation failed:`,
         JSON.stringify(result.error.issues.slice(0, 4)),
       )
+      escalate(attempt)
       continue
     }
     return result.data
