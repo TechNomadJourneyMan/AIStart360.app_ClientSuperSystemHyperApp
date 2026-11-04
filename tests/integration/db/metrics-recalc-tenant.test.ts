@@ -76,6 +76,17 @@ async function snapshot(db: Db, company: string): Promise<Array<{ metric_key: st
   return rows
 }
 
+/** The owner's P&L (company_id NULL) as a revenue hit the resolver read, whichever source won. */
+async function revenueDocumentHits(db: Db, company: string): Promise<unknown[]> {
+  const { rows } = await db.query(
+    `SELECT a FROM public.metrics m, jsonb_array_elements(m.provenance->'considered') a
+     WHERE m.company_id = $1 AND m.metric_key = 'biz.finansy.vyruchka_god'
+       AND a->'source'->>'type' = 'document' AND a->>'status' = 'hit'`,
+    [company],
+  )
+  return rows.map((r) => r.a)
+}
+
 describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidden owner inputs)', () => {
   afterAll(closeTestPool)
 
@@ -89,7 +100,12 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
       const afterOwner = await snapshot(db, fx.company)
       const byKey = new Map(afterOwner.map((r) => [r.metric_key, r]))
       // Owner inputs without company_id + the member's company upload all count.
-      expect(byKey.get('biz.finansy.vyruchka_god')).toMatchObject({ v: 72_000_000, source: 'document' })
+      // Revenue: the survey answer describes the current situation (2026, the
+      // year it was given), the P&L 2025 — the most recent period wins, and
+      // within one period «анкета главная» (spec 2026-10-12 §1.4). The P&L is
+      // still read: it is a considered hit of the revenue row.
+      expect(byKey.get('biz.finansy.vyruchka_god')).toMatchObject({ v: 66_000_000, source: 'survey' })
+      expect(await revenueDocumentHits(db, fx.company)).toEqual([expect.objectContaining({ numeric: 72_000_000 })])
       expect(byKey.get('biz.marketing.cac')).toMatchObject({ v: 18_500, source: 'document' })
       expect(byKey.get('biz.prodazhi.tsikl_zakrytiya_sdelki')).toMatchObject({ v: 21, source: 'survey' })
       expect(afterOwner.some((r) => r.metric_key.startsWith('gri.'))).toBe(true)
@@ -99,6 +115,7 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
         expect(run.result.errors, who).toEqual([])
         expect(run.result.superseded ?? 0, `${role}: superseded`).toBe(0)
         expect(await snapshot(db, fx.company), `${role}: rows`).toEqual(afterOwner)
+        expect(await revenueDocumentHits(db, fx.company), `${role}: owner's P&L read`).toEqual([expect.objectContaining({ numeric: 72_000_000 })])
       }
     }))
 
