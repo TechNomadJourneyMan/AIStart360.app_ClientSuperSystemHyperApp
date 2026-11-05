@@ -4,7 +4,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
-import { asUser, closeTestPool, inRollback, pgErrorCode, seedUser } from '../../helpers/pg-rls'
+import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedUser } from '../../helpers/pg-rls'
 
 describe.skipIf(!dbTestsEnabled)('083 security hardening', () => {
   afterAll(closeTestPool)
@@ -69,16 +69,34 @@ describe.skipIf(!dbTestsEnabled)('083 security hardening', () => {
         expect(rows[0].telegram_chat_id).toBeNull()
       }))
 
-    it('still lets the service role and platform admins change entitlements', () =>
+    // 084 (audit F-002) closed the admin path of 083: profiles_admin_update is
+    // dropped (an admin could PATCH any column of any profile, role → super_admin
+    // included) and profiles_protect_privileged_columns lets only the service
+    // role or a direct DB connection change role / status / tier / feature_flags.
+    // Platform admins change entitlements through service-role routes
+    // (giga-admin/users/[id]/access, lib/admin/bulk-users.ts).
+    it('lets the service role change entitlements, never a platform admin\'s own session (084, F-002)', () =>
       inRollback(async (db) => {
         const id = await seedUser(db, { status: 'approved' })
-        await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [id])
+        const tier = async (uid: string) =>
+          (await db.query('SELECT tier FROM public.profiles WHERE id = $1', [uid])).rows[0].tier
+        await asService(db, () => db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [id]))
+        expect(await tier(id)).toBe('pro')
+
         const admin = await seedUser(db, { role: 'admin', status: 'approved' })
-        await asUser(db, admin, () =>
+        const other = await asUser(db, admin, () =>
           db.query(`UPDATE public.profiles SET tier = 'free' WHERE id = $1`, [id]),
         )
-        const { rows } = await db.query('SELECT tier FROM public.profiles WHERE id = $1', [id])
-        expect(rows[0].tier).toBe('free')
+        expect(other.rowCount).toBe(0)
+        expect(await tier(id)).toBe('pro')
+        const own = await pgErrorCode(
+          asUser(db, admin, () => db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [admin])),
+        )
+        expect(own).toBe('42501')
+        expect(await tier(admin)).toBe('free')
+
+        await asService(db, () => db.query(`UPDATE public.profiles SET tier = 'free' WHERE id = $1`, [id]))
+        expect(await tier(id)).toBe('free')
       }))
   })
 
