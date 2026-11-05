@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { getSiteUrl } from '@/lib/site-url'
+import { getSiteUrl, requestOrigin } from '@/lib/site-url'
 
 const SNAPSHOT = { ...process.env }
 afterEach(() => {
@@ -62,5 +62,30 @@ describe('getSiteUrl — stale or unsafe values never reach email links (W6)', (
   it('keeps localhost outside production (local development)', () => {
     process.env.AUTH_URL = 'http://localhost:3000'
     expect(getSiteUrl()).toBe('http://localhost:3000')
+  })
+})
+
+describe('requestOrigin', () => {
+  const req = (url: string, headers: Record<string, string> = {}) => ({
+    url,
+    headers: new Headers(headers),
+  })
+
+  it('keeps the origin of a request URL that names a real host (Vercel, local dev)', () => {
+    expect(requestOrigin(req('https://portal.aistart360.app/auth/verify', { host: 'evil.example' }))).toBe('https://portal.aistart360.app')
+    expect(requestOrigin(req('http://localhost:3000/auth/callback', { host: 'localhost:3000' }))).toBe('http://localhost:3000')
+  })
+
+  it('behind `next start -H 0.0.0.0` (Railway) takes the host the browser used', () => {
+    expect(requestOrigin(req('https://0.0.0.0:8080/auth/callback?code=x', { host: 'portal.aistart360.app' }))).toBe('https://portal.aistart360.app')
+    expect(requestOrigin(req('http://[::]:3000/auth/verify', { host: 'localhost:3000' }))).toBe('http://localhost:3000')
+  })
+
+  it('falls back to the site URL when the Host header is missing, a bind address or not a host', () => {
+    delete process.env.AUTH_URL
+    delete process.env.NEXT_PUBLIC_APP_URL
+    expect(requestOrigin(req('https://0.0.0.0:8080/auth/verify'))).toBe('https://portal.aistart360.app')
+    expect(requestOrigin(req('https://0.0.0.0:8080/auth/verify', { host: '0.0.0.0:8080' }))).toBe('https://portal.aistart360.app')
+    expect(requestOrigin(req('https://0.0.0.0:8080/auth/verify', { host: 'a b/c' }))).toBe('https://portal.aistart360.app')
   })
 })

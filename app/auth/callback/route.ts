@@ -5,13 +5,15 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { prisma } from '@/lib/db'
 import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { requestOrigin } from '@/lib/site-url'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
 import { roleLandingPath } from '@/lib/role-landing'
 import type { UserRole } from '@/types'
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = requestOrigin(request)
   const code = searchParams.get('code')
   // Guard against open redirect: `next` is attacker-controllable on this
   // unauthenticated endpoint, so only allow internal paths.
