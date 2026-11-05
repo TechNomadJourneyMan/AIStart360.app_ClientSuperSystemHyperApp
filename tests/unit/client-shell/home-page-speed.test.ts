@@ -38,9 +38,15 @@ describe('/client/home — round trips (W4)', () => {
   it('two round trips; Point A comes from the v4 snapshot', async () => {
     const data = await dataOf()
     expect(s.net!.waves()).toBe(2)
-    expect(data.diagnostics).toEqual({ overallScore: 61, stage: 'growth', calculatedAt: '2026-10-10T00:00:00Z', primary: false })
+    expect(data.diagnostics).toEqual({ overallScore: 61, stage: 'growth', calculatedAt: '2026-10-10T00:00:00Z', primary: false, preliminary: false })
     expect(data.documentsCount).toBe(1)
     expect(data.fullName).toBe('Клиент')
+  })
+
+  it('a preliminary snapshot (before the full questionnaire) has no score', async () => {
+    s.tables.point_a_snapshots = [{ company_id: 'company-1', overall: null, stage: null, created_at: '2026-11-02T00:00:00Z', v4: { assessment: 'preliminary' } }]
+    const data = await dataOf()
+    expect(data.diagnostics).toMatchObject({ overallScore: null, stage: null, preliminary: true })
   })
 
   it('no company: the v1 diagnostics row is the fallback, no snapshot read', async () => {

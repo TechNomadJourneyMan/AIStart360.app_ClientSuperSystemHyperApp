@@ -18,20 +18,39 @@ import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
 import type { PointAComment } from '@/lib/point-a/v4/state'
 import { ExpertComment } from './ExpertNotes'
+import { useAnswerEditor } from './AnswerEditDialog'
+import { blockFindingsText } from '@/lib/point-a/v4/primary'
+import type { BlockKey } from '@/lib/point-a/v4/config'
+import { checkAuthorLines } from '@/lib/point-a/v4/answer-authors'
+import type { AnswerAttribution, AttributionViewer } from '@/lib/survey/attribution-label'
 
-function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
+function Body({ d, comments, preliminary, onClose, attribution, viewer }: { d: BlockDetail; comments: PointAComment[]; preliminary: boolean; onClose: () => void; attribution: Record<string, AnswerAttribution>; viewer: AttributionViewer }) {
   const b = d.block
+  const editor = useAnswerEditor()
+  // The editor window asks the unanswered checks first; with none — every check of the block.
+  const openEditor = () => {
+    if (!editor || !b) return
+    const open = b.checks.filter((c) => !c.excluded && !c.answered).map((c) => c.id)
+    onClose()
+    editor({ block: d.key as BlockKey, checks: open.length ? open : b.checks.filter((c) => !c.excluded).map((c) => c.id), title: `${d.title}: ответы анкеты` })
+  }
   const withValue = d.metrics.filter((m) => m.value !== null)
   const without = d.metrics.filter((m) => m.value === null)
   return (
     <div className="space-y-5">
       <p className="text-sm text-on-surface-variant">{d.description}</p>
-      <button type="button" onClick={() => openAiChat({ surface: 'point_a', focus: { block: d.key, label: d.title }, question: `Объясни раздел «${d.title}»: почему такой балл и что сделать в первую очередь?` })}
+      <button type="button" onClick={() => openAiChat({ surface: 'point_a', focus: { block: d.key, label: d.title }, question: preliminary ? `Объясни раздел «${d.title}»: что видно по моим ответам и что сделать в первую очередь?` : `Объясни раздел «${d.title}»: почему такой балл и что сделать в первую очередь?` })}
         className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 px-3 py-2 text-xs text-primary hover:bg-primary/10">
         <Icon name="auto_awesome" className="text-[16px]" />Спросить AI о разделе
       </button>
 
-      {b && (
+      {b && preliminary && (
+        <div className="space-y-2">
+          <p className="text-sm text-on-surface">{blockFindingsText(b)} · оценка появится после полной анкеты</p>
+          <ConfidenceBar value={b.coverage} label="Полнота данных" />
+        </div>
+      )}
+      {b && !preliminary && (
         <div className="grid grid-cols-[auto_1fr] items-center gap-4">
           <div className="text-center">
             {b.score !== null
@@ -48,7 +67,7 @@ function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
           </div>
         </div>
       )}
-      {b?.hypothesis && (
+      {b?.hypothesis && !preliminary && (
         <div className="rounded-xl border border-violet-400/20 bg-violet-400/[0.05] p-3 text-xs text-on-surface">
           <span className={cn(CHIP, 'mb-1 bg-violet-400/10 text-violet-200')}>
             {b.basis === 'inferred' ? `гипотеза AI · подтверждена экспертом${b.expertReview?.by ? ` (${b.expertReview.by})` : ''}` : 'гипотеза AI · не факт'}
@@ -85,7 +104,7 @@ function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
 
       {b && (
         <section>
-          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">Из чего сложился балл</h3>
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">{preliminary ? 'Что видно по ответам' : 'Из чего сложился балл'}</h3>
           <ul className="space-y-1.5">
             {b.checks.filter((c) => !c.excluded).map((c) => (
               <li key={c.id} className="flex items-start gap-2 text-sm">
@@ -96,10 +115,13 @@ function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between gap-2">
                     <span className="text-on-surface">{CHECK_LABELS[c.id] ?? c.id}</span>
-                    <span className="font-mono text-xs text-on-surface-variant">{c.answered ? `${c.earned}/${c.max}` : 'нет ответа'}</span>
+                    <span className="font-mono text-xs text-on-surface-variant">{!c.answered ? 'нет ответа' : preliminary ? (c.earned === c.max ? 'в порядке' : 'есть замечание') : `${c.earned}/${c.max}`}</span>
                   </div>
                   {c.answered && c.issue && <p className="text-xs text-amber-100/90">{c.issue}</p>}
                   {!c.answered && c.missing && <p className="text-xs text-on-surface-variant">{c.missing}</p>}
+                  {c.answered && checkAuthorLines(d.key as BlockKey, c.id, attribution, viewer).slice(0, 2).map((a, i, all) => (
+                    <p key={a.key} className="text-[11px] text-on-surface-variant">{all.length > 1 || i > 0 ? `${a.label}: ` : ''}{a.line}</p>
+                  ))}
                 </div>
               </li>
             ))}
@@ -114,9 +136,13 @@ function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
         </section>
       )}
 
-      {b && b.needs.length > 0 && (
+      {b && (b.needs.length > 0 || editor) && (
         <section className="flex flex-wrap gap-2">
-          <Link href="/client/onboarding" className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs text-on-surface-variant hover:text-on-surface"><Icon name="edit_note" className="text-[16px]" />Ответить в анкете</Link>
+          {editor ? (
+            <button type="button" onClick={openEditor} className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 px-3 py-2 text-xs text-primary hover:bg-primary/10"><Icon name="edit_note" className="text-[16px]" />{b.needs.length ? 'Ответить на вопросы раздела' : 'Изменить ответы раздела'}</button>
+          ) : (
+            <Link href="/client/onboarding" className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs text-on-surface-variant hover:text-on-surface"><Icon name="edit_note" className="text-[16px]" />Ответить в анкете</Link>
+          )}
           <Link href="/client/onboarding/documents" className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs text-on-surface-variant hover:text-on-surface"><Icon name="upload_file" className="text-[16px]" />Загрузить документы</Link>
         </section>
       )}
@@ -124,7 +150,7 @@ function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
   )
 }
 
-export function BlockDetailPanel({ blockKey, title, onClose, preview, comments = [] }: { blockKey: string; title: string; onClose: () => void; preview?: BlockDetail; comments?: PointAComment[] }) {
+export function BlockDetailPanel({ blockKey, title, onClose, preview, comments = [], preliminary = false, attribution = {}, viewer = {} }: { blockKey: string; title: string; onClose: () => void; preview?: BlockDetail; comments?: PointAComment[]; preliminary?: boolean; attribution?: Record<string, AnswerAttribution>; viewer?: AttributionViewer }) {
   const live = useBlockDetail(preview ? null : blockKey)
   const data = preview ?? live.data
   useEffect(() => {
@@ -141,7 +167,7 @@ export function BlockDetailPanel({ blockKey, title, onClose, preview, comments =
           <h2 className="font-headline text-lg font-bold text-on-surface">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>
         </div>
-        {data ? <Body d={data} comments={comments} /> : live.isError ? (
+        {data ? <Body d={data} comments={comments} preliminary={preliminary} onClose={onClose} attribution={attribution} viewer={viewer} /> : live.isError ? (
           <p className="text-sm text-on-surface" role="alert">Не удалось загрузить раздел.</p>
         ) : (
           <div className="space-y-3" aria-busy="true">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] animate-pulse" />)}</div>

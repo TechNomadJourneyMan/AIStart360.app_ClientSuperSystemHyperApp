@@ -239,10 +239,13 @@ export async function POST(req: NextRequest) {
   // The actor is who made the change: the admin in edit mode, staff saving for
   // a client, otherwise the client.
   const justCompleted = progress.is_complete && !wasComplete
-  // Any explicit save of answers (not a keystroke autosave) changes the data
-  // Point A is built from (spec 2026-10-12 §1.6); one event per minute. A
-  // submit already announces the change below (ONBOARDING_ / QUESTIONNAIRE_COMPLETED).
-  if (company_id && !autosave && rows.length && !justCompleted && !finalSubmitted) {
+  // Any save of answers — the wizard's autosave too — changes the data Point A
+  // is built from (spec 2026-10-12 §1.6; before 2026-11-02 autosaves waited for
+  // the night). Every autosave slides the queued recalculation without a drain
+  // of its own; the event (one per minute) kicks it. A submit already announces
+  // the change below (ONBOARDING_ / QUESTIONNAIRE_COMPLETED).
+  if (company_id && rows.length && !justCompleted && !finalSubmitted) {
+    if (autosave) void import('@/lib/point-a/recalc-queue').then((q) => q.requestPointARecalc(company_id, 'SURVEY_ANSWER_CHANGED', q.RECALC_DEBOUNCE_MS, { kick: false })).catch(() => {})
     const actorId = imp?.aid ?? sessionUser?.id ?? targetUserId
     emitPlatformEventSafely({
       name: 'SURVEY_ANSWER_CHANGED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId,

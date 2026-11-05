@@ -7,20 +7,22 @@
  * cleans up after itself, including any rows the materialize step writes to
  * `public.metrics`.
  *
- * Skipped automatically when no service-role key is available, or when the
+ * Skipped without TEST_SUPABASE_URL + TEST_SUPABASE_SERVICE_ROLE_KEY, or when the
  * Phase-4 aggregator module hasn't been built yet.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { supabaseTestEnv } from '../helpers/supabase-test-env'
 
 // ── Env / skip detection ─────────────────────────────────────────────────────
 
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const SUPA_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+// Only an explicitly given disposable project (tests/helpers/supabase-test-env.ts),
+// never the app's own Supabase from the env.
+const SERVICE_KEY = supabaseTestEnv?.serviceRoleKey
+const SUPA_URL = supabaseTestEnv?.url
 
-const SKIP = !SERVICE_KEY || !SUPA_URL
+const SKIP = !supabaseTestEnv
 
 // Vitest's `describe.skipIf` lands in 1.0+. Fall back to inline guard if
 // running on an older runner.

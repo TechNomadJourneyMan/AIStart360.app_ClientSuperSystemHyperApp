@@ -16,7 +16,7 @@ export const CURRENT_FULL_STRONG: Record<string, unknown> = {
   s1_company_name: 'ТОО «Северный ветер»',
   s1_industry: 'B2B услуги',
   s1_employee_count: 42,
-  s1_current_revenue_year: 540_000_000,
+  s1_current_revenue_year: 600_000_000,
   s1_goal_12m_revenue_year: 700_000_000,
   s1_goal_3y_revenue_year: 1_500_000_000,
   s1_website: 'https://veter.kz',
@@ -46,7 +46,7 @@ export const CURRENT_FULL_STRONG: Record<string, unknown> = {
   s5_has_competitor_analysis: true,
   s7_nps_score: 52,
   s8n_metrics_table: metricsTable({
-    'Сумма продаж': { y2023: 380_000_000, y2024: 470_000_000, y2025: 540_000_000 },
+    'Сумма продаж': { y2023: 380_000_000, y2024: 470_000_000, y2025: 600_000_000 },
     'Кол-во новых продаж': { y2024: 380, y2025: 410 },
     'Кол-во повторных': { y2024: 230, y2025: 290 },
     CAC: { y2025: 120_000 },

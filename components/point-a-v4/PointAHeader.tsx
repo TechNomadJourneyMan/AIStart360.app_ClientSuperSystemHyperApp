@@ -6,7 +6,8 @@ import type { PointAPageState } from '@/hooks/usePointAState'
 import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, ConfidenceBar, Icon, STAGE_RU, pct } from './ui'
 import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
-import { PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, isPrimaryPointA } from '@/lib/point-a/v4/primary'
+import { PRELIMINARY_POINT_A_HINT, PRELIMINARY_POINT_A_LABEL, PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, isPrimaryPointA } from '@/lib/point-a/v4/primary'
+import Link from 'next/link'
 
 export function PointAHeader({
   state, onRecalc, recalcPending, customize, onCustomize,
@@ -23,6 +24,8 @@ export function PointAHeader({
   const busy = recalcPending || state.recalculation === 'running'
   const queued = !busy && state.recalculation === 'queued'
   const withoutData = s?.blocks.filter((b) => b.score === null && !b.informational).length ?? 0
+  // Before the full questionnaire: a snapshot of findings, no score, no stage (PO 2026-11-02).
+  const preliminary = s?.assessment === 'preliminary'
   return (
     // overflow-clip, not overflow-hidden: the glow sticks out of the card, and a
     // hidden-overflow box can still be scrolled (focus, scrollIntoView) — that
@@ -30,20 +33,34 @@ export function PointAHeader({
     <section className={cn(CARD, 'relative overflow-clip')} aria-labelledby="pa-title">
       <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" aria-hidden />
       <div className="relative flex flex-col md:flex-row md:items-center gap-4 md:gap-5">
-        <div className="self-center md:self-auto"><ScoreGauge score={s?.overall ?? null} size={132} /></div>
+        <div className="self-center md:self-auto">
+          {preliminary ? (
+            <div className="flex size-[132px] flex-col items-center justify-center rounded-full border border-dashed border-amber-300/30 bg-amber-300/[0.04] text-center" aria-hidden>
+              <Icon name="pending_actions" className="text-4xl text-amber-200" />
+              <span className="mt-1 text-[10px] font-mono uppercase tracking-wider text-amber-200/80">без оценки</span>
+            </div>
+          ) : <ScoreGauge score={s?.overall ?? null} size={132} />}
+        </div>
         <div className="flex-1 min-w-0 space-y-3">
           <div>
             <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">Точка А</p>
-            <h1 id="pa-title" className="font-headline text-xl sm:text-2xl font-bold text-on-surface">Текущее состояние бизнеса</h1>
+            <h1 id="pa-title" className="font-headline text-xl sm:text-2xl font-bold text-on-surface">{preliminary ? 'Снимок бизнеса' : 'Текущее состояние бизнеса'}</h1>
+            {preliminary && (
+              <p className="mt-1 text-sm text-on-surface-variant">
+                {PRELIMINARY_POINT_A_HINT}.{' '}
+                {state.viewerIsOwner && <Link href="/client/onboarding" className="font-semibold text-primary hover:underline">Перейти к полной анкете →</Link>}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {preliminary && <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>{PRELIMINARY_POINT_A_LABEL}</span>}
             {s?.stage && <span className={cn(CHIP, 'bg-primary/10 text-primary')}>{STAGE_RU[s.stage] ?? s.stage}</span>}
             {/* A block without data → the assessment is primary (survey express, spec 2026-10-23 §7.2). */}
             {s && s.overall !== null && isPrimaryPointA(s.blocks) && (
               <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')} title={PRIMARY_POINT_A_HINT}>{PRIMARY_POINT_A_LABEL}</span>
             )}
             {s && <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')}>Полнота данных {pct(s.coverage)}</span>}
-            {withoutData > 0 && <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>Без данных: {withoutData}</span>}
+            {withoutData > 0 && !preliminary && <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>Без данных: {withoutData}</span>}
             {state.review?.status === 'current' && (
               <span className={cn(CHIP, 'bg-emerald-400/10 text-emerald-300')} suppressHydrationWarning>
                 <Icon name="verified" className="text-[12px]" />Проверено экспертом{state.review.by ? ` ${state.review.by}` : ''}, {new Date(state.review.at).toLocaleDateString('ru-RU')}
@@ -65,7 +82,7 @@ export function PointAHeader({
               </span>
             )}
           </div>
-          <div className="max-w-sm"><ConfidenceBar value={s?.confidence ?? null} /></div>
+          {!preliminary && <div className="max-w-sm"><ConfidenceBar value={s?.confidence ?? null} /></div>}
           {s && <p className="text-[11px] text-on-surface-variant" suppressHydrationWarning>Обновлено {formatRelativeRuLong(s.createdAt)}</p>}
         </div>
         <div className="grid grid-cols-2 gap-2 md:flex md:flex-col md:items-stretch md:min-w-[11rem] [&>*:first-child:nth-last-child(odd)]:col-span-2 [&>*:only-child]:col-span-2">

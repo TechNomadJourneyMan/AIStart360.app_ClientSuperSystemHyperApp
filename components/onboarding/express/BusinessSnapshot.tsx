@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { FieldCalc } from '@/components/survey/FieldCalc'
 import { CalcTracker } from '@/components/onboarding/CalcTracker'
-import { POINT_A_TOO_LITTLE_DATA, PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, pointAStatus } from '@/lib/point-a/v4/primary'
+import { POINT_A_TOO_LITTLE_DATA, PRELIMINARY_POINT_A_HINT, PRELIMINARY_POINT_A_LABEL, PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, blockFindingsText, pointAStatus } from '@/lib/point-a/v4/primary'
 import type { RecommendedBlock } from '@/lib/survey/blocks'
 import { SNAPSHOT_CALC_IDS, expressBlindSpots, snapshotFigures, type SnapshotPointA } from '@/lib/survey/snapshot'
 
@@ -73,6 +73,9 @@ export function BusinessSnapshot({ answers, pointA, recommended, chatEnabled = f
           {status?.kind === 'primary' && (
             <span className="rounded-full bg-amber-300/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200">{PRIMARY_POINT_A_LABEL}</span>
           )}
+          {status?.kind === 'preliminary' && (
+            <span className="rounded-full bg-amber-300/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200">{PRELIMINARY_POINT_A_LABEL}</span>
+          )}
         </div>
         {(pointA.state === 'loading' || pointA.state === 'pending') && (
           <p className="mt-2 flex items-center gap-2 text-xs text-on-surface-variant">
@@ -85,7 +88,9 @@ export function BusinessSnapshot({ answers, pointA, recommended, chatEnabled = f
         )}
         {status && status.kind !== 'none' && (
           <div className="mt-2 space-y-3">
-            {status.kind === 'too_little' ? (
+            {status.kind === 'preliminary' ? (
+              <p className="text-sm text-on-surface">{PRELIMINARY_POINT_A_HINT}</p>
+            ) : status.kind === 'too_little' ? (
               <p className="text-sm text-on-surface">{POINT_A_TOO_LITTLE_DATA}</p>
             ) : (
               <p className="text-sm text-on-surface">
@@ -98,7 +103,9 @@ export function BusinessSnapshot({ answers, pointA, recommended, chatEnabled = f
               {blocks.map((b) => (
                 <li key={b.key} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.02] px-3 py-2 text-xs">
                   <span className="text-on-surface">{b.title}</span>
-                  {b.score === null ? <span className="text-amber-200">данных не хватает</span> : <span className="font-semibold text-on-surface">{b.score}</span>}
+                  {status.kind === 'preliminary'
+                    ? <span className="text-on-surface-variant">{blockFindingsText(b)}</span>
+                    : b.score === null ? <span className="text-amber-200">данных не хватает</span> : <span className="font-semibold text-on-surface">{b.score}</span>}
                 </li>
               ))}
             </ul>

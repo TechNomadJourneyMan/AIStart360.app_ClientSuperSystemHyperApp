@@ -14,8 +14,9 @@ export interface OverviewSummary {
   strengths: Array<{ block: string; text: string }>
 }
 
-export function overviewSummary(s: { overall: number | null; confidence: number | null; stage: string | null; blocks: readonly V4Block[] }): OverviewSummary {
+export function overviewSummary(s: { overall: number | null; confidence: number | null; stage: string | null; blocks: readonly V4Block[]; assessment?: 'full' | 'preliminary' }): OverviewSummary {
   const weighted = s.blocks.filter((b) => !b.informational)
+  if (s.assessment === 'preliminary') return preliminarySummary(weighted)
   const scored = weighted.filter((b) => b.score !== null).sort((a, b) => (b.score as number) - (a.score as number))
   const missing = weighted.filter((b) => b.score === null)
 
@@ -43,4 +44,27 @@ export function overviewSummary(s: { overall: number | null; confidence: number 
     .slice(0, 3)
     .map((b) => ({ block: b.title, text: `${b.score} из 100${b.confidence < 0.7 ? " (данных пока мало)" : ""}` }))
   return { headline, risks, quickWins, strengths }
+}
+
+/**
+ * Before the full questionnaire (PO 2026-11-02): what the answers already
+ * show — findings and first steps of every block with answers, blocks with
+ * no remarks — and never a score, a stage or «сильнее / слабее всего N».
+ */
+function preliminarySummary(weighted: readonly V4Block[]): OverviewSummary {
+  const withIssues = weighted.filter((b) => b.top_issues.length).sort((a, b) => b.top_issues.length - a.top_issues.length)
+  const findings = weighted.reduce((n, b) => n + b.top_issues.length, 0)
+  const noData = weighted.filter((b) => b.coverage < 0.4)
+  const parts = ['Это предварительный снимок: оценка и стадия бизнеса появятся после отправки полной анкеты.']
+  parts.push(findings ? `По вашим ответам уже видно находок: ${findings}${withIssues.length > 1 ? ` — в ${withIssues.length} блоках` : ''}.` : 'По ответам пока нет замечаний.')
+  if (noData.length) parts.push(`Мало ответов: ${noData.map((b) => `«${b.title}»`).join(', ')}.`)
+  return {
+    headline: parts.join(' '),
+    risks: withIssues.flatMap((b) => b.top_issues.slice(0, 2).map((text) => ({ block: b.title, text }))).slice(0, 3),
+    quickWins: withIssues.flatMap((b) => b.recommendations.slice(0, 2).map((text) => ({ block: b.title, text }))).slice(0, 3),
+    strengths: weighted
+      .filter((b) => b.score !== null && b.coverage >= 0.4 && !b.top_issues.length && b.score >= 70)
+      .slice(0, 3)
+      .map((b) => ({ block: b.title, text: 'замечаний нет' })),
+  }
 }

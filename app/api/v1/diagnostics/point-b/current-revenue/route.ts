@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { writeWithAttribution } from '@/lib/survey/attribution'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 /**
  * POST /api/v1/diagnostics/point-b/current-revenue
@@ -49,6 +50,14 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     return dbError('v1/diagnostics/point-b/current-revenue', error)
+  }
+  // The current revenue is a Point A input too (the trend check).
+  if (companyId) {
+    emitPlatformEventSafely({
+      name: 'SURVEY_ANSWER_CHANGED', companyId, subjectType: 'survey', subjectId: user.id, actor: `user:${user.id}`,
+      payload: { keys: ['s1_current_revenue_year', 's1_current_revenue_month'], via: 'point_b' },
+      dedupeKey: `survey_changed:${companyId}:${new Date().toISOString().slice(0, 16)}`,
+    })
   }
   return NextResponse.json({ ok: true, data: { revenue_year: year, revenue_month: month } })
 }

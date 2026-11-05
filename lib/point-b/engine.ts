@@ -148,8 +148,9 @@ export interface PointBV2 {
   growth_decomposition: GrowthDecomposition
 
   target_blocks: Record<string, TargetBlock>
-  target_overall_score: number
-  target_health_index: number
+  /** null when no Point A block has a score (preliminary assessment). */
+  target_overall_score: number | null
+  target_health_index: number | null
   target_stage: string
 
   horizons: {
@@ -684,7 +685,7 @@ function buildGrowthDecomposition(
 function buildHorizons(
   goals: PointBGoals,
   pointA: PointA,
-  targetOverall: number,
+  targetOverall: number | null,
   monthly12m: TrajectoryPoint[],
   top5: PointBV2['top5_limits'],
   withoutData: ReadonlySet<string> = new Set(),
@@ -712,7 +713,7 @@ function buildHorizons(
       ],
       kpis: [
         { label: 'Целевая выручка/год', target: goals.goal_3y_revenue_year != null ? `${goals.goal_3y_revenue_year.toLocaleString('ru-RU')} ₸` : '—' },
-        { label: 'Целевой GRI', target: `${targetOverall}/100` },
+        ...(targetOverall !== null ? [{ label: 'Целевой GRI', target: `${targetOverall}/100` }] : []),
       ],
     },
     one_year: {
@@ -816,8 +817,11 @@ export function calculatePointBV2(
     targetBlocks[key] = { current, target, gap: blockGap, priority: gapPriority(blockGap), effort: effortFromGap(blockGap) }
   }
   const weights = { finance: 0.30, sales: 0.25, operations: 0.20, marketing: 0.15, strategy: 0.10 }
-  const targetOverall = Math.round(BLOCK_KEYS.reduce((s, k) => s + targetBlocks[k].target * weights[k], 0))
-  const targetHealth = Math.min(100, Math.round(targetOverall * 0.6 + (targetBlocks.finance.target > 50 ? 20 : 0) + (targetBlocks.sales.target > 50 ? 10 : 0) + (targetBlocks.operations.target > 50 ? 10 : 0)))
+  // No block of Point A has a score (preliminary, before the full questionnaire):
+  // a target score would be built on zeros — there is none.
+  const anyScored = BLOCK_KEYS.some((k) => !withoutData.has(k))
+  const targetOverall = anyScored ? Math.round(BLOCK_KEYS.reduce((s, k) => s + targetBlocks[k].target * weights[k], 0)) : null
+  const targetHealth = targetOverall === null ? null : Math.min(100, Math.round(targetOverall * 0.6 + (targetBlocks.finance.target > 50 ? 20 : 0) + (targetBlocks.sales.target > 50 ? 10 : 0) + (targetBlocks.operations.target > 50 ? 10 : 0)))
 
   // TOP-5 limits (from GRI if provided, else lowest blocks)
   const top5_limits = options.griTop5?.length

@@ -37,10 +37,11 @@ describe('current wizard can reach the top of every block', () => {
   it('reads revenue by year, CAC/LTV and new vs repeat sales from the step-8 metrics table', () => {
     const base = { s8n_metrics_table: CURRENT_FULL_STRONG.s8n_metrics_table, s9n_net_margin: 34 }
     const pa = calculatePointA(base)
-    // growth 2023→2024 (+23.7%) 20 + margin 15 + LTV/CAC 4.3 15 + trend 2025 ≥ 2024 15 = 65 of 85
-    expect(pa.blocks.finance.earned).toBe(65)
+    // growth of the latest full years 2024→2025 (+27.7%) 20 + margin 15 + LTV/CAC 4.3 15 = 50 of 85;
+    // the trend needs the current pace (step 1), which this set has not → no verdict
+    expect(pa.blocks.finance.earned).toBe(50)
     expect(pa.blocks.finance.top_issues.join(' ')).not.toMatch(/CAC или LTV/)
-    expect(pa.insights.map((i) => i.text).join(' ')).toMatch(/Выручка растёт на 24% г\/г/)
+    expect(pa.insights.map((i) => i.text).join(' ')).toMatch(/Выручка растёт на 28% г\/г/)
     // repeat share 230 / 610 = 38% → full points, no «Повторных клиентов …» issue
     expect(pa.blocks.sales.top_issues.join(' ')).not.toMatch(/Повторных клиентов/)
   })
@@ -51,15 +52,18 @@ describe('legacy answers are still read', () => {
   // to 0..100 and capped blocks at 85/80/80/70/60); the score is now
   // earned / possible. Strategy differs on purpose: v1 gave 0 for the 12-month
   // goal «Выручка 400 млн ₸» because it is shorter than 20 characters.
-  it('strong legacy company — same earned points and issues as v1', () => {
+  // Finance differs since 2026-11-02: growth is the latest pair of full years
+  // (2024→2025 +15% → 10 of 20, v1 took 2023→2024 +30%), and the trend needs
+  // the current pace, which legacy answers have not (0, no issue).
+  it('strong legacy company — same earned points and issues as v1 (finance: latest years)', () => {
     const pa = calculatePointA(LEGACY_STRONG)
-    expect(BLOCKS.map((b) => pa.blocks[b].earned)).toEqual([85, 80, 80, 70, 60])
+    expect(BLOCKS.map((b) => pa.blocks[b].earned)).toEqual([60, 80, 80, 70, 60])
     expect(BLOCKS.map((b) => pa.blocks[b].possible)).toEqual([85, 80, 80, 70, 60])
     expect(BLOCKS.map((b) => pa.blocks[b].excluded_checks)).toEqual([[], [], [], [], []])
     expect(pa.risks).toEqual([])
-    // v1: overall 77, health 86, growth; now every block is complete.
-    expect(pa.overall_score).toBe(100)
-    expect(pa.health_index).toBe(100)
+    // v1: overall 77, health 86, growth; finance 60/85 = 71 → overall 91.
+    expect(pa.overall_score).toBe(91)
+    expect(pa.health_index).toBe(95)
   })
 
   it('weak legacy company — v1 earned points, issues and risks unchanged', () => {
@@ -71,7 +75,7 @@ describe('legacy answers are still read', () => {
     expect(pa.blocks.marketing.earned).toBe(7)
     expect(pa.blocks.finance.top_issues).toEqual([
       'Выручка не растёт или падает',
-      'Низкая маржинальность (<30%)',
+      'Низкая валовая маржа (<15%)',
       'LTV/CAC = 1.5 — маркетинг убыточен',
     ])
     expect(pa.risks.map((r) => r.text)).toEqual([
@@ -80,7 +84,8 @@ describe('legacy answers are still read', () => {
       'Отчётность в Excel — слепые зоны в данных',
       'Ручное управление — высокий операционный риск',
       'Маркетинговый бюджет ниже нормы или не определён',
-      'Точка безубыточности неизвестна',
+      // «Точка безубыточности неизвестна» is gone since 2026-11-02: the set does
+      // not answer the break-even question, and no answer is no data, not a risk.
     ])
     expect(BLOCKS.map((b) => pa.blocks[b].score)).toEqual([4, 0, 6, 12, 38])
     expect(pa.overall_score).toBe(8)

@@ -12,6 +12,7 @@ import { useResolveDiscrepancy } from '@/hooks/usePointAState'
 import { BTN_GHOST, BTN_PRIMARY, CARD, Icon, SectionTitle, fmtValue } from './ui'
 import { cn } from '@/lib/utils'
 import { actionLabel, isPendingKey } from '@/lib/ui/pending'
+import { editorTitle, useAnswerEditor } from './AnswerEditDialog'
 
 const SOURCE_RU: Record<string, string> = { survey: 'Анкета', document: 'Документ', manual: 'Вручную', integration: 'Интеграция', assessment: 'Оценка GRI' }
 
@@ -106,6 +107,8 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
 }
 
 export function AttentionPanel({ state, readonly }: { state: PointAPageState; readonly?: boolean }) {
+  const editor = useAnswerEditor()
+  // Items of snapshots before 2026-11-02 have no check id: they keep the link to the questionnaire.
   const checklist = state.snapshot?.uploadChecklist.slice(0, 3) ?? []
   if (!state.discrepancies.length && !checklist.length) return null
   return (
@@ -128,7 +131,14 @@ export function AttentionPanel({ state, readonly }: { state: PointAPageState; re
           <ul className="space-y-1.5">
             {checklist.map((c, i) => (
               <li key={i} className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-on-surface"><span className="text-on-surface-variant">{c.title}:</span> {c.what}</span>
+                {editor && c.check ? (
+                  <button type="button" className="min-h-[40px] text-left text-on-surface hover:text-primary"
+                    onClick={() => editor({ block: c.block, checks: [c.check as string], title: editorTitle(c.title, c.what) })}>
+                    <span className="text-on-surface-variant">{c.title}:</span> <span className="underline decoration-dotted underline-offset-4">{c.what}</span>
+                  </button>
+                ) : (
+                  <span className="text-on-surface"><span className="text-on-surface-variant">{c.title}:</span> {c.what}</span>
+                )}
                 <span className="font-mono text-[11px] text-primary whitespace-nowrap">+{c.gain}%</span>
               </li>
             ))}

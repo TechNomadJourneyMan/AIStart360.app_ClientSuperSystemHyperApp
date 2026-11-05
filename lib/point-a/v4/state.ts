@@ -11,6 +11,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getMetricById } from '@/lib/metrics/registry'
 import { surveyProgressFromRows } from '@/lib/survey/steps'
+import { loadAttribution, type AttributionSourceRow } from '@/lib/survey/attribution-read'
+import { summarizeAuthors, type AnswerAttribution, type AuthorSummary } from '@/lib/survey/attribution-label'
+import { POINT_A_QUESTION_KEYS, lastAnswerChange } from './answer-authors'
 import { findBenchmark, percentileAgainstBenchmark, ratingLabel, type BenchmarkBlockKey } from '@/lib/point-a/benchmarks'
 import { periodLabel } from '@/lib/data-layer/period-key'
 import { loadGoalsWithEvaluation, type GoalWithEvaluation } from '@/lib/goals/current'
@@ -24,6 +27,8 @@ export interface PointASnapshotView {
   id: string
   createdAt: string
   engine: 'v1' | 'v4'
+  /** 'preliminary' until the full questionnaire is sent: no numbers on the page (PO 2026-11-02). */
+  assessment: 'full' | 'preliminary'
   trigger: string
   overall: number | null
   confidence: number | null
@@ -70,7 +75,13 @@ export interface PointAState {
   gri: { index100: number | null; assessedAt: string | null }
   benchmarks: { industry: string; stage: string; source: string; overall: number; blocks: Array<{ key: BlockKey; title: string; benchmark: number; score: number | null; rating: string | null }> } | null
   sources: {
-    survey: { percent: number; completed: number; total: number }
+    survey: {
+      percent: number; completed: number; total: number
+      /** Who answered: the owner (express / AI helper), documents, each expert / admin (PO 2026-11-02). */
+      authors: AuthorSummary
+      /** The latest change of an answer (ISO), or null. */
+      lastChangedAt: string | null
+    }
     documents: { parsed: number; processing: number; failed: number }
     metrics: number
   }
@@ -87,6 +98,10 @@ export interface PointAState {
   comments: PointAComment[]
   /** «Проверено экспертом»: this snapshot, or an earlier one (then «есть изменения»). */
   review: { status: 'current' | 'earlier'; by: string | null; at: string } | null
+  /** The viewer owns the company: they may answer questions from the page (staff edit in GIGA). */
+  viewerIsOwner: boolean
+  /** Who answered each question behind a Point A check and when (only answers with a recorded author). */
+  answerAttribution: Record<string, AnswerAttribution>
 }
 
 function missing(e: { code?: string } | null | undefined): boolean {
@@ -114,11 +129,12 @@ function metricsOf(inputs: SnapshotInputs | null | undefined): PointASnapshotVie
 }
 
 export function snapshotView(row: Record<string, unknown>): PointASnapshotView {
-  const v4 = (row.v4 ?? {}) as { strengths?: PointASnapshotView['strengths']; upload_checklist?: UploadItem[]; health_index?: number | null }
+  const v4 = (row.v4 ?? {}) as { assessment?: string; strengths?: PointASnapshotView['strengths']; upload_checklist?: UploadItem[]; health_index?: number | null }
   return {
     id: String(row.id),
     createdAt: String(row.created_at),
     engine: row.engine === 'v4' ? 'v4' : 'v1',
+    assessment: v4.assessment === 'preliminary' ? 'preliminary' : 'full',
     trigger: String(row.trigger ?? 'event'),
     overall: num(row.overall),
     confidence: num(row.confidence),
@@ -147,7 +163,7 @@ async function keyMetricsOf(client: SupabaseClient, companyId: string, cfg: Awai
   return { chosen, keyMetrics }
 }
 
-export async function loadPointAState(client: SupabaseClient, service: SupabaseClient, companyId: string): Promise<PointAState> {
+export async function loadPointAState(client: SupabaseClient, service: SupabaseClient, companyId: string, viewerId: string | null = null): Promise<PointAState> {
   // Every read keyed by the company starts at once with the company row; only the GRI, the
   // questionnaire (owner's user_id) and the block config (industry) wait for it, and the key metrics
   // wait only for the config — not for the slowest read of the page.
@@ -175,7 +191,14 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
     client.from('point_a_comments').select('id, target_kind, target_key, body, author_name, author_role, created_at').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }).limit(100),
     client.from('point_a_snapshots').select('reviewed_at, reviewed_by_name').eq('company_id', companyId).not('reviewed_at', 'is', null).order('reviewed_at', { ascending: false }).limit(1),
-    companyP.then(async ({ ownerId }): Promise<{ data: unknown[] | null }> => (ownerId ? await client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId) : { data: [] })),
+    // `*`: the author columns (migrations 131 / 134) — who answered what and when.
+    companyP.then(async ({ ownerId }): Promise<{ data: unknown[] | null; attribution: Record<string, AnswerAttribution> }> => {
+      if (!ownerId) return { data: [], attribution: {} }
+      const res = await client.from('survey_answers').select('*').eq('user_id', ownerId)
+      const rows = (res.data ?? []) as AttributionSourceRow[]
+      // Expert / admin names through the service role (a client cannot read staff profiles).
+      return { data: res.data, attribution: await loadAttribution(service, rows) }
+    }),
     loadGoalsWithEvaluation(client, companyId).catch((err) => {
       console.error('[point-a/state] goals not loaded', err instanceof Error ? err.message : err)
       return [] as GoalWithEvaluation[]
@@ -189,7 +212,9 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
   const rows = (snaps.error ? [] : snaps.data ?? []) as Array<Record<string, unknown>>
   const latestRow = ((latest.error ? [] : latest.data ?? []) as Array<Record<string, unknown>>)[0]
   const snapshot = latestRow ? snapshotView(latestRow) : null
-  const progress = surveyProgressFromRows(((survey.data ?? []) as Array<{ question_key: string; step: number | null; answer: unknown }>))
+  const surveyRows = (survey.data ?? []) as Array<{ question_key: string; step: number | null; answer: unknown }>
+  const progress = surveyProgressFromRows(surveyRows)
+  const authors = summarizeAuthors(surveyRows.map((r) => r.question_key), survey.attribution)
   const { chosen, keyMetrics } = keyMetricsRead ?? { chosen: [], keyMetrics: [] }
 
   const bench = findBenchmark(industry, snapshot?.stage ?? null)
@@ -230,14 +255,18 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
   // A row backing off after a failed run is not «running» for the page.
   const q = queue.error ? null : (queue.data as { started_at: string | null; last_error: string | null } | null)
 
+  // Before the full questionnaire no score is shown — older snapshots' scores neither (PO 2026-11-02).
+  const preliminary = snapshot?.assessment === 'preliminary'
   return {
     snapshot,
     history: rows.map((r) => ({
       id: String(r.id),
       createdAt: String(r.created_at),
-      overall: num(r.overall),
+      overall: preliminary ? null : num(r.overall),
       confidence: num(r.confidence),
-      changes: (Array.isArray(r.change_reasons) ? (r.change_reasons as ChangeReason[]) : []).map((c) => c.text),
+      changes: (Array.isArray(r.change_reasons) ? (r.change_reasons as ChangeReason[]) : [])
+        .filter((c) => !preliminary || c.type !== 'block')
+        .map((c) => c.text),
     })),
     discrepancies: ((disc.error ? [] : disc.data ?? []) as Array<Record<string, unknown>>).map((d) => ({
       id: String(d.id),
@@ -258,7 +287,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     })(),
     benchmarks,
     sources: {
-      survey: { percent: progress.percent, completed: progress.completed, total: progress.total_steps },
+      survey: { percent: progress.percent, completed: progress.completed, total: progress.total_steps, authors, lastChangedAt: lastAnswerChange(survey.attribution) },
       documents: {
         parsed: docRows.filter((d) => d.parse_status === 'parsed' || d.parse_status === 'completed').length,
         processing: docRows.filter((d) => d.parse_status === 'queued' || d.parse_status === 'pending' || d.parse_status === 'processing' || d.parse_status === 'needs_ocr').length,
@@ -280,5 +309,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     metricCatalog: keyMetricCatalog(),
     comments,
     review,
+    viewerIsOwner: viewerId !== null && ownerId !== null && ownerId === viewerId,
+    answerAttribution: Object.fromEntries(POINT_A_QUESTION_KEYS.filter((k) => survey.attribution[k]?.updatedByRole).map((k) => [k, survey.attribution[k]])),
   }
 }

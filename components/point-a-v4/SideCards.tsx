@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { formatRelativeRuLong } from '@/components/point-a/executive-overview-model'
 import { CARD, CARD_TITLE, Icon, toneColor } from './ui'
+import { formatAttributionDate, formatAuthorSummary } from '@/lib/survey/attribution-label'
 
 /** GRI — readiness for growth, a separate indicator (spec §4.6), on the same 0–100 scale. */
 export function GriCard({ gri }: { gri: PointAPageState['gri'] }) {
@@ -46,7 +47,9 @@ export function BenchmarksCard({ benchmarks }: { benchmarks: PointAPageState['be
   )
 }
 
-export function SourcesCard({ sources }: { sources: PointAPageState['sources'] }) {
+export function SourcesCard({ sources, viewerIsOwner = false }: { sources: PointAPageState['sources']; viewerIsOwner?: boolean }) {
+  const authors = sources.survey.authors
+  const changed = formatAttributionDate(sources.survey.lastChangedAt)
   return (
     <section className={CARD} aria-labelledby="pa-sources">
       <p id="pa-sources" className={CARD_TITLE}>Мои данные</p>
@@ -66,6 +69,13 @@ export function SourcesCard({ sources }: { sources: PointAPageState['sources'] }
           <Link href="/metrics" className="font-mono text-xs text-primary/80 hover:text-primary">{sources.metrics}</Link>
         </li>
       </ul>
+      {authors && authors.total > 0 && (
+        <div className="mt-3 border-t border-white/[0.05] pt-3 text-xs text-on-surface-variant">
+          <p className="mb-1 font-mono text-[10px] uppercase tracking-wider">Кто заполнял анкету</p>
+          <p className="text-on-surface">{formatAuthorSummary(authors, { viewerIsOwner })}</p>
+          {changed && <p className="mt-1">Последнее изменение: {changed}</p>}
+        </div>
+      )}
     </section>
   )
 }

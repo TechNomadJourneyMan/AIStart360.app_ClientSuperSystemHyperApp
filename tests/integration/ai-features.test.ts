@@ -1,35 +1,22 @@
 // ============================================================
 // tests/integration/ai-features.test.ts
-// Verifies the AI-1 migrations (045–049) against real Supabase:
+// Verifies the AI-1 migrations (045–049) against a disposable Supabase:
 //   ai_conversations / ai_messages, nba_log, user_consents,
 //   founder_psych_profiles, action_items (new columns) and the
 //   match_user_document_chunks RPC (046).
 // Seeds an ephemeral auth user + profile and cleans up after.
-// Skipped when SUPABASE creds are absent (keeps CI green).
+// Skipped without TEST_SUPABASE_URL + TEST_SUPABASE_SERVICE_ROLE_KEY.
 // ============================================================
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { supabaseTestEnv } from '../helpers/supabase-test-env'
 
-function loadEnvFile(file: string) {
-  if (!existsSync(file)) return
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/)
-    if (!m) continue
-    let val = m[2].trim()
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1)
-    if (process.env[m[1]] === undefined) process.env[m[1]] = val
-  }
-}
-loadEnvFile(resolve(process.cwd(), '.env.local'))
-loadEnvFile(resolve(process.cwd(), '.env'))
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const SKIP = !SUPABASE_URL || !SERVICE_ROLE_KEY
+// Only an explicitly given disposable project; .env.local is production.
+const SUPABASE_URL = supabaseTestEnv?.url ?? ''
+const SERVICE_ROLE_KEY = supabaseTestEnv?.serviceRoleKey ?? ''
+const SKIP = !supabaseTestEnv
 
 const describeOrSkip =
   typeof (describe as unknown as { skipIf?: unknown }).skipIf === 'function'

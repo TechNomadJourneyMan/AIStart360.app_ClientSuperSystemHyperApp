@@ -21,6 +21,7 @@
  *     ai_usage (091, lib/ai/usage.ts — per-tier user budgets and the GIGA report).
  */
 
+import { autoComplexity, COMPLEXITY_TIER, type Complexity } from './complexity'
 import {
   chatCompletion,
   computeCost,
@@ -33,13 +34,14 @@ import {
   type ChatMessage,
   type ClientFailure,
 } from './providers/client'
-import { runWithFailover } from './providers/failover'
+import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveCandidates, resolveTarget } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
 import { recordAiUsage, type AiFeature } from './usage'
 
 export type { AiFeature } from './usage'
+export { autoComplexity, escalateComplexity, type Complexity } from './complexity'
 
 export const OPENROUTER_MODELS = {
   sonnet5: 'anthropic/claude-sonnet-5',
@@ -67,9 +69,6 @@ export const MODEL_TIERS = {
   max:   OPENROUTER_MODELS.opus,
 } as const
 
-/** Task complexity → drives automatic model selection. */
-export type Complexity = 'low' | 'medium' | 'high' | 'max'
-
 /**
  * Map a task's complexity to the most suitable model, balancing quality and
  * speed. `low`/`medium` favour Haiku (fast, cheap, good); `high` uses Sonnet for
@@ -83,19 +82,6 @@ export function pickModel(complexity: Complexity): string {
     case 'medium':
     default:     return MODEL_TIERS.fast
   }
-}
-
-/**
- * Heuristic complexity estimate used when a caller specifies neither `model` nor
- * `complexity`. Larger expected outputs and longer prompts imply harder tasks.
- */
-export function autoComplexity(opts: { user: string; system?: string; maxTokens?: number }): Complexity {
-  const promptChars = (opts.user?.length ?? 0) + (opts.system?.length ?? 0)
-  const maxTokens = opts.maxTokens ?? 2000
-  // Big, open-ended generations → reason harder. Short ones → go fast.
-  if (maxTokens >= 3000 || promptChars >= 12_000) return 'high'
-  if (maxTokens <= 600 && promptChars < 4_000) return 'low'
-  return 'medium'
 }
 
 interface ChatOptions {
@@ -161,14 +147,6 @@ export function hasOpenRouterKey(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY) || hasConfiguredChatRoute()
 }
 
-/** Complexity → gateway tier, so legacy features follow the owner's tier routes. */
-const COMPLEXITY_TIER: Record<Complexity, ChatTier> = {
-  low: 'light',
-  medium: 'light',
-  high: 'standard',
-  max: 'premium',
-}
-
 function logTag(target: ProviderTarget, suffix = ''): string {
   return target.kind === 'openrouter' && target.providerKey === 'openrouter'
     ? `[openrouter${suffix}]`
@@ -191,8 +169,12 @@ interface OpenRouterResponseJson {
  * automatic estimate. An explicit `model` registered by the owner wins; an
  * unregistered one is used through OpenRouter after the owner's route, and
  * when OpenRouter has no key the call transparently goes to an available chat
- * model of the same tier. A failover-worthy error tries the next candidate.
- * With nothing configured: OpenRouter with the complexity model, as before 094.
+ * model of the same tier. A failover-worthy error (incl. 402 — OpenRouter out
+ * of credits) tries the next candidate, and so does a 400 that rejects the
+ * model or the requested output format (isModelOrFormatRejection: an invalid
+ * model id, json_schema / response_format the model cannot do); any other
+ * 400 stops. With nothing configured: OpenRouter with the complexity model,
+ * as before 094.
  */
 export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | null> {
   const fallbackModel = resolveModel({
@@ -237,6 +219,9 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     }),
     {
       budgetCheck: providerBudgetRefusal,
+      // Structured calls (json_schema / json_object) on a cheap model, or a
+      // misregistered model id: another candidate can answer the same request.
+      alsoFailoverOn: (_target, res) => isModelOrFormatRejection(res),
       onFailure: async (target, res) => {
         if (res.code === 'TIMEOUT') {
           // The provider may have generated (and billed) the answer we stopped

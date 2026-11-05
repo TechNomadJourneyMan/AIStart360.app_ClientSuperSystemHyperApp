@@ -29,7 +29,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   try {
-    const state = await loadPointAState(supabase, createServiceClient(), tenant.tenant.companyId)
+    const state = await loadPointAState(supabase, createServiceClient(), tenant.tenant.companyId, user.id)
     if (!state.snapshot && state.recalculation === 'idle' && state.sources.survey.completed > 0) {
       if (await requestPointARecalc(tenant.tenant.companyId, 'first_view', 0)) state.recalculation = 'queued'
     } else if (state.recalculation === 'queued') {
