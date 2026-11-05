@@ -1,7 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { drainPointARecalc, POINT_A_TRIGGER_EVENTS, type DrainDeps } from '@/lib/point-a/recalc-queue'
 
 vi.mock('@/lib/db', () => ({ prisma: {} }))
+// drainInBackground must never reach the real drain (it talks to the database): only record that it was started.
+const background = vi.hoisted(() => ({ run: vi.fn(async () => {}) }))
+vi.mock('@/lib/background', () => ({ runInBackground: background.run }))
 
 function deps(queue: Array<{ company_id: string; reasons: string[] }>, build: DrainDeps['build']) {
   const finished: string[] = []
@@ -61,5 +64,39 @@ describe('drainInBackground', () => {
     delete process.env.VERCEL
     expect(() => drainInBackground('co')).not.toThrow()
     process.env.VERCEL = prev
+  })
+
+  describe('where the work outlives the response', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+      background.run.mockClear()
+    })
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    it('starts the background drain on Vercel', async () => {
+      const { drainInBackground } = await import('@/lib/point-a/recalc-queue')
+      vi.stubEnv('VERCEL', '1')
+      drainInBackground('co')
+      await flush()
+      expect(background.run).toHaveBeenCalledWith('point-a-recalc', expect.any(Function))
+    })
+
+    it('starts the background drain on a persistent server (PERSISTENT_SERVER=1)', async () => {
+      const { drainInBackground } = await import('@/lib/point-a/recalc-queue')
+      vi.stubEnv('VERCEL', '')
+      vi.stubEnv('PERSISTENT_SERVER', '1')
+      drainInBackground('co')
+      await flush()
+      expect(background.run).toHaveBeenCalledWith('point-a-recalc', expect.any(Function))
+    })
+
+    it('starts nothing without a flag', async () => {
+      const { drainInBackground } = await import('@/lib/point-a/recalc-queue')
+      vi.stubEnv('VERCEL', '')
+      vi.stubEnv('PERSISTENT_SERVER', '')
+      drainInBackground('co')
+      await flush()
+      expect(background.run).not.toHaveBeenCalled()
+    })
   })
 })

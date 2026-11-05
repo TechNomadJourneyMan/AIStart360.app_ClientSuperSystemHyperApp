@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { isPersistentServer } from '@/lib/runtime/platform'
 
 /**
  * Short-lived HMAC token for authenticating TRUSTED server-to-server calls
@@ -127,12 +128,19 @@ export function internalFetchHeaders(
 
 /**
  * Base URL for internal fan-out fetches. Never the request's Host header in
- * production (a spoofed Host would receive the token): NEXT_PUBLIC_APP_URL,
- * else the Vercel deployment URL. Outside production the request origin is
- * accepted for local development. Null when nothing trustworthy is known —
- * the caller must then skip the fan-out.
+ * production (a spoofed Host would receive the token): INTERNAL_BASE_URL first
+ * (a persistent server calls itself on localhost, e.g. http://127.0.0.1:$PORT,
+ * so the fan-out never leaves the box); without it a persistent server
+ * (PERSISTENT_SERVER=1) still does, on http://127.0.0.1:${PORT || 3000} — the
+ * port `next start` listens on; else NEXT_PUBLIC_APP_URL, else the Vercel
+ * deployment URL. Outside production the request origin is accepted for local
+ * development. Null when nothing trustworthy is known — the caller must then
+ * skip the fan-out.
  */
 export function internalBaseUrl(req: { nextUrl?: { origin: string }; url?: string }): string | null {
+  const internal = process.env.INTERNAL_BASE_URL?.trim()
+  if (internal) return internal.replace(/\/+$/, '')
+  if (isPersistentServer()) return `http://127.0.0.1:${process.env.PORT?.trim() || 3000}`
   const configured = process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (configured) return configured.replace(/\/+$/, '')
   const vercel = process.env.VERCEL_URL?.trim()

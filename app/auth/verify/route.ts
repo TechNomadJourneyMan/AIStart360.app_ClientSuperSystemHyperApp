@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
 import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { requestOrigin } from '@/lib/site-url'
 import { acceptInvitation } from '@/lib/admin/invites'
 
 /**
@@ -11,7 +12,8 @@ import { acceptInvitation } from '@/lib/admin/invites'
  * домене, поэтому Site URL в Supabase роли не играет.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
+  const origin = requestOrigin(request)
   const tokenHash = searchParams.get('token_hash')
   const raw = searchParams.get('type')
   const type = raw === 'recovery' ? 'recovery' : raw === 'invite' ? 'invite' : 'magiclink'

@@ -4,6 +4,7 @@ import {
   createSignedBridgeHeaders,
   WHATSAPP_WEB_PORTAL_AUDIENCE,
 } from "@/lib/omnichannel/whatsapp-web-signature";
+import { waitForBackgroundWork } from "@/lib/background";
 
 const repository = vi.hoisted(() => ({
   claimWebhookEventForProcessing: vi.fn(),
@@ -54,6 +55,7 @@ const managedEnv = [
   "OMNICHANNEL_PERSISTENCE",
   "OMNICHANNEL_DATABASE_URL",
   "VERCEL",
+  "PERSISTENT_SERVER",
 ] as const;
 const originalEnv = Object.fromEntries(
   managedEnv.map((key) => [key, process.env[key]]),
@@ -385,6 +387,46 @@ describe("/api/webhooks/whatsapp-web", () => {
       "pg-audit-1",
       "processed",
     );
+  });
+
+  it("starts the due database job after the response on a persistent server", async () => {
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = "database";
+    process.env.OMNICHANNEL_PERSISTENCE = "postgres";
+    process.env.OMNICHANNEL_DATABASE_URL =
+      "postgresql://restricted.invalid/omnichannel";
+    process.env.PERSISTENT_SERVER = "1";
+    processingJobs.enqueue.mockResolvedValue({
+      id: "job-1",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+
+    const response = await POST(request(payload()));
+    await expect(waitForBackgroundWork(1000)).resolves.toEqual({
+      finished: true,
+      pending: 0,
+    });
+
+    expect(response.status).toBe(200);
+    expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 });
+  });
+
+  it("leaves the due database job to the durable queue without a Vercel or persistent-server flag", async () => {
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = "database";
+    process.env.OMNICHANNEL_PERSISTENCE = "postgres";
+    process.env.OMNICHANNEL_DATABASE_URL =
+      "postgresql://restricted.invalid/omnichannel";
+    delete process.env.VERCEL;
+    delete process.env.PERSISTENT_SERVER;
+    processingJobs.enqueue.mockResolvedValue({
+      id: "job-1",
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+
+    const response = await POST(request(payload()));
+    await waitForBackgroundWork(1000);
+
+    expect(response.status).toBe(200);
+    expect(jobDrain.drain).not.toHaveBeenCalled();
   });
 
   it("fails closed before persistence when database processing lacks its dedicated DSN", async () => {

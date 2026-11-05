@@ -48,3 +48,29 @@ export function getSiteUrl(path?: string): string {
   if (!path) return base
   return `${base}/${path.replace(/^\/+/, '')}`
 }
+
+/** Addresses a server listens on (`next start -H 0.0.0.0`) — never a host a browser can open. */
+const BIND_HOSTS = new Set(['0.0.0.0', '[::]', '::'])
+
+/**
+ * Origin to send a browser back to from a route handler (OAuth callback, email
+ * links). `next start -H 0.0.0.0` on Railway builds request.url from the listen
+ * address, so redirects built from it sent people to https://0.0.0.0:8080. There
+ * the Host header names the site — the domain the browser used, which the
+ * platform routes by — and the site URL is the last resort. A request URL that
+ * names a real host (Vercel, local dev) is kept as is.
+ */
+export function requestOrigin(request: { url: string; headers: { get(name: string): string | null } }): string {
+  const url = new URL(request.url)
+  if (!BIND_HOSTS.has(url.hostname)) return url.origin
+  const host = request.headers.get('host')?.split(',')[0]?.trim()
+  if (host) {
+    try {
+      const fromHost = new URL(`${url.protocol}//${host}`)
+      if (!BIND_HOSTS.has(fromHost.hostname) && fromHost.host === host.toLowerCase()) return fromHost.origin
+    } catch {
+      // not a host — fall through to the site URL
+    }
+  }
+  return new URL(getSiteUrl()).origin
+}

@@ -90,4 +90,67 @@ describe('internalBaseUrl', () => {
     vi.stubEnv('VERCEL_URL', 'my-app-abc.vercel.app')
     expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('https://my-app-abc.vercel.app')
   })
+
+  it('INTERNAL_BASE_URL (a persistent server calling itself) wins over the public and Vercel URLs', () => {
+    vi.stubEnv('INTERNAL_BASE_URL', 'http://127.0.0.1:8080/')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.aistart360.app/')
+    vi.stubEnv('VERCEL_URL', 'my-app-abc.vercel.app')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:8080')
+  })
+
+  it('INTERNAL_BASE_URL is trimmed, and also applies in production', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('INTERNAL_BASE_URL', '  http://127.0.0.1:3000//  ')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:3000')
+  })
+
+  it('a persistent server without INTERNAL_BASE_URL calls itself on 127.0.0.1 and its PORT', () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('INTERNAL_BASE_URL', '')
+    vi.stubEnv('PORT', '8080')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.aistart360.app/')
+    vi.stubEnv('VERCEL_URL', 'my-app-abc.vercel.app')
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:8080')
+    vi.stubEnv('INTERNAL_BASE_URL', '   ')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:8080')
+  })
+
+  it('a persistent server without INTERNAL_BASE_URL or PORT uses port 3000, as next start does', () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('INTERNAL_BASE_URL', '')
+    vi.stubEnv('PORT', '')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.aistart360.app/')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:3000')
+  })
+
+  it('INTERNAL_BASE_URL still wins on a persistent server', () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORT', '8080')
+    vi.stubEnv('INTERNAL_BASE_URL', 'http://127.0.0.1:9000')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('http://127.0.0.1:9000')
+  })
+
+  it('on Vercel (no PERSISTENT_SERVER) PORT is ignored and the order is as before', () => {
+    vi.stubEnv('PERSISTENT_SERVER', '')
+    vi.stubEnv('INTERNAL_BASE_URL', '')
+    vi.stubEnv('PORT', '8080')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.aistart360.app/')
+    vi.stubEnv('VERCEL_URL', 'my-app-abc.vercel.app')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('https://app.aistart360.app')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('https://my-app-abc.vercel.app')
+    vi.stubEnv('VERCEL_URL', '')
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBeNull()
+  })
+
+  it('a blank INTERNAL_BASE_URL falls back to the previous order', () => {
+    vi.stubEnv('INTERNAL_BASE_URL', '   ')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.aistart360.app/')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('https://app.aistart360.app')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+    vi.stubEnv('VERCEL_URL', 'my-app-abc.vercel.app')
+    expect(internalBaseUrl({ nextUrl: { origin: 'https://evil.example' } })).toBe('https://my-app-abc.vercel.app')
+  })
 })

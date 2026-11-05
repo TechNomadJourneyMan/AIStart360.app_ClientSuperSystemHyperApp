@@ -6,7 +6,8 @@
  * Vercel Workflow or Inngest). No AI work and no Bot API calls happen here;
  * the webhook stays a short write + enqueue.
  */
-import { waitUntil } from '@vercel/functions'
+import { trackBackground } from '@/lib/background'
+import { canRunAfterResponse } from '@/lib/runtime/platform'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from './events'
 import { shouldUseOmnichannelPostgres } from './postgres-runtime'
 import type {
@@ -81,7 +82,7 @@ function sleep(milliseconds: number): Promise<void> {
 
 /** Same best-effort low-latency drain as the Meta/WhatsApp webhooks. */
 function scheduleDatabaseQueueFastPath(runAt: string): void {
-  if (process.env.VERCEL !== '1') return
+  if (!canRunAfterResponse()) return
   const runAtMs = new Date(runAt).getTime()
   if (!Number.isFinite(runAtMs)) return
   const delayMs = Math.max(0, runAtMs - Date.now())
@@ -93,11 +94,7 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
   })().catch(() => {
     // The durable job stays queued and is recovered by a later drain.
   })
-  try {
-    waitUntil(work)
-  } catch {
-    // Outside Vercel the promise is already running.
-  }
+  trackBackground(work)
 }
 
 /** Enqueue on whichever backend the other inbox webhooks use. */

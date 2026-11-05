@@ -61,6 +61,7 @@ vi.mock('@/workflows/process-omnichannel-message', () => ({
 }))
 
 import { GET, POST } from '@/app/api/webhooks/meta/route'
+import { waitForBackgroundWork } from '@/lib/background'
 
 const originalAppSecret = process.env.META_APP_SECRET
 const originalInstagramAppSecret = process.env.INSTAGRAM_APP_SECRET
@@ -69,6 +70,8 @@ const originalWhatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
 const originalVerifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN
 const originalProcessingBackend = process.env.OMNICHANNEL_PROCESSING_BACKEND
 const originalVercel = process.env.VERCEL
+const originalPersistentServer = process.env.PERSISTENT_SERVER
+const REQUEST_CONTEXT = Symbol.for('@vercel/request-context')
 
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name]
@@ -153,6 +156,7 @@ describe('/api/webhooks/meta', () => {
     delete process.env.META_WEBHOOK_VERIFY_TOKEN
     delete process.env.OMNICHANNEL_PROCESSING_BACKEND
     delete process.env.VERCEL
+    delete process.env.PERSISTENT_SERVER
     process.env.INSTAGRAM_ACCOUNT_ID = 'ig-business-1'
     process.env.WHATSAPP_PHONE_NUMBER_ID = 'phone-number-1'
 
@@ -187,6 +191,8 @@ describe('/api/webhooks/meta', () => {
     restoreEnv('META_WEBHOOK_VERIFY_TOKEN', originalVerifyToken)
     restoreEnv('OMNICHANNEL_PROCESSING_BACKEND', originalProcessingBackend)
     restoreEnv('VERCEL', originalVercel)
+    restoreEnv('PERSISTENT_SERVER', originalPersistentServer)
+    delete (globalThis as Record<symbol, unknown>)[REQUEST_CONTEXT]
   })
 
   it('fails closed when GET verification is not configured', async () => {
@@ -391,6 +397,8 @@ describe('/api/webhooks/meta', () => {
     process.env.META_APP_SECRET = 'app-secret'
     process.env.OMNICHANNEL_PROCESSING_BACKEND = 'database'
     process.env.VERCEL = '1'
+    // Vercel's per-request context: what trackBackground registers the job with.
+    ;(globalThis as Record<symbol, unknown>)[REQUEST_CONTEXT] = { get: () => ({ waitUntil: vercel.waitUntil }) }
     processingJobs.enqueue.mockResolvedValue({
       id: 'job-1',
       runAt: new Date(Date.now() - 1_000).toISOString(),
@@ -405,6 +413,45 @@ describe('/api/webhooks/meta', () => {
     expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 })
     expect(vercel.waitUntil).toHaveBeenCalledOnce()
     expect(queue.send).not.toHaveBeenCalled()
+  })
+
+  it('starts the due database job on a persistent server (no Vercel context) and tracks it', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = 'database'
+    process.env.PERSISTENT_SERVER = '1'
+    processingJobs.enqueue.mockResolvedValue({
+      id: 'job-1',
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+    })
+
+    const response = await POST(postRequest(
+      JSON.stringify(instagramInboundPayload()),
+      'app-secret',
+    ))
+    await expect(waitForBackgroundWork(1000)).resolves.toEqual({ finished: true, pending: 0 })
+
+    expect(response.status).toBe(200)
+    expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 })
+    expect(vercel.waitUntil).not.toHaveBeenCalled()
+    expect(queue.send).not.toHaveBeenCalled()
+  })
+
+  it('leaves the due database job to the durable queue without a Vercel or persistent-server flag', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = 'database'
+    processingJobs.enqueue.mockResolvedValue({
+      id: 'job-1',
+      runAt: new Date(Date.now() - 1_000).toISOString(),
+    })
+
+    const response = await POST(postRequest(
+      JSON.stringify(instagramInboundPayload()),
+      'app-secret',
+    ))
+    await waitForBackgroundWork(1000)
+
+    expect(response.status).toBe(200)
+    expect(jobDrain.drain).not.toHaveBeenCalled()
   })
 
   it('does not enqueue a duplicate message whose repository status is terminal', async () => {

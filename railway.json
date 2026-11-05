@@ -1,0 +1,19 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "npm run build"
+  },
+  "deploy": {
+    "startCommand": "node node_modules/next/dist/bin/next start -H 0.0.0.0",
+    "preDeployCommand": ["node scripts/railway/predeploy.mjs"],
+    "healthcheckPath": "/api/healthz",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "overlapSeconds": 45,
+    "drainingSeconds": 60,
+    "multiRegionConfig": {
+      "europe-west4-drams3a": { "numReplicas": 1 }
+    }
+  }
+}

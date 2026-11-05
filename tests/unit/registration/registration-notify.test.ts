@@ -105,4 +105,10 @@ describe('registration notifications (GAP-20)', () => {
     res = await callback(new NextRequest('http://localhost/auth/callback?code=abc&next=/metrics'))
     expect(res.headers.get('location')).toBe('http://localhost/metrics')
   })
+
+  it('behind `next start -H 0.0.0.0` (Railway) sends the browser back to the domain it used, not 0.0.0.0', async () => {
+    s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    const res = await callback(new NextRequest('https://0.0.0.0:8080/auth/callback?code=abc', { headers: { host: 'portal.aistart360.app' } }))
+    expect(res.headers.get('location')).toBe('https://portal.aistart360.app/admin-giga-panel')
+  })
 })

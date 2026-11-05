@@ -16,6 +16,7 @@
  * agentsMaintenance — so it works without Inngest too.
  */
 import { prisma } from '@/lib/db'
+import { canRunAfterResponse } from '@/lib/runtime/platform'
 
 export const RECALC_DEBOUNCE_MS = 20_000
 export const POINT_A_RECALC_EVENT = 'point-a/recalc.requested'
@@ -51,13 +52,13 @@ const INLINE_MAX_DELAY_S = 30
 
 /**
  * Drain this company's due recalculation in the background of the current
- * request (Vercel waitUntil) — the path that works without Inngest and
- * without a minute cron. Never throws.
+ * request (Vercel waitUntil, or a persistent server) — the path that works
+ * without Inngest and without a minute cron. Never throws.
  */
 export function drainInBackground(companyId: string, delayMs = 0): void {
-  // Only on Vercel (waitUntil keeps the work alive); never in tests or a
-  // local dev server pointed at the production database.
-  if (process.env.VERCEL !== '1') return
+  // Only where the work outlives the response (Vercel waitUntil, a persistent
+  // server); never in tests or a local dev server pointed at the production database.
+  if (!canRunAfterResponse()) return
   void import('@/lib/background').then(({ runInBackground }) =>
     runInBackground('point-a-recalc', async () => {
       if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
