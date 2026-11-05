@@ -303,6 +303,7 @@ describe('failover', () => {
   it('classifies failover-worthy errors', () => {
     const f = (status: number | null, retryable = true) => ({ ok: false as const, code: 'PROVIDER_ERROR' as const, status, message: '', retryable, detail: null })
     for (const s of [401, 403, 404, 408, 429, 500, 502, 503]) expect(isFailoverWorthy(f(s))).toBe(true)
+    expect(isFailoverWorthy(f(402, false))).toBe(true) // OpenRouter: insufficient credits
     expect(isFailoverWorthy(f(400, false))).toBe(false)
     expect(isFailoverWorthy(f(422, false))).toBe(false)
     expect(isFailoverWorthy(f(null, true))).toBe(true) // timeout / network

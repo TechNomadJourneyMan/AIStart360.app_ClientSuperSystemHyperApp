@@ -7,51 +7,28 @@
 //         materializeAll  →
 //           SELECT FROM public.metrics
 //
-// Runs against the real Supabase instance using the service role
-// key (RLS bypass) so we can both seed fixtures and clean up.
-// If `SUPABASE_SERVICE_ROLE_KEY` is missing the suite is skipped
-// rather than failing — that keeps CI/local-without-creds green.
+// Runs against a disposable Supabase project (TEST_SUPABASE_URL +
+// TEST_SUPABASE_SERVICE_ROLE_KEY, RLS bypass) so we can both seed
+// fixtures and clean up. Without them the suite is skipped.
 // ============================================================
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 import {
   gatherResolverContext,
   materializeAll,
 } from '@/lib/metrics/materialize'
 import { resolveAllMetrics } from '@/lib/metrics/resolver'
+import { supabaseTestEnv } from '../helpers/supabase-test-env'
 
-// ─── Env loading ─────────────────────────────────────────────
-// `tests/helpers/setup.ts` only loads `.env`. The service role
-// lives in `.env.local`, so we read it ourselves (no dep added).
-function loadEnvFile(file: string) {
-  if (!existsSync(file)) return
-  const content = readFileSync(file, 'utf8')
-  for (const line of content.split('\n')) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/)
-    if (!m) continue
-    let val = m[2].trim()
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1)
-    }
-    if (process.env[m[1]] === undefined) process.env[m[1]] = val
-  }
-}
-
-loadEnvFile(resolve(__dirname, '../../.env.local'))
-loadEnvFile(resolve(__dirname, '../../.env'))
-
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? ''
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const SKIP = !SUPABASE_URL || !SERVICE_ROLE_KEY
+// ─── Env ─────────────────────────────────────────────────────
+// Only an explicitly given disposable project (tests/helpers/supabase-test-env.ts);
+// .env.local is production and is never read.
+const SUPABASE_URL = supabaseTestEnv?.url ?? ''
+const SERVICE_ROLE_KEY = supabaseTestEnv?.serviceRoleKey ?? ''
+const SKIP = !supabaseTestEnv
 
 // Allowed source values in `public.metrics` (per migration 016).
 const ALLOWED_SOURCES = new Set([

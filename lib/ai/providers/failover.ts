@@ -2,23 +2,28 @@
  * lib/ai/providers/failover.ts — try the router's candidates in order (A1).
  *
  * A call moves on to the next candidate when the current one fails with a
- * failover-worthy error: HTTP 401/403/404/408/429/5xx, a timeout or a network
- * error (the key, model or provider is the problem, so another target can
- * answer the same request). Any other error (400 bad request, invalid output)
- * is returned as is — another model would get the same request.
+ * failover-worthy error: HTTP 401/402/403/404/408/429/5xx, a timeout or a
+ * network error (the key, account, model or provider is the problem — 402 is
+ * OpenRouter's "insufficient credits" — so another target can answer the same
+ * request). Any other error (400 bad request, invalid output) is returned as
+ * is — another model would get the same request — unless the caller's
+ * `alsoFailoverOn` says otherwise: the chat callers pass
+ * isModelOrFormatRejection (a 400 that blames the model id or the requested
+ * output format, not the prompt).
  *
  * Every failover-worthy failure marks the target unhealthy for 5 minutes and
- * every success clears it (health.ts). A target whose provider budget is spent
- * is skipped (its refusal is returned when nothing else answered). Callers keep
- * their per-attempt accounting in `onFailure` (ledger of timed-out attempts,
- * logs). With a single candidate, `retryAlone` retries a retryable error once
- * after a pause (the gateway's pre-A1 behaviour).
+ * every success clears it (health.ts); an `alsoFailoverOn` failure does not
+ * (the target may serve other requests fine). A target whose provider budget
+ * is spent is skipped (its refusal is returned when nothing else answered).
+ * Callers keep their per-attempt accounting in `onFailure` (ledger of
+ * timed-out attempts, logs). With a single candidate, `retryAlone` retries a
+ * retryable error once after a pause (the gateway's pre-A1 behaviour).
  */
 import type { ClientFailure } from './client'
 import { markFailure, markSuccess } from './health'
 import type { ProviderTarget } from './types'
 
-const FAILOVER_STATUSES = new Set([401, 403, 404, 408, 429])
+const FAILOVER_STATUSES = new Set([401, 402, 403, 404, 408, 429])
 
 /** Should the next candidate be tried after this failure? */
 export function isFailoverWorthy(f: ClientFailure): boolean {
@@ -26,8 +31,30 @@ export function isFailoverWorthy(f: ClientFailure): boolean {
   return FAILOVER_STATUSES.has(f.status) || f.status >= 500
 }
 
+/**
+ * The provider's error text of a 400 that rejects the model or the output
+ * format rather than the prompt: "Claude is not a valid model ID", unknown /
+ * unsupported model, response_format / json_schema / structured output the
+ * model or endpoint cannot do, "… is not supported". A false positive (the
+ * error echoes a prompt that mentions a model) costs one more rejected call.
+ */
+const MODEL_OR_FORMAT_400 =
+  /\bmodel|not a valid|response_format|json_schema|json_object|structured[ _-]?output|unsupported|not supported/i
+
+/**
+ * A 400 that another candidate may answer (chat callers' `alsoFailoverOn`).
+ * A generic 400 (malformed messages, a bad prompt) still stops the chain.
+ * Reads `detail` only to classify — never logs it (it may echo client data).
+ */
+export function isModelOrFormatRejection(f: ClientFailure): boolean {
+  if (f.status !== 400) return false
+  return MODEL_OR_FORMAT_400.test(`${f.message} ${f.detail ?? ''}`)
+}
+
 function failureText(f: ClientFailure): string {
-  return f.status !== null ? `HTTP ${f.status}${f.code === 'RATE_LIMITED' ? ' (лимит запросов)' : ''}` : f.message
+  if (f.status === null) return f.message
+  const why = f.code === 'RATE_LIMITED' ? ' (лимит запросов)' : f.status === 402 ? ' (нет кредитов / оплаты)' : ''
+  return `HTTP ${f.status}${why}`
 }
 
 export interface FailoverOptions {

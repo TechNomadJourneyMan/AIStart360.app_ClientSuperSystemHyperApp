@@ -129,9 +129,11 @@ export interface SnapshotPointA {
   /** loading: not read yet; pending: the recalculation is running; ready: the snapshot is there; none: no Point A. */
   state: 'loading' | 'pending' | 'ready' | 'none'
   snapshot?: {
+    /** 'preliminary' before the full questionnaire: findings, no numbers. */
+    assessment?: 'full' | 'preliminary'
     overall: number | null
     confidence: number | null
-    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean }>
+    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean; top_issues?: readonly string[] }>
     uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
   } | null
 }

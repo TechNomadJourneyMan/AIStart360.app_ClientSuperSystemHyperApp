@@ -288,6 +288,21 @@ function normalizeIndustry(value: string): string {
   return value.trim().toLocaleLowerCase('ru')
 }
 
+/**
+ * Industry options of the questionnaire (components/onboarding/constants/
+ * options.ts INDUSTRIES) → the benchmark row they compare with. Before
+ * 2026-11-02 only exact names matched — 2 of 13 options found a benchmark.
+ * An option without a sensible row (construction, finance, logistics, agro,
+ * media, «Другое») has none: the card is not shown rather than misleading.
+ */
+const INDUSTRY_ALIASES: Readonly<Record<string, string>> = {
+  'it / технологии': 'B2B SaaS',
+  'ритейл / e-commerce': 'Розничная торговля',
+  'horeca / рестораны': 'Общепит / HoReCa',
+  'консалтинг / услуги b2b': 'Услуги',
+  'медицина / здравоохранение': 'Медицина / клиники',
+}
+
 function normalizeStage(stage: string | null | undefined): BenchmarkStage | null {
   if (!stage) return null
   const lower = stage.trim().toLocaleLowerCase('en') as BenchmarkStage
@@ -306,7 +321,7 @@ export function findBenchmark(
   stage: string | null,
 ): BenchmarkBlockData | null {
   if (!industry) return null
-  const wanted = normalizeIndustry(industry)
+  const wanted = normalizeIndustry(INDUSTRY_ALIASES[normalizeIndustry(industry)] ?? industry)
   const rowsForIndustry = BENCHMARKS.filter(
     (row) => normalizeIndustry(row.industry) === wanted,
   )

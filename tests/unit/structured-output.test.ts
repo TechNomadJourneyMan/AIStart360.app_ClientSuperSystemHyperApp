@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 const openRouter = vi.hoisted(() => ({
@@ -140,5 +140,63 @@ describe('provider-enforced structured output', () => {
         value: 'server-owned',
       }),
     })).resolves.toEqual({ value: 'server-owned' })
+  })
+})
+
+describe('retry one tier up after a broken answer', () => {
+  const schema = z.object({ title: z.string() }).strict()
+  const base = { feature: 'point_a_analysis' as const, system: 'system', user: 'user', schema }
+  const complexities = () => openRouter.chat.mock.calls.map((c) => c[0].complexity)
+
+  beforeEach(() => {
+    openRouter.chat.mockReset()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('schema-invalid answer: medium (light tier) → high (standard)', async () => {
+    openRouter.chat
+      .mockResolvedValueOnce(JSON.stringify({ title: 7 }))
+      .mockResolvedValueOnce(JSON.stringify({ title: 'ok' }))
+    await expect(generateObjectViaOpenRouter({ ...base, complexity: 'medium' })).resolves.toEqual({ title: 'ok' })
+    expect(complexities()).toEqual(['medium', 'high'])
+  })
+
+  it('not JSON: low → high', async () => {
+    openRouter.chat.mockResolvedValueOnce('null').mockResolvedValueOnce(JSON.stringify({ title: 'ok' }))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'low' })
+    expect(complexities()).toEqual(['low', 'high'])
+  })
+
+  it('auto complexity of a short call (low) escalates too', async () => {
+    openRouter.chat.mockResolvedValueOnce('null').mockResolvedValueOnce(JSON.stringify({ title: 'ok' }))
+    await generateObjectViaOpenRouter({ ...base, maxTokens: 400 })
+    expect(complexities()).toEqual([undefined, 'high'])
+  })
+
+  it('high and max stay; an explicit model is never escalated', async () => {
+    for (const complexity of ['high', 'max'] as const) {
+      openRouter.chat.mockReset()
+      openRouter.chat.mockResolvedValue('null')
+      await generateObjectViaOpenRouter({ ...base, complexity })
+      expect(complexities()).toEqual([complexity, complexity])
+    }
+    openRouter.chat.mockReset()
+    openRouter.chat.mockResolvedValue('null')
+    await generateObjectViaOpenRouter({ ...base, complexity: 'low', model: 'AlemLLM' })
+    expect(openRouter.chat.mock.calls.map((c) => [c[0].model, c[0].complexity])).toEqual([['AlemLLM', 'low'], ['AlemLLM', 'low']])
+  })
+
+  it('a failed call (no answer) is retried on the same tier — failover already tried the others', async () => {
+    openRouter.chat.mockResolvedValueOnce(null).mockResolvedValueOnce(JSON.stringify({ title: 'ok' }))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'medium' })
+    expect(complexities()).toEqual(['medium', 'medium'])
+
+    // A broken last answer announces no retry that will not happen.
+    openRouter.chat.mockReset()
+    openRouter.chat.mockResolvedValueOnce(null).mockResolvedValueOnce('null')
+    expect(await generateObjectViaOpenRouter({ ...base, complexity: 'medium' })).toBeNull()
+    expect(vi.mocked(console.warn)).not.toHaveBeenCalledWith(expect.stringContaining('one tier up'))
   })
 })

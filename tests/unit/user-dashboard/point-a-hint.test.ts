@@ -3,7 +3,7 @@
  * tile when a weighed v4 block has no data (as the snapshot and the Point A header do).
  */
 import { describe, expect, it } from 'vitest'
-import { pointAStatHint, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
+import { pointAStatHint, snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
 
 const fmt = (iso: string) => iso.slice(0, 10)
 const block = (key: string, score: number | null, status = score === null ? 'insufficient_data' : 'ok', informational = false) => ({ key, score, status, informational })
@@ -21,5 +21,12 @@ describe('home Point A hint', () => {
     expect(pointAStatHint({ calculatedAt: '2026-10-23T09:00:00Z', primary: true }, fmt)).toBe('Первичная · по быстрым данным · расчёт 2026-10-23')
     expect(pointAStatHint({ calculatedAt: '2026-10-23T09:00:00Z' }, fmt)).toBe('расчёт 2026-10-23')
     expect(pointAStatHint(null, fmt)).toBe('появится после анкеты')
+  })
+
+  it('preliminary (PO 2026-11-02): no score until the full questionnaire', () => {
+    expect(snapshotIsPreliminary({ v4: { assessment: 'preliminary' } })).toBe(true)
+    expect(snapshotIsPreliminary({ v4: { assessment: 'full' } })).toBe(false)
+    expect(snapshotIsPreliminary({ v4: null })).toBe(false)
+    expect(pointAStatHint({ calculatedAt: '2026-11-02T09:00:00Z', preliminary: true }, fmt)).toBe('Снимок бизнеса · предварительно · оценка после полной анкеты')
   })
 })

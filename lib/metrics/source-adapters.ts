@@ -73,19 +73,24 @@ export function coerceNumeric(raw: unknown): number | null {
 
 /**
  * Parse a percentage-change string into a signed number of percent.
- *   "+15%" → 15 · "-10%" → -10 · "±15%" → 15 · "15" → 15
- * Returns null when no numeric component is present.
+ *   "+15%" → 15 · "-10%" → -10 · "15" → 15 · "снизилась на 8%" → -8 · "±15%" → null
+ * Returns null when no numeric component is present or the sign is unknown («±»).
  * Used for fields like `s9n_change_vs_2023` so a revenue YoY delta can
  * be derived even when the prior-year absolute revenue was not entered.
  */
+const DECLINE_RE = /(сниз|упал|уменьш|сократ|минус|паден|просел|меньше)/i
+
 export function parsePercentChange(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
   if (typeof raw === 'string') {
-    const m = raw.replace(',', '.').match(/-?\d+(?:\.\d+)?/)
+    if (raw.includes('±')) return null
+    const s = raw.replace(',', '.').replace(/−/g, '-')
+    const m = s.match(/(-\s*)?(\d+(?:\.\d+)?)/)
     if (!m) return null
-    const n = Number(m[0])
-    return Number.isFinite(n) ? n : null
+    const n = Number(m[2])
+    if (!Number.isFinite(n)) return null
+    return m[1] || DECLINE_RE.test(s) ? -n : n
   }
   return null
 }

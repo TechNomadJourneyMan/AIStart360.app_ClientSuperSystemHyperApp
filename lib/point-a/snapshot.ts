@@ -64,6 +64,8 @@ export type SnapshotResult =
       diagnosticId: string
       diagnostic: Record<string, unknown>
       engine: 'v1' | 'v4'
+      /** 'preliminary': the row has no score (written keeps the internal v1 for AI / logs only). */
+      assessment: 'full' | 'preliminary'
       written: PointA
       v4: PointAV4
       changes: ChangeReason[]
@@ -75,7 +77,9 @@ export interface SnapshotDeps {
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
   lock: (companyId: string) => Promise<{ release: () => Promise<void> } | null>
-  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
+  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; preliminary: boolean; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
+  /** The owner sent the full questionnaire (public.survey_completed_at). Omitted: treated as sent. */
+  surveyComplete?: (service: SupabaseClient, ownerId: string) => Promise<boolean>
 }
 
 const defaultDeps: SnapshotDeps = {
@@ -90,6 +94,16 @@ const defaultDeps: SnapshotDeps = {
     return getSetting('point_a_v4')
   },
   store: async (...args) => (await import('./diagnostic-row')).storeCurrentDiagnostic(...args),
+  surveyComplete: async (service, ownerId) => {
+    // One definition of «анкета заполнена» (lib/survey/completion.ts, migration 090).
+    const { data, error } = await service.rpc('survey_completed_at', { p_user: ownerId })
+    if (error) {
+      // Before migration 090 there is no function: keep the full assessment.
+      if (error.code === '42883' || error.code === 'PGRST202') return true
+      throw new Error(`point-a: survey completion read failed (${error.code ?? 'unknown'})`)
+    }
+    return data !== null && data !== undefined
+  },
   lock: async (companyId) => {
     const q = await import('./recalc-queue')
     try {
@@ -109,16 +123,19 @@ const defaultDeps: SnapshotDeps = {
         import('./diagnostic-row'),
         import('@/lib/internal-auth'),
       ])
+      const overall = o.preliminary ? null : o.written.overall_score
       emitPlatformEventSafely({
         name: 'POINT_A_UPDATED', companyId: o.companyId, subjectType: 'diagnostic', subjectId: o.diagnosticId, actor: 'system',
-        payload: { engine: o.engine, overall: o.written.overall_score, trigger: o.trigger, changes: o.changes.slice(0, 10).map((c) => c.text) },
+        payload: { engine: o.engine, overall, preliminary: o.preliminary, trigger: o.trigger, changes: o.changes.slice(0, 10).map((c) => c.text) },
         dedupeKey: `point_a_updated:${o.snapshotId ?? o.diagnosticId}`,
       })
       const baseUrl = internalBaseUrl({})
-      if (process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
+      // The AI analysis and hypotheses wait for the full questionnaire: a
+      // preliminary assessment shows no numbers, and it keeps Point A cheap.
+      if (!o.preliminary && process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
       if (!o.fromPipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
-      void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: Number(o.written.overall_score), engine: o.engine, trigger: o.trigger } })
-      if (o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
+      void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
+      if (!o.preliminary && o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
     })
   },
 }
@@ -234,8 +251,9 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   const config = await loadBlockConfig(service, companyId, industry)
   const reviews = await loadHypothesisReviews(service, companyId)
   const resolved = resolvedInputsFromValues(values)
+  const surveyComplete = deps.surveyComplete ? await deps.surveyComplete(service, ownerId) : true
   const v1 = calculatePointA(surveyAnswers, resolved)
-  const computed = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts), reviews })
+  const computed = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts), reviews, surveyComplete })
   // AI hypotheses of blocks whose inputs did not change are kept (no new AI call).
   const v4: PointAV4 = { ...computed, blocks: carryOverHypotheses(computed.blocks, prev?.blocks) }
 
@@ -248,11 +266,15 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // The engine shown is part of the version: switching point_a_v4 writes a new
   // Point A on the next pass instead of stopping at «inputs unchanged».
   const wantV4 = await deps.useV4()
-  // No v4 score at all (too little data): the row stays v1 — never a 0.
-  const engine: 'v1' | 'v4' = wantV4 && v4.overall !== null ? 'v4' : 'v1'
+  // Before the full questionnaire the assessment is preliminary: a v4 row
+  // without a score. No v4 score otherwise (too little data): the row stays v1 — never a 0.
+  const preliminary = wantV4 && v4.assessment === 'preliminary'
+  const engine: 'v1' | 'v4' = wantV4 && (v4.overall !== null || preliminary) ? 'v4' : 'v1'
   const version = `${config.version}|${wantV4 ? 'v4' : 'v1'}`
   const inputs = {
     ...snapshotInputs(values, surveyAnswers, conflicts, version),
+    // Sending the full questionnaire turns the preliminary assessment into a full one.
+    survey: surveyComplete ? 'complete' : 'preliminary',
     goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])),
     // An expert decision on a hypothesis changes the score — a new Point A.
     ...(Object.keys(reviews).length ? { reviews: Object.fromEntries(Object.entries(reviews).map(([k, r]) => [k, `${r!.decision}|${r!.score ?? ''}|${r!.inputsHash}`])) } : {}),
@@ -263,8 +285,13 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
     return { status: 'unchanged', snapshotId: prev.id }
   }
 
-  const written = engine === 'v4' ? toCompatPointA(v4, v1) : v1
-  const changes = changeReasons(prev ? { blocks: prev.blocks ?? [], inputs: prev.inputs } : null, { blocks: v4.blocks, inputs })
+  const written = engine === 'v4' && !preliminary ? toCompatPointA(v4, v1) : v1
+  let changes = changeReasons(prev ? { blocks: prev.blocks ?? [], inputs: prev.inputs } : null, { blocks: v4.blocks, inputs })
+  // Block scores are not shown before the full questionnaire (PO 2026-11-02);
+  // the first full assessment after it says what happened instead of «+N».
+  const wasPreliminary = (prev?.inputs as { survey?: string } | undefined)?.survey === 'preliminary'
+  if (preliminary) changes = changes.filter((c) => c.type !== 'block')
+  else if (wasPreliminary) changes = [{ type: 'first', text: 'Отправлена полная анкета — появились оценка и стадия бизнеса' }, ...changes.filter((c) => c.type !== 'block')]
 
   // The snapshot first: a recalculation that cannot be recorded must not write
   // a diagnostic (the next pass would compare with the old snapshot, write
@@ -281,7 +308,7 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
       coverage: v4.coverage,
       stage: v4.stage,
       blocks: v4.blocks,
-      v4: { strengths: v4.strengths, upload_checklist: v4.upload_checklist, blocks_without_data: v4.blocks_without_data, health_index: v4.health_index, goals: goalEvaluations.map((g) => g.evaluation) },
+      v4: { assessment: v4.assessment, strengths: v4.strengths, upload_checklist: v4.upload_checklist, blocks_without_data: v4.blocks_without_data, health_index: v4.health_index, goals: goalEvaluations.map((g) => g.evaluation) },
       v1_overall: v1.overall_score,
       v1_blocks: v1.blocks,
       inputs,
@@ -295,8 +322,8 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   if (ins.error || !snapshotId) throw new Error(`point-a: snapshot not stored (${ins.error?.code ?? 'no id'})`)
 
   const stored = await deps.store(service, {
-    userId: ownerId, companyId, result: written,
-    aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
+    userId: ownerId, companyId, result: written, preliminary,
+    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary ? 'processing' : 'none',
   })
   if (!stored.ok) {
     const del = await service.from('point_a_snapshots').delete().eq('id', snapshotId)
@@ -309,6 +336,6 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Without the link the next pass is not «unchanged» and writes again — never stuck.
   if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
-  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
-  return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, written, v4, changes }
+  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, preliminary, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
+  return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, assessment: preliminary ? 'preliminary' : 'full', written, v4, changes }
 }

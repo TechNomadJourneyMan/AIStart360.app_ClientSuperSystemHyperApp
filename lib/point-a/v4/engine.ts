@@ -94,6 +94,8 @@ export const INFERRED_CONFIDENCE = 0.4
 
 export interface UploadItem {
   block: BlockKey
+  /** The check to answer (the editor window asks its questions); absent in snapshots before 2026-11-02. */
+  check?: string
   title: string
   what: string
   /** Expected rise of the overall coverage, percentage points. */
@@ -102,6 +104,12 @@ export interface UploadItem {
 
 export interface PointAV4 {
   engine: typeof POINT_A_V4_ENGINE
+  /**
+   * 'preliminary' until the owner sends the full questionnaire (PO 2026-11-02):
+   * blocks, findings and the checklist are computed, but there is no overall,
+   * stage or health — and the page shows no numbers.
+   */
+  assessment: 'full' | 'preliminary'
   overall: number | null
   confidence: number
   coverage: number
@@ -121,6 +129,11 @@ export interface V4Input {
   conflictMetrics?: ReadonlySet<string>
   /** Expert decisions on AI hypotheses, by block. */
   reviews?: Partial<Record<BlockKey, HypothesisReview>>
+  /**
+   * The owner sent the full questionnaire (public.survey_completed_at). Until
+   * then the assessment is preliminary (PO 2026-11-02). Omitted = sent.
+   */
+  surveyComplete?: boolean
 }
 
 /**
@@ -137,6 +150,27 @@ export function applyReviews(blocks: readonly V4Block[], reviews: V4Input['revie
     if (r.decision === 'rejected' || r.score === null) return { ...b, hypothesis: undefined, expertReview: mark }
     return { ...b, score: r.score, basis: 'inferred' as const, confidence: INFERRED_CONFIDENCE, expertReview: mark }
   })
+}
+
+/** Health bonus of the key blocks (v1: +20 / +10 / +10 for a score above 50). */
+const HEALTH_BONUS: Partial<Record<BlockKey, number>> = { finance: 20, sales: 10, operations: 10 }
+
+/**
+ * overall × 0.6 + 40 × the share of the bonus earned — over the key blocks
+ * that HAVE a score, so a block without data neither earns nor loses its bonus.
+ * No key block scored → the overall itself.
+ */
+function healthIndex(overall: number, blocks: readonly V4Block[]): number {
+  let earned = 0
+  let possible = 0
+  for (const b of blocks) {
+    const w = HEALTH_BONUS[b.key]
+    if (!w || b.score === null || b.informational) continue
+    possible += w
+    if (b.score > 50) earned += w
+  }
+  if (possible === 0) return round(overall)
+  return round(Math.min(100, overall * 0.6 + (40 * earned) / possible))
 }
 
 function round(n: number, digits = 0): number {
@@ -156,8 +190,8 @@ export function allChecks(answers: Record<string, unknown>, resolved: PointAReso
   return { ...pointAChecks(answers, resolved), team: teamChecks(aliased), product: productChecks(aliased, resolved) }
 }
 
-function scoreBlock(eb: EffectiveBlock, raw: PointACheck[], ctx: { aliased: Record<string, unknown>; steps: Set<number>; resolved: PointAResolvedInputs; conflicts: ReadonlySet<string> }): V4Block {
-  const checks: V4Check[] = raw.map((c) => ({ ...c, answered: isAnswered(eb.key, c, ctx.aliased, ctx.steps, ctx.resolved) }))
+function scoreBlock(eb: EffectiveBlock, raw: PointACheck[], ctx: { aliased: Record<string, unknown>; steps: Set<number>; resolved: PointAResolvedInputs; conflicts: ReadonlySet<string>; surveyComplete: boolean }): V4Block {
+  const checks: V4Check[] = raw.map((c) => ({ ...c, answered: isAnswered(eb.key, c, ctx.aliased, ctx.steps, ctx.resolved, { surveyComplete: ctx.surveyComplete }) }))
   const included = checks.filter((c) => !c.excluded)
   const answered = included.filter((c) => c.answered)
   const totalMax = included.reduce((s, c) => s + c.max, 0)
@@ -192,7 +226,8 @@ function scoreBlock(eb: EffectiveBlock, raw: PointACheck[], ctx: { aliased: Reco
 export function calculatePointAV4(input: V4Input): PointAV4 {
   const resolved = input.resolved ?? {}
   const aliased = withCurrentAliases(input.answers)
-  const ctx = { aliased, steps: answeredSteps(input.answers), resolved, conflicts: input.conflictMetrics ?? new Set<string>() }
+  const surveyComplete = input.surveyComplete !== false
+  const ctx = { aliased, steps: answeredSteps(input.answers), resolved, conflicts: input.conflictMetrics ?? new Set<string>(), surveyComplete }
   const raw = allChecks(input.answers, resolved)
   const blocks = applyReviews(input.blocks.map((eb) => scoreBlock(eb, raw[eb.key], ctx)), input.reviews)
 
@@ -200,15 +235,14 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   const scored = weighted.filter((b) => b.score !== null)
   const wScored = scored.reduce((s, b) => s + b.weight, 0)
   const wAll = weighted.reduce((s, b) => s + b.weight, 0)
-  // No overall from hypotheses alone: at least one block must rest on facts.
+  // No overall from hypotheses alone: at least one block must rest on facts;
+  // none before the full questionnaire.
   const factual = scored.some((b) => b.basis !== 'inferred')
-  const overall = wScored > 0 && factual ? round(scored.reduce((s, b) => s + b.weight * (b.score as number), 0) / wScored) : null
+  const overall = surveyComplete && wScored > 0 && factual ? round(scored.reduce((s, b) => s + b.weight * (b.score as number), 0) / wScored) : null
   const confidence = wAll > 0 ? round(weighted.reduce((s, b) => s + b.weight * b.confidence, 0) / wAll, 3) : 0
   const coverage = wAll > 0 ? round(weighted.reduce((s, b) => s + b.weight * b.coverage, 0) / wAll, 3) : 0
 
-  const byKey = new Map(blocks.map((b) => [b.key, b]))
-  const over50 = (k: BlockKey) => ((byKey.get(k)?.score ?? 0) > 50 ? 1 : 0)
-  const health_index = overall === null ? null : round(Math.min(100, overall * 0.6 + over50('finance') * 20 + over50('sales') * 10 + over50('operations') * 10))
+  const health_index = overall === null ? null : healthIndex(overall, blocks)
 
   const strengths = weighted
     .filter((b) => b.score !== null && b.confidence >= 0.6 && (b.score as number) >= 70)
@@ -221,13 +255,14 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
       const totalMax = b.checks.filter((c) => !c.excluded).reduce((s, c) => s + c.max, 0) || 1
       return b.checks
         .filter((c) => !c.excluded && !c.answered)
-        .map((c) => ({ block: b.key, title: b.title, what: c.missing ?? `Заполнить: ${CHECK_LABELS[c.id] ?? c.id}`, gain: round((c.max / totalMax) * b.weight * 100, 1) }))
+        .map((c) => ({ block: b.key, check: c.id, title: b.title, what: c.missing ?? `Заполнить: ${CHECK_LABELS[c.id] ?? c.id}`, gain: round((c.max / totalMax) * b.weight * 100, 1) }))
     })
     .sort((a, b) => b.gain - a.gain)
     .slice(0, 8)
 
   return {
     engine: POINT_A_V4_ENGINE,
+    assessment: surveyComplete ? 'full' : 'preliminary',
     overall,
     confidence,
     coverage,

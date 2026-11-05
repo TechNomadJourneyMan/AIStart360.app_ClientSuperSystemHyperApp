@@ -93,11 +93,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Точка А уже пересчитывается — обновите страницу через минуту' }, { status: 409 })
       }
       if (snap?.status === 'written') {
+        // Before the full questionnaire there is no score to tell (PO 2026-11-02).
+        const preliminary = snap.assessment === 'preliminary'
+        const overallScore = preliminary ? null : Number(snap.written.overall_score)
         runInBackground('point-a-notify', () =>
-          notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore: Number(snap.written.overall_score) }),
+          notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore }),
         )
-        notifyAdmins('diagnostic_recalculated', { overallScore: snap.written.overall_score, stage: snap.written.stage ?? null, diagnosticId: snap.diagnosticId }, user_id)
-        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: snap.written, snapshot_id: snap.snapshotId, engine: snap.engine } })
+        notifyAdmins('diagnostic_recalculated', { overallScore, stage: preliminary ? null : snap.written.stage ?? null, diagnosticId: snap.diagnosticId }, user_id)
+        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: preliminary ? null : snap.written, assessment: snap.assessment, snapshot_id: snap.snapshotId, engine: snap.engine } })
       }
     }
 

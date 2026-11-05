@@ -49,6 +49,10 @@ function accepts(key: InputKey, v: number): boolean {
   return v > 0
 }
 
+/** Annual revenue; its current value fills the engine's revenue of that full year. */
+export const REVENUE_METRIC = 'biz.finansy.vyruchka_god'
+const FULL_YEARS = new Set([2023, 2024, 2025])
+
 /** Engine inputs from the company's current metrics. */
 export function resolvedInputsFromMetrics(metrics: CompanyMetrics): PointAResolvedInputs {
   const out: PointAResolvedInputs = {}
@@ -60,6 +64,11 @@ export function resolvedInputsFromMetrics(metrics: CompanyMetrics): PointAResolv
         break
       }
     }
+  }
+  // A P&L of a full past year (document, survey) — not a quarter, not the current run-rate.
+  const rev = metrics.get(REVENUE_METRIC)
+  if (rev && rev.value > 0 && rev.periodYear !== null && FULL_YEARS.has(rev.periodYear) && !rev.periodQuarter) {
+    out.revenue = { [rev.periodYear]: rev.value }
   }
   return out
 }
@@ -83,7 +92,7 @@ export function resolvedInputsFromMetricRows(rows: ReadonlyArray<ResolvedMetricR
  */
 export async function loadResolvedInputs(client: SupabaseClient, companyId: string | null): Promise<PointAResolvedInputs> {
   if (!companyId) return {}
-  const ids = Object.values(RESOLVED_INPUT_METRICS).flat()
+  const ids = [...Object.values(RESOLVED_INPUT_METRICS).flat(), REVENUE_METRIC]
   try {
     return resolvedInputsFromMetrics(await loadCompanyMetrics(client, companyId, ids))
   } catch (err) {

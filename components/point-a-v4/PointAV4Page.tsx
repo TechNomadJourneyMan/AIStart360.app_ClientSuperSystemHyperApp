@@ -23,6 +23,7 @@ import type { BlockKey } from '@/lib/point-a/v4/config'
 import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { BTN_PRIMARY, CARD, Icon } from './ui'
 import { cn } from '@/lib/utils'
+import { AnswerEditorProvider } from './AnswerEditDialog'
 
 function Skeleton() {
   return (
@@ -36,7 +37,7 @@ function Skeleton() {
 }
 
 /** `preview` (dev-only /dev/point-a-preview): render the given state, no requests. */
-export default function PointAV4Page({ preview, previewDetails }: { preview?: PointAPageState; previewDetails?: Partial<Record<BlockKey, BlockDetail>> } = {}) {
+export default function PointAV4Page({ preview, previewDetails, previewAnswers }: { preview?: PointAPageState; previewDetails?: Partial<Record<BlockKey, BlockDetail>>; previewAnswers?: Record<string, unknown> } = {}) {
   const live = usePointAState({ enabled: !preview })
   const { isLoading, error, refetch } = live
   const state = preview ?? live.data
@@ -81,7 +82,10 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
       onError: (e) => toast.error(e instanceof Error ? e.message : 'Не удалось пересчитать'),
     })
 
+  const preliminary = state.snapshot?.assessment === 'preliminary'
+
   return (
+    <AnswerEditorProvider enabled={preview ? !!previewAnswers : state.viewerIsOwner} onSaved={() => void refetch()} previewAnswers={previewAnswers} attribution={state.answerAttribution ?? {}}>
     <div className="mx-auto max-w-6xl px-4 py-6 space-y-4">
       <PointAHeader state={state} onRecalc={preview ? () => toast.info('Предпросмотр: пересчёт отключён') : runRecalc} recalcPending={recalc.isPending} customize={customize} onCustomize={() => setCustomize((v) => !v)} />
 
@@ -110,12 +114,13 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
             </div>
             <div className="space-y-4">
               <GriCard gri={state.gri} />
-              <BenchmarksCard benchmarks={state.benchmarks} />
-              <SourcesCard sources={state.sources} />
+              {!preliminary && <BenchmarksCard benchmarks={state.benchmarks} />}
+              <SourcesCard sources={state.sources} viewerIsOwner={state.viewerIsOwner} />
             </div>
           </div>
         </>
       )}
     </div>
+    </AnswerEditorProvider>
   )
 }

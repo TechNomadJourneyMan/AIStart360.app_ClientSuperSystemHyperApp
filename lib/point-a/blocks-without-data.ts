@@ -30,6 +30,14 @@ export interface SnapshotQualityRow {
   engine?: unknown
   config_version?: unknown
   blocks?: unknown
+  /** point_a_snapshots.v4 — `assessment: 'preliminary'` before the full questionnaire. */
+  v4?: unknown
+}
+
+/** Before the full questionnaire no block has an official score (PO 2026-11-02). */
+export function isPreliminary(snap: SnapshotQualityRow | null | undefined): boolean {
+  const v4 = snap?.v4
+  return !!v4 && typeof v4 === 'object' && (v4 as { assessment?: unknown }).assessment === 'preliminary'
 }
 
 /** The diagnostics row is v1 only because v4 had no overall (v4 is on). */
@@ -40,9 +48,10 @@ export function isV1Fallback(snap: SnapshotQualityRow | null | undefined): boole
 /** Blocks (keys) without data. */
 export function blocksWithoutDataOf(snap: SnapshotQualityRow | null | undefined, diagnostic: Record<string, unknown> | null | undefined): string[] {
   if (snap && Array.isArray(snap.blocks) && (snap.engine === 'v4' || isV1Fallback(snap))) {
+    const preliminary = isPreliminary(snap)
     const out: string[] = []
     for (const b of snap.blocks as Array<{ key?: unknown; score?: unknown; informational?: unknown }>) {
-      if (typeof b?.key === 'string' && (b.score === null || b.score === undefined)) out.push(b.key)
+      if (typeof b?.key === 'string' && (preliminary || b.score === null || b.score === undefined)) out.push(b.key)
     }
     return out
   }
@@ -64,7 +73,7 @@ export async function loadPointAQuality(client: Pick<SupabaseClient, 'from'>, us
     if (!companyId) return { blocksWithoutData: [], v1Fallback: false }
     const { data, error } = await client
       .from('point_a_snapshots')
-      .select('engine, config_version, blocks')
+      .select('engine, config_version, blocks, v4')
       .eq('company_id', companyId)
       .order('created_at', { ascending: false })
       .limit(1)

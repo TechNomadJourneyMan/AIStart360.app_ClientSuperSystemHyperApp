@@ -73,12 +73,15 @@ function inngestConfigured(): boolean {
 /**
  * Queue a recalculation of the company. Never throws; false when the
  * automatic recalculation is switched off or the queue does not exist yet.
+ * `kick: false` only queues (a keystroke autosave): no Inngest event and no
+ * background drain per request — the next kick, the Point A page or the
+ * maintenance run drains it.
  */
 export async function requestPointARecalc(
   companyId: string,
   reason: string,
   delayMs = RECALC_DEBOUNCE_MS,
-  opts: { slide?: boolean } = {},
+  opts: { slide?: boolean; kick?: boolean } = {},
 ): Promise<boolean> {
   try {
     const { getSetting } = await import('@/lib/settings/store')
@@ -106,6 +109,7 @@ export async function requestPointARecalc(
             -- a failed run backs off; new events do not cut the backoff short
             CASE WHEN point_a_recalc_queue.last_error IS NOT NULL THEN point_a_recalc_queue.due_at ELSE '-infinity'::timestamptz END)`
     }
+    if (opts.kick === false) return true
     if (inngestConfigured()) {
       const { inngest } = await import('@/lib/inngest')
       await inngest.send({ name: POINT_A_RECALC_EVENT, data: { companyId } }).catch((err: unknown) => {
