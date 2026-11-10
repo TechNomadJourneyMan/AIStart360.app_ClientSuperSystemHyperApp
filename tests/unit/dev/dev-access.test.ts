@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import {
   DEV_MODE_COOKIE,
+  devAccessConfigured,
   devAccessEnabled,
   devAccessEnabledForRequest,
   devModeOn,
@@ -262,7 +263,7 @@ describe('production', () => {
     // the literal form is replaced, and only then is the guard the constant
     // `false` in a production build — whatever the request or the environment.
     const source = readFileSync('lib/dev/dev-access.ts', 'utf8')
-    for (const name of ['devAccessEnabled', 'devModeOn', 'devAccessEnabledForRequest', 'devModeOnForRequest']) {
+    for (const name of ['devAccessConfigured', 'devAccessEnabled', 'devModeOn', 'devAccessEnabledForRequest', 'devModeOnForRequest']) {
       const start = source.indexOf(`export function ${name}(`)
       expect(start, name).toBeGreaterThan(-1)
       const body = source.slice(start, source.indexOf('\n}\n', start))
@@ -274,6 +275,16 @@ describe('production', () => {
     const source = readFileSync('lib/dev/dev-access.ts', 'utf8')
     expect(source).not.toMatch(/^\s*import\s/m)
     expect(source).not.toMatch(/\brequire\(/)
+  })
+})
+
+describe('devAccessConfigured', () => {
+  it('is the build, the flag and the platform — no request yet', () => {
+    expect(devAccessConfigured(ON)).toBe(true)
+    expect(devAccessConfigured({})).toBe(false)
+    expect(devAccessConfigured({ ...ON, PERSISTENT_SERVER: '1' })).toBe(false)
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(devAccessConfigured(ON)).toBe(false)
   })
 })
 

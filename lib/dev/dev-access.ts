@@ -45,12 +45,23 @@ function isSet(value: string | undefined): boolean {
   return typeof value === 'string' && value.trim() !== ''
 }
 
+/**
+ * The build, the flag and the platform allow developer access at all — before
+ * any request is looked at. Always `false` in a production build.
+ */
+export function devAccessConfigured(env: Partial<NodeJS.ProcessEnv> = process.env): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    env.ENABLE_DEV_AUTH_ROUTES === '1' &&
+    !PLATFORM_VARS.some((name) => isSet(env[name]))
+  )
+}
+
 /** Developer access for a request that names `host`. Always `false` in a production build. */
 export function devAccessEnabled(host: string | null | undefined, env: Partial<NodeJS.ProcessEnv> = process.env): boolean {
   return (
     process.env.NODE_ENV !== 'production' &&
-    env.ENABLE_DEV_AUTH_ROUTES === '1' &&
-    !PLATFORM_VARS.some((name) => isSet(env[name])) &&
+    devAccessConfigured(env) &&
     isLocalHost(host)
   )
 }
