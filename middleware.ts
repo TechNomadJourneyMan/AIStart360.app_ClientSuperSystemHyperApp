@@ -12,6 +12,7 @@ import { edgeSettings } from '@/lib/settings/edge'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { roleLandingPath } from '@/lib/role-landing'
 import { E2E_SEAM_COOKIE_NAME, verifyE2eSeamEdge } from '@/lib/admin/e2e-auth-seam-edge'
+import { devModeOnForRequest } from '@/lib/dev/dev-access'
 
 const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
 const IMP_ENDED_PATH = '/admin-giga-panel/impersonation'
@@ -251,6 +252,18 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     return NextResponse.next()
   }
 
+  // ── Dev mode (the localhost developer login, lib/dev/dev-access.ts) ──
+  // A developer's browser is otherwise stuck: maintenance mode, switched on in
+  // the database local development shares, sends every client to /maintenance,
+  // and staff are sent to enrol in 2FA or to pass it. With the developer's own
+  // cookie on a local host those two gates are skipped — the maintenance
+  // redirect and the 2FA redirects (/2fa and the staff enrolment requirement) —
+  // and nothing else: role, approval-status and section checks are untouched.
+  // In a production build this is the constant `false` (the guard starts with
+  // the literal NODE_ENV check Next.js folds at build time), so the cookie is
+  // ignored there whatever the request says.
+  const devMode = devModeOnForRequest(request)
+
   // Platform settings (maintenance, staff 2FA) and the GIGA-CRM section list
   // are per-instance cached reads that do not depend on the user: for
   // signed-in requests start them now so they overlap the Auth round trip
@@ -364,12 +377,12 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // проходи его и здесь, иначе самый чувствительный экран оказался бы
     // единственным без step-up.
     const seEnrolled = mfaFlagsEnrolled(user)
-    if (seEnrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
+    if (!devMode && seEnrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
       const url = new URL(MFA_CHALLENGE_PATH, request.url)
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    if (!seEnrolled && (await settings()).staff_require_mfa) {
+    if (!devMode && !seEnrolled && (await settings()).staff_require_mfa) {
       const url = new URL('/settings', request.url)
       url.searchParams.set('tab', 'security')
       url.searchParams.set('mfa', 'required')
@@ -397,7 +410,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // A personal super_admin session that enrolled in 2FA must pass the step-up
     // here too — this branch returns early, so the general MFA gate below was
     // never reached and the most privileged surface was the one skipping 2FA.
-    if (user && !impersonating) {
+    if (user && !impersonating && !devMode) {
       const enrolled = mfaFlagsEnrolled(user)
       if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
         const url = new URL(MFA_CHALLENGE_PATH, request.url)
@@ -455,7 +468,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     mfaEnrolled &&
     // The admin cannot (and must not) answer the user's second factor; the
     // session was minted server-side after the admin's own authorization.
-    !impersonating
+    !impersonating &&
+    !devMode
   ) {
     const passed = await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id)
     if (!passed) {
@@ -469,7 +483,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Staff, experts and an admin driving a cabinet keep working. Staff whose
   // profiles.role is 'client' (the role lives only in staff_roles) are staff
   // too — otherwise they could not even reach /settings (password, 2FA).
-  if (user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
+  if (!devMode && user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
     if ((await settings()).maintenance.enabled) {
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
       if (!isStaffRole(staffRow?.role)) {
