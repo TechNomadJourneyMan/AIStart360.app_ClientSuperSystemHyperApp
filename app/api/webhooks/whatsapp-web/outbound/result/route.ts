@@ -5,7 +5,10 @@ export const maxDuration = 30;
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { reportOutboundDeliveryViaPostgres } from "@/lib/omnichannel/outbound-deliveries";
-import { verifyWhatsAppPortalPullRequest } from "@/lib/omnichannel/whatsapp-web-portal-route";
+import {
+  logBridgeFailure,
+  verifyWhatsAppPortalPullRequest,
+} from "@/lib/omnichannel/whatsapp-web-portal-route";
 
 const PATH = "/api/webhooks/whatsapp-web/outbound/result";
 const base = {
@@ -77,7 +80,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
       result.accepted ? 200 : 409,
     );
-  } catch {
+  } catch (error) {
+    logBridgeFailure("outbound/result", error);
     return response({ ok: false }, 503);
   }
 }

@@ -8,7 +8,10 @@ import {
   ackBridgeCommand,
   createSupabaseBridgeControlStore,
 } from "@/lib/omnichannel/whatsapp-bridge-control";
-import { verifyWhatsAppBridgeControlRequest } from "@/lib/omnichannel/whatsapp-web-portal-route";
+import {
+  logBridgeFailure,
+  verifyWhatsAppBridgeControlRequest,
+} from "@/lib/omnichannel/whatsapp-web-portal-route";
 
 /** Bridge reports the outcome of a claimed command under its lease token. */
 const PATH = "/api/webhooks/whatsapp-web/commands/ack";
@@ -49,7 +52,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       errorCode: parsed.data.error_code ?? null,
     });
     return response({ ok: true, accepted: result.accepted });
-  } catch {
+  } catch (error) {
+    logBridgeFailure("commands/ack", error);
     return response({ ok: false }, 503);
   }
 }

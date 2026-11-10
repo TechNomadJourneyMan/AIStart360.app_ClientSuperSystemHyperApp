@@ -8,7 +8,10 @@ import {
   claimBridgeCommand,
   createSupabaseBridgeControlStore,
 } from "@/lib/omnichannel/whatsapp-bridge-control";
-import { verifyWhatsAppBridgeControlRequest } from "@/lib/omnichannel/whatsapp-web-portal-route";
+import {
+  logBridgeFailure,
+  verifyWhatsAppBridgeControlRequest,
+} from "@/lib/omnichannel/whatsapp-web-portal-route";
 
 /** Bridge claims the in-flight session command (connect / logout), if any. */
 const PATH = "/api/webhooks/whatsapp-web/commands/claim";
@@ -50,7 +53,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           }
         : null,
     });
-  } catch {
+  } catch (error) {
+    logBridgeFailure("commands/claim", error);
     return response({ ok: false }, 503);
   }
 }

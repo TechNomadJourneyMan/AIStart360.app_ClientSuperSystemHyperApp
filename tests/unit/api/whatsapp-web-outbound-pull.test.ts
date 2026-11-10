@@ -166,4 +166,154 @@ describe("signed WhatsApp Web outbound pull API", () => {
       errorCode: "provider_send_ambiguous",
     });
   });
+
+  // The bridge only sees «503»: the reason has to be in the portal's log. One line per failure —
+  // the route and the first line of the error — and nothing of what the bridge sent.
+  describe("a database failure leaves a trace", () => {
+    /** Runs `run` with console.error captured and returns what was written to it. */
+    async function withErrorLog<T>(
+      run: () => Promise<T>,
+    ): Promise<{ result: T; logged: unknown[][] }> {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const result = await run();
+        return { result, logged: spy.mock.calls.map((call) => [...call]) };
+      } finally {
+        spy.mockRestore();
+      }
+    }
+    const databaseDown = () =>
+      new Error(
+        "Connection terminated unexpectedly\n    at Connection.<anonymous> (pg/lib/client.js:132:73)",
+      );
+
+    it("outbound/claim: 503 and one line", async () => {
+      outbound.claim.mockRejectedValue(databaseDown());
+
+      const { result: response, logged } = await withErrorLog(() =>
+        claim(
+          request("/api/webhooks/whatsapp-web/outbound/claim", {
+            version: 1,
+            session_id: "primary",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ ok: false });
+      expect(logged).toEqual([
+        ["[whatsapp-web/outbound/claim] Connection terminated unexpectedly"],
+      ]);
+    });
+
+    it("outbound/authorize: 503 and one line, without the delivery id or the lease token", async () => {
+      outbound.authorize.mockRejectedValue(databaseDown());
+
+      const { result: response, logged } = await withErrorLog(() =>
+        authorize(
+          request("/api/webhooks/whatsapp-web/outbound/authorize", {
+            version: 1,
+            session_id: "primary",
+            delivery_id: deliveryId,
+            lease_token: leaseToken,
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ ok: false });
+      expect(logged).toEqual([
+        ["[whatsapp-web/outbound/authorize] Connection terminated unexpectedly"],
+      ]);
+      expect(JSON.stringify(logged)).not.toMatch(
+        new RegExp(`${deliveryId}|${leaseToken}`),
+      );
+    });
+
+    it("outbound/authorize: an authorized delivery that came back without its content is a logged 503 too", async () => {
+      outbound.authorize.mockResolvedValue({
+        authorized: true,
+        reason: "authorized",
+        recipient: "77001234567@s.whatsapp.net",
+        text: null,
+        replyToExternalId: null,
+        idempotencyKey: "omnichannel:auto:message-1",
+      });
+
+      const { result: response, logged } = await withErrorLog(() =>
+        authorize(
+          request("/api/webhooks/whatsapp-web/outbound/authorize", {
+            version: 1,
+            session_id: "primary",
+            delivery_id: deliveryId,
+            lease_token: leaseToken,
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ ok: false });
+      expect(logged).toHaveLength(1);
+      expect(String(logged[0][0])).toMatch(/^\[whatsapp-web\/outbound\/authorize\] /);
+      expect(JSON.stringify(logged)).not.toMatch(
+        new RegExp(`77001234567|message-1|${deliveryId}|${leaseToken}`),
+      );
+    });
+
+    it("outbound/result: 503 and one line, without the provider message id", async () => {
+      outbound.report.mockRejectedValue(databaseDown());
+
+      const { result: response, logged } = await withErrorLog(() =>
+        result(
+          request("/api/webhooks/whatsapp-web/outbound/result", {
+            version: 1,
+            session_id: "primary",
+            delivery_id: deliveryId,
+            lease_token: leaseToken,
+            outcome: "sent",
+            provider_message_id: "3EB0C767D26A1B2C3D4E",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ ok: false });
+      expect(logged).toEqual([
+        ["[whatsapp-web/outbound/result] Connection terminated unexpectedly"],
+      ]);
+      expect(JSON.stringify(logged)).not.toContain("3EB0C767D26A1B2C3D4E");
+    });
+
+    it("a thrown value that is not an error still gets its line", async () => {
+      outbound.claim.mockRejectedValue({ code: "57P01" });
+
+      const { result: response, logged } = await withErrorLog(() =>
+        claim(
+          request("/api/webhooks/whatsapp-web/outbound/claim", {
+            version: 1,
+            session_id: "primary",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(503);
+      expect(logged).toEqual([["[whatsapp-web/outbound/claim] unknown error"]]);
+    });
+
+    it("a request that is answered writes nothing", async () => {
+      outbound.claim.mockResolvedValue(null);
+
+      const { result: response, logged } = await withErrorLog(() =>
+        claim(
+          request("/api/webhooks/whatsapp-web/outbound/claim", {
+            version: 1,
+            session_id: "primary",
+          }),
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      expect(logged).toEqual([]);
+    });
+  });
 });
