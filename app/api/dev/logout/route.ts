@@ -3,10 +3,12 @@ export const runtime = 'nodejs'
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { devAccessEnabledForRequest, devNotFound } from '@/lib/dev/dev-access'
+import { clearIdentityCookies } from '@/lib/dev/dev-cookies'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * POST /api/dev/logout — ends the Supabase session of this browser; the
+ * POST /api/dev/logout — ends the Supabase session of this browser and clears
+ * the staff, impersonation and step-up cookies that went with it; the
  * dev-mode cookie stays. Dev-only: 404 unless lib/dev/dev-access.ts allows the
  * request, and in a production build that guard is the constant `false`.
  */
@@ -19,7 +21,10 @@ export async function POST(request: NextRequest) {
     // for a real account entered by e-mail, on every device its owner uses.
     const { error } = await supabase.auth.signOut({ scope: 'local' })
     if (error) throw error
-    return NextResponse.json({ ok: true })
+    const res = NextResponse.json({ ok: true })
+    // Nobody is signed in now: nothing of the previous identity stays.
+    clearIdentityCookies(res)
+    return res
   } catch (error) {
     console.error('[dev/logout]', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'DEV_LOGOUT_FAILED' }, { status: 500 })

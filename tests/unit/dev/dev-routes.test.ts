@@ -54,6 +54,11 @@ const rows = (pick: (table: string) => unknown) => (table: string) => ({
   select: () => ({ eq: () => ({ maybeSingle: async (): Promise<Result> => ({ data: pick(table), error: null }) }) }),
 })
 
+// lib/admin/giga-actor is loaded for the name of the staff cookie only; keep its own dependencies inert.
+vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }) }))
+vi.mock('@/lib/db', () => ({ prisma: {} }))
+vi.mock('@/lib/settings/store', () => ({ getSetting: async () => false }))
+
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => {
     s.clients.service++
@@ -94,6 +99,12 @@ vi.mock('@/lib/supabase/server', () => ({
   },
 }))
 
+const { STAFF_COOKIE_NAME } = await import('@/lib/admin/giga-actor')
+const { IMP_COOKIE_NAME } = await import('@/lib/impersonation/token')
+const { MFA_COOKIE_NAME } = await import('@/lib/mfa/step-up')
+/** Cookies that describe the identity the browser had before. */
+const IDENTITY_COOKIES = [STAFF_COOKIE_NAME, IMP_COOKIE_NAME, MFA_COOKIE_NAME]
+
 const session = await import('@/app/api/dev/session/route')
 const login = await import('@/app/api/dev/login/route')
 const mode = await import('@/app/api/dev/mode/route')
@@ -125,6 +136,9 @@ const post = (handlers: { POST: Handler }, path: string, body?: unknown, extra: 
 
 /** The dev-mode cookie a response sets, if any. */
 const devCookie = (res: Response) => (res as NextResponse).cookies.get(DEV_MODE_COOKIE)
+
+/** The cookies a response sets, by name. */
+const setCookies = (res: Response) => (res as NextResponse).cookies
 
 /** Script a successful exchange for `userId`. */
 function sessionFor(userId: string) {
@@ -327,6 +341,64 @@ describe('POST /api/dev/login { role }', () => {
     const res = await post(login, '/api/dev/login', { role: 'admin' })
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'DEV_ACCOUNT_WRITE_FAILED' })
+  })
+})
+
+describe('switching identity leaves no stale cookies', () => {
+  /** A browser that was a staff member, inside an impersonation, past the second factor. */
+  const leftovers = [`${DEV_MODE_COOKIE}=1`, ...IDENTITY_COOKIES.map((name) => `${name}=stale`)].join('; ')
+
+  it('the names come from the modules that own the cookies', () => {
+    expect(IDENTITY_COOKIES).toEqual(['aistart360_giga_staff', 'aistart360_imp', 'aistart360_mfa'])
+  })
+
+  it('a successful login clears the staff, impersonation and step-up cookies', async () => {
+    sessionFor('id-client')
+    const res = await post(login, '/api/dev/login', { role: 'client' }, { cookie: leftovers })
+    expect(res.status).toBe(200)
+    for (const name of IDENTITY_COOKIES) {
+      expect(setCookies(res).get(name), name).toMatchObject({ value: '', maxAge: 0, path: '/' })
+    }
+    expect(devCookie(res)).toMatchObject({ value: '1' })
+  })
+
+  it('a login that did not happen clears nothing', async () => {
+    // unknown e-mail, a bad body, a failed exchange, a refused developer address
+    s.found = null
+    const attempts = [
+      await post(login, '/api/dev/login', { email: 'nobody@example.com' }, { cookie: leftovers }),
+      await post(login, '/api/dev/login', { role: 'owner' }, { cookie: leftovers }),
+    ]
+    s.linkUserId = 'somebody-else'
+    attempts.push(await post(login, '/api/dev/login', { role: 'client' }, { cookie: leftovers }))
+    s.ensureFail = 'DEV_ACCOUNT_CONFLICT'
+    attempts.push(await post(login, '/api/dev/login', { role: 'admin' }, { cookie: leftovers }))
+
+    expect(attempts.map((res) => res.status)).toEqual([404, 400, 500, 409])
+    for (const res of attempts) {
+      for (const name of IDENTITY_COOKIES) expect(setCookies(res).get(name), `${res.status} ${name}`).toBeUndefined()
+    }
+  })
+
+  it('logout clears them too and keeps the dev-mode cookie', async () => {
+    const res = await post(logout, '/api/dev/logout', undefined, { cookie: leftovers })
+    expect(res.status).toBe(200)
+    for (const name of IDENTITY_COOKIES) {
+      expect(setCookies(res).get(name), name).toMatchObject({ value: '', maxAge: 0, path: '/' })
+    }
+    expect(devCookie(res)).toBeUndefined()
+  })
+
+  it('a logout that failed clears nothing', async () => {
+    s.signOutError = { message: 'offline' }
+    const res = await post(logout, '/api/dev/logout', undefined, { cookie: leftovers })
+    expect(res.status).toBe(500)
+    for (const name of IDENTITY_COOKIES) expect(setCookies(res).get(name), name).toBeUndefined()
+  })
+
+  it('the dev-mode switch touches none of them', async () => {
+    const res = await post(mode, '/api/dev/mode', { on: false }, { cookie: leftovers })
+    for (const name of IDENTITY_COOKIES) expect(setCookies(res).get(name), name).toBeUndefined()
   })
 })
 

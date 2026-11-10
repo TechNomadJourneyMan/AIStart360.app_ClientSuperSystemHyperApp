@@ -12,7 +12,7 @@ import { edgeSettings } from '@/lib/settings/edge'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { roleLandingPath } from '@/lib/role-landing'
 import { E2E_SEAM_COOKIE_NAME, verifyE2eSeamEdge } from '@/lib/admin/e2e-auth-seam-edge'
-import { devModeOnForRequest } from '@/lib/dev/dev-access'
+import { devAccessEnabledForRequest, devModeOnForRequest } from '@/lib/dev/dev-access'
 
 const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
 const IMP_ENDED_PATH = '/admin-giga-panel/impersonation'
@@ -36,6 +36,10 @@ async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unk
   const { pathname } = request.nextUrl
   if (!token || !MUTATING.has(method) || pathname.startsWith('/api/giga-admin/')) return null
   if (pathname === '/api/v1/impersonation/exit') return null
+  // The localhost developer login (lib/dev/dev-access.ts) replaces the identity
+  // of the browser and clears this cookie: a view-mode or ended impersonation
+  // must not lock its routes out. Constant `false` in a production build.
+  if (pathname.startsWith('/api/dev/') && devAccessEnabledForRequest(request)) return null
   const v = await readImpersonation(token)
   if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) {
     return NextResponse.json({ ok: false, error: 'Сессия просмотра от имени пользователя завершена' }, { status: 401 })

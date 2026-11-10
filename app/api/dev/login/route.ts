@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { isStaffRole } from '@/lib/admin/rbac'
 import { DEV_MODE_COOKIE, DEV_MODE_COOKIE_OPTIONS, devAccessEnabledForRequest, devNotFound } from '@/lib/dev/dev-access'
 import { DEV_ROLES, DevAccountError, devAccountShape, ensureDevAccount, findAuthUserByEmail } from '@/lib/dev/dev-accounts'
+import { clearIdentityCookies } from '@/lib/dev/dev-cookies'
 import { roleLandingPath } from '@/lib/role-landing'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createClient } from '@/lib/supabase/server'
@@ -90,6 +91,8 @@ export async function POST(request: NextRequest) {
     }
 
     const res = NextResponse.json({ ok: true, redirect })
+    // The browser is somebody else now: nothing of the previous identity stays.
+    clearIdentityCookies(res)
     res.cookies.set(DEV_MODE_COOKIE, '1', DEV_MODE_COOKIE_OPTIONS)
     return res
   } catch (error) {

@@ -19,6 +19,8 @@ const s = vi.hoisted(() => ({
   staffRow: null as null | { role: string },
   blockedSection: null as string | null,
   signOuts: 0,
+  /** Whether the impersonation session of the cookie is still open in the database. */
+  impActive: true,
 }))
 
 // postgrest builders accept .abortSignal() (middleware times its reads out)
@@ -28,7 +30,7 @@ vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
 vi.mock('@/lib/mfa/step-up-edge', () => ({ MFA_COOKIE_NAME: 'mfa', verifyStepUpEdge: async () => false }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => s.blockedSection, loadEdgeSections: async () => [] }))
 vi.mock('@/lib/impersonation/edge', () => ({
-  isImpersonationActiveEdge: async () => false,
+  isImpersonationActiveEdge: async () => s.impActive,
   endImpersonationEdge: async () => {},
   auditImpersonatedRequestEdge: async () => {},
 }))
@@ -48,6 +50,7 @@ vi.mock('@/lib/supabase/middleware', () => ({
 }))
 
 const { middleware } = await import('@/middleware')
+const { IMP_COOKIE_NAME, signImpersonation } = await import('@/lib/impersonation/token')
 
 const PLATFORM_VARS = ['RAILWAY_ENVIRONMENT', 'RAILWAY_PROJECT_ID', 'VERCEL', 'PERSISTENT_SERVER']
 const DEV_COOKIE = `${DEV_MODE_COOKIE}=1`
@@ -73,7 +76,9 @@ beforeEach(() => {
   s.settings = { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false }
   s.blockedSection = null
   s.signOuts = 0
+  s.impActive = true
   signIn('client')
+  vi.stubEnv('GIGA_COOKIE_SECRET', 'test-secret-for-signed-tokens-0123456789')
   vi.stubEnv('ENABLE_DEV_AUTH_ROUTES', '1')
   for (const name of PLATFORM_VARS) vi.stubEnv(name, '')
 })
@@ -241,5 +246,58 @@ describe('the cookie alone switches nothing off', () => {
 
   it('with another cookie value', async () => {
     await gatesAreBack({ headers: { cookie: `${DEV_MODE_COOKIE}=true` } })
+  })
+})
+
+describe('an impersonation cookie does not lock the developer panel out', () => {
+  // guardImpersonatedApi makes a cabinet opened in view mode read-only and
+  // refuses changes once the impersonation has ended. The developer login
+  // replaces the identity of the browser (and clears that cookie), so it must
+  // get through — but only where developer access is on.
+  const impCookie = async (mode: 'view' | 'edit') =>
+    `${IMP_COOKIE_NAME}=${await signImpersonation({ sid: 's1', uid: 'u1', mode, aid: 'admin-1', alabel: 'admin', tlabel: 'target' })}`
+
+  const post = (path: string, cookie: string, opts: { host?: string; origin?: string } = {}) => {
+    const host = opts.host ?? 'localhost:3000'
+    return middleware(new NextRequest(`http://localhost:3000${path}`, { method: 'POST', headers: { host, origin: opts.origin ?? `http://${host}`, cookie } }))
+  }
+  const DEV_PATHS = ['/api/dev/login', '/api/dev/logout', '/api/dev/mode', '/api/dev/register', '/api/dev/confirm-email']
+
+  it('view mode: the dev routes go through, everything else stays read-only', async () => {
+    const cookie = await impCookie('view')
+    for (const path of DEV_PATHS) expect((await post(path, cookie)).status, path).toBe(200)
+    const other = await post('/api/v1/onboarding/survey', cookie)
+    expect(other.status).toBe(403)
+    expect(await other.json()).toMatchObject({ error: 'Режим просмотра: изменения запрещены' })
+    // a path that only looks like a dev route
+    expect((await post('/api/developer/thing', cookie)).status).toBe(403)
+  })
+
+  it('an impersonation that has ended: the dev routes go through, everything else is refused', async () => {
+    s.impActive = false
+    const cookie = await impCookie('edit')
+    for (const path of DEV_PATHS) expect((await post(path, cookie)).status, path).toBe(200)
+    expect((await post('/api/v1/onboarding/survey', cookie)).status).toBe(401)
+    // a forged cookie is treated the same way
+    expect((await post('/api/dev/login', `${IMP_COOKIE_NAME}=forged`)).status).toBe(200)
+    expect((await post('/api/v1/onboarding/survey', `${IMP_COOKIE_NAME}=forged`)).status).toBe(401)
+  })
+
+  it('without developer access a dev path is treated like any other', async () => {
+    const cookie = await impCookie('view')
+    const refused = async (opts: Parameters<typeof post>[2] = {}) => {
+      for (const path of DEV_PATHS) expect((await post(path, cookie, opts)).status, path).toBe(403)
+    }
+    vi.stubEnv('NODE_ENV', 'production')
+    await refused()
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('ENABLE_DEV_AUTH_ROUTES', '')
+    await refused()
+    vi.stubEnv('ENABLE_DEV_AUTH_ROUTES', '1')
+    vi.stubEnv('VERCEL', '1')
+    await refused()
+    vi.stubEnv('VERCEL', '')
+    await refused({ host: '192.168.1.5:3000' })
+    await refused({ origin: 'https://evil.example' })
   })
 })
