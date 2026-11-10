@@ -3,6 +3,7 @@
  * service key — no supabase-js, no node:crypto). Used only by middleware and
  * only when an impersonation cookie is present, so normal traffic pays nothing.
  */
+import { edgeSupabaseFetch } from '@/lib/supabase/transport-edge'
 
 const cache = new Map<string, { active: boolean; at: number }>()
 const CACHE_MS = 15_000
@@ -20,7 +21,7 @@ export async function isImpersonationActiveEdge(sid: string): Promise<boolean> {
   const r = rest()
   if (!r || !/^[0-9a-f-]{36}$/i.test(sid)) return false
   try {
-    const res = await fetch(`${r.url}/rest/v1/impersonation_sessions?id=eq.${sid}&select=ended_at,expires_at`, {
+    const res = await edgeSupabaseFetch(`${r.url}/rest/v1/impersonation_sessions?id=eq.${sid}&select=ended_at,expires_at`, {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
       cache: 'no-store',
     })
@@ -46,7 +47,7 @@ export async function endImpersonationEdge(sid: string, reason: string): Promise
   if (!r || !/^[0-9a-f-]{36}$/i.test(sid)) return
   forgetImpersonation(sid)
   try {
-    await fetch(`${r.url}/rest/v1/impersonation_sessions?id=eq.${sid}&ended_at=is.null`, {
+    await edgeSupabaseFetch(`${r.url}/rest/v1/impersonation_sessions?id=eq.${sid}&ended_at=is.null`, {
       method: 'PATCH',
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({ ended_at: new Date().toISOString(), end_reason: reason }),
@@ -71,7 +72,7 @@ export async function auditImpersonatedRequestEdge(entry: {
   const r = rest()
   if (!r) return
   try {
-    await fetch(`${r.url}/rest/v1/admin_audit_log`, {
+    await edgeSupabaseFetch(`${r.url}/rest/v1/admin_audit_log`, {
       method: 'POST',
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({

@@ -13,7 +13,8 @@
  *   - optionally the first attempt goes over the private network (SUPABASE_INTERNAL_URL), which
  *     does not pass the edge at all.
  *
- * Edge-safe (Web APIs only): the same module serves the Node server and middleware.
+ * Edge-safe (Web APIs only): the Node server installs it over `globalThis.fetch`
+ * (instrumentation.ts), middleware uses it through lib/supabase/transport-edge.ts.
  */
 
 export interface TransportOptions {

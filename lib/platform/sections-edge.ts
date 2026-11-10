@@ -3,6 +3,7 @@
  * cached per instance for 60 s; user facts are fetched only when the requested
  * path belongs to a section that is disabled or segment-restricted.
  */
+import { edgeSupabaseFetch } from '@/lib/supabase/transport-edge'
 import { isVisible, type UserFacts } from './visibility'
 
 export interface EdgeSection { key: string; paths: string[]; enabled: boolean; visibility: unknown }
@@ -21,7 +22,7 @@ async function sections(): Promise<EdgeSection[]> {
   const r = rest()
   if (!r) return []
   try {
-    const res = await fetch(`${r.url}/rest/v1/platform_sections?select=key,paths,enabled,visibility`, {
+    const res = await edgeSupabaseFetch(`${r.url}/rest/v1/platform_sections?select=key,paths,enabled,visibility`, {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
       cache: 'no-store',
       // Middleware must answer even when the database is slow (504 otherwise).
@@ -39,7 +40,7 @@ async function facts(userId: string): Promise<UserFacts | null> {
   const r = rest()
   if (!r) return null
   try {
-    const res = await fetch(`${r.url}/rest/v1/rpc/user_segment_facts`, {
+    const res = await edgeSupabaseFetch(`${r.url}/rest/v1/rpc/user_segment_facts`, {
       method: 'POST',
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_user: userId }),
