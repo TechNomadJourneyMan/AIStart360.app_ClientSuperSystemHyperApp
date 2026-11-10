@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { devAccessEnabledForRequest, devNotFound } from '@/lib/dev/dev-access'
 
-// Dev-only: requires non-prod NODE_ENV AND an explicit opt-in flag, so a
-// misconfigured NODE_ENV alone can never open it. Off by default. See audit A4.
-function isDevMode() {
-  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_ROUTES === '1'
-}
+// Dev-only: answers 404 unless lib/dev/dev-access.ts allows the request — a
+// non-production build (in a production build that guard is the constant
+// `false`), the explicit opt-in flag, a local host, no platform variable and
+// a same-origin request. Off by default. See audit A4.
 
 function getAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -30,10 +30,8 @@ function getEmail(body: unknown): string | null {
   return email.trim().toLowerCase()
 }
 
-export async function POST(request: Request) {
-  if (!isDevMode()) {
-    return NextResponse.json({ error: 'NOT_AVAILABLE' }, { status: 403 })
-  }
+export async function POST(request: NextRequest) {
+  if (!devAccessEnabledForRequest(request)) return devNotFound()
 
   try {
     const email = getEmail(await request.json())
@@ -67,3 +65,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
+
+// Any other method: there is no such route (Next.js would answer 405 / 204).
+export { devNotFound as GET, devNotFound as PUT, devNotFound as PATCH, devNotFound as DELETE, devNotFound as OPTIONS }

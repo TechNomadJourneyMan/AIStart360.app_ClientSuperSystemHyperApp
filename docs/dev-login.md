@@ -39,7 +39,7 @@
 Нужны все условия сразу (`lib/dev/dev-access.ts`):
 
 1. **Не production-сборка.** `process.env.NODE_ENV` подставляется при сборке, поэтому после
-   `next build` проверка — константа `false`: `/api/dev/session|login|mode|logout` отвечают 404,
+   `next build` проверка — константа `false`: все маршруты `/api/dev/*` отвечают 404,
    middleware не смотрит на cookie, панели в сборке нет. Запрос и переменные окружения этого не меняют.
 2. **Флаг** `ENABLE_DEV_AUTH_ROUTES=1` — по умолчанию пуст.
 3. **Локальный адрес**: и адрес, на котором слушает сервер, и заголовки `Host` / `X-Forwarded-Host`.
