@@ -4,7 +4,7 @@
  * the minute the process started, and each minute fires at most once.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { dueJobs } from '@/lib/cron/schedule'
+import { dueJobs, jobsForRole } from '@/lib/cron/schedule'
 import { startCronRunner } from '@/lib/cron/runner'
 import { pendingBackgroundCount } from '@/lib/background'
 
@@ -24,8 +24,11 @@ const clearGuard = () => {
 afterEach(clearGuard)
 
 describe('dueJobs', () => {
+  // What one process for everything schedules (PORTAL_ROLE unset): the schedule Vercel ran.
+  const portal = jobsForRole('all')
+
   it('Monday 04:00 UTC: the CRM, agents and client digests', () => {
-    expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z')))).toEqual([
+    expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z'), portal))).toEqual([
       '/api/cron/agents-digest',
       '/api/cron/client-digest',
       '/api/cron/crm-digest',
@@ -33,32 +36,55 @@ describe('dueJobs', () => {
   })
 
   it('Tuesday 04:00 UTC: the same without the weekly client digest', () => {
-    expect(paths(dueJobs(new Date('2026-11-03T04:00:00Z')))).toEqual(['/api/cron/agents-digest', '/api/cron/crm-digest'])
+    expect(paths(dueJobs(new Date('2026-11-03T04:00:00Z'), portal))).toEqual(['/api/cron/agents-digest', '/api/cron/crm-digest'])
   })
 
   it('04:01 UTC: nothing', () => {
-    expect(dueJobs(new Date('2026-11-02T04:01:00Z'))).toEqual([])
+    expect(dueJobs(new Date('2026-11-02T04:01:00Z'), portal)).toEqual([])
   })
 
   it('00:15 UTC: billing expiry', () => {
-    expect(paths(dueJobs(new Date('2026-11-02T00:15:00Z')))).toEqual(['/api/cron/billing-expiry'])
+    expect(paths(dueJobs(new Date('2026-11-02T00:15:00Z'), portal))).toEqual(['/api/cron/billing-expiry'])
   })
 
   it('matches the minute a moment falls in, not only its first millisecond', () => {
-    expect(dueJobs(new Date('2026-11-03T04:00:42.500Z')).length).toBe(2)
-    expect(dueJobs(new Date('2026-11-03T04:01:00.000Z'))).toEqual([])
+    expect(dueJobs(new Date('2026-11-03T04:00:42.500Z'), portal).length).toBe(2)
+    expect(dueJobs(new Date('2026-11-03T04:01:00.000Z'), portal)).toEqual([])
   })
 
   it('reads the schedule in UTC, whatever the clock of the host says', () => {
     // 09:00 in Asia/Almaty (UTC+5) is 04:00 UTC; a host-local reading would miss it
-    expect(dueJobs(new Date('2026-11-03T09:00:00+05:00')).length).toBe(2)
-    expect(dueJobs(new Date('2026-11-03T04:00:00+05:00'))).toEqual([])
+    expect(dueJobs(new Date('2026-11-03T09:00:00+05:00'), portal).length).toBe(2)
+    expect(dueJobs(new Date('2026-11-03T04:00:00+05:00'), portal)).toEqual([])
   })
 
   it('takes the job list as an argument', () => {
     const jobs = [{ path: '/a', schedule: '*/5 * * * *' }, { path: '/b', schedule: '0 * * * *' }]
     expect(paths(dueJobs(new Date('2026-11-02T10:05:00Z'), jobs))).toEqual(['/a'])
     expect(paths(dueJobs(new Date('2026-11-02T10:00:00Z'), jobs))).toEqual(['/a', '/b'])
+  })
+
+  it('the agents service: the queue drain every minute, the agents digest at 04:00', () => {
+    const agents = jobsForRole('agents')
+    expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z'), agents))).toEqual(['/api/cron/agents', '/api/cron/agents-digest'])
+    expect(paths(dueJobs(new Date('2026-11-02T04:01:00Z'), agents))).toEqual(['/api/cron/agents'])
+    expect(paths(dueJobs(new Date('2026-11-02T13:37:20Z'), agents))).toEqual(['/api/cron/agents'])
+  })
+
+  it('the portal next to an agents service: Monday 04:00 without the agents digest, and never the drain', () => {
+    const web = jobsForRole('web')
+    expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z'), web))).toEqual(['/api/cron/client-digest', '/api/cron/crm-digest'])
+    expect(dueJobs(new Date('2026-11-02T04:01:00Z'), web)).toEqual([])
+  })
+
+  it('without a list it is every job of every service: a scheduler passes the jobs of its role', () => {
+    expect(paths(dueJobs(new Date('2026-11-02T04:01:00Z')))).toEqual(['/api/cron/agents'])
+    expect(paths(dueJobs(new Date('2026-11-02T04:00:00Z')))).toEqual([
+      '/api/cron/agents',
+      '/api/cron/agents-digest',
+      '/api/cron/client-digest',
+      '/api/cron/crm-digest',
+    ])
   })
 })
 
@@ -701,6 +727,134 @@ describe('startCronRunner (in-flight calls are tracked as background work)', () 
     const runner = start()
     await vi.advanceTimersByTimeAsync(10_000)
     expect(pendingBackgroundCount()).toBe(0)
+    runner.stop()
+  })
+})
+
+describe('startCronRunner (the jobs of the role of this process)', () => {
+  // PORTAL_ROLE says which service a process is (lib/runtime/role.ts). One process for everything
+  // keeps the schedule it always had; only a process dedicated to agent work drains the queue every
+  // minute, and only it sends the agents digest once the two are separate services.
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+  const calledPaths = () => fetchImpl.mock.calls.map((call) => String(call[0]).slice(BASE.length)).sort()
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    lines = []
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
+  function start(startedAt: string, extra: Partial<Parameters<typeof startCronRunner>[0]> = {}) {
+    vi.setSystemTime(new Date(startedAt))
+    return startCronRunner({ baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log: (line) => { lines.push(line) }, ...extra })
+  }
+
+  it('without PORTAL_ROLE: the schedule as it always was, and no call in a minute with nothing due', async () => {
+    vi.stubEnv('PORTAL_ROLE', '')
+    const runner = start('2026-11-02T03:58:30Z')
+    await vi.advanceTimersByTimeAsync(30_000) // 03:59
+    expect(fetchImpl).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(60_000) // 04:00
+    expect(calledPaths()).toEqual(['/api/cron/agents-digest', '/api/cron/client-digest', '/api/cron/crm-digest'])
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000) // 04:05
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    runner.stop()
+  })
+
+  it('an unknown PORTAL_ROLE is one process for everything as well', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'worker')
+    const runner = start('2026-11-02T03:59:30Z')
+    await vi.advanceTimersByTimeAsync(30_000 + 2 * 60_000)
+    expect(calledPaths()).toEqual(['/api/cron/agents-digest', '/api/cron/client-digest', '/api/cron/crm-digest'])
+    runner.stop()
+  })
+
+  it('PORTAL_ROLE=agents: the queue drain every minute and the agents digest at 04:00, nothing of the portal', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    const runner = start('2026-11-02T03:58:30Z')
+    await vi.advanceTimersByTimeAsync(30_000) // 03:59
+    expect(calledPaths()).toEqual(['/api/cron/agents'])
+
+    await vi.advanceTimersByTimeAsync(60_000) // 04:00
+    expect(calledPaths()).toEqual(['/api/cron/agents', '/api/cron/agents', '/api/cron/agents-digest'])
+
+    await vi.advanceTimersByTimeAsync(3 * 60_000) // 04:01, 04:02, 04:03
+    expect(calledPaths().filter((path) => path === '/api/cron/agents')).toHaveLength(5)
+    expect([...new Set(calledPaths())]).toEqual(['/api/cron/agents', '/api/cron/agents-digest'])
+    runner.stop()
+  })
+
+  it('PORTAL_ROLE=agents: the drain is called like any other job - GET, bearer secret, claimed per minute', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    const claim = vi.fn(async (_path: string, _minute: Date) => true)
+    const runner = start('2026-11-02T10:10:30Z', { claim })
+    await vi.advanceTimersByTimeAsync(30_000 + 60_000) // 10:11 and 10:12
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    for (const [url, init] of fetchImpl.mock.calls) {
+      expect(String(url)).toBe(`${BASE}/api/cron/agents`)
+      expect(init.method).toBe('GET')
+      expect(new Headers(init.headers).get('authorization')).toBe(`Bearer ${SECRET}`)
+    }
+    expect(claim.mock.calls).toEqual([
+      ['/api/cron/agents', new Date('2026-11-02T10:11:00Z')],
+      ['/api/cron/agents', new Date('2026-11-02T10:12:00Z')],
+    ])
+    expect(lines.join('\n')).not.toContain(SECRET)
+    runner.stop()
+  })
+
+  it('PORTAL_ROLE=agents: the minute the process started in is not drained either', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    const runner = start('2026-11-02T10:10:30Z')
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(fetchImpl).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1) // 10:11:00
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    runner.stop()
+  })
+
+  it('PORTAL_ROLE=agents: a drain that takes minutes holds one slot, the next minutes still get their call', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    const gates: (() => void)[] = []
+    fetchImpl.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      gates.push(() => resolve(new Response('{}', { status: 200 })))
+    }))
+    const runner = start('2026-11-02T10:10:30Z')
+    await vi.advanceTimersByTimeAsync(30_000) // 10:11: the long drain starts
+    await vi.advanceTimersByTimeAsync(2 * 60_000) // 10:12, 10:13: answered at once (the route says it is busy)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+
+    gates.splice(0).forEach((open) => open())
+    await vi.advanceTimersByTimeAsync(0)
+    runner.stop()
+  })
+
+  it('PORTAL_ROLE=web: the portal jobs without the agents digest, and never the drain', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'web')
+    const runner = start('2026-11-02T03:59:30Z')
+    await vi.advanceTimersByTimeAsync(30_000 + 5 * 60_000) // 04:00 .. 04:05
+    expect(calledPaths()).toEqual(['/api/cron/client-digest', '/api/cron/crm-digest'])
+
+    await vi.advanceTimersByTimeAsync(55 * 60_000) // 05:00
+    expect(calledPaths()).toEqual(['/api/cron/client-digest', '/api/cron/crm-digest', '/api/telegram/personal/sync'])
+    runner.stop()
+  })
+
+  it('the role is the one the process started with: a later change of the variable changes nothing', async () => {
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    const runner = start('2026-11-02T10:10:30Z')
+    vi.stubEnv('PORTAL_ROLE', 'web')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(calledPaths()).toEqual(['/api/cron/agents'])
     runner.stop()
   })
 })
