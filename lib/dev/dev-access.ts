@@ -17,6 +17,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DEV_MODE_COOKIE = 'aistart360_dev_mode'
+/** Read by the server only; without a lifetime it ends with the browser session. */
+export const DEV_MODE_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax', path: '/' } as const
 
 /** Set by the hosting platform (or for it): a deployed server is never a developer's laptop. */
 const PLATFORM_VARS = ['RAILWAY_ENVIRONMENT', 'RAILWAY_PROJECT_ID', 'VERCEL', 'PERSISTENT_SERVER'] as const
