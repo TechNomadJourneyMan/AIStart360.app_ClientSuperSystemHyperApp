@@ -39,6 +39,43 @@ describe('predeploy.mjs', () => {
     expect(out).toContain('WORKFLOW_POSTGRES_URL')
     expect(out).not.toContain('prod.invalid')
   })
+
+  // The agents service is built from the same repository with the same railway.json, so Railway runs
+  // this step for it too, usually at the same moment as for the portal (one push deploys both). The
+  // queue tables are the portal's: the agents service must not bootstrap them a second time.
+  it('skips, with exit 0, on the agents service (PORTAL_ROLE=agents), even with the Postgres world configured', () => {
+    const { status, out } = run({
+      PORTAL_ROLE: 'agents',
+      WORKFLOW_TARGET_WORLD: '@workflow/world-postgres',
+      // unreachable on purpose: a bootstrap that did start would fail, not skip
+      WORKFLOW_POSTGRES_URL: 'postgres://user:pw@unreachable.invalid:5432/db',
+    })
+    expect(status).toBe(0)
+    expect(out).toMatch(/пропуск/i)
+    expect(out).toContain('PORTAL_ROLE=agents')
+    expect(out).not.toContain('unreachable.invalid')
+    expect(out).not.toContain('bootstrap')
+  })
+
+  it('reads PORTAL_ROLE like the server does: any case, surrounding spaces', () => {
+    const { status, out } = run({ PORTAL_ROLE: ' Agents ', WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' })
+    expect(status).toBe(0)
+    expect(out).toMatch(/пропуск/i)
+  })
+
+  it('the agents role skips before the missing-URL check: its deploy does not need WORKFLOW_POSTGRES_URL here', () => {
+    const { status } = run({ PORTAL_ROLE: 'agents', WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' })
+    expect(status).toBe(0)
+  })
+
+  it('the web role and an unknown role prepare the queue as before', () => {
+    for (const role of ['web', 'all', 'worker', '']) {
+      // without the URL the step must still stop the deploy: that is the portal's own guard
+      const { status, out } = run({ PORTAL_ROLE: role, WORKFLOW_TARGET_WORLD: '@workflow/world-postgres' })
+      expect(status, `role=${role}`).not.toBe(0)
+      expect(out).toContain('WORKFLOW_POSTGRES_URL')
+    }
+  })
 })
 
 /**

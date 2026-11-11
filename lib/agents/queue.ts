@@ -9,11 +9,19 @@
  *   3. Inngest cron `agents-maintenance` every minute: reaps expired leases,
  *      expires approvals, drains due tasks (retries after backoff);
  *   4. GET /api/cron/agents (Bearer CRON_SECRET) — same as 3, for any scheduler.
+ *
+ * With a separate agents service (PORTAL_ROLE, lib/runtime/role.ts) the paths split by process:
+ *   - the portal (web) runs none of them: kickTask hands the task to the agents service
+ *     (lib/agents/remote-kick.ts → POST /api/internal/agents/kick there);
+ *   - the agents service runs 1 (its own enqueues and the tasks handed to it) and 4, which its
+ *     in-process cron calls every minute. It has no Inngest, so 2 and 3 do not exist there.
  */
-import { runInBackground } from '@/lib/background'
+import { runInBackground, trackBackground } from '@/lib/background'
 import { inngest } from '@/lib/inngest'
+import { portalRole } from '@/lib/runtime/role'
 import { alertStuckTasks, notifyTaskFinished, notifyTaskStarted, safely } from './lifecycle'
 import { getAgent, listAgents } from './registry'
+import { kickAgentsService } from './remote-kick'
 import { runClaimedTask, type RunReport } from './runner'
 import type { AgentDefinition, AgentTaskRow } from './types'
 import * as store from './store'
@@ -50,9 +58,24 @@ function inngestConfigured(): boolean {
   return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
 }
 
-/** Start execution of a task without waiting for it. Never throws. */
+/**
+ * Start execution of a task without waiting for it. Never throws.
+ *
+ * By the role of this process (PORTAL_ROLE):
+ *   - all (the default): the Inngest event when Inngest is configured, and the run in the
+ *     background of this request unless AGENT_INLINE_EXECUTION=false;
+ *   - agents: the run in the background only - the agents service has no Inngest;
+ *   - web: neither. Agent work does not execute in the portal process: the agents service is told
+ *     to start the task, and if that fails its own maintenance loop picks the task up.
+ */
 export function kickTask(taskId: string): void {
-  if (inngestConfigured()) {
+  const role = portalRole()
+  if (role === 'web') {
+    // Tracked like any after-response work, so a shutdown waits the few seconds the request may take.
+    trackBackground(kickAgentsService(taskId))
+    return
+  }
+  if (role === 'all' && inngestConfigured()) {
     inngest.send({ name: AGENT_TASK_REQUESTED_EVENT, data: { taskId } }).catch((err: unknown) => {
       console.error('[agents] inngest send failed', err instanceof Error ? err.message : err)
     })

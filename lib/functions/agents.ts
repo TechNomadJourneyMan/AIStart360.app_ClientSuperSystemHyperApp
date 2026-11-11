@@ -34,6 +34,10 @@ export const agentsTaskRequested = inngest.createFunction(
 /**
  * Every minute: reap expired leases, expire approvals, re-dispatch stuck
  * platform events, enqueue scheduled agents whose cron matches, drain the queue.
+ *
+ * The agents service (PORTAL_ROLE=agents) has no Inngest: there GET /api/cron/agents runs this
+ * same loop from the in-process cron. A change here (a budget, the order, the quiet mode) belongs
+ * there too; tests/unit/agents/maintenance-parity.test.ts compares the two call for call.
  */
 export const agentsMaintenance = inngest.createFunction(
   {

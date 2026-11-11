@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { checkPlatformHealth } from '@/lib/health/platform'
 import { isPersistentServer } from '@/lib/runtime/platform'
+import { servesWeb } from '@/lib/runtime/role'
 import { getWorkflowQueueStatus, type WorkflowQueueState } from '@/lib/runtime/workflow-queue-status'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,10 @@ export const dynamic = 'force-dynamic'
  * starts in the background and retries while its database is down (lib/runtime/server-start.ts).
  * A queue that has failed to start, or is not set up at all, fails the check; the error text stays
  * in the server log. On Vercel the output is unchanged.
+ *
+ * The agents service (PORTAL_ROLE=agents) is a persistent server that does not start the Workflow
+ * queue on purpose, so it has no queue entry: its check passes when the database and the
+ * configuration do.
  */
 interface ServiceResult {
   name: string
@@ -46,7 +51,7 @@ export async function GET() {
     latencyMs: 0,
     uptime: NOT_MEASURED,
   }
-  const queue: ServiceResult | null = isPersistentServer()
+  const queue: ServiceResult | null = isPersistentServer() && servesWeb()
     ? { name: 'Очередь Workflow', status: QUEUE_STATUS[getWorkflowQueueStatus().state], latencyMs: 0, uptime: NOT_MEASURED }
     : null
   const services = queue ? [db, config, queue] : [db, config]
