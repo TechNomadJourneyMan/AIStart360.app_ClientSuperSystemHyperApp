@@ -5,7 +5,10 @@ export const maxDuration = 30;
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { authorizeOutboundDeliveryViaPostgres } from "@/lib/omnichannel/outbound-deliveries";
-import { verifyWhatsAppPortalPullRequest } from "@/lib/omnichannel/whatsapp-web-portal-route";
+import {
+  logBridgeFailure,
+  verifyWhatsAppPortalPullRequest,
+} from "@/lib/omnichannel/whatsapp-web-portal-route";
 
 const PATH = "/api/webhooks/whatsapp-web/outbound/authorize";
 const schema = z
@@ -44,6 +47,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return response({ ok: true, authorized: false, reason: delivery.reason });
     }
     if (!delivery.recipient || !delivery.text || !delivery.idempotencyKey) {
+      logBridgeFailure(
+        "outbound/authorize",
+        new Error("authorized delivery came back without its recipient, text or idempotency key"),
+      );
       return response({ ok: false }, 503);
     }
     return response({
@@ -56,7 +63,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         idempotency_key: delivery.idempotencyKey,
       },
     });
-  } catch {
+  } catch (error) {
+    logBridgeFailure("outbound/authorize", error);
     return response({ ok: false }, 503);
   }
 }

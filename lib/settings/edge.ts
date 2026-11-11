@@ -2,6 +2,8 @@
  * Middleware-side settings (PostgREST fetch, Edge-safe, 5 s cache).
  * Only the few switches middleware enforces are read here.
  */
+import { edgeSupabaseFetch } from '@/lib/supabase/transport-edge'
+
 interface EdgeSettings {
   maintenance: { enabled: boolean; message: string; until: string }
   staff_require_mfa: boolean
@@ -21,7 +23,7 @@ export async function edgeSettings(): Promise<EdgeSettings> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return DEFAULTS
   try {
-    const res = await fetch(`${url}/rest/v1/system_settings?select=key,value&key=in.(maintenance,staff_require_mfa)`, {
+    const res = await edgeSupabaseFetch(`${url}/rest/v1/system_settings?select=key,value&key=in.(maintenance,staff_require_mfa)`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cache: 'no-store',
       // Middleware must answer even when the database is slow (504 otherwise).

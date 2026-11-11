@@ -1,6 +1,7 @@
 /**
- * instrumentation.ts — Next calls register() once at boot, on Vercel as well. It must do nothing
- * there (and on the Edge runtime), and start the persistent-server work only on Railway.
+ * instrumentation.ts — Next calls register() once at boot, on Vercel as well. On every Node server
+ * it puts the Supabase transport over globalThis.fetch; the persistent-server work starts only on
+ * Railway. On the Edge runtime it does nothing at all.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,13 +10,21 @@ vi.mock('@/lib/runtime/server-start', () => ({ startPersistentServer: server.sta
 
 import { register } from '@/instrumentation'
 
+const TRANSPORT_MARKER = Symbol.for('aistart360.supabaseTransport')
+const isTransport = (fn: unknown) => (fn as Record<symbol, unknown>)[TRANSPORT_MARKER] === true
+
 beforeEach(() => {
   server.startPersistentServer.mockReset()
   server.startPersistentServer.mockImplementation(async () => ({ world: false, cron: false }))
+  // register() replaces globalThis.fetch on the Node runtime: give it a fetch of the test's own, so
+  // nothing can reach the network and afterEach takes the wrapper off again.
+  vi.stubEnv('SUPABASE_INTERNAL_URL', '')
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')))
 })
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -29,7 +38,7 @@ describe('register()', () => {
     expect(server.startPersistentServer).not.toHaveBeenCalled()
   })
 
-  it('does nothing on Vercel (node runtime, no PERSISTENT_SERVER)', async () => {
+  it('starts no persistent-server work on Vercel (node runtime, no PERSISTENT_SERVER)', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs')
     vi.stubEnv('VERCEL', '1')
     vi.stubEnv('PERSISTENT_SERVER', '')
@@ -56,6 +65,91 @@ describe('register()', () => {
 
     expect(server.startPersistentServer).toHaveBeenCalledTimes(1)
     expect(server.startPersistentServer).toHaveBeenCalledWith(process.env)
+  })
+})
+
+// Every Node server gets the retrying Supabase transport (lib/supabase/transport.ts): some 270 call
+// sites build their client inline and all of them end in globalThis.fetch. The Edge runtime has a
+// global scope of its own; middleware takes the wrapper explicitly (lib/supabase/transport-edge.ts).
+describe('register(): Supabase transport', () => {
+  it('puts the wrapper over globalThis.fetch on the Node runtime, once', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs')
+    vi.stubEnv('PERSISTENT_SERVER', '')
+    const before = globalThis.fetch
+
+    await register()
+
+    const installed = globalThis.fetch
+    expect(installed).not.toBe(before)
+    expect(isTransport(installed)).toBe(true)
+
+    await register()
+
+    expect(globalThis.fetch).toBe(installed)
+    expect(server.startPersistentServer).not.toHaveBeenCalled()
+  })
+
+  it('is in place before the persistent-server work starts', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs')
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    let wrappedAtStart = false
+    server.startPersistentServer.mockImplementation(async () => {
+      wrappedAtStart = isTransport(globalThis.fetch)
+      return { world: false, cron: false }
+    })
+
+    await register()
+
+    expect(wrappedAtStart).toBe(true)
+  })
+
+  it('does not touch globalThis.fetch on the Edge runtime', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'edge')
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    const before = globalThis.fetch
+
+    await register()
+
+    expect(globalThis.fetch).toBe(before)
+    expect(isTransport(globalThis.fetch)).toBe(false)
+  })
+
+  it('does not touch globalThis.fetch when NEXT_RUNTIME is not set at all', async () => {
+    vi.stubEnv('NEXT_RUNTIME', '')
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    const before = globalThis.fetch
+
+    await register()
+
+    expect(globalThis.fetch).toBe(before)
+  })
+
+  it('a wrapper that cannot be installed is reported and does not stop the boot', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs')
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as unknown as typeof process.exit)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const before = globalThis.fetch
+    vi.resetModules()
+    vi.doMock('@/lib/supabase/transport', () => ({
+      installSupabaseTransport: () => {
+        throw new Error('fetch is frozen')
+      },
+    }))
+    try {
+      const fresh = await import('@/instrumentation')
+
+      await fresh.register()
+
+      expect(globalThis.fetch).toBe(before)
+      expect(String(error.mock.calls[0]?.[0])).toContain('fetch is frozen')
+      // the rest of the boot goes on as before
+      expect(server.startPersistentServer).toHaveBeenCalledTimes(1)
+      expect(exit).not.toHaveBeenCalled()
+    } finally {
+      vi.doUnmock('@/lib/supabase/transport')
+      vi.resetModules()
+    }
   })
 })
 

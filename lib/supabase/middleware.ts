@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { edgeSupabaseFetch } from './transport-edge'
 
 /** `profiles.role, status` of the verified user, read under RLS (own row). */
 export interface SessionProfile {
@@ -32,7 +33,7 @@ async function readOwnProfile(userId: string, accessToken: string): Promise<Sess
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !anon) return null
   try {
-    const res = await fetch(
+    const res = await edgeSupabaseFetch(
       `${url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=role,status`,
       { headers: { apikey: anon, Authorization: `Bearer ${accessToken}` }, cache: 'no-store', signal: AbortSignal.timeout(3_000) },
     )
@@ -52,6 +53,9 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // The Edge runtime does not see the wrapper the Node server keeps over globalThis.fetch
+      // (instrumentation.ts): the client is handed the retrying transport explicitly.
+      global: { fetch: edgeSupabaseFetch },
       cookies: {
         getAll() {
           return request.cookies.getAll()

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => {
@@ -12,11 +13,14 @@ import {
   BRIDGE_STALE_AFTER_MS,
   bridgeStatusView,
   claimBridgeCommand,
+  createSupabaseBridgeControlStore,
   issueBridgeCommand,
   normalizePushedStatus,
   readBridgeControlSnapshot,
   recordBridgeStatus,
   resetBridgeStatusThrottle,
+  storeError,
+  type BridgeControlStore,
   type PushedBridgeStatus,
 } from '@/lib/omnichannel/whatsapp-bridge-control'
 import {
@@ -201,6 +205,109 @@ describe('bridge pull control — status freshness and QR', () => {
 
     const afterTtl = await readBridgeControlSnapshot(store, 'primary', at(140_000))
     expect(afterTtl.pendingCommand).toBeNull()
+  })
+})
+
+// A control route that answers 503 logs the first line of what the store threw, so the error has
+// to say why — and only that: Supabase's message, details and hint can echo row values (a QR).
+describe('bridge pull control — a failed statement of the Supabase store', () => {
+  const QR = 'raw-secret-qr'
+  const leaky = {
+    message: `new row for relation "whatsapp_bridge_status" violates check constraint (${QR})`,
+    details: `Failing row contains (primary, qr, ${QR}).`,
+    hint: `Check ${QR}.`,
+    code: '23514',
+  }
+
+  /** A client whose every statement resolves to `result`, whatever chain of builder calls made it. */
+  function clientAnswering(result: { error: unknown; status?: number }): SupabaseClient {
+    const builder: unknown = new Proxy({}, {
+      get: (_target, property) =>
+        property === 'then'
+          ? (resolve: (value: unknown) => unknown) => resolve({ data: null, ...result })
+          : () => builder,
+    })
+    return { from: () => builder } as unknown as SupabaseClient
+  }
+
+  const failure = (run: Promise<unknown>) => run.then(() => null, (error: unknown) => error as Error)
+
+  const statements: Array<[string, (store: BridgeControlStore) => Promise<unknown>]> = [
+    ['status upsert', (store) => store.upsertStatus(normalizePushedStatus(push({
+      state: 'qr', connected: false, qr: QR, qrExpiresAt: at(60_000).toISOString(),
+    }), T0))],
+    ['status read', (store) => store.readStatus('primary')],
+    ['qr clear', (store) => store.clearExpiredQr('primary', T0.toISOString())],
+    ['command expiry', (store) => store.expireCommands('primary', T0.toISOString())],
+    ['command prune', (store) => store.pruneCommands(T0.toISOString())],
+    ['command read', (store) => store.findInFlight('primary')],
+    ['command insert', (store) => store.insertCommand({
+      session_id: 'primary', action: 'connect', idempotency_key: 'omnichannel:bridge:connect:1', requested_by: null,
+      created_at: T0.toISOString(), expires_at: at(120_000).toISOString(),
+    })],
+    ['command update', (store) => store.updateCommand(
+      '00000000-0000-4000-8000-000000000001', { status: 'pending', leaseToken: null }, { status: 'cancelled' },
+    )],
+  ]
+
+  it.each(statements)('%s: the error names the operation, the HTTP status and the code — nothing else', async (operation, run) => {
+    const store = createSupabaseBridgeControlStore(clientAnswering({ error: leaky, status: 400 }))
+
+    const error = await failure(run(store))
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error?.message).toBe(`whatsapp bridge control: ${operation} failed (status 400, code 23514)`)
+  })
+
+  it('a request that got no HTTP answer shows as status 0', async () => {
+    // What supabase-js returns when fetch itself failed.
+    const store = createSupabaseBridgeControlStore(clientAnswering({
+      error: { message: 'TypeError: fetch failed', details: 'TypeError: fetch failed\n    at node:internal', hint: '', code: '' },
+      status: 0,
+    }))
+
+    expect((await failure(store.readStatus('primary')))?.message).toBe('whatsapp bridge control: status read failed (status 0)')
+  })
+
+  it('an answer of the hosting edge shows as status 404, code 404', async () => {
+    // The body Railway's edge sends instead of the gateway, as supabase-js parses it.
+    const store = createSupabaseBridgeControlStore(clientAnswering({
+      error: { status: 'error', code: 404, message: 'Application not found', request_id: 'r-1' },
+      status: 404,
+    }))
+
+    expect((await failure(store.findInFlight('primary')))?.message).toBe('whatsapp bridge control: command read failed (status 404, code 404)')
+  })
+
+  it('a duplicate command is still a conflict, not a failure', async () => {
+    const store = createSupabaseBridgeControlStore(clientAnswering({ error: { ...leaky, code: '23505' }, status: 409 }))
+
+    expect(await store.insertCommand({
+      session_id: 'primary', action: 'connect', idempotency_key: 'omnichannel:bridge:connect:1', requested_by: null,
+      created_at: T0.toISOString(), expires_at: at(120_000).toISOString(),
+    })).toBe('conflict')
+  })
+})
+
+describe('storeError', () => {
+  it('adds the status and the code that are known', () => {
+    expect(storeError('status upsert').message).toBe('whatsapp bridge control: status upsert failed')
+    expect(storeError('status upsert', {}).message).toBe('whatsapp bridge control: status upsert failed')
+    expect(storeError('status upsert', { status: 503 }).message).toBe('whatsapp bridge control: status upsert failed (status 503)')
+    expect(storeError('status upsert', { code: 'PGRST301' }).message).toBe('whatsapp bridge control: status upsert failed (code PGRST301)')
+    expect(storeError('status upsert', { status: 404, code: '42P01' }).message)
+      .toBe('whatsapp bridge control: status upsert failed (status 404, code 42P01)')
+    expect(storeError('status upsert', { status: 503, code: '57014' })).toBeInstanceOf(Error)
+  })
+
+  it('leaves out a code that is not a short identifier', () => {
+    expect(storeError('status read', { status: 500, code: '' }).message).toBe('whatsapp bridge control: status read failed (status 500)')
+    expect(storeError('status read', { status: 500, code: 'Key (qr)=(raw-secret-qr)' }).message)
+      .toBe('whatsapp bridge control: status read failed (status 500)')
+    expect(storeError('status read', { status: 500, code: 'X'.repeat(200) }).message)
+      .toBe('whatsapp bridge control: status read failed (status 500)')
+    expect(storeError('status read', { status: Number.NaN, code: 'PGRST116' }).message)
+      .toBe('whatsapp bridge control: status read failed (code PGRST116)')
   })
 })
 
