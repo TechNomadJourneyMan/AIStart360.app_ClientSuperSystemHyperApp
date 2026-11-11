@@ -7,6 +7,8 @@ import { getSetting } from '@/lib/settings/store'
 import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { e2eSeamEnabled } from '@/lib/admin/e2e-auth-seam-edge'
+import type { DevAccessRequest } from '@/lib/dev/dev-access'
+import { devModeOnForServerRequest } from '@/lib/dev/dev-request'
 import { canManageTarget, effectiveClientScope, hasPermission, isStaffRole, permissionsFor, type ClientScope, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
@@ -91,11 +93,19 @@ export type GigaMfaBlock = 'step_up' | 'enroll'
  * gates pages; /api/* skips it). Enrolment is read from the database
  * (user_security, webauthn_credentials) and the JWT flags, never from
  * user-editable metadata alone; the proof is the signed step-up cookie.
+ *
+ * Dev mode of the localhost developer login (lib/dev/dev-access.ts) counts as
+ * the second factor, exactly as middleware treats the pages: `request` when
+ * the caller holds it, next/headers otherwise. In a production build that
+ * check is the constant `false`. Who the caller is and what their role allows
+ * is decided elsewhere and does not change.
  */
 export async function staffMfaGate(
   stepUpCookie: string | null | undefined,
   user: { id: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
+  request?: DevAccessRequest,
 ): Promise<'ok' | GigaMfaBlock> {
+  if (devModeOnForServerRequest(request)) return 'ok'
   let enrolled = mfaFlagsEnrolled(user)
   if (!enrolled) {
     const service = createServiceClient()
@@ -155,7 +165,7 @@ async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
       const role = await staffRoleOf(sb, user.id)
       if (role) {
         staffSession = true
-        const gate = await staffMfaGate(req.cookies.get(MFA_COOKIE_NAME)?.value, user)
+        const gate = await staffMfaGate(req.cookies.get(MFA_COOKIE_NAME)?.value, user, req)
         if (gate === 'ok') return { actor: actor(user.id, 'session', role, user.email ?? undefined), staff: true }
         mfa = gate
       }
