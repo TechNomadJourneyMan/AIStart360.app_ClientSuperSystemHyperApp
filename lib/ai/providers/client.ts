@@ -143,6 +143,8 @@ export interface ChatSuccess {
   tokensOut: number | null
   /** usage.cost when the provider reports it (OpenRouter does). */
   providerCostUsd: number | null
+  /** choices[0].finish_reason when the provider sends one ('length' = cut at max_tokens). */
+  finishReason?: string
 }
 
 export interface EmbeddingsSuccess {
@@ -298,8 +300,9 @@ export function buildChatBody(target: ProviderTarget, p: ChatParams): Record<str
 export async function chatCompletion(target: ProviderTarget, p: ChatParams): Promise<ChatSuccess | ClientFailure> {
   const r = await postJson(target, target.chatPath, buildChatBody(target, p), p.timeoutMs ?? 45_000, p.fetchImpl)
   if (!r.ok) return r
-  const choices = r.json.choices as Array<{ message?: { content?: unknown } }> | undefined
+  const choices = r.json.choices as Array<{ message?: { content?: unknown }; finish_reason?: unknown }> | undefined
   const usage = usageOf(r.json)
+  const finishReason = choices?.[0]?.finish_reason
   return {
     ok: true,
     text: textOf(choices?.[0]?.message?.content),
@@ -307,6 +310,7 @@ export async function chatCompletion(target: ProviderTarget, p: ChatParams): Pro
     tokensIn: usage.tokensIn,
     tokensOut: usage.tokensOut,
     providerCostUsd: usage.cost,
+    ...(typeof finishReason === 'string' && finishReason ? { finishReason } : {}),
   }
 }
 

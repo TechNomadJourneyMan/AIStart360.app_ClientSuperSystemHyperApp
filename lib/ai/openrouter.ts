@@ -120,6 +120,12 @@ interface ChatOptions {
   label?: string
   /** Company the call is made for, when known (company spend). */
   companyId?: string | null
+  /**
+   * Called once when a candidate answered, with the provider's finish reason
+   * ('length' = cut at maxTokens) when it sent one. lib/ai/structured.ts uses
+   * it to give a cut answer a bigger budget; the return value stays the text.
+   */
+  onFinish?: (info: { finishReason?: string }) => void
 }
 
 /**
@@ -286,6 +292,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     ok: Boolean(res.text),
     userId: opts.userId,
   })
+  opts.onFinish?.({ finishReason: res.finishReason })
   return res.text || null
 }
 
