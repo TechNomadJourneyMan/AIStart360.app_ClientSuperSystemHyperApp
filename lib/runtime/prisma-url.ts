@@ -48,3 +48,18 @@ export function persistentPrismaDatasourceUrl(env: Env = process.env): string | 
   if (!url) return undefined
   return withConnectionLimit(url, prismaConnectionLimit(env.PRISMA_CONNECTION_LIMIT))
 }
+
+/**
+ * Local development only (`next dev`, NODE_ENV=development): PRISMA_DATASOURCE=direct switches the
+ * client to DIRECT_URL, the session pooler, as on a persistent server. Over the transaction pooler
+ * every query is wrapped in BEGIN / DEALLOCATE ALL / COMMIT — four round trips; from a laptop far
+ * from the database (~140 ms each) that alone made a page with a dozen queries take seconds. Off by
+ * default; a persistent server keeps persistentPrismaDatasourceUrl. The URL is never logged.
+ */
+export function localDevPrismaDatasourceUrl(env: Env = process.env): string | undefined {
+  if (env.NODE_ENV !== 'development' || isPersistentServer(env)) return undefined
+  if (env.PRISMA_DATASOURCE?.trim() !== 'direct') return undefined
+  const url = env.DIRECT_URL?.trim()
+  if (!url) return undefined
+  return withConnectionLimit(url, prismaConnectionLimit(env.PRISMA_CONNECTION_LIMIT))
+}
