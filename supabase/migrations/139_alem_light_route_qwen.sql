@@ -34,7 +34,7 @@ DECLARE
 BEGIN
   SELECT m.id INTO v_qwen
     FROM public.ai_models m JOIN public.ai_providers p ON p.id = m.provider_id
-   WHERE p.base_url LIKE '%llm.alem.ai%' AND m.capability = 'chat'
+   WHERE p.base_url ILIKE '%llm.alem.ai%' AND m.capability = 'chat'
      AND m.model_id = 'qwen3-8' AND m.credential_id IS NOT NULL
    ORDER BY m.created_at, m.id LIMIT 1;
   IF v_qwen IS NULL THEN
@@ -50,24 +50,24 @@ BEGIN
      SET model_id = v_qwen, updated_by = 'migration:139', updated_at = now()
     FROM public.ai_models m JOIN public.ai_providers p ON p.id = m.provider_id
    WHERE r.model_id = m.id AND r.capability = 'chat'
-     AND p.base_url LIKE '%llm.alem.ai%' AND m.model_id = 'AlemLLM';
+     AND p.base_url ILIKE '%llm.alem.ai%' AND m.model_id = 'AlemLLM';
 
   UPDATE public.ai_models m
      SET tier_hint = 'light', updated_at = now()
     FROM public.ai_providers p
-   WHERE p.id = m.provider_id AND p.base_url LIKE '%llm.alem.ai%'
+   WHERE p.id = m.provider_id AND p.base_url ILIKE '%llm.alem.ai%'
      AND m.capability = 'chat' AND m.model_id = 'alemllm'
      AND m.credential_id IS NOT NULL AND m.tier_hint IS NULL;
 
   UPDATE public.ai_models m
      SET enabled = FALSE, tier_hint = NULL, updated_at = now()
     FROM public.ai_providers p
-   WHERE p.id = m.provider_id AND p.base_url LIKE '%llm.alem.ai%' AND m.capability = 'chat'
+   WHERE p.id = m.provider_id AND p.base_url ILIKE '%llm.alem.ai%' AND m.capability = 'chat'
      AND (
        m.model_id = 'AlemLLM'
        OR (m.model_id = 'alemllm' AND m.credential_id IS NULL AND EXISTS (
              SELECT 1 FROM public.ai_models w JOIN public.ai_providers wp ON wp.id = w.provider_id
-              WHERE wp.base_url LIKE '%llm.alem.ai%' AND w.capability = 'chat'
+              WHERE wp.base_url ILIKE '%llm.alem.ai%' AND w.capability = 'chat'
                 AND w.model_id = 'alemllm' AND w.credential_id IS NOT NULL))
      );
 END $$;
