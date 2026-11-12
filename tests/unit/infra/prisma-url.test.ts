@@ -16,6 +16,7 @@ vi.mock('@prisma/client', () => ({
 
 import {
   DEFAULT_PRISMA_CONNECTION_LIMIT,
+  localDevPrismaDatasourceUrl,
   persistentPrismaDatasourceUrl,
   prismaConnectionLimit,
   withConnectionLimit,
@@ -122,6 +123,26 @@ describe('persistentPrismaDatasourceUrl', () => {
         `PRISMA_DATASOURCE=${String(PRISMA_DATASOURCE)}`,
       ).toBe(`${POOLER}?pgbouncer=true&connection_limit=5`)
     }
+  })
+})
+
+describe('localDevPrismaDatasourceUrl', () => {
+  it('uses the session pooler in development when PRISMA_DATASOURCE=direct', () => {
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'development', PRISMA_DATASOURCE: 'direct', DIRECT_URL: SESSION, DATABASE_URL: POOLER }))
+      .toBe(`${SESSION}?connection_limit=${DEFAULT_PRISMA_CONNECTION_LIMIT}`)
+  })
+
+  it('honours PRISMA_CONNECTION_LIMIT', () => {
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'development', PRISMA_DATASOURCE: 'direct', DIRECT_URL: SESSION, PRISMA_CONNECTION_LIMIT: '3' }))
+      .toBe(`${SESSION}?connection_limit=3`)
+  })
+
+  it('changes nothing without the switch, without DIRECT_URL, outside development or on a persistent server', () => {
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'development', DIRECT_URL: SESSION })).toBeUndefined()
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'development', PRISMA_DATASOURCE: 'direct' })).toBeUndefined()
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'production', PRISMA_DATASOURCE: 'direct', DIRECT_URL: SESSION })).toBeUndefined()
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'test', PRISMA_DATASOURCE: 'direct', DIRECT_URL: SESSION })).toBeUndefined()
+    expect(localDevPrismaDatasourceUrl({ NODE_ENV: 'development', PERSISTENT_SERVER: '1', PRISMA_DATASOURCE: 'direct', DIRECT_URL: SESSION })).toBeUndefined()
   })
 })
 
