@@ -439,9 +439,28 @@ const STATUS_TABLE = 'whatsapp_bridge_status'
 const COMMANDS_TABLE = 'whatsapp_bridge_commands'
 const IN_FLIGHT = ['pending', 'claimed'] as const
 
-function storeError(operation: string): Error {
-  // Supabase error payloads may echo row values; keep only the operation name.
-  return new Error(`whatsapp bridge control: ${operation} failed`)
+/** A PostgREST / SQLSTATE code (PGRST116, 23505, 42P01, …) — never free text. */
+const SAFE_ERROR_CODE = /^[A-Za-z0-9_.-]{1,32}$/
+
+/**
+ * The error of a failed store statement: the operation, plus the HTTP status and the error code
+ * where they are known. A control route that answers 503 logs it, and those two say what kind of
+ * failure it was: the database refused the statement (a 4xx/5xx with its code), the request got
+ * no HTTP answer at all (status 0 — that is how supabase-js reports a failed fetch), or the
+ * hosting edge answered instead of the gateway (status 404, code 404).
+ *
+ * Supabase's message, details and hint are never included: they may echo row values, and a
+ * pairing QR is one of them.
+ */
+export function storeError(operation: string, cause?: { status?: number; code?: string }): Error {
+  const known: string[] = []
+  if (typeof cause?.status === 'number' && Number.isFinite(cause.status)) known.push(`status ${cause.status}`)
+  // A string for supabase-js, but a body that is not PostgREST's own can carry a number.
+  const code: unknown = cause?.code
+  if ((typeof code === 'string' || typeof code === 'number') && SAFE_ERROR_CODE.test(String(code))) {
+    known.push(`code ${code}`)
+  }
+  return new Error(`whatsapp bridge control: ${operation} failed${known.length > 0 ? ` (${known.join(', ')})` : ''}`)
 }
 
 export function createSupabaseBridgeControlStore(
@@ -449,46 +468,46 @@ export function createSupabaseBridgeControlStore(
 ): BridgeControlStore {
   return {
     async upsertStatus(row) {
-      const { error } = await client.from(STATUS_TABLE).upsert(row, { onConflict: 'session_id' })
-      if (error) throw storeError('status upsert')
+      const { error, status } = await client.from(STATUS_TABLE).upsert(row, { onConflict: 'session_id' })
+      if (error) throw storeError('status upsert', { status, code: error.code })
     },
     async readStatus(sessionId) {
-      const { data, error } = await client
+      const { data, error, status } = await client
         .from(STATUS_TABLE)
         .select('session_id, state, connected, qr, qr_expires_at, error_code, bridge_updated_at, bridge_version, last_seen_at')
         .eq('session_id', sessionId)
         .maybeSingle()
-      if (error) throw storeError('status read')
+      if (error) throw storeError('status read', { status, code: error.code })
       return (data as BridgeStatusRow | null) ?? null
     },
     async clearExpiredQr(sessionId, expiredAt) {
-      const { error } = await client
+      const { error, status } = await client
         .from(STATUS_TABLE)
         .update({ qr: null, qr_expires_at: null })
         .eq('session_id', sessionId)
         .not('qr', 'is', null)
         .lte('qr_expires_at', expiredAt)
-      if (error) throw storeError('qr clear')
+      if (error) throw storeError('qr clear', { status, code: error.code })
     },
     async expireCommands(sessionId, now) {
-      const { error } = await client
+      const { error, status } = await client
         .from(COMMANDS_TABLE)
         .update({ status: 'expired', completed_at: now, lease_until: null })
         .eq('session_id', sessionId)
         .in('status', [...IN_FLIGHT])
         .lte('expires_at', now)
-      if (error) throw storeError('command expiry')
+      if (error) throw storeError('command expiry', { status, code: error.code })
     },
     async pruneCommands(before) {
-      const { error } = await client
+      const { error, status } = await client
         .from(COMMANDS_TABLE)
         .delete()
         .lt('created_at', before)
         .not('status', 'in', `(${IN_FLIGHT.join(',')})`)
-      if (error) throw storeError('command prune')
+      if (error) throw storeError('command prune', { status, code: error.code })
     },
     async findInFlight(sessionId) {
-      const { data, error } = await client
+      const { data, error, status } = await client
         .from(COMMANDS_TABLE)
         .select('*')
         .eq('session_id', sessionId)
@@ -496,18 +515,18 @@ export function createSupabaseBridgeControlStore(
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      if (error) throw storeError('command read')
+      if (error) throw storeError('command read', { status, code: error.code })
       return (data as BridgeCommandRow | null) ?? null
     },
     async insertCommand(row) {
-      const { data, error } = await client
+      const { data, error, status } = await client
         .from(COMMANDS_TABLE)
         .insert({ ...row, status: 'pending', attempts: 0 })
         .select('*')
         .single()
       if (error) {
         if ((error as { code?: string }).code === '23505') return 'conflict'
-        throw storeError('command insert')
+        throw storeError('command insert', { status, code: error.code })
       }
       return data as BridgeCommandRow
     },
@@ -520,8 +539,8 @@ export function createSupabaseBridgeControlStore(
       query = expected.leaseToken === null
         ? query.is('lease_token', null)
         : query.eq('lease_token', expected.leaseToken)
-      const { data, error } = await query.select('*').maybeSingle()
-      if (error) throw storeError('command update')
+      const { data, error, status } = await query.select('*').maybeSingle()
+      if (error) throw storeError('command update', { status, code: error.code })
       return (data as BridgeCommandRow | null) ?? null
     },
   }

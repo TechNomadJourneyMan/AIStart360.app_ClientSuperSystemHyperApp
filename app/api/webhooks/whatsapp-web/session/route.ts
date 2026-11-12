@@ -9,7 +9,10 @@ import {
   createSupabaseBridgeControlStore,
   recordBridgeStatus,
 } from "@/lib/omnichannel/whatsapp-bridge-control";
-import { verifyWhatsAppBridgeControlRequest } from "@/lib/omnichannel/whatsapp-web-portal-route";
+import {
+  logBridgeFailure,
+  verifyWhatsAppBridgeControlRequest,
+} from "@/lib/omnichannel/whatsapp-web-portal-route";
 
 /**
  * Bridge → portal session status push (WHATSAPP_WEB_BRIDGE_CONTROL=pull).
@@ -63,7 +66,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       bridgeVersion: parsed.data.bridge_version ?? null,
     });
     return response({ ok: true });
-  } catch {
+  } catch (error) {
+    logBridgeFailure("session", error);
     return response({ ok: false }, 503);
   }
 }

@@ -781,6 +781,166 @@ describe('startPersistentServer: signals', () => {
   })
 })
 
+// The same build runs as the agents service (PORTAL_ROLE=agents, lib/runtime/role.ts). The Workflow
+// queue belongs to the portal: a second service polling it would take a share of the portal's
+// workflow jobs. Everything else a persistent server starts, the in-process cron (the service's
+// maintenance loop) and the shutdown handler, is the same.
+describe('startPersistentServer: the agents role (PORTAL_ROLE=agents)', () => {
+  const AGENTS_ENV: Partial<NodeJS.ProcessEnv> = { ...FULL_ENV, PORTAL_ROLE: 'agents' }
+  const roleLines = (t: ReturnType<typeof setup>) => t.lines.filter((line) => line.includes('PORTAL_ROLE=agents') && line.includes('Workflow'))
+
+  it('does not start the Workflow queue, even with the Postgres world configured, and says so in one line', async () => {
+    const t = setup()
+
+    await expect(startPersistentServer(AGENTS_ENV, t.deps)).resolves.toEqual({ world: false, cron: true })
+    await flush()
+
+    expect(t.startWorld).not.toHaveBeenCalled()
+    expect(roleLines(t)).toHaveLength(1)
+    expect(roleLines(t)[0]).toMatch(/^server: /)
+    expect(t.errors).toEqual([]) // it is how the service is meant to run, not a failure
+    expect(getWorkflowQueueStatus()).toEqual({ state: 'off', attempts: 0 })
+  })
+
+  it('says so when no Workflow world is configured either: the line is the mark of the role in the boot log', async () => {
+    const t = setup()
+
+    await expect(startPersistentServer({ ...NO_QUEUE_ENV, PORTAL_ROLE: 'agents' }, t.deps)).resolves.toEqual({ world: false, cron: true })
+
+    expect(roleLines(t)).toHaveLength(1)
+    expect(t.startWorld).not.toHaveBeenCalled()
+  })
+
+  it('reads the role from the environment it was given, in any spelling', async () => {
+    const t = setup()
+    await expect(startPersistentServer({ ...FULL_ENV, PORTAL_ROLE: ' Agents ' }, t.deps)).resolves.toEqual({ world: false, cron: true })
+    expect(t.startWorld).not.toHaveBeenCalled()
+  })
+
+  it('the cron runner starts exactly as in any other role: 127.0.0.1, the PORT, the secret, the claim', async () => {
+    const t = setup()
+    const env = { ...AGENTS_ENV, WORKFLOW_POSTGRES_URL: 'postgres://user:pw@unreachable.invalid:5432/db' }
+
+    await startPersistentServer(env, t.deps)
+
+    expect(t.startCron).toHaveBeenCalledTimes(1)
+    const opts = t.startCron.mock.calls[0][0] as { baseUrl: string; secret: string; claim?: unknown }
+    expect(opts).toMatchObject({ baseUrl: 'http://127.0.0.1:8080', secret: 'x' })
+    expect(typeof opts.claim).toBe('function')
+    expect(t.text()).not.toContain('pw@')
+  })
+
+  it('the cron runner is still refused while vercel.json has crons', async () => {
+    const t = setup({ cwd: dirWith(VERCEL_WITH_CRONS) })
+    await expect(startPersistentServer(AGENTS_ENV, t.deps)).resolves.toEqual({ world: false, cron: false })
+    expect(t.startCron).not.toHaveBeenCalled()
+  })
+
+  it('SIGTERM: stops the cron first, waits for tracked work, then exits 0 - there is no queue to wait for', async () => {
+    const t = setup()
+    const work = deferred()
+    trackBackground(work.promise)
+    await startPersistentServer(AGENTS_ENV, t.deps)
+    expect([...t.handlers.keys()].sort()).toEqual(['SIGINT', 'SIGTERM'])
+
+    t.handlers.get('SIGTERM')!()
+
+    expect(t.stopCron).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(t.exit).not.toHaveBeenCalled() // an agent task is still running
+
+    work.resolve()
+    await vi.waitFor(() => expect(t.exit).toHaveBeenCalledWith(0)) // one signal is enough: no re-sent one is coming
+    expect(t.exit).toHaveBeenCalledTimes(1)
+    expect(t.text()).toContain('ждали 1 задач')
+    expect(t.text()).not.toMatch(/очередь Workflow (остановлена|не подтвердила|не запущена)/)
+  })
+
+  it('still waits at most 55 s for the work', async () => {
+    vi.useFakeTimers()
+    try {
+      const t = setup()
+      trackBackground(new Promise<void>(() => {})) // a task that never ends
+      await startPersistentServer(AGENTS_ENV, t.deps)
+
+      t.handlers.get('SIGTERM')!()
+      await vi.advanceTimersByTimeAsync(54_999)
+      expect(t.exit).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(t.exit).toHaveBeenCalledWith(0)
+      expect(t.text()).toMatch(/не завершено 1/)
+    } finally {
+      vi.useRealTimers()
+      delete (globalThis as Record<symbol, unknown>)[Symbol.for('aistart360.background.pending')]
+    }
+  })
+
+  it('with the real defaults nothing of the Workflow world is touched', async () => {
+    vi.stubEnv('WORKFLOW_POSTGRES_WORKER_CONCURRENCY', undefined)
+    runtime.concurrencySeen = []
+    try {
+      const t = setup()
+      const { startWorld: _stub, ...deps } = t.deps
+
+      await expect(startPersistentServer({ WORKFLOW_TARGET_WORLD: '@workflow/world-postgres', PORTAL_ROLE: 'agents' }, deps)).resolves.toEqual({ world: false, cron: false })
+      await flush()
+
+      expect(runtime.concurrencySeen).toEqual([]) // getWorld() was never asked
+      expect(process.env.WORKFLOW_POSTGRES_WORKER_CONCURRENCY).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  // Without the in-process cron nothing calls /api/cron/agents: retries, expired leases and
+  // scheduled agents would silently never happen. That deserves a loud line at boot.
+  it('without the cron runner the log says, as an error, that nothing maintains the agent queue', async () => {
+    for (const env of [
+      { PERSISTENT_SERVER: '1', PORTAL_ROLE: 'agents' }, // CRON_RUNNER_ENABLED not set
+      { PERSISTENT_SERVER: '1', PORTAL_ROLE: 'agents', CRON_RUNNER_ENABLED: '1' }, // no CRON_SECRET
+    ]) {
+      const t = setup()
+      await expect(startPersistentServer(env, t.deps)).resolves.toEqual({ world: false, cron: false })
+      const said = t.errors.filter((line) => line.includes('PORTAL_ROLE=agents') && line.includes('CRON_RUNNER_ENABLED'))
+      expect(said, JSON.stringify(env)).toHaveLength(1)
+    }
+  })
+
+  it('with the cron runner started there is no such line', async () => {
+    const t = setup()
+    await startPersistentServer(AGENTS_ENV, t.deps)
+    expect(t.errors).toEqual([])
+  })
+})
+
+describe('startPersistentServer: the other roles keep the Workflow queue', () => {
+  it('PORTAL_ROLE=web starts the queue and the cron like one process for everything', async () => {
+    const t = setup()
+
+    await expect(startPersistentServer({ ...FULL_ENV, PORTAL_ROLE: 'web' }, t.deps)).resolves.toEqual({ world: true, cron: true })
+    await vi.waitFor(() => expect(getWorkflowQueueStatus().state).toBe('running'))
+
+    expect(t.startWorld).toHaveBeenCalledTimes(1)
+    expect(t.text()).not.toContain('PORTAL_ROLE')
+  })
+
+  it('an unknown or empty PORTAL_ROLE is one process for everything', async () => {
+    for (const role of ['', 'all', 'worker', 'agent']) {
+      const t = setup()
+      await expect(startPersistentServer({ ...FULL_ENV, PORTAL_ROLE: role }, t.deps), `role=${role}`).resolves.toEqual({ world: true, cron: true })
+      expect(t.startWorld).toHaveBeenCalledTimes(1)
+      expect(t.text()).not.toContain('PORTAL_ROLE')
+    }
+  })
+
+  it('the web role without the cron runner gets no line about the agent queue', async () => {
+    const t = setup()
+    await startPersistentServer({ PERSISTENT_SERVER: '1', NEXT_MANUAL_SIG_HANDLE: 'true', PORTAL_ROLE: 'web' }, t.deps)
+    expect(t.text()).not.toContain('PORTAL_ROLE')
+  })
+})
+
 describe('startPersistentServer: the Next signal handler', () => {
   // Next's own handler is server.close(() => process.exit(0)); left on, it would race the wait above.
   it('warns on a persistent server when NEXT_MANUAL_SIG_HANDLE is not set', async () => {

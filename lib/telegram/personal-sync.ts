@@ -356,6 +356,16 @@ async function collectIncomingMessages(
   return { messages: incoming, scannedDialogs: dialogs.length, ignored }
 }
 
+/**
+ * Whether this deployment has a personal Telegram account to read at all: TELEGRAM_API_ID,
+ * TELEGRAM_API_HASH and TELEGRAM_USER_SESSION are all set. Without them there is nothing to sync,
+ * which is a normal state (the cron route skips the run), not a failure. The values are not judged
+ * here: a malformed one is a configuration error, and the sync itself reports it.
+ */
+export function telegramPersonalSyncConfigured(env: Partial<NodeJS.ProcessEnv> = process.env): boolean {
+  return [env.TELEGRAM_API_ID, env.TELEGRAM_API_HASH, env.TELEGRAM_USER_SESSION].every((value) => Boolean(value?.trim()))
+}
+
 export async function syncTelegramPersonalInbox(): Promise<TelegramPersonalSyncResult> {
   const admin = createTelegramAdminClient()
   const client = await createTelegramPersonalClient()

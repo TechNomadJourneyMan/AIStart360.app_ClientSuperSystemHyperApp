@@ -10,7 +10,10 @@
  * Two attempts. When the first answer is not JSON or fails the schema, the
  * second goes one chat tier up (escalateComplexity: low / medium → high), so a
  * broken answer of the cheap light tier (Alem / Qwen) is redone by Claude.
- * An explicit `model` is never escalated.
+ * An explicit `model` is never escalated. An answer that is not JSON because
+ * it was cut at the token limit (finish_reason 'length', or — without a finish
+ * reason — a text that does not close its object/array) is retried with twice
+ * the budget, at most MAX_STRUCTURED_TOKENS.
  */
 
 import type { ZodSchema } from 'zod'
@@ -50,6 +53,20 @@ interface GenerateObjectOptions<T> {
   label?: string
 }
 
+/** Ceiling of the output budget a cut structured answer is retried with. */
+export const MAX_STRUCTURED_TOKENS = 8000
+
+/**
+ * Was a non-JSON answer cut at the token limit? The provider's finish reason
+ * when it sent one; otherwise the text (code fences stripped) must close its
+ * object or array to count as complete.
+ */
+function wasCut(raw: string, finishReason: string | undefined): boolean {
+  if (finishReason) return finishReason === 'length'
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  return !/[}\]]$/.test(text)
+}
+
 export function hasOpenRouterKey(): boolean {
   if (process.env.NODE_ENV !== 'production' && process.env.JOURNEY_FORCE_DEMO === '1') {
     return false
@@ -77,7 +94,9 @@ export async function generateObjectViaOpenRouter<T>(
     : undefined
 
   let validationFeedback = ''
-  const maxTokens = opts.maxTokens ?? 3000
+  // Grows only after an answer cut at the token limit; every attempt passes it
+  // to chatWithOpenRouter, so the budget / worst-case cost guards see it.
+  let maxTokens = opts.maxTokens ?? 3000
   let complexity = opts.complexity
   // After a broken answer: the next attempt one chat tier up (never with an
   // explicit model — that is the caller's decision).
@@ -110,6 +129,7 @@ export async function generateObjectViaOpenRouter<T>(
       : ''
     const user = `${opts.user}${retryInstruction}${inBandSchema}`
 
+    let finishReason: string | undefined
     const raw = await chatWithOpenRouter({
       feature: opts.feature,
       userId: opts.userId,
@@ -124,6 +144,7 @@ export async function generateObjectViaOpenRouter<T>(
       privacySensitive,
       timeoutMs: opts.timeoutMs,
       label,
+      onFinish: (info) => { finishReason = info.finishReason },
     })
     if (!raw) continue
 
@@ -135,6 +156,12 @@ export async function generateObjectViaOpenRouter<T>(
           : `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length}); tail="${raw.slice(-160).replace(/\n/g, ' ')}"`,
       )
       escalate(attempt)
+      // A cut answer is cut again with the same budget: give the retry more
+      // room (never less than asked, at most MAX_STRUCTURED_TOKENS).
+      if (attempt < 1 && wasCut(raw, finishReason)) {
+        maxTokens = Math.max(maxTokens, Math.min(maxTokens * 2, MAX_STRUCTURED_TOKENS))
+        console.warn(`[${label}] attempt ${attempt + 1}: answer cut at the token limit, retrying with maxTokens=${maxTokens}`)
+      }
       continue
     }
 

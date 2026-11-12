@@ -52,6 +52,16 @@ describe('chat', () => {
     expect(body).toEqual({ model: 'alemllm', messages: [{ role: 'user', content: 'Привет' }], max_tokens: 50, temperature: 0.2 })
   })
 
+  it('carries the provider finish reason when it sends one', async () => {
+    const f = vi.fn(async () => json({ choices: [{ message: { content: '{"a":' }, finish_reason: 'length' }] }))
+    const r = await chatCompletion(target(), { messages: [], maxTokens: 1, fetchImpl: f as unknown as typeof fetch })
+    expect(r).toMatchObject({ ok: true, text: '{"a":', finishReason: 'length' })
+
+    const none = vi.fn(async () => json({ choices: [{ message: { content: 'x' }, finish_reason: null }] }))
+    const r2 = await chatCompletion(target(), { messages: [], maxTokens: 1, fetchImpl: none as unknown as typeof fetch })
+    expect(r2).not.toHaveProperty('finishReason')
+  })
+
   it('never sends OpenRouter-only fields or headers to other providers', () => {
     const body = buildChatBody(target(), { messages: [], maxTokens: 1, json: true })
     expect(body).not.toHaveProperty('provider')

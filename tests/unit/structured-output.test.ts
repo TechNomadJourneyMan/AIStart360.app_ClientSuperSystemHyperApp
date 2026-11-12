@@ -7,11 +7,13 @@ const openRouter = vi.hoisted(() => ({
 
 vi.mock('@/lib/ai/openrouter', () => ({
   chatWithOpenRouter: openRouter.chat,
-  extractJson: (value: string) => JSON.parse(value),
+  extractJson: (value: string) => {
+    try { return JSON.parse(value) } catch { return null }
+  },
   hasOpenRouterKey: () => true,
 }))
 
-import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
+import { generateObjectViaOpenRouter, hasOpenRouterKey, MAX_STRUCTURED_TOKENS } from '@/lib/ai/structured'
 
 describe('provider-enforced structured output', () => {
   beforeEach(() => {
@@ -198,5 +200,105 @@ describe('retry one tier up after a broken answer', () => {
     openRouter.chat.mockResolvedValueOnce(null).mockResolvedValueOnce('null')
     expect(await generateObjectViaOpenRouter({ ...base, complexity: 'medium' })).toBeNull()
     expect(vi.mocked(console.warn)).not.toHaveBeenCalledWith(expect.stringContaining('one tier up'))
+  })
+})
+
+describe('an answer cut at the token limit gets a bigger budget', () => {
+  const schema = z.object({ title: z.string() }).strict()
+  const base = { feature: 'point_a_analysis' as const, label: 'point-a:blocksA', system: 'system', user: 'user', schema }
+  const budgets = () => openRouter.chat.mock.calls.map((c) => c[0].maxTokens)
+  /** One answer of the mocked chat layer; the finish reason reaches structured.ts through `onFinish`. */
+  const answer = (text: string, finishReason?: string) =>
+    async (opts: { onFinish?: (info: { finishReason?: string }) => void }) => {
+      opts.onFinish?.({ finishReason })
+      return text
+    }
+
+  beforeEach(() => {
+    openRouter.chat.mockReset()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('finish_reason "length": the next attempt doubles the budget and its valid JSON is returned', async () => {
+    openRouter.chat
+      .mockImplementationOnce(answer('{"title":"Финансы компании растут, но маржа', 'length'))
+      .mockImplementationOnce(answer('{"title":"Финансы"}', 'stop'))
+    await expect(generateObjectViaOpenRouter({ ...base, complexity: 'medium', maxTokens: 2000 }))
+      .resolves.toEqual({ title: 'Финансы' })
+    expect(budgets()).toEqual([2000, 4000])
+    expect(vi.mocked(console.warn)).toHaveBeenCalledWith(
+      '[point-a:blocksA] attempt 1: answer cut at the token limit, retrying with maxTokens=4000',
+    )
+    // the «one tier up» rule is unchanged
+    expect(openRouter.chat.mock.calls.map((c) => c[0].complexity)).toEqual(['medium', 'high'])
+  })
+
+  it('the budget never exceeds MAX_STRUCTURED_TOKENS', async () => {
+    expect(MAX_STRUCTURED_TOKENS).toBe(8000)
+    openRouter.chat
+      .mockImplementationOnce(answer('{"title":"обрезано', 'length'))
+      .mockImplementationOnce(answer('{"title":"ok"}', 'stop'))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 6000 })
+    expect(budgets()).toEqual([6000, 8000])
+  })
+
+  it('a valid first answer makes exactly one call', async () => {
+    openRouter.chat.mockImplementationOnce(answer('{"title":"ok"}', 'length'))
+    await expect(generateObjectViaOpenRouter({ ...base, maxTokens: 2000 })).resolves.toEqual({ title: 'ok' })
+    expect(openRouter.chat).toHaveBeenCalledTimes(1)
+  })
+
+  it('an invalid but complete answer keeps the budget', async () => {
+    // the provider says it stopped on its own
+    openRouter.chat
+      .mockImplementationOnce(answer('{"title": "x",}', 'stop'))
+      .mockImplementationOnce(answer('{"title":"ok"}', 'stop'))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 2000 })
+    expect(budgets()).toEqual([2000, 2000])
+
+    // no finish reason, but the text closes its object or array (also inside a code fence)
+    for (const text of ['{"title": "x",}', '```json\n{"title": "x",}\n```', 'Вот ответ: [1, 2,]']) {
+      openRouter.chat.mockReset()
+      openRouter.chat
+        .mockImplementationOnce(answer(text))
+        .mockImplementationOnce(answer('{"title":"ok"}'))
+      await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 2000 })
+      expect(budgets()).toEqual([2000, 2000])
+    }
+
+    // valid JSON that fails the schema is not a cut answer either
+    openRouter.chat.mockReset()
+    openRouter.chat
+      .mockImplementationOnce(answer('{"title":7}', 'length'))
+      .mockImplementationOnce(answer('{"title":"ok"}'))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 2000 })
+    expect(budgets()).toEqual([2000, 2000])
+    expect(vi.mocked(console.warn)).not.toHaveBeenCalledWith(expect.stringContaining('cut at the token limit'))
+  })
+
+  it('no finish reason: an unclosed text counts as cut (code fences stripped)', async () => {
+    openRouter.chat
+      .mockImplementationOnce(answer('```json\n{"title":"Финансы компании'))
+      .mockImplementationOnce(answer('{"title":"ok"}'))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 1500 })
+    expect(budgets()).toEqual([1500, 3000])
+  })
+
+  it('a budget above the cap is never lowered', async () => {
+    openRouter.chat
+      .mockImplementationOnce(answer('{"title":"обрезано', 'length'))
+      .mockImplementationOnce(answer('{"title":"ok"}'))
+    await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 10_000 })
+    expect(budgets()).toEqual([10_000, 10_000])
+  })
+
+  it('a cut last answer announces no retry that will not happen', async () => {
+    openRouter.chat
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(answer('{"title":"обрезано', 'length'))
+    expect(await generateObjectViaOpenRouter({ ...base, complexity: 'high', maxTokens: 2000 })).toBeNull()
+    expect(vi.mocked(console.warn)).not.toHaveBeenCalledWith(expect.stringContaining('cut at the token limit'))
   })
 })

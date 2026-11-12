@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import dynamic from 'next/dynamic'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
 import { RouteProgress } from '@/components/navigation/RouteProgress'
@@ -6,6 +7,14 @@ import { Providers } from './providers'
 import { getSiteUrl } from '@/lib/site-url'
 import { LegacySymbolFont } from '@/components/ui/LegacySymbolFont'
 import './globals.css'
+
+/**
+ * The localhost developer panel (components/dev/DevPanel). The condition is
+ * the literal NODE_ENV check that Next.js folds at build time: in a production
+ * build this is `null`, and neither the import nor its chunk exists.
+ */
+const DevPanel =
+  process.env.NODE_ENV !== 'production' ? dynamic(() => import('@/components/dev/DevPanel')) : null
 
 /**
  * Базовый адрес для абсолютных ссылок в метаданных.
@@ -72,6 +81,7 @@ export default function RootLayout({
         {/* Single global sonner Toaster (PERF-09: the only toast system).
             mobileOffset clears the mobile bottom-nav (UX-07). */}
         <Toaster theme="dark" position="bottom-right" richColors mobileOffset={{ bottom: '88px' }} />
+        {DevPanel && <DevPanel />}
       </body>
     </html>
   )

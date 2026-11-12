@@ -3,6 +3,9 @@
  *
  * Every UTC minute boundary it asks `dueJobs` what is due and calls each route
  * (`GET {baseUrl}{path}` with `Authorization: Bearer {secret}`), at most two requests at a time.
+ * The jobs are those of the role this process started with (PORTAL_ROLE, lib/runtime/role.ts):
+ * one process for everything runs the schedule it always had, the portal next to an agents service
+ * leaves the agent jobs out, and the agents service runs only those, its queue drain every minute.
  *
  * Anti-goal: a job must never fire twice (duplicate client digests and emails). Missing a minute
  * is the lesser evil, so:
@@ -25,7 +28,8 @@
  * spent, and no other instance would run that minute again.
  */
 import { trackBackground } from '@/lib/background'
-import { dueJobs, type CronJob } from '@/lib/cron/schedule'
+import { dueJobs, jobsForRole, type CronJob } from '@/lib/cron/schedule'
+import { portalRole } from '@/lib/runtime/role'
 
 const MINUTE_MS = 60_000
 /** The incident rule for background work: at most two requests in flight at once. */
@@ -81,6 +85,8 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
   const setTimer = opts.setTimer ?? setTimeout
   const baseUrl = opts.baseUrl.replace(/\/+$/, '')
   const authorization = `Bearer ${opts.secret}`
+  // Read once: a process keeps the role it booted with.
+  const jobs = jobsForRole(portalRole())
 
   // Minutes up to and including this one are done with. Starting it at the minute of `startedAt`
   // is the "nothing in the start minute" rule; moving it up on every tick is the "once a minute" rule.
@@ -158,7 +164,7 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
       if (minute > lastHandled) {
         lastHandled = minute
         const minuteStart = new Date(minute * MINUTE_MS)
-        for (const job of dueJobs(minuteStart)) {
+        for (const job of dueJobs(minuteStart, jobs)) {
           // fire and forget: a slow job must not delay the next tick, but a shutdown must see it
           trackBackground(runJob(job, minuteStart).catch((error) => write(`cron: ${job.path} not run: ${messageOf(error)}`)))
         }

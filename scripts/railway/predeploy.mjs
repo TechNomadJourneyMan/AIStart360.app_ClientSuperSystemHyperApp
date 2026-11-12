@@ -13,6 +13,13 @@
  * The database is only ever the one named in WORKFLOW_POSTGRES_URL. Bootstrap would otherwise fall
  * back to DATABASE_URL or to a localhost default, and a quiet fallback is not what a deploy step
  * should do to a database, so a missing URL stops the deploy.
+ *
+ * The agents service (PORTAL_ROLE=agents, lib/runtime/role.ts) is built from this repository with
+ * this same railway.json, so Railway runs the step for it too - as a rule at the same moment as
+ * for the portal, one push deploys both. The queue is the portal's (the agents service does not
+ * start it), so there the step does nothing: two bootstraps of one database at once is a deploy
+ * that fails for no reason. The scheduler's claim table needs no step, lib/cron/claim.ts creates
+ * it on first use.
  */
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -20,6 +27,12 @@ import path from 'node:path'
 import { ensureCronRunsTable } from './ensure-cron-runs.mjs'
 
 const WORLD = '@workflow/world-postgres'
+
+// Read like portalRole() in lib/runtime/role.ts (this file is run by bare node, it cannot import it).
+if ((process.env.PORTAL_ROLE ?? '').trim().toLowerCase() === 'agents') {
+  console.log('predeploy: пропуск (PORTAL_ROLE=agents - таблицы очереди Workflow готовит деплой портала)')
+  process.exit(0)
+}
 
 if (process.env.WORKFLOW_TARGET_WORLD !== WORLD) {
   console.log(`predeploy: пропуск (WORKFLOW_TARGET_WORLD=${process.env.WORKFLOW_TARGET_WORLD || '<не задан>'}, не ${WORLD})`)

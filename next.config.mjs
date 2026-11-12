@@ -38,13 +38,15 @@ const withPWA = withPWAInit({
 })
 
 // Routes that can run the document_intelligence agent (and therefore OCR):
-// Inngest functions, the agents cron, document finalize (inline waitUntil),
-// the manual re-process route and the admin "run agent / retry task" routes.
+// Inngest functions, the agents cron, the kick endpoint of the agents service,
+// document finalize (inline waitUntil), the manual re-process route and the
+// admin "run agent / retry task" routes.
 // Keys are picomatch globs matched with `contains`, so a prefix also covers
 // nested routes (e.g. /api/v1/onboarding/documents/[id]/process).
 const OCR_ROUTES = [
   '/api/inngest',
   '/api/cron/agents',
+  '/api/internal/agents',
   '/api/v1/documents',
   '/api/v1/onboarding/documents',
   '/api/giga-admin/agents',

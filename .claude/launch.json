@@ -4,7 +4,7 @@
     {
       "name": "aistart360",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "dev", "--", "-H", "127.0.0.1"],
       "port": 3000
     }
   ]

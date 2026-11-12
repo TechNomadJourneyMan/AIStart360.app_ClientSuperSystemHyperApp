@@ -14,6 +14,13 @@
  *     for graphile-worker to finish its own stop (see the shutdown below).
  *
  * Next's own signal handler is turned off with NEXT_MANUAL_SIG_HANDLE=true, so this one is the only one.
+ *
+ * The same build also runs as the agents service (PORTAL_ROLE=agents, lib/runtime/role.ts). It
+ * does not start the Workflow queue: the queue belongs to the portal, and a second service polling
+ * it would take a share of the portal's workflow jobs and run them in the agents process. Its
+ * in-process cron is what calls GET /api/cron/agents every minute, the service's only maintenance
+ * loop, so there a cron that did not start is logged as an error. The cron runner itself and the
+ * shutdown are the same in every role.
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -22,6 +29,7 @@ import { startCronRunner } from '@/lib/cron/runner'
 import { pendingBackgroundCount, waitForBackgroundWork } from '@/lib/background'
 import { maskConnectionSecrets } from '@/lib/runtime/mask-secrets'
 import { isPersistentServer } from '@/lib/runtime/platform'
+import { portalRole, servesWeb } from '@/lib/runtime/role'
 import { setWorkflowQueueStatus } from '@/lib/runtime/workflow-queue-status'
 
 /** The deploy's grace period is longer than this; past it the work is abandoned rather than hang the stop. */
@@ -175,8 +183,13 @@ export async function startPersistentServer(
 
   let queue: QueueStart | undefined
   let cron: { stop(): void } | undefined
+  /** The agents service: agent work only (PORTAL_ROLE=agents). */
+  const agentsOnly = !servesWeb(portalRole(env))
 
-  if (env.WORKFLOW_TARGET_WORLD === '@workflow/world-postgres') {
+  if (agentsOnly) {
+    // Said in every case, configured world or not: the line is also the mark of the role in the boot log.
+    log('server: PORTAL_ROLE=agents - очередь Workflow здесь не запускается, её ведёт сервис портала')
+  } else if (env.WORKFLOW_TARGET_WORLD === '@workflow/world-postgres') {
     // Not awaited: the boot goes on while the queue starts (or retries); queue.running() tells which.
     queue = startQueueInBackground(startWorld, env.WORKFLOW_POSTGRES_URL, log, logError)
   }
@@ -204,6 +217,10 @@ export async function startPersistentServer(
         log,
       })
     }
+  }
+  if (agentsOnly && !cron) {
+    // Nothing else calls /api/cron/agents on this service: no retries, no reaped leases, no scheduled agents.
+    logError('server: PORTAL_ROLE=agents, но планировщик не запущен - очередь агентов никто не обслуживает (нужны CRON_RUNNER_ENABLED=1 и CRON_SECRET)')
   }
 
   // Needed whenever this is the long-lived process or something was started that has to be stopped.

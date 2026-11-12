@@ -132,3 +132,23 @@ export async function verifyWhatsAppBridgeControlRequest(
     requirePostgres: false,
   });
 }
+
+const MAX_FAILURE_LINE_LENGTH = 300;
+
+/**
+ * One line for a bridge endpoint that answers 503 because its storage failed:
+ * the route (`session`, `commands/claim`, `outbound/result`, …) and the first
+ * line of the error's message. The bridge is told nothing but the status, so
+ * without this line the reason is lost.
+ *
+ * Only the error is written, never the request: a pushed QR is
+ * account-equivalent and an authorized delivery carries the customer's text.
+ */
+export function logBridgeFailure(route: string, error: unknown): void {
+  const message = (error as { message?: unknown } | null | undefined)?.message;
+  const firstLine =
+    typeof message === "string"
+      ? message.split(/\r?\n/, 1)[0].trim().slice(0, MAX_FAILURE_LINE_LENGTH)
+      : "";
+  console.error(`[whatsapp-web/${route}] ${firstLine || "unknown error"}`);
+}

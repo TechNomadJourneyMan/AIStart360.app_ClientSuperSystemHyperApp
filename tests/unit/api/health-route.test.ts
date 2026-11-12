@@ -143,3 +143,97 @@ describe('GET /api/health: the Workflow queue of a persistent server', () => {
     expect((await (await GET()).json()).summary).toMatch(/Конфигурация/)
   })
 })
+
+// The agents service (PORTAL_ROLE=agents) is a persistent server too, but it does not start the
+// Workflow queue (lib/runtime/server-start.ts): a queue that is "off" is how it is meant to run.
+describe('GET /api/health: the agents service has no Workflow queue', () => {
+  const names = (body: { services: { name: string }[] }) => body.services.map((s) => s.name)
+
+  it('no «Очередь Workflow» entry, and the check passes when the database and the configuration do', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+
+    const res = await GET()
+    const text = await res.text()
+    const body = JSON.parse(text)
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(Object.keys(body.checks)).toEqual(['db', 'config'])
+    expect(body.allOnline).toBe(true)
+    expect(body.degradedCount).toBe(0)
+    expect(body.summary).toBe('Все проверки пройдены')
+    expect(text).not.toContain('Workflow')
+  })
+
+  it('whatever the queue status says, it is not this service that runs the queue', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', ' Agents ')
+    setWorkflowQueueStatus({ state: 'retrying', attempts: 9, lastError: 'ECONNREFUSED' })
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(body.ok).toBe(true)
+  })
+
+  it('a failed database round-trip still fails the check', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    state.dbFails = true
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.checks).toEqual({ db: 'fail', config: 'ok' })
+    expect(body.summary).toMatch(/База данных/)
+  })
+
+  it('an incomplete configuration still fails the check', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    state.missing = ['DATABASE_URL']
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(body.checks).toEqual({ db: 'ok', config: 'fail' })
+    expect(body.summary).toMatch(/Конфигурация/)
+  })
+
+  it('the web role is the portal: its queue entry stays, and a queue that is off still fails the check', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'web')
+
+    const res = await GET()
+    const body = await res.json()
+
+    expect(res.status).toBe(503)
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Очередь Workflow'])
+    expect(body.checks.queue).toBe('fail')
+
+    setWorkflowQueueStatus({ state: 'running', attempts: 1 })
+    expect((await GET()).status).toBe(200)
+  })
+
+  it('an unknown PORTAL_ROLE is the portal too', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'worker')
+    setWorkflowQueueStatus({ state: 'running', attempts: 1 })
+
+    const body = await (await GET()).json()
+
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Очередь Workflow'])
+  })
+
+  it('off Railway the role changes nothing: no queue entry either way', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '')
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    expect(names(await (await GET()).json())).toEqual(['База данных', 'Конфигурация сервера'])
+  })
+})

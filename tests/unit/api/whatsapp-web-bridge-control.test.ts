@@ -34,7 +34,8 @@ import { POST as pushStatus } from '@/app/api/webhooks/whatsapp-web/session/rout
 import { POST as claim } from '@/app/api/webhooks/whatsapp-web/commands/claim/route'
 import { POST as ack } from '@/app/api/webhooks/whatsapp-web/commands/ack/route'
 import { GET as gigaGet, POST as gigaPost } from '@/app/api/giga-admin/omnichannel/whatsapp-web/route'
-import { resetBridgeStatusThrottle } from '@/lib/omnichannel/whatsapp-bridge-control'
+import { resetBridgeStatusThrottle, type BridgeControlStore } from '@/lib/omnichannel/whatsapp-bridge-control'
+import { logBridgeFailure } from '@/lib/omnichannel/whatsapp-web-portal-route'
 
 const secret = 'portal-inbound-secret-0123456789abcdef'
 const SESSION = '/api/webhooks/whatsapp-web/session'
@@ -87,6 +88,34 @@ function statusBody(overrides: Record<string, unknown> = {}) {
 }
 
 let mem: ReturnType<typeof memoryStore>
+
+/** A store whose every statement fails with `message`. */
+function failingStore(message: string): BridgeControlStore {
+  const fail = async (): Promise<never> => {
+    throw new Error(message)
+  }
+  return {
+    upsertStatus: fail,
+    readStatus: fail,
+    clearExpiredQr: fail,
+    expireCommands: fail,
+    pruneCommands: fail,
+    findInFlight: fail,
+    insertCommand: fail,
+    updateCommand: fail,
+  }
+}
+
+/** Runs `run` with console.error captured and returns what was written to it. */
+async function withErrorLog<T>(run: () => Promise<T> | T): Promise<{ result: T; logged: unknown[][] }> {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const result = await run()
+    return { result, logged: spy.mock.calls.map((call) => [...call]) }
+  } finally {
+    spy.mockRestore()
+  }
+}
 
 describe('WhatsApp Web bridge pull control', () => {
   beforeEach(() => {
@@ -202,6 +231,104 @@ describe('WhatsApp Web bridge pull control', () => {
         error_code: 'connect_failed',
       }))).json()
       expect(fenced).toEqual({ ok: true, accepted: false })
+    })
+  })
+
+  // The bridge only sees «503»: the reason has to be in the portal's log. One line per failure —
+  // the route and the first line of the error — and nothing of what the bridge sent.
+  describe('a storage failure leaves a trace', () => {
+    const COMMAND_ID = '00000000-0000-4000-8000-0000000000c1'
+    const LEASE_TOKEN = '00000000-0000-4000-8000-0000000000a1'
+
+    it('session: 503 and one line, without the pushed QR', async () => {
+      holder.store = failingStore('whatsapp bridge control: status upsert failed (status 503, code 57014)\nFailing row contains (raw-secret-qr)')
+
+      const { result: response, logged } = await withErrorLog(() => pushStatus(signed(SESSION, statusBody({
+        state: 'qr',
+        connected: false,
+        qr: 'raw-secret-qr',
+        qr_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      }))))
+
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ ok: false })
+      expect(logged).toEqual([['[whatsapp-web/session] whatsapp bridge control: status upsert failed (status 503, code 57014)']])
+    })
+
+    it('commands/claim: 503 and one line', async () => {
+      holder.store = failingStore('whatsapp bridge control: command read failed (status 404, code 404)')
+
+      const { result: response, logged } = await withErrorLog(() => claim(signed(CLAIM, { version: 1, session_id: 'primary' })))
+
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ ok: false })
+      expect(logged).toEqual([['[whatsapp-web/commands/claim] whatsapp bridge control: command read failed (status 404, code 404)']])
+    })
+
+    it('commands/ack: 503 and one line, without the command id or the lease token', async () => {
+      holder.store = failingStore('whatsapp bridge control: command update failed (status 0)')
+
+      const { result: response, logged } = await withErrorLog(() => ack(signed(ACK, {
+        version: 1,
+        session_id: 'primary',
+        command_id: COMMAND_ID,
+        lease_token: LEASE_TOKEN,
+        outcome: 'failed',
+        error_code: 'connect_failed',
+      })))
+
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ ok: false })
+      expect(logged).toEqual([['[whatsapp-web/commands/ack] whatsapp bridge control: command update failed (status 0)']])
+      expect(JSON.stringify(logged)).not.toMatch(new RegExp(`${COMMAND_ID}|${LEASE_TOKEN}|connect_failed`))
+    })
+
+    it('a request that is answered writes nothing', async () => {
+      const { result: response, logged } = await withErrorLog(() => claim(signed(CLAIM, { version: 1, session_id: 'primary' })))
+
+      expect(response.status).toBe(200)
+      expect(logged).toEqual([])
+    })
+
+    it('a rejected request (bad signature, another session) writes nothing either', async () => {
+      holder.store = failingStore('whatsapp bridge control: command read failed (status 503)')
+
+      const { logged } = await withErrorLog(async () => {
+        expect((await claim(signed(CLAIM, { version: 1, session_id: 'primary' }, { signed: false }))).status).toBe(401)
+        expect((await claim(signed(CLAIM, { version: 1, session_id: 'other' }))).status).toBe(403)
+      })
+
+      expect(logged).toEqual([])
+    })
+  })
+
+  describe('logBridgeFailure', () => {
+    it('writes the route and the first line of the message', async () => {
+      const { logged } = await withErrorLog(() => {
+        logBridgeFailure('session', new Error('whatsapp bridge control: status upsert failed (status 503)\n    at upsertStatus (store.ts:1:1)'))
+        logBridgeFailure('outbound/claim', new Error('Connection terminated unexpectedly\r\nsecond line'))
+      })
+
+      expect(logged).toEqual([
+        ['[whatsapp-web/session] whatsapp bridge control: status upsert failed (status 503)'],
+        ['[whatsapp-web/outbound/claim] Connection terminated unexpectedly'],
+      ])
+    })
+
+    it('has a line for a thrown value that carries no message, and keeps a long one short', async () => {
+      const { logged } = await withErrorLog(() => {
+        logBridgeFailure('commands/ack', 'a thrown string')
+        logBridgeFailure('commands/ack', undefined)
+        logBridgeFailure('commands/ack', new Error(''))
+        logBridgeFailure('commands/ack', new Error('x'.repeat(5_000)))
+      })
+
+      expect(logged.slice(0, 3)).toEqual([
+        ['[whatsapp-web/commands/ack] unknown error'],
+        ['[whatsapp-web/commands/ack] unknown error'],
+        ['[whatsapp-web/commands/ack] unknown error'],
+      ])
+      expect(String(logged[3][0]).length).toBeLessThanOrEqual('[whatsapp-web/commands/ack] '.length + 300)
     })
   })
 
