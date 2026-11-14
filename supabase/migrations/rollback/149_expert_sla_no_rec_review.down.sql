@@ -3,12 +3,21 @@
 -- NOT part of the migration sequence (appliers read only supabase/migrations/*.sql).
 -- Restores the 146 body of expert_sla_sync: Point B recommendations on review
 -- ('rec_review') are opened as expert SLA work again on the next pass.
--- Tasks closed by 149 (close_reason = 'excluded') stay closed — they are history;
--- the next pass opens fresh tasks for recommendations still pending review.
+-- Tasks closed by 149 (close_reason = 'excluded') stay closed — they are history.
+-- Their «answered» mark is cleared (false → NULL) so that the 146 rule «a new
+-- version of work closed WITHOUT an answer inherits the original clock» does not
+-- apply to them: the next pass opens fresh tasks with their own 24/48 h clock for
+-- recommendations still pending review (review F6).
 --   STAGING_PG_PASSWORD_FILE=… scripts/staging/apply-migration.sh supabase/migrations/rollback/149_expert_sla_no_rec_review.down.sql
 
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
+
+LOCK TABLE public.expert_sla_tasks IN SHARE ROW EXCLUSIVE MODE;
+
+UPDATE public.expert_sla_tasks
+   SET answered = NULL
+ WHERE source = 'rec_review' AND close_reason = 'excluded' AND answered IS FALSE;
 
 CREATE OR REPLACE FUNCTION public.expert_sla_sync(
   p_now            TIMESTAMPTZ DEFAULT now(),

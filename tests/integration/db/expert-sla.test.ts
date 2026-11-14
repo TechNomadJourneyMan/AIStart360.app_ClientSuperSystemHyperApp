@@ -564,7 +564,9 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
         `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, created_at)
          VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h2', 'agent:report', $2) RETURNING id`, [company, plus(t0, 25.5)])
       await sync(db, plus(t0, 26))
-      const [old, fresh] = await tasksOf(db, client)
+      const all = await tasksOf(db, client) // same created_at (transaction time): pick by state
+      const old = all.find((t) => t.closed_at !== null)!
+      const fresh = all.find((t) => t.closed_at === null)!
       expect(old).toMatchObject({ source_id: v1, close_reason: 'superseded', answered: false, first_response_at: null })
       expect(fresh.source_id).toBe(rows[0].id)
       expect(fresh.closed_at).toBeNull()
@@ -573,6 +575,31 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
       expect(fresh.escalated_at).not.toBeNull() // already escalated — not again
       expect((await claim(db, 'escalated', plus(t0, 27))).filter((t) => t.client_id === client)).toEqual([])
       expect((await claim(db, 'breached', plus(t0, 48.5))).filter((t) => t.client_id === client).map((t) => t.id)).toEqual([fresh.id])
+    }))
+
+  it('149 rollback: recommendations are SLA work again, with a fresh clock (not the clock of «excluded» tasks)', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      // An open recommendation task of 146, already escalated and breached.
+      await db.query(
+        `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, company_id, title, lineage, received_at, reaction_due_at, answer_due_at, escalated_at, breached_at)
+         VALUES ('rec_review', $2, $1, $2, 'Рекомендации Точки Б на проверке', $2, $3, $3::timestamptz + interval '24 hours', $3::timestamptz + interval '48 hours', $3::timestamptz + interval '24 hours', $3::timestamptz + interval '48 hours')`,
+        [client, company, plus(t0, -50)])
+      await seedPendingRecs(db, company, 2)
+      await db.query(readFileSync(join(process.cwd(), 'supabase/migrations/149_expert_sla_no_rec_review.sql'), 'utf8'))
+      expect((await sync(db, t0)).filter((c) => c.r_client === client)).toEqual([])
+      await db.query(readFileSync(join(process.cwd(), 'supabase/migrations/rollback/149_expert_sla_no_rec_review.down.sql'), 'utf8'))
+      const changes = (await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)
+      expect(changes.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['rec_review:new'])
+      const fresh = (await tasksOf(db, client)).find((t) => t.closed_at === null)!
+      expect(fresh.received_at.getTime()).toBeGreaterThan(plus(t0, -1).getTime()) // its own clock
+      expect(fresh.escalated_at).toBeNull()
+      expect(fresh.breached_at).toBeNull()
+      // Back to 149 for the rest of the suite (the transaction rolls back anyway).
+      await db.query(readFileSync(join(process.cwd(), 'supabase/migrations/149_expert_sla_no_rec_review.sql'), 'utf8'))
     }))
 
   it('п. 8: an expert decision on a report is an answer — the next version starts its own clock', () =>
@@ -592,8 +619,10 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
          VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h3', 'agent:report', $2)`, [company, plus(t0, 14.5)])
       await sync(db, plus(t0, 15))
       const reports = (await tasksOf(db, client)).filter((t) => t.source === 'report_review')
-      expect(reports[0]).toMatchObject({ answered: true, close_reason: 'published' })
-      expect(reports[1].received_at.getTime()).toBe(plus(t0, 14.5).getTime()) // its own clock
+      expect(reports).toHaveLength(2)
+      // created_at is the transaction time for both rows: pick by state, not by position.
+      expect(reports.find((t) => t.closed_at !== null)).toMatchObject({ answered: true, close_reason: 'published' })
+      expect(reports.find((t) => t.closed_at === null)!.received_at.getTime()).toBe(plus(t0, 14.5).getTime()) // its own clock
     }))
 
   it('п. 8: a predecessor closed without an answer longer ago than the answer window is not inherited', () =>
@@ -612,7 +641,8 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
         `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, created_at)
          VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h2', 'agent:report', $2)`, [company, plus(later, -1)])
       await sync(db, later)
-      const [, fresh] = await tasksOf(db, client)
+      // created_at is the transaction time for every row here: pick by state, not by position.
+      const fresh = (await tasksOf(db, client)).find((t) => t.closed_at === null)!
       expect(fresh.received_at.getTime()).toBe(plus(later, -1).getTime())
       expect(fresh.escalated_at).toBeNull()
     }))

@@ -29,6 +29,10 @@ BEGIN
   END IF;
 END $$;
 
+-- A watcher pass that is running now must not open a 'rec_review' task after the
+-- UPDATE below (review F5): wait for it, and hold new passes until this commits.
+LOCK TABLE public.expert_sla_tasks IN SHARE ROW EXCLUSIVE MODE;
+
 UPDATE public.expert_sla_tasks
    SET closed_at = greatest(now(), received_at),
        close_reason = 'excluded',
