@@ -5,7 +5,8 @@
  * model hypotheses hidden until review, evidence validation, input-hash cache,
  * score reuse, failure and stall handling.
  *
- * The two Supabase-backed steps (metric materialisation, overview) are
+ * The three Supabase-backed steps (metric materialisation, the official Point A
+ * recalculation — lib/point-a/snapshot.ts, R-034 — and the overview) are
  * replaced through setDiagnosticsIO; the model is a stubbed fetch.
  * Run: npm run test:db:setup && npm run test:db
  */
@@ -24,6 +25,8 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
   const { failStalledSessions } = await import('@/lib/diagnostics/sessions')
   const { AgentError } = await import('@/lib/agents/types')
   const { DIAGNOSTIC_STAGES } = await import('@/lib/diagnostics/pipeline')
+  const { calculatePointA } = await import('@/lib/point-a-engine')
+  type SnapshotResult = import('@/lib/point-a/snapshot').SnapshotResult
 
   const users: string[] = []
   const companies: string[] = []
@@ -44,6 +47,42 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
     }
   }
   const emptyCompanies = new Set<string>()
+  const answersOf = new Map<string, Record<string, unknown>>()
+
+  /**
+   * Stand-in for the official recalculation (the real one reads and writes via
+   * Supabase): like it, it writes the company's current diagnostic when there
+   * is none for the current inputs and reports «unchanged» otherwise; the
+   * pipeline only links that row to the session (R-034). The row's content is
+   * a deterministic engine result over the seeded answers — this file tests
+   * the pipeline, not the Point A rules (tests/unit/point-a, scoring-official).
+   */
+  async function fakeSnapshot(companyId: string): Promise<SnapshotResult> {
+    const [c] = await prisma.$queryRaw<Array<{ user_id: string | null }>>`
+      SELECT user_id::text AS user_id FROM public.companies WHERE id = ${companyId}`
+    if (!c?.user_id) return { status: 'skipped', reason: 'no_owner' }
+    const answers = answersOf.get(companyId) ?? {}
+    if (Object.keys(answers).length === 0) return { status: 'skipped', reason: 'no_answers' }
+    const [current] = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id::text AS id FROM public.diagnostics WHERE user_id = ${c.user_id}::uuid AND is_current`
+    if (current) return { status: 'unchanged', snapshotId: `fake-${current.id}` }
+    const pa = calculatePointA(answers)
+    const j = (v: unknown) => JSON.stringify(v ?? null)
+    const [row] = await prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.diagnostics
+        (user_id, company_id, overall_score, health_index, stage,
+         finance_score, marketing_score, operations_score, strategy_score, sales_score,
+         risks, insights, quick_wins, data_gaps, is_current, ai_status)
+      VALUES (${c.user_id}::uuid, ${companyId},
+              ${String(pa.overall_score)}::text::numeric, ${String(pa.health_index)}::text::numeric, ${pa.stage},
+              ${j(pa.blocks.finance)}::jsonb, ${j(pa.blocks.marketing)}::jsonb, ${j(pa.blocks.operations)}::jsonb,
+              ${j(pa.blocks.strategy)}::jsonb, ${j(pa.blocks.sales)}::jsonb,
+              ${j(pa.risks)}::jsonb, ${j(pa.insights)}::jsonb, ${j(pa.quick_wins)}::jsonb, ${j(pa.data_gaps)}::jsonb,
+              TRUE, 'none')
+      RETURNING id::text AS id`
+    // Only `status` is read by the pipeline (lib/diagnostics/scoring.ts).
+    return { status: 'written', snapshotId: `fake-${row.id}`, diagnosticId: row.id } as unknown as SnapshotResult
+  }
 
   async function seedCompany(opts: { answers?: Record<string, unknown>; industry?: string | null } = {}) {
     const owner = randomUUID()
@@ -59,6 +98,7 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
         INSERT INTO public.survey_answers (user_id, company_id, step, question_key, answer)
         VALUES (${owner}::uuid, ${companyId}, 2, ${key}, ${JSON.stringify({ value })}::jsonb)`
     }
+    answersOf.set(companyId, opts.answers ?? {})
     return { owner, companyId }
   }
 
@@ -145,6 +185,7 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
         if (materializeFails) throw new AgentError('MATERIALIZE_DOWN', 'хранилище метрик недоступно', false)
         return { written: 4, total: 148, skipped: 144, errors: 0 }
       },
+      snapshot: fakeSnapshot,
       async overview(companyId) {
         return emptyCompanies.has(companyId)
           ? overview(companyId, { surveyStepsCompleted: 0, documentsProcessed: 0, metricsWithValue: 0, documentsTotal: 0, documentsFailed: 0 })

@@ -165,6 +165,7 @@ describe.skipIf(!dbTestsEnabled)('backups (142)', async () => {
         encoding: 'utf8',
         timeout: 120_000,
         env: {
+          NODE_ENV: 'test',
           PATH: `${fakeBin}:${process.env.PATH}`,
           HOME: dir,
           FAKE_RCLONE_ROOT: join(dir, 's3'),

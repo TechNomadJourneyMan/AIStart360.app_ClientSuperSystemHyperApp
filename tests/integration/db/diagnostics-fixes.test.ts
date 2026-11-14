@@ -187,8 +187,10 @@ describe.skipIf(!dbTestsEnabled)('staff decisions and score reuse', async () => 
 
     const res = await replaceRecommendations(meta, [rec('Внедрить  ежемесячный P&L.'), rec('нанять РОПа'), rec('Запустить программу лояльности')])
     expect(res).toMatchObject({ inserted: 1, suppressed: 2 })
+    // COLLATE "C": byte order (= alphabetical for Cyrillic in UTF-8), the same on every server;
+    // the database's default locale is not (macOS libc en_US.UTF-8 orders Cyrillic backwards).
     const rows = await prisma.$queryRaw<Array<{ title: string; status: string }>>`
-      SELECT title, status FROM public.diagnostic_recommendations WHERE company_id = ${companyId} ORDER BY title`
+      SELECT title, status FROM public.diagnostic_recommendations WHERE company_id = ${companyId} ORDER BY title COLLATE "C"`
     expect(rows).toEqual([
       { title: 'Внедрить ежемесячный P&L', status: 'rejected' },
       { title: 'Запустить программу лояльности', status: 'proposed' },

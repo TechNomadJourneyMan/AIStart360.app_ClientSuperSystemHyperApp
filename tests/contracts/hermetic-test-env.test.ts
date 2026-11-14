@@ -217,7 +217,7 @@ describe('(c) DB gates accept only a local database', () => {
     for (const url of [CLOUD_DB, 'postgres://postgres@reserve.example.com:5432/postgres']) {
       const run = spawnSync(process.execPath, [resolve(ROOT, 'scripts/test-db/setup.mjs'), '--quiet'], {
         cwd: ROOT,
-        env: { PATH: process.env.PATH, TEST_DB_ADMIN_URL: url },
+        env: { NODE_ENV: 'test', PATH: process.env.PATH, TEST_DB_ADMIN_URL: url },
         encoding: 'utf8',
         timeout: 10_000,
       })

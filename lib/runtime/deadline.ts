@@ -120,7 +120,18 @@ export function deadlineResponse(label: string): Response {
  * `ms`, the client gets 504 at once and the deadline signal is aborted; the handler keeps running
  * until it notices (its later Response is dropped). Its errors after that are logged, not thrown.
  */
-export function withDeadline<C = unknown, Req extends Request = Request>(
+// The returned function has the shape of a Next route handler, `(req, ctx?)`: a handler that takes
+// only the request gives a wrapper whose context is optional (the way Next and the tests call
+// static routes); a handler that needs `{ params }` keeps it required.
+export function withDeadline<Req extends Request = Request>(
+  handler: (req: Req) => Promise<Response> | Response,
+  opts: WithDeadlineOptions,
+): (req: Req, ctx?: unknown) => Promise<Response>
+export function withDeadline<C, Req extends Request = Request>(
+  handler: (req: Req, ctx: C) => Promise<Response> | Response,
+  opts: WithDeadlineOptions,
+): (req: Req, ctx: C) => Promise<Response>
+export function withDeadline<C, Req extends Request = Request>(
   handler: (req: Req, ctx: C) => Promise<Response> | Response,
   opts: WithDeadlineOptions,
 ): (req: Req, ctx: C) => Promise<Response> {

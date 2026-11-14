@@ -462,7 +462,9 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
       vi.stubGlobal('fetch', fetchSpy)
       const { rep } = await run(s.companyId)
       expect(rep?.summary).toContain('модель не настроена')
-      expect(fetchSpy).not.toHaveBeenCalled()
+      // No model call. The only network traffic allowed is the PDF upload to Storage (lib/reports/pdf-store).
+      const nonStorage = fetchSpy.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('/storage/v1/object/report-pdfs/'))
+      expect(nonStorage).toEqual([])
       const [v] = await versions(s.companyId)
       expect(v.provenance.staff.narrative).toEqual({ state: 'unavailable', reason: 'OPENROUTER_API_KEY не задан' })
     })

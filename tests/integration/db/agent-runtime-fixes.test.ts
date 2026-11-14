@@ -159,7 +159,9 @@ describe.skipIf(!dbTestsEnabled)('agent runtime fixes', async () => {
         const reports = await Promise.all([executeTaskById(a.id), executeTaskById(b.id)])
         expect(reports.map((r) => r?.finalStatus).sort()).toEqual(['dead', 'succeeded'])
         expect(reports.find((r) => r?.finalStatus === 'dead')?.errorCode).toBe('BUDGET_EXCEEDED')
-        expect(fetchSpy).toHaveBeenCalledTimes(1)
+        // One model call. The spy also sees the platform-settings read (Supabase REST, unreachable here).
+        const modelCalls = (fetchSpy.mock.calls as unknown as unknown[][]).filter((c) => String(c[0]).includes('/chat/completions'))
+        expect(modelCalls).toHaveLength(1)
         // The real cost replaced the reservation; nothing is left reserved.
         expect(await store.spendToday({ agentKey: K.parallel })).toBeCloseTo(0.0003, 6)
         const [held] = await prisma.$queryRaw<Array<{ n: bigint }>>`

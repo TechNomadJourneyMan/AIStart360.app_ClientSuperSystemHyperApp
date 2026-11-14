@@ -17,6 +17,7 @@ import { prisma } from '@/lib/db'
 import type { PointAResolvedInputs } from '@/lib/point-a-engine'
 import { officialDiagnosticRow, officialPointA, type OfficialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 import type { SnapshotResult } from '@/lib/point-a/snapshot'
+import { diagnosticsIO } from '@/lib/diagnostics/io'
 import { RESOLVED_INPUT_METRICS, resolvedInputsFromMetricRows, type ResolvedMetricRow } from '@/lib/point-a/resolved-inputs'
 import type { BlockScore, DataGap, Insight, PointA, QuickWin, Risk } from '@/types/onboarding'
 import { stableStringify } from '@/lib/agents/tools'
@@ -216,10 +217,8 @@ export async function scoreViaSnapshot(io: ScoringIO, companyId: string, session
 const prismaIO: ScoringIO = {
   profile: companyProfile,
   answeredKeys: async (ownerId) => Object.keys(await surveyAnswers(ownerId)).length,
-  snapshot: async (companyId) => {
-    const { buildPointASnapshot } = await import('@/lib/point-a/snapshot')
-    return buildPointASnapshot(companyId, { trigger: 'event', reasons: ['DIAGNOSTIC_PIPELINE'], lock: true, fromPipeline: true })
-  },
+  // Through lib/diagnostics/io.ts: the snapshot reads and writes via Supabase, like materialisation.
+  snapshot: (companyId) => diagnosticsIO().snapshot(companyId),
   currentRow: async (ownerId) => {
     const rows = await prisma.$queryRawUnsafe<DiagnosticRow[]>(
       `SELECT ${DIAG_COLUMNS} FROM public.diagnostics WHERE user_id = $1::uuid AND is_current ORDER BY calculated_at DESC LIMIT 1`, ownerId)

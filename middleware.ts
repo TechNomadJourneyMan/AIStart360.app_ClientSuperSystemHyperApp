@@ -189,10 +189,17 @@ function normalizeRole(rawRole: string | null | undefined): ValidRole {
   return 'client'
 }
 
+/**
+ * The role / status the guard works with. `unknown: true` (R-140) = the profile
+ * could not be read now (error / timeout): role and status are placeholders the
+ * caller must not act on — it answers with a retry page instead.
+ */
+type ResolvedProfile = { role: ValidRole; status: string | null; unknown?: true }
+
 function roleAndStatusFrom(
   data: SessionProfile | null | undefined,
   fallbackRole: string | null,
-): { role: ValidRole; status: string | null } {
+): ResolvedProfile {
   return {
     role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
     status: typeof data?.status === 'string' ? data.status : null,
@@ -203,7 +210,7 @@ async function resolveRoleAndStatus(
   supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
   userId: string,
   fallbackRole: string | null,
-): Promise<{ role: ValidRole; status: string | null; unknown?: true }> {
+): Promise<ResolvedProfile> {
   try {
     const { data, error } = await supabase
       .from('profiles')
@@ -374,7 +381,7 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
 
   // Role comes from profiles only: user_metadata is editable by the user
   // (auth.updateUser) and must never grant a role (F-001).
-  const resolved = user
+  const resolved: ResolvedProfile | null = user
     ? profile
       ? roleAndStatusFrom(profile, null)
       : await resolveRoleAndStatus(supabase, user.id, null)
@@ -513,18 +520,19 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     return response
   }
 
-  // ГИГА-Панель: только персонал (super_admin, роль из staff_roles или личный
-  // staff-cookie во время impersonation). Права по разделам проверяет каждый
-  // API-маршрут (lib/admin/rbac.ts).
+  // ГИГА-Панель: только персонал — строка staff_roles у одобренного профиля
+  // (R-002: legacy profiles.role 'super_admin' без staff_roles персоналом не
+  // считается, как в RLS и lib/admin/giga-actor.ts) или личный staff-cookie во
+  // время impersonation. Права по разделам проверяет каждый API-маршрут.
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    let isStaff = (role === 'super_admin' && resolved?.status === 'approved') || e2eSeam !== null
+    let isStaff = e2eSeam !== null
     if (!isStaff) {
       const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
       if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true
     }
-    if (!isStaff && user && !impersonating) {
+    if (!isStaff && user && !impersonating && resolved?.status === 'approved') {
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
-      isStaff = !!staffRow
+      isStaff = isStaffRole(staffRow?.role)
     }
     if (!isStaff) {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
@@ -556,13 +564,16 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     // обычный 'client' (SuperExpert, super_admin только в staff_roles), поэтому
     // без этой проверки его уводило бы в клиентский дашборд.
     let staffRole: string | null = null
-    if (user && role !== 'super_admin') {
+    if (user) {
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
       staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
     }
+    // R-002: a legacy profiles.role 'super_admin' without a staff_roles row is
+    // not staff — landing it in the panel would bounce it back here (loop).
+    const landingRole = role === 'super_admin' && !staffRole ? 'client' : role
     const dest = staffRole
       ? roleLandingPath(role, resolved?.status, staffRole)
-      : role === 'client' ? '/dashboard' : roleLandingPath(role, resolved?.status)
+      : landingRole === 'client' ? '/dashboard' : roleLandingPath(landingRole, resolved?.status)
     return NextResponse.redirect(new URL(dest, request.url))
   }
 

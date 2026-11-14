@@ -86,12 +86,15 @@ describe('cookie', () => {
 })
 
 describe('resolveE2eSeamIdentity (Node, database role)', () => {
-  it('reads the role from the database: super_admin profile, else the staff_roles row', async () => {
+  it('reads the role from the database: staff only from the staff_roles row (R-002)', async () => {
     const cookie = await signE2eSeamCookie(USER)
-    prismaMock.$queryRaw.mockResolvedValueOnce([{ role: 'super_admin', status: 'approved', email: 'o@x.kz', staff_role: null }])
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ role: 'super_admin', status: 'approved', email: 'o@x.kz', staff_role: 'super_admin' }])
     expect(await resolveE2eSeamIdentity(jar(cookie))).toEqual({ userId: USER, role: 'super_admin', email: 'o@x.kz' })
     prismaMock.$queryRaw.mockResolvedValueOnce([{ role: 'client', status: 'approved', email: null, staff_role: 'support' }])
     expect(await resolveE2eSeamIdentity(jar(cookie))).toEqual({ userId: USER, role: 'support', email: undefined })
+    // R-002: profiles.role = 'super_admin' without a staff_roles row admits no one (as staffRoleOf in giga-actor).
+    prismaMock.$queryRaw.mockResolvedValueOnce([{ role: 'super_admin', status: 'approved', email: 'o@x.kz', staff_role: null }])
+    expect(await resolveE2eSeamIdentity(jar(cookie))).toBeNull()
   })
 
   it('refuses unapproved, role-less, unknown users and database errors', async () => {

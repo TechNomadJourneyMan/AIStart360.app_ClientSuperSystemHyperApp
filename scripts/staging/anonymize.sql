@@ -155,6 +155,9 @@ SELECT DISTINCT w, '[имя]', false FROM (
 ) s
 WHERE length(w) >= 4 AND w ~ '^[A-ZА-ЯЁӘҒҚҢӨҰҮҺІ][a-zа-яёәғқңөұүһі''-]+$' AND NOT pg_temp.stopword(w)
 ON CONFLICT DO NOTHING;
+-- Строки, целиком состоящие из служебных слов («Owner», «Test User»), не считаем именами.
+DELETE FROM _nm WHERE NOT EXISTS (
+  SELECT 1 FROM regexp_split_to_table(old, '[\s,.;:()«»"-]+') w WHERE length(w) >= 3 AND NOT pg_temp.stopword(w));
 ALTER TABLE _nm ADD COLUMN re text;
 UPDATE _nm SET re = '(^|[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі0-9_])('
   || regexp_replace(old, '([.^$*+?()\[\]{}|\\-])', '\\\1', 'g')
@@ -432,6 +435,8 @@ BEGIN
       AND (c.data_type IN ('text', 'character varying', 'jsonb', 'json') OR c.udt_name IN ('citext', '_text', '_varchar'))
       -- не трогаем первичные id и хэши; остальные колонки чистятся только там, где нашлось совпадение
       AND c.column_name !~* '(^id$|hash$|checksum$|sha256$|fingerprint$)'
+      -- перечислимые технические колонки (роль, статус, тип…) — не ПДн
+      AND c.column_name !~* '^(role|status|type|kind|channel|source|scenario|tier|segment|stage|level|priority|severity|category|mode|state|vertical|currency|unit|provider|action|operation|event_type|entity_type|actor_kind|actor_role|author_role|staff_role|permission|decision|capability|surface|direction|doc_type|parse_status|security_status)$'
     ORDER BY 1, 2, 3
   LOOP
     IF r.dt IN ('jsonb') THEN
