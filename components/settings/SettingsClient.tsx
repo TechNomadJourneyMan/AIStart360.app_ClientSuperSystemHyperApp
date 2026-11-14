@@ -295,6 +295,20 @@ function BackupCodesPanel({ codes, onDone }: { codes: string[]; onDone: () => vo
   )
 }
 
+/**
+ * R-003: once the account has a factor, factor changes need the second factor
+ * of this session. The server says so with a code; the step-up page brings the
+ * user back here. Returns the message to show, or null when redirecting.
+ */
+function factorChangeError(json: { code?: unknown; error?: unknown }, fallback: string): string | null {
+  if (json.code === 'MFA_STEP_UP_REQUIRED') {
+    window.location.assign('/2fa?from=' + encodeURIComponent('/settings?tab=security'))
+    return null
+  }
+  if (json.code === 'MFA_REQUIRED_FOR_STAFF' && typeof json.error === 'string') return json.error
+  return fallback
+}
+
 function TwoFactorCard() {
   const [status, setStatus] = useState<TwoFAStatus | null>(null)
   const [phase, setPhase] = useState<'idle' | 'enrolling'>('idle')
@@ -325,7 +339,7 @@ function TwoFactorCard() {
       if (!res.ok || !json.ok) {
         setErr(json.error === 'encryption_not_configured'
           ? 'Шифрование не настроено на сервере (SECRETS_ENCRYPTION_KEY). Обратитесь к администратору.'
-          : 'Не удалось начать настройку.')
+          : factorChangeError(json, 'Не удалось начать настройку.'))
         return
       }
       setSetup({ qr_svg: json.qr_svg, secret: json.secret }); setPhase('enrolling'); setCode('')
@@ -340,7 +354,7 @@ function TwoFactorCard() {
         body: JSON.stringify({ code: code.trim() }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось подтвердить.'); return }
+      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : factorChangeError(json, 'Не удалось подтвердить.')); return }
       setBackupCodes(json.backup_codes); setPhase('idle'); setSetup(null); setCode('')
       toast.success('2FA включена')
       loadStatus()
@@ -355,7 +369,7 @@ function TwoFactorCard() {
         body: JSON.stringify({ code: disableCode.trim() }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось отключить.'); return }
+      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : factorChangeError(json, 'Не удалось отключить.')); return }
       toast.success('2FA отключена'); setDisabling(false); setDisableCode(''); loadStatus()
     } catch { setErr('Ошибка сети.') } finally { setBusy(false); setRunning(null) }
   }
@@ -370,7 +384,7 @@ function TwoFactorCard() {
         body: JSON.stringify({ code: c.trim() }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) { toast.error(json.error === 'invalid_code' ? 'Неверный код' : 'Не удалось'); return }
+      if (!res.ok || !json.ok) { const m = json.error === 'invalid_code' ? 'Неверный код' : factorChangeError(json, 'Не удалось'); if (m) toast.error(m); return }
       setBackupCodes(json.backup_codes); loadStatus()
     } catch { toast.error('Ошибка сети') } finally { setBusy(false); setRunning(null) }
   }
@@ -488,7 +502,7 @@ function BiometricsCard() {
       const { startRegistration } = await import('@simplewebauthn/browser')
       const optRes = await fetch('/api/v1/security/webauthn/register/options', { method: 'POST', credentials: 'include' })
       const optJson = await optRes.json().catch(() => ({}))
-      if (!optRes.ok || !optJson.ok) { setErr('Не удалось начать регистрацию ключа.'); return }
+      if (!optRes.ok || !optJson.ok) { setErr(factorChangeError(optJson, 'Не удалось начать регистрацию ключа.')); return }
       let attResp
       try {
         attResp = await startRegistration(optJson.options)
@@ -501,7 +515,7 @@ function BiometricsCard() {
         body: JSON.stringify({ response: attResp }),
       })
       const verJson = await verRes.json().catch(() => ({}))
-      if (!verRes.ok || !verJson.ok) { setErr('Ключ не подтверждён сервером.'); return }
+      if (!verRes.ok || !verJson.ok) { setErr(factorChangeError(verJson, 'Ключ не подтверждён сервером.')); return }
       if (Array.isArray(verJson.backup_codes)) setBackupCodes(verJson.backup_codes)
       toast.success('Ключ доступа добавлен')
       load()
@@ -517,7 +531,7 @@ function BiometricsCard() {
         body: JSON.stringify({ id }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) { toast.error('Не удалось удалить'); return }
+      if (!res.ok || !json.ok) { const m = factorChangeError(json, 'Не удалось удалить'); if (m) toast.error(m); return }
       toast.success('Ключ удалён'); load()
     } catch { toast.error('Ошибка сети') } finally { setBusy(false); setRemovingId(null) }
   }

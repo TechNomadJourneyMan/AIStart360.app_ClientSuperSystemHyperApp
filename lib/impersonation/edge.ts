@@ -1,12 +1,10 @@
 /**
  * Edge-safe DB helpers for impersonation (plain PostgREST fetch with the
- * service key — no supabase-js, no node:crypto). Used only by middleware and
- * only when an impersonation cookie is present, so normal traffic pays nothing.
+ * service key — no supabase-js, no node:crypto). Used only by middleware.
+ * The row itself is read and cached in state-edge.ts (R-008).
  */
 import { edgeSupabaseFetch } from '@/lib/supabase/transport-edge'
-
-const cache = new Map<string, { active: boolean; at: number }>()
-const CACHE_MS = 15_000
+import { forgetImpersonationRow, impersonationRowEdge } from './state-edge'
 
 function rest(): { url: string; key: string } | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -14,31 +12,16 @@ function rest(): { url: string; key: string } | null {
   return url && key ? { url, key } : null
 }
 
-/** Is the DB session still open? Fails CLOSED (unknown → inactive). */
+/**
+ * Is the DB session still open? Fails CLOSED (unknown → inactive). The row is
+ * read and cached by state-edge.ts (R-008), which also gives its mode.
+ */
 export async function isImpersonationActiveEdge(sid: string): Promise<boolean> {
-  const hit = cache.get(sid)
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.active
-  const r = rest()
-  if (!r || !/^[0-9a-f-]{36}$/i.test(sid)) return false
-  try {
-    const res = await edgeSupabaseFetch(`${r.url}/rest/v1/impersonation_sessions?id=eq.${sid}&select=ended_at,expires_at`, {
-      headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
-      cache: 'no-store',
-    })
-    if (!res.ok) return false
-    const rows = (await res.json()) as Array<{ ended_at: string | null; expires_at: string }>
-    const row = rows[0]
-    const active = !!row && !row.ended_at && new Date(row.expires_at).getTime() > Date.now()
-    if (cache.size > 500) cache.clear()
-    cache.set(sid, { active, at: Date.now() })
-    return active
-  } catch {
-    return false
-  }
+  return (await impersonationRowEdge(sid))?.active === true
 }
 
 export function forgetImpersonation(sid: string): void {
-  cache.delete(sid)
+  forgetImpersonationRow(sid)
 }
 
 /** Close a session that expired while the browser still held it. */

@@ -238,6 +238,7 @@ const COPY: Record<Locale, {
   s74_close: (list: string) => string
   // 7.5
   s75_noDiag: string
+  s75_noScore: string
   s75_health: (h: number) => string
   s75_stage: (stage: string) => string
   s75_strong: (list: string) => string
@@ -330,6 +331,8 @@ const COPY: Record<Locale, {
     s74_close: (list) => `для точного анализа. Закройте пробелы документами:\n- ${list}`,
     s75_noDiag:
       'Точка А ещё не рассчитана. Пройдите анкету или загрузите отчёты — тогда я покажу общий балл, индекс здоровья и разбивку по блокам.',
+    s75_noScore:
+      'Балл появится, когда данных хватит: нужна отправленная полная анкета и данные по блокам, которые вместе весят не меньше 60 %, включая «Финансы» или «Продажи». Блоки без данных не считаются слабыми.',
     s75_health: (h) => `, индекс здоровья ${h}`,
     s75_stage: (_stage) => ``, // «Стадия» removed from display per product decision (kept in data only)
     s75_strong: (list) => ` Сильнее всего: ${list}.`,
@@ -427,6 +430,8 @@ const COPY: Record<Locale, {
     s74_close: (list) => `for an accurate analysis. Close the gaps with documents:\n- ${list}`,
     s75_noDiag:
       'Point A has not been calculated yet. Complete the survey or upload reports — then I\'ll show the overall score, the health index and a per-block breakdown.',
+    s75_noScore:
+      'The score will appear once there is enough data: the full questionnaire sent and data on blocks worth at least 60 % of the weight, including Finance or Sales. Blocks without data are not counted as weak.',
     s75_health: (h) => `, health index ${h}`,
     s75_stage: (stage) => `, stage "${stage}"`,
     s75_strong: (list) => ` Strongest: ${list}.`,
@@ -710,8 +715,9 @@ export function hydrate(
       const stage = ctx.pointA.stage
 
       if (!ctx.pointA.has_diagnostic || !hasNum(score)) {
+        // A diagnostic without an official score (R-032/R-033): say when it appears, no number.
         return {
-          answer_ru: `${INSUFFICIENT}: ${t.s75_noDiag}`,
+          answer_ru: `${INSUFFICIENT}: ${ctx.pointA.has_diagnostic ? t.s75_noScore : t.s75_noDiag}`,
           used_data: used,
           insufficient: true,
         }

@@ -13,7 +13,8 @@ jobs:
   checks:
     name: typecheck · lint · tests (with prod-mirror DB)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # +15 min for `next build` (R-019).
+    timeout-minutes: 45
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -47,3 +48,27 @@ jobs:
         run: node scripts/test-db/setup.mjs
       - name: Unit + DB integration tests (real RLS)
         run: npx vitest run
+      # R-019: tsc and vitest do not catch what only the bundler sees — e.g. a client component
+      # importing node:crypto, a server-only module pulled into the browser bundle, a broken
+      # next.config. Build exactly like Railway does (`npm run build`), with dummy public env:
+      # no secrets in CI. The Supabase URL is a closed loopback port, so any build-time fetch fails
+      # fast instead of hanging on DNS. `--no-lint`: lint already ran above.
+      - name: Restore Next build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - name: Production build (next build)
+        run: npm run build -- --no-lint
+        env:
+          NODE_ENV: production
+          # The build script gives the main process 6 GB; webpack workers inherit this. A private-repo
+          # ubuntu-latest runner has ~7 GB RAM, so the workers are capped lower.
+          NODE_OPTIONS: --max-old-space-size=3072
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-dummy-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: ci-build-dummy-service-role-key
+          NEXT_PUBLIC_MARKET_APP_URL: https://market.ci.invalid
+          NEXT_PUBLIC_APP_URL: https://portal.ci.invalid

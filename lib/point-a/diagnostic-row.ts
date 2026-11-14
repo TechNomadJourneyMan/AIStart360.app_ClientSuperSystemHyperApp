@@ -11,7 +11,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PointA } from '@/types/onboarding'
 import { internalFetchHeaders } from '@/lib/internal-auth'
-import { runInBackground } from '@/lib/background'
+import { runInBackground, trackBackground } from '@/lib/background'
 
 export type StoreResult =
   | { ok: true; diag: Record<string, unknown> & { id: string } }
@@ -83,19 +83,92 @@ export async function storeCurrentDiagnostic(
 }
 
 /**
+ * BE-13: how long the fan-out waits for each call. The AI analysis route answers when its model
+ * calls are done; with the AI deadline (45 s per call chain, lib/ai/providers/failover.ts) and the
+ * route's own deadline (lib/runtime/deadline.ts) it never needs more than ~2 minutes.
+ * POINT_A_FAN_OUT_TIMEOUT_MS overrides it.
+ */
+export const FAN_OUT_TIMEOUT_MS = 150_000
+
+const FAN_OUT_PATHS = ['/api/v1/diagnostics/ai-analyze', '/api/v1/diagnostics/point-b/ai-generate'] as const
+
+type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string }
+
+export interface FanOutDeps {
+  fetchImpl?: typeof fetch
+  /** Default trackBackground: a shutdown waits for the calls. */
+  track?: (work: Promise<unknown>) => void
+  /** Default: ai_status 'processing' → 'failed' on the row the call was for. */
+  markFailed?: (path: string, opts: FanOutOpts, reason: string) => Promise<void>
+  log?: (line: string) => void
+  timeoutMs?: number
+}
+
+/**
+ * A call that did not succeed leaves the status it was started with ('processing') behind, and
+ * the client polls it forever. Only a row still 'processing' is changed: a route that finished in
+ * the meantime ('completed' / 'failed' / 'none') keeps its own answer.
+ */
+async function markFanOutFailed(path: string, opts: FanOutOpts): Promise<void> {
+  const { createServiceClient } = await import('@/lib/supabase-service')
+  const db = createServiceClient()
+  const { error } = path === FAN_OUT_PATHS[0]
+    ? await db.from('diagnostics').update({ ai_status: 'failed' })
+      .eq('id', opts.diagnosticId).eq('user_id', opts.userId).eq('ai_status', 'processing')
+    : await db.from('point_b_analysis').update({ ai_status: 'failed' })
+      .eq('diagnostic_id', opts.diagnosticId).eq('is_current', true).eq('ai_status', 'processing')
+  if (error) throw new Error(error.code ?? 'update failed')
+}
+
+function fanOutTimeoutMs(): number {
+  const raw = Number(process.env.POINT_A_FAN_OUT_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : FAN_OUT_TIMEOUT_MS
+}
+
+/**
  * The paid AI fan-out after a recalculation: the full Point A analysis and
  * the Point B strategic bridge, each with a signed internal token bound to its
  * path, the user and the diagnostic. `baseUrl` must be a trusted origin
  * (lib/internal-auth.ts internalBaseUrl), never the request Host.
+ *
+ * BE-13: each call has a timeout, is tracked as background work (a redeploy waits for it), and a
+ * call that fails — a non-2xx answer, a network error, the timeout — marks its status 'failed' so
+ * the client stops showing «ИИ анализирует…» and offers a retry. Never throws, never rejects.
  */
-export function fireAiFanOut(opts: { baseUrl: string; diagnosticId: string; userId: string; locale: string }): void {
+export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   const { baseUrl, diagnosticId, userId, locale } = opts
-  for (const path of ['/api/v1/diagnostics/ai-analyze', '/api/v1/diagnostics/point-b/ai-generate']) {
-    fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: internalFetchHeaders({}, { path, userId, diagnosticId }),
-      body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale }),
-    }).catch((err) => console.error(`[point-a] fan-out ${path} failed:`, err instanceof Error ? err.message : err))
+  const doFetch = deps.fetchImpl ?? fetch
+  // Tracking is best effort: it must never make the caller (a recalculation) fail.
+  const track = deps.track ?? ((work: Promise<unknown>) => { try { trackBackground(work) } catch { /* untracked */ } })
+  const markFailed = deps.markFailed ?? ((path: string, o: FanOutOpts) => markFanOutFailed(path, o))
+  const log = deps.log ?? ((line: string) => console.error(line))
+  const timeoutMs = deps.timeoutMs ?? fanOutTimeoutMs()
+  for (const path of FAN_OUT_PATHS) {
+    const work = (async () => {
+      let reason: string | null = null
+      try {
+        const res = await doFetch(`${baseUrl}${path}`, {
+          method: 'POST',
+          headers: internalFetchHeaders({}, { path, userId, diagnosticId }),
+          body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale }),
+          signal: AbortSignal.timeout(timeoutMs),
+        })
+        if (!res.ok) reason = `http_${res.status}`
+        await res.body?.cancel().catch(() => {})
+      } catch (err) {
+        const name = (err as { name?: unknown } | null)?.name
+        reason = typeof name === 'string' && name ? name : 'Error'
+      }
+      if (!reason) return
+      // Ids and a reason code only: the body may echo client data.
+      log(`[point-a] fan-out ${path} failed (${reason}) for diagnostic ${diagnosticId}`)
+      try {
+        await markFailed(path, opts, reason)
+      } catch (err) {
+        log(`[point-a] fan-out ${path}: could not mark failed: ${err instanceof Error ? err.message : 'error'}`)
+      }
+    })()
+    track(work)
   }
 }
 

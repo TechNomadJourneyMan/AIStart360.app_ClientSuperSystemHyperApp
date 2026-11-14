@@ -19,9 +19,16 @@
  *
  * The configuration snapshot (all small tables) and decrypted keys are cached
  * in memory for ≤ 60 s per server instance; every mutation through service.ts
- * calls invalidateProviderCache() on the instance that wrote. When the database
- * is unreachable or migration 094 is not applied, the snapshot is empty and
+ * calls invalidateProviderCache() on the instance that wrote. When migration 094
+ * is not applied (or there is no DATABASE_URL), the snapshot is empty and
  * everything falls back to the built-in behaviour.
+ *
+ * Database unreachable (BE-09): the last good configuration is kept and used
+ * (stale-while-error) and the load is tried again after ROUTER_ERROR_RETRY_MS;
+ * an empty configuration is never cached for a full TTL — before, one failed
+ * load sent every call of the next minute to the built-in Claude through
+ * OpenRouter, past the owner's routes. A load is bounded by
+ * AI_ROUTER_LOAD_TIMEOUT_MS (5 s): a hung database must not hang every AI call.
  */
 import { decryptSecret } from '@/lib/crypto/secrets'
 import { knownModelTier } from './client'
@@ -38,6 +45,10 @@ import {
 } from './types'
 
 export const ROUTER_CACHE_TTL_MS = 60_000
+/** After a failed load: how soon the next call tries the database again (BE-09). */
+export const ROUTER_ERROR_RETRY_MS = 5_000
+/** Default bound of one configuration load (AI_ROUTER_LOAD_TIMEOUT_MS). */
+const ROUTER_LOAD_TIMEOUT_MS = 5_000
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
@@ -59,36 +70,82 @@ interface Cache {
 let cache: Cache | null = null
 let loading: Promise<Cache> | null = null
 let generation = 0
+/** The last snapshot that loaded without an error (BE-09); dropped by invalidateProviderCache. */
+let lastGood: ProviderSnapshot | null = null
+/** When the last load failed (0 = it did not); the next try waits ROUTER_ERROR_RETRY_MS. */
+let failedAt = 0
+/** What the calls get between a failed load and the next try. */
+let fallback: Cache | null = null
 
 /** Drop the cached configuration and keys (called after every mutation). */
 export function invalidateProviderCache(): void {
   generation += 1
   cache = null
   loading = null
+  failedAt = 0
+  fallback = null
+  // A write made the last good snapshot outdated (a provider may just have been switched off).
+  lastGood = null
+}
+
+function loadTimeoutMs(): number {
+  const raw = Number(process.env.AI_ROUTER_LOAD_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : ROUTER_LOAD_TIMEOUT_MS
+}
+
+/** The store's snapshot, or a rejection after the load timeout. */
+async function loadBounded(): Promise<ProviderSnapshot> {
+  const store = await import('./store')
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const ms = loadTimeoutMs()
+  try {
+    return await Promise.race([
+      store.loadSnapshot(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`provider configuration load timed out after ${ms} ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 async function load(): Promise<Cache> {
   const gen = generation
   let snapshot: ProviderSnapshot
   try {
-    const store = await import('./store')
-    snapshot = await store.loadSnapshot()
+    snapshot = await loadBounded()
   } catch (err) {
-    // No database, or 094 not applied yet: built-in behaviour.
     const msg = err instanceof Error ? err.message : String(err)
-    if (!/DATABASE_URL|ai_providers|ai_routes|ai_models|ai_credentials|ai_budgets/.test(msg)) {
+    if (/DATABASE_URL|ai_providers|ai_routes|ai_models|ai_credentials|ai_budgets/.test(msg)) {
+      // No database configured, or 094 not applied yet: built-in behaviour, cached as a configuration.
+      snapshot = EMPTY
+    } else {
+      // The database is unreachable or slow: keep serving the last good configuration (or the
+      // built-in one when there never was one) and try again soon. Nothing is cached for a TTL.
       const line = msg.split('\n').map((l) => l.trim()).find(Boolean) ?? 'unknown error'
-      console.warn('[ai-router] provider configuration unavailable:', line.slice(0, 200))
+      console.warn(`[ai-router] provider configuration unavailable (${lastGood ? 'using the last good one' : 'built-in fallback'}):`, line.slice(0, 200))
+      const stale: Cache = { at: Date.now(), snapshot: lastGood ?? EMPTY, keys: cache?.keys ?? new Map() }
+      if (gen === generation) {
+        failedAt = Date.now()
+        fallback = stale
+      }
+      return stale
     }
-    snapshot = EMPTY
   }
   const fresh: Cache = { at: Date.now(), snapshot, keys: new Map() }
-  if (gen === generation) cache = fresh
+  if (gen === generation) {
+    cache = fresh
+    failedAt = 0
+    fallback = null
+    if (snapshot !== EMPTY) lastGood = snapshot
+  }
   return fresh
 }
 
 async function current(): Promise<Cache> {
   if (cache && Date.now() - cache.at < ROUTER_CACHE_TTL_MS) return cache
+  if (fallback && failedAt && Date.now() - failedAt < ROUTER_ERROR_RETRY_MS) return fallback
   if (!loading) {
     loading = load().finally(() => {
       loading = null

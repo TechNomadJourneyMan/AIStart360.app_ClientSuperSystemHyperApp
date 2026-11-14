@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { formatRelativeRuLong } from '@/components/point-a/executive-overview-model'
 import { CARD, CARD_TITLE, Icon, toneColor } from './ui'
+import { cn } from '@/lib/utils'
 import { formatAttributionDate, formatAuthorSummary } from '@/lib/survey/attribution-label'
 
 /** GRI — readiness for growth, a separate indicator (spec §4.6), on the same 0–100 scale. */
@@ -51,14 +52,15 @@ export function SourcesCard({ sources, viewerIsOwner = false }: { sources: Point
   const authors = sources.survey.authors
   const changed = formatAttributionDate(sources.survey.lastChangedAt)
   return (
-    <section className={CARD} aria-labelledby="pa-sources">
+    // #my-data / #files: anchors of /client/my-data, the old menus' «Мои документы» and the mascot tour.
+    <section id="my-data" className={cn(CARD, 'scroll-mt-24')} aria-labelledby="pa-sources">
       <p id="pa-sources" className={CARD_TITLE}>Мои данные</p>
       <ul className="mt-3 space-y-2 text-sm">
         <li className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2 text-on-surface"><Icon name="edit_note" className="text-[16px] text-primary/70" />Анкета</span>
           <Link href="/client/onboarding" className="font-mono text-xs text-primary/80 hover:text-primary">{sources.survey.completed}/{sources.survey.total} шагов</Link>
         </li>
-        <li className="flex items-center justify-between gap-2">
+        <li id="files" className="flex scroll-mt-24 items-center justify-between gap-2">
           <span className="flex items-center gap-2 text-on-surface"><Icon name="description" className="text-[16px] text-primary/70" />Документы</span>
           <Link href="/client/onboarding/documents" className="font-mono text-xs text-primary/80 hover:text-primary">
             {sources.documents.parsed} обработано{sources.documents.processing ? ` · ${sources.documents.processing} в работе` : ''}{sources.documents.failed ? ` · ${sources.documents.failed} с ошибкой` : ''}

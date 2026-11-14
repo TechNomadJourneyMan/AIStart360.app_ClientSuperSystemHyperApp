@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
+import { officialGriFromRows, type GriRowLike } from '@/lib/gri/official'
 
 /**
  * Service-role REST fetch — bypasses RLS on profiles (which only exposes
@@ -102,7 +103,9 @@ export async function GET() {
   }
   // The questionnaire status (survey Ф5): mode, express, full submitted. A failed
   // read leaves `survey: null` — the list itself never fails because of it.
-  const [diagnostics, companies, comments, surveyStatuses] = await Promise.all([
+  // GRI (R-036): the official GRI of each client (lib/gri/official.ts, 0–10) —
+  // NOT diagnostics.overall_score, which is Point A (0–100).
+  const [diagnostics, companies, comments, surveyStatuses, griRows] = await Promise.all([
     sbFetchByIds<DiagRow>(ids, (idList) =>
       `diagnostics?user_id=in.(${idList})&select=user_id,overall_score,health_index,stage,calculated_at&order=calculated_at.desc,id.asc`),
     sbFetchByIds<CompanyRow>(ids, (idList) =>
@@ -110,8 +113,10 @@ export async function GET() {
     sbFetchByIds<CommentRow>(ids, (idList) =>
       `expert_comments?client_id=in.(${idList})&select=client_id&order=id.asc`),
     loadSurveyStaffStatuses(createServiceClient(), ids),
+    sbFetchByIds<GriRowLike>(ids, (idList) =>
+      `gri_assessments?user_id=in.(${idList})&select=id,user_id,gri_index,section_avgs,is_current,created_at&order=created_at.desc,id.asc`),
   ])
-  if (!diagnostics || !companies || !comments) {
+  if (!diagnostics || !companies || !comments || !griRows) {
     return NextResponse.json({ error: 'failed to load client details' }, { status: 500 })
   }
 
@@ -130,6 +135,8 @@ export async function GET() {
     commentCount.set(c.client_id, (commentCount.get(c.client_id) ?? 0) + 1)
   }
 
+  const griByUser = officialGriFromRows(griRows)
+
   const result = clients.map((c) => {
     const diag = latest.get(c.id)
     const comp = companyByUser.get(c.id)
@@ -145,6 +152,8 @@ export async function GET() {
       stage: diag?.stage ?? comp?.stage ?? null,
       overallScore: diag?.overall_score ?? null,
       healthIndex: diag?.health_index ?? null,
+      /** Official GRI, 0–10; null = «нет данных» (never Point A). */
+      griIndex: griByUser.get(c.id)?.index ?? null,
       calculatedAt: diag?.calculated_at ?? null,
       commentsCount: commentCount.get(c.id) ?? 0,
       survey: surveyStatuses.get(c.id) ?? null,

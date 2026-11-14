@@ -6,7 +6,7 @@
  *   • under RLS an API caller cannot retire its current diagnostic (why
  *     POST /api/v1/diagnostics/recalculate now writes with the service role);
  *   • replaceRecommendations / replaceFindings respect staff decisions;
- *   • scoreCompany moves calculated_at when it reuses an unchanged result.
+ *   • scoreCompany moves calculated_at when the official snapshot reports «unchanged» (R-034).
  * Run: npm run test:db:setup && npm run test:db
  */
 import fs from 'node:fs'
@@ -129,11 +129,12 @@ describe.skipIf(!dbTestsEnabled)('097: point_a_insights provenance guard', () =>
       await asUser(db, owner, () => db.query(`UPDATE public.point_a_insights SET status = 'confirmed' WHERE id = $1`, [q.id]))
     }))
 
-  it('platform staff are unaffected', () =>
+  it('platform staff are unaffected (an expert on an ASSIGNED client, R-004 / 140)', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })
       const company = await seedCompany(db, owner)
       const expert = await seedUser(db, { status: 'approved', role: 'expert' })
+      await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [owner, expert])
       const res = await asUser(db, expert, () => db.query(INSERT, [owner, company, 'expert', 'Эксперт', 'awaiting_answer', null, null]))
       expect(res.rowCount).toBe(1)
     }))
@@ -142,7 +143,7 @@ describe.skipIf(!dbTestsEnabled)('097: point_a_insights provenance guard', () =>
 describe.skipIf(!dbTestsEnabled)('staff decisions and score reuse', async () => {
   const { prisma } = await import('@/lib/db')
   const { replaceFindings, replaceRecommendations } = await import('@/lib/diagnostics/findings-store')
-  const { scoreCompany } = await import('@/lib/diagnostics/scoring')
+  const { scoreCompany: scoreCompanyReal } = await import('@/lib/diagnostics/scoring')
   const users: string[] = []
   const companies: string[] = []
 
@@ -227,8 +228,19 @@ describe.skipIf(!dbTestsEnabled)('staff decisions and score reuse', async () => 
 
   it('reusing an unchanged score moves calculated_at to now (the overview is not «stale»)', async () => {
     const { owner, companyId } = await seed(LEGACY_WEAK)
+    // R-034: the score comes from the official snapshot path only; here a fake
+    // snapshot writes the current row once, then reports «unchanged».
+    let runs = 0
+    const snapshot = async () => {
+      if (runs++ > 0) return { status: 'unchanged' as const, snapshotId: 'snap' }
+      await prisma.$executeRaw`
+        INSERT INTO public.diagnostics (user_id, company_id, overall_score, stage, is_current, ai_status)
+        VALUES (${owner}::uuid, ${companyId}, 40, 'seed', TRUE, 'none')`
+      return { status: 'skipped' as const, reason: 'busy' as const } // any non-«unchanged» result: no calculated_at move
+    }
+    const scoreCompany = (id: string, s: string | null) => scoreCompanyReal(id, s, { snapshot })
     const first = await scoreCompany(companyId, null)
-    expect(first.reused).toBe(false)
+    expect(first.reused).toBe(true) // the pipeline wrote nothing itself
     await prisma.$executeRaw`UPDATE public.diagnostics SET calculated_at = now() - interval '3 days' WHERE id = ${first.diagnosticId}::uuid`
 
     const second = await scoreCompany(companyId, null)

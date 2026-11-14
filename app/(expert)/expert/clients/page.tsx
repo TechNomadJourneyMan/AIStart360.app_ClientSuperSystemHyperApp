@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
 import { SurveyStatusChips } from '@/components/survey/SurveyStatusChips'
+import { formatGri, griTone, type GriTone } from '@/lib/format/gri'
 import {
   SURVEY_STATUS_FILTERS, SURVEY_STATUS_FILTER_LABELS, countBySurveyFilter, matchesSurveyFilter,
   type SurveyStaffStatus, type SurveyStatusFilter,
@@ -20,8 +21,11 @@ interface ExpertClient {
   companyName: string | null
   industry: string | null
   stage: string | null
+  /** Point A overall (diagnostics, 0–100) — NOT GRI. */
   overallScore: number | null
   healthIndex: number | null
+  /** Official GRI, 0–10 (lib/gri/official.ts); null = нет данных. */
+  griIndex?: number | null
   calculatedAt: string | null
   commentsCount: number
   /** The questionnaire status (survey Ф5): mode, express, full submitted; null when unknown. */
@@ -33,6 +37,18 @@ function scoreBadgeClass(score: number | null): string {
   if (score < 30) return 'bg-error/10 text-error border-error/20'
   if (score < 60) return 'bg-amber-500/10 text-amber-300 border-amber-500/20'
   return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+}
+
+const GRI_BADGE: Record<GriTone, string> = {
+  red: 'bg-error/10 text-error border-error/20',
+  amber: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+  green: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+}
+
+/** GRI badge: 0–10, colours from GRI_ZONES (R-036). */
+function griBadgeClass(gri: number | null | undefined): string {
+  const tone = griTone(gri)
+  return tone ? GRI_BADGE[tone] : 'bg-white/[0.05] text-on-surface-variant border-white/[0.06]'
 }
 
 function ClientCard({ client }: { client: ExpertClient }) {
@@ -76,11 +92,22 @@ function ClientCard({ client }: { client: ExpertClient }) {
             </p>
           </div>
 
-          <span
-            className={`text-[10px] font-bold px-2 py-1 rounded-full border ${scoreBadgeClass(client.overallScore)}`}
-          >
-            {client.overallScore ?? '—'}
-          </span>
+          {/* Two different instruments, each on its own scale (R-036):
+              GRI 0–10 and Point A 0–100 — never one «score» column. */}
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <span
+              className={`text-[10px] font-bold px-2 py-1 rounded-full border ${griBadgeClass(client.griIndex)}`}
+              title="GRI-индекс, шкала 0–10"
+            >
+              GRI {formatGri(client.griIndex, { empty: '—' })}
+            </span>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scoreBadgeClass(client.overallScore)}`}
+              title="Оценка Точки А, шкала 0–100"
+            >
+              Точка А {client.overallScore ?? '—'}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap mb-3">

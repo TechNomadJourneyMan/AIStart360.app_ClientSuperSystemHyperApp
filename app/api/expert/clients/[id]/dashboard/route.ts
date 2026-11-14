@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
+import { OFFICIAL_SNAPSHOT_COLUMNS, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 interface Diagnostic {
   id: string
@@ -44,13 +45,24 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const diagRows = await srGet<Diagnostic[]>(
     `diagnostics?user_id=eq.${clientId}&is_current=eq.true&select=*&limit=1`,
   )
-  const diagnostic = diagRows?.[0] ?? null
+  const rawDiagnostic = diagRows?.[0] ?? null
 
   // Company
   const companyRows = await srGet<Company[]>(
     `companies?user_id=eq.${clientId}&select=*&limit=1`,
   )
   const company = companyRows?.[0] ?? null
+
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033): the row with the
+  // official numbers — no overall / stage without an official score, a block
+  // without data is null (never «0 — критично»).
+  const snapRows = company?.id
+    ? await srGet<OfficialSnapshotRow[]>(`point_a_snapshots?company_id=eq.${encodeURIComponent(company.id)}&select=${OFFICIAL_SNAPSHOT_COLUMNS.replace(/\s+/g, '')}&order=created_at.desc&limit=1`)
+    : null
+  const official = rawDiagnostic || snapRows?.[0] ? officialPointA(rawDiagnostic, snapRows?.[0] ?? null) : null
+  const diagnostic = rawDiagnostic && official
+    ? { ...officialDiagnosticRow(rawDiagnostic, official), official: { state: official.state, blocks_without_data: official.blocksWithoutData } }
+    : null
 
   // Basic profile
   const profileRows = await srGet<

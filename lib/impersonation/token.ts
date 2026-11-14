@@ -29,7 +29,23 @@ export interface ImpersonationClaims extends Record<string, unknown> {
   arole?: string
   /** target label for the banner */
   tlabel: string
+  /**
+   * GoTrue session id of the client session minted for this impersonation
+   * (R-008). The cookie is valid only together with that very session; the
+   * server-side binding (IMP_BINDING_ACTION) lets middleware recognise the
+   * session even when the cookie is gone. Absent on cookies issued before.
+   */
+  asid?: string
 }
+
+/**
+ * Audit action that binds an impersonation_sessions row to the Supabase
+ * session minted for it: admin_audit_log row with entity_type
+ * IMP_BINDING_ENTITY, entity_id = GoTrue session id, impersonation_session_id
+ * = the row. Written (required) before the cookie is handed out.
+ */
+export const IMP_BINDING_ACTION = 'impersonation.session_bound'
+export const IMP_BINDING_ENTITY = 'auth_session'
 
 export function signImpersonation(claims: ImpersonationClaims, ttlSeconds = IMP_TTL_SECONDS): Promise<string> {
   return signToken('imp', claims, ttlSeconds)

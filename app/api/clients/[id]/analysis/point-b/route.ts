@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
+import { getOfficialPointA, pointAFromOfficial } from '@/lib/point-a/official'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { requireExpert } from '@/lib/expert-auth'
-import { calculatePointA } from '@/lib/point-a-engine'
 import { calculatePointB } from '@/lib/point-b-engine'
 import { safeErrorMessage } from '@/lib/api-error'
 import { unwrapAnswer } from '@/lib/survey/answer-value'
@@ -36,16 +35,17 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       answers[row.question_key] = unwrapAnswer(row.answer)
     }
 
-    // The client's stored Point A (the score they see), then Point B; the
-    // survey-only engine only when no diagnostic exists yet.
-    const { data: cur } = await sb
-      .from('diagnostics')
-      .select(DIAGNOSTIC_POINT_A_COLUMNS)
-      .eq('user_id', params.id)
-      .eq('is_current', true)
-      .maybeSingle()
-    const pointA = pointAFromDiagnosticRow(cur as Record<string, unknown> | null) ?? calculatePointA(answers)
-    const pointB = calculatePointB(pointA, answers)
+    // The client's OFFICIAL Point A (R-033), then Point B. No official score →
+    // an honest answer, never a v1 recalculation of an incomplete survey (I2).
+    const official = await getOfficialPointA(sb, params.id)
+    const scored = pointAFromOfficial(official)
+    if (!scored) {
+      return NextResponse.json(
+        { error: 'Точка Б строится после оценки Точки А: клиент ещё не отправил полную анкету или данных мало для общего балла', state: official.state },
+        { status: 409 },
+      )
+    }
+    const pointB = { ...calculatePointB(scored.pointA, answers, { blocksWithoutData: scored.blocksWithoutData }), blocks_without_data: scored.blocksWithoutData }
 
     return NextResponse.json(pointB)
   } catch (error: unknown) {

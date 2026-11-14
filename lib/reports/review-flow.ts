@@ -337,7 +337,8 @@ async function afterPublish(v: ReviewVersionHead, reviewer: Reviewer): Promise<v
   // 2) The client: in-app notification with a link to exactly this version.
   try {
     const { createNotification } = await import('@/lib/notifications/create')
-    let link = '/point-a#reports'
+    // The client's cabinet (not the old shell): the same section as ReportReadyCard (REPORT_SECTION_HREF).
+    let link = '/client/point-a#reports'
     try {
       const { linkSecretConfigured, signVersionLink } = await import('./version-link')
       if (linkSecretConfigured()) link = `/r/v/${(await signVersionLink(v.id, v.version)).token}`

@@ -8,6 +8,7 @@ import { getSessionUser } from '@/lib/api-identity'
 import { listCredentials, deleteCredential, countCredentials } from '@/lib/webauthn/store'
 import { setMfaWebauthnFlag } from '@/lib/mfa/store'
 import { logActivity } from '@/lib/activity/log'
+import { guardFactorChange, lastFactorRefusal } from '@/lib/mfa/factor-guard'
 
 // GET /api/v1/security/webauthn/credentials — the caller's passkeys (no secrets).
 export async function GET() {
@@ -30,6 +31,8 @@ export async function GET() {
 }
 
 // DELETE /api/v1/security/webauthn/credentials — remove one passkey.
+// R-003: needs the step-up of this session; staff who must keep 2FA cannot
+// remove their last factor (lib/mfa/factor-guard.ts).
 const DELETE_SCHEMA = z.object({ id: z.string().min(1) })
 
 export async function DELETE(request: Request) {
@@ -40,11 +43,18 @@ export async function DELETE(request: Request) {
   const parsed = DELETE_SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid_body' }, { status: 400 })
 
+  const guard = await guardFactorChange(request, user, 'webauthn.delete')
+  if (!guard.ok) return guard.response
+  const after = { ...guard.state, passkeys: Math.max(0, guard.state.passkeys - 1) }
+  const refused = await lastFactorRefusal(request, user, after, 'webauthn.delete')
+  if (refused) return refused
+
   const removed = await deleteCredential(user.id, parsed.data.id)
   if (!removed) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
 
   // If that was the last passkey, clear the enforcement flag.
-  if ((await countCredentials(user.id)) === 0) {
+  const remaining = await countCredentials(user.id).catch(() => after.passkeys)
+  if (remaining === 0) {
     await setMfaWebauthnFlag(user.id, false)
   }
 
@@ -52,7 +62,7 @@ export async function DELETE(request: Request) {
     userId: user.id,
     action: 'security.passkey_removed',
     category: 'security',
-    severity: 'warning',
+    severity: 'critical',
     description: 'Удалён ключ доступа (passkey)',
     req: request,
   })

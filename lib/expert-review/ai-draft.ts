@@ -91,15 +91,19 @@ export function buildReviewContext(input: ReviewContextInput): ReviewContext {
   const d = input.diagnostic
   if (d) {
     const rows: string[] = []
+    // The caller passes the OFFICIAL row (officialDiagnosticRow): null = no score / no data.
     const overall = num(d.overall_score)
-    if (overall !== null) rows.push(`- Общий балл: ${overall} из 100`)
+    rows.push(overall !== null ? `- Общий балл: ${overall} из 100` : '- Общий балл: нет — данных для общей оценки недостаточно')
     const health = num(d.health_index)
     if (health !== null) rows.push(`- Индекс здоровья: ${health}`)
     if (d.stage) rows.push(`- Стадия: ${short(d.stage, 60)}`)
     for (const [col, label] of POINT_A_BLOCKS) {
       const b = d[col] as { score?: unknown; top_issues?: unknown } | null | undefined
       const score = num(b?.score)
-      if (score === null) continue
+      if (score === null) {
+        rows.push(`- ${label}: нет данных (не оценивался — это не слабость)`)
+        continue
+      }
       const issues = Array.isArray(b?.top_issues) ? b!.top_issues.slice(0, 3).map((x) => short(x, 160)).filter(Boolean) : []
       rows.push(`- ${label}: ${score}${issues.length ? ` (проблемы: ${issues.join('; ')})` : ''}`)
     }

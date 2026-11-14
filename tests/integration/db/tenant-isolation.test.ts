@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
-import { asUser, closeTestPool, inRollback, pgErrorCode, seedCompany, seedUser, type Db } from '../../helpers/pg-rls'
+import { asUser, closeTestPool, inRollback, pgErrorCode, seedCompany, seedStaff, seedUser, type Db } from '../../helpers/pg-rls'
 
 interface World {
   ownerA: string
@@ -138,13 +138,19 @@ describe.skipIf(!dbTestsEnabled)('tenant isolation (084)', () => {
       expect(await orgs(outsider)).toBe(0)
     }))
 
-  it('platform staff see every company', () =>
+  it('platform staff (staff_roles) see every company; an expert only assigned ones (R-004, 140)', () =>
     inRollback(async (db) => {
       const w = await world(db)
-      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
-      const v = await visible(db, expert)
+      const staff = await seedStaff(db, 'super_expert')
+      const v = await visible(db, staff)
       expect(v.companies).toEqual(expect.arrayContaining([w.companyA, w.companyB]))
       expect(v.metrics).toEqual(expect.arrayContaining([w.companyA, w.companyB]))
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [w.ownerB, expert])
+      const e = await visible(db, expert)
+      expect(e.companies).toContain(w.companyB)
+      expect(e.companies).not.toContain(w.companyA)
+      expect(e.metrics).not.toContain(w.companyA)
     }))
 
   it('an unapproved expert gets no platform-wide access', () =>

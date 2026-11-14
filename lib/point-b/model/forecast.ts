@@ -78,11 +78,20 @@ const HEADLINE: Record<ModelResult['verdict']['key'], string> = {
   no_data: 'Пока нельзя сказать, успеваете ли вы',
 }
 
-export function verdictFor(args: { goal: ModelGoal | null; forecast: Forecast; baseAnnual: number | null }): ModelResult['verdict'] {
+export function verdictFor(args: { goal: ModelGoal | null; forecast: Forecast; baseAnnual: number | null; baseStale?: boolean }): ModelResult['verdict'] {
   const { goal, forecast, baseAnnual } = args
   const no = (reason: string): ModelResult['verdict'] => ({ key: 'no_data', headline: HEADLINE.no_data, reason })
   if (!goal) return no('Цель по выручке не задана — сравнивать прогноз не с чем.')
   if (goal.months < 1) return no('Срок цели уже прошёл или меньше месяца — задайте новый срок, и мы сравним прогноз с целью.')
+  // BI-26, PO rule: the goal is reached when the run-rate × 12 ≥ the goal. The base IS today's annual run-rate, so a
+  // fresh base at or above the goal is an answer even without the 12 months of history a forecast needs.
+  if (!args.baseStale && finite(baseAnnual) && baseAnnual > 0 && finite(goal.targetAnnual) && goal.targetAnnual > 0 && baseAnnual >= goal.targetAnnual) {
+    return {
+      key: 'on_track',
+      headline: 'Цель достигнута по текущему темпу',
+      reason: `Текущая выручка в пересчёте на год — ${fmtMoney(baseAnnual)} — не ниже цели в ${fmtMoney(goal.targetAnnual)}. Задача — удержать темп; можно поставить новую цель.`,
+    }
+  }
   if (forecast.basis === 'insufficient') {
     return no('Для прогноза при текущем ходе нужна история выручки по месяцам: не меньше 12 месяцев подряд, без пропусков и не старше четырёх месяцев.')
   }

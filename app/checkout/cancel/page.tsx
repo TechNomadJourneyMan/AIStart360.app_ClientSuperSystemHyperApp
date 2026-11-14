@@ -16,17 +16,17 @@ export default function CheckoutCancelPage() {
           Оплата отменена
         </h1>
         <p className="mt-4 text-on-surface-variant leading-relaxed">
-          Списание не произошло. Вы можете вернуться к выбору тарифа в любой момент —
+          Списание не произошло. Вы можете вернуться к оплате в любой момент —
           доступ к диагностике остаётся открытым.
         </p>
 
         <div className="mt-10 flex flex-col gap-3">
           <Link
-            href="/#pricing"
+            href="/client/home"
             className="bg-primary text-on-primary font-semibold px-6 py-3.5 rounded-xl flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
             <span className="material-symbols-outlined">arrow_back</span>
-            Вернуться к тарифам
+            Вернуться в кабинет
           </Link>
           <Link
             href="/dashboard"

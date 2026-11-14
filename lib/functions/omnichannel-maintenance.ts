@@ -16,6 +16,9 @@ export const omnichannelOutboundDeliveryMaintenance = inngest.createFunction(
   {
     id: 'omnichannel-outbound-delivery-maintenance',
     retries: 1,
+    // BE-05/06 (lib/functions/limits.ts): one at a time; start < the 5-minute period.
+    concurrency: { limit: 1 },
+    timeouts: { start: '4m', finish: '4m' },
     triggers: [{ cron: '*/5 * * * *' }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -42,6 +45,9 @@ export const omnichannelMaintenance = inngest.createFunction(
   {
     id: 'omnichannel-maintenance',
     retries: 1,
+    // BE-05/06 (lib/functions/limits.ts).
+    concurrency: { limit: 1 },
+    timeouts: { start: '1h', finish: '30m' },
     triggers: [{ cron: 'TZ=Asia/Almaty 15 4 * * *' }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

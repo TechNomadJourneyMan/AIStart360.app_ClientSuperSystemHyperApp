@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   enqueued: [] as Array<Record<string, unknown>>,
   pending: [] as Array<Promise<unknown>>,
   seq: 0,
+  notified: [] as Array<{ to: string; overallScore: unknown; stage?: unknown }>,
 }))
 
 function fakeClient(kind: 'session' | 'service') {
@@ -72,15 +73,17 @@ function fakeClient(kind: 'session' | 'service') {
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => fakeClient('session') }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeClient('service') }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
-vi.mock('@/lib/notifications', () => ({ notifyAdmins: () => undefined }))
-vi.mock('@/lib/notifications/product', () => ({ notifyPointARecalculated: async () => undefined }))
+// The staff session in this test passed its second factor (R-005 rules: tests/unit/api/api-identity-staff-stepup.test.ts).
+vi.mock('@/lib/mfa/api-staff-gate', () => ({ staffApiSecondFactor: async () => 'ok' }))
+vi.mock('@/lib/notifications', () => ({ notifyAdmins: (_k: string, p: { overallScore: unknown; stage?: unknown }) => { h.notified.push({ to: 'admins', overallScore: p.overallScore, stage: p.stage }) } }))
+vi.mock('@/lib/notifications/product', () => ({ notifyPointARecalculated: async (_u: string, p: { overallScore: unknown }) => { h.notified.push({ to: 'client', overallScore: p.overallScore }) } }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))
 vi.mock('@/lib/background', () => ({ runInBackground: (_l: string, work: () => Promise<unknown>) => { const p = work(); h.pending.push(p); return p } }))
 vi.mock('@/lib/agents/queue', () => ({ enqueueAgentTask: async (t: Record<string, unknown>) => { h.enqueued.push(t); return { id: 't1' } } }))
 // The snapshot path (lib/point-a/snapshot.ts) has its own tests; here it is
 // «before migration 111» unless a test switches it on — the direct path below.
-const snap = vi.hoisted(() => ({ result: { status: 'skipped', reason: 'not_migrated' } as Record<string, unknown>, calls: [] as unknown[][] }))
-vi.mock('@/lib/point-a/snapshot', () => ({ buildPointASnapshot: async (...args: unknown[]) => { snap.calls.push(args); return snap.result } }))
+const snap = vi.hoisted(() => ({ result: { status: 'skipped', reason: 'not_migrated' } as Record<string, unknown>, calls: [] as unknown[][], throws: false }))
+vi.mock('@/lib/point-a/snapshot', () => ({ buildPointASnapshot: async (...args: unknown[]) => { snap.calls.push(args); if (snap.throws) throw new Error('boom'); return snap.result } }))
 
 const { POST } = await import('@/app/api/v1/diagnostics/recalculate/route')
 const { verifyInternalToken, INTERNAL_TOKEN_HEADER } = await import('@/lib/internal-auth')
@@ -101,6 +104,8 @@ beforeEach(() => {
   h.seq = 0
   snap.result = { status: 'skipped', reason: 'not_migrated' }
   snap.calls = []
+  snap.throws = false
+  h.notified = []
   h.tables = {
     survey_answers: [{ user_id: 'client-1', question_key: 's2_revenue_2025', answer: { value: 95_000_000 } }],
     companies: [{ id: 'co-1', user_id: 'client-1' }],
@@ -202,6 +207,54 @@ describe('POST /api/v1/diagnostics/recalculate', () => {
       vi.unstubAllGlobals()
       vi.unstubAllEnvs()
       delete process.env.INTERNAL_TOKEN_SECRET
+    }
+  })
+
+  // I2 (R-033): no official score → no number anywhere.
+  it('snapshot written WITHOUT an official score (scored: false) → no point_a and no score in the notifications', async () => {
+    snap.result = { status: 'written', snapshotId: 's1', diagnosticId: 'diag-v1', diagnostic: { id: 'diag-v1' }, engine: 'v1', assessment: 'full', scored: false, written: { overall_score: 31, stage: 'seed' }, v4: {}, changes: [] }
+    const res = await post()
+    await Promise.all(h.pending)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data.point_a).toBeNull()
+    expect(body.data.scored).toBe(false)
+    expect(h.notified).toHaveLength(2)
+    expect(h.notified).toEqual(expect.arrayContaining([{ to: 'client', overallScore: null }, { to: 'admins', overallScore: null, stage: null }]))
+  })
+
+  it('a scored snapshot tells its score', async () => {
+    snap.result = { status: 'written', snapshotId: 's1', diagnosticId: 'diag-v4', diagnostic: { id: 'diag-v4' }, engine: 'v4', assessment: 'full', scored: true, written: { overall_score: 61, stage: 'early' }, v4: {}, changes: [] }
+    await post()
+    await Promise.all(h.pending)
+    expect(h.notified.map((n) => n.overallScore)).toEqual([61, 61])
+  })
+
+  it('a failed snapshot is a 503 and the current diagnostic stays (no v1 recalculation)', async () => {
+    snap.throws = true
+    const res = await post()
+    expect(res.status).toBe(503)
+    expect(current().map((r) => r.id)).toEqual(['diag-old'])
+    expect(h.tables.diagnostics).toHaveLength(1)
+  })
+
+  it('no company → the row is stored without a score, no fan-out, no score in the notifications', async () => {
+    h.tables.companies = []
+    process.env.OPENROUTER_API_KEY = 'k'
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.kz'
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const res = await post()
+      await Promise.all(h.pending)
+      expect(res.status).toBe(200)
+      expect((await res.json()).data.point_a).toBeNull()
+      expect(current()[0]).toMatchObject({ overall_score: null, stage: null, finance_score: null, ai_status: 'none' })
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(h.notified.every((n) => n.overallScore === null)).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+      delete process.env.NEXT_PUBLIC_APP_URL
     }
   })
 })

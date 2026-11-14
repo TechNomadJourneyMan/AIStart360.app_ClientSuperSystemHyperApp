@@ -1,16 +1,14 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
+import { getOfficialPointA, officialRedBlocks } from '@/lib/point-a/official'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildNbaSignals, type NbaSignalInput } from '@/lib/nba/signals'
 import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
-import { calculatePointA } from '@/lib/point-a-engine'
 import { trackUserAction } from '@/lib/events/server'
 import { nbaEventMetadata } from '@/lib/nba/events'
-import { unwrapAnswer } from '@/lib/survey/answer-value'
 
 const POINT_A_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -119,27 +117,14 @@ export async function GET(_req: NextRequest) {
     }
   } catch { /* crm tables absent — skip */ }
 
-  // Point A red zones (S2) — the stored current Point A (the score the client
-  // sees); computed from the survey only when there is none yet.
+  // Point A red zones (S2) — the OFFICIAL Point A (lib/point-a/official.ts, the
+  // score the client sees): critical AND weak blocks, critical first (R-035,
+  // BI-46 — `weak` alone dropped the worst blocks). A block without data is
+  // never a red zone; before the full questionnaire there are none (PO
+  // 2026-11-02) — never a v1 recalculation from an incomplete survey.
   try {
-    const { data: cur } = await sb.from('diagnostics').select(DIAGNOSTIC_POINT_A_COLUMNS).eq('user_id', user.id).eq('is_current', true).maybeSingle()
-    let pa = pointAFromDiagnosticRow(cur as Record<string, unknown> | null)
-    if (!pa) {
-      const { data: sa } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', user.id)
-      if (sa && sa.length > 0) {
-        const answers: Record<string, unknown> = {}
-        for (const r of sa as Array<{ question_key: string; answer: unknown }>) {
-          answers[r.question_key] = unwrapAnswer(r.answer)
-        }
-        pa = calculatePointA(answers)
-      }
-    }
-    if (pa) {
-      const reds = Object.entries(pa.blocks)
-        .filter(([, b]) => (b as { status?: string }).status === 'weak')
-        .map(([k, b]) => ({ key: k, label: POINT_A_LABELS[k] ?? k, score: (b as { score: number }).score }))
-      if (reds.length > 0) input.redBlocks = reds
-    }
+    const reds = officialRedBlocks(await getOfficialPointA(sb, user.id))
+    if (reds.length > 0) input.redBlocks = reds.map((r) => ({ key: r.key, label: POINT_A_LABELS[r.key] ?? r.label, score: r.score }))
   } catch { /* skip */ }
 
   // Cooldown history from the NBA log.

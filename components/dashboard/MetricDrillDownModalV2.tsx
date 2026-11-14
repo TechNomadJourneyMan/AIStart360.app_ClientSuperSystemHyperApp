@@ -23,7 +23,7 @@ import {
   YAxis,
 } from 'recharts'
 
-import { useTimeseries, useForecast, useMetricGoal, useAnomalies } from '@/hooks/useTimeseries'
+import { useTimeseries, useForecast, useMetricGoal, useAnomalies, forecastUnavailableNote } from '@/hooks/useTimeseries'
 import type { Period } from '@/types/periods'
 import type { AnomalyPoint } from '@/types/metrics'
 import type { MetricBenchmark, MetricStatus, MetricTarget } from '@/types/metric-catalog'
@@ -329,6 +329,8 @@ export function MetricDrillDownModalV2({
 
   const factPoints = useMemo(() => tsData?.data ?? [], [tsData])
   const forecastPoints = useMemo(() => fData?.data ?? [], [fData])
+  // R-040: no forecast below 6 business periods — say so instead of drawing one.
+  const forecastNote = showForecast ? forecastUnavailableNote(fData) : null
 
   const chartData = useMemo(
     () => mergeFactForecast(factPoints, forecastPoints, showForecast),
@@ -657,6 +659,18 @@ export function MetricDrillDownModalV2({
                             </AreaChart>
                           </ResponsiveContainer>
                         </div>
+                      )}
+
+                      {forecastNote && !isLoading && !empty && (
+                        <p
+                          className="mt-2 flex items-center gap-1.5 text-xs text-on-surface-variant"
+                          data-testid="drilldown-forecast-note"
+                        >
+                          <span className="material-symbols-outlined text-[14px] text-secondary/80" aria-hidden>
+                            info
+                          </span>
+                          {forecastNote}
+                        </p>
                       )}
 
                       {/* Layer toggles */}

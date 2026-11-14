@@ -10,6 +10,8 @@ import {
   type AcquiringProviderName,
 } from '@/lib/payments'
 import { BillingError, getEffectivePlan, setPlan } from '@/lib/payments/billing'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CheckoutBody } from '@/lib/validation/schemas'
 
 const VALID_PROVIDERS: AcquiringProviderName[] = [
   'stripe',
@@ -89,17 +91,12 @@ export async function POST(req: NextRequest) {
 
   try {
 
-    let body: { planKey?: string; provider?: string }
-    try {
-      body = (await req.json()) as { planKey?: string; provider?: string }
-    } catch {
-      return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 })
-    }
-
+    // R-149: { planKey, provider? } only (.strict()); a missing / non-string
+    // planKey or a non-object body is a 400 (it used to be a 500).
+    const parsed = await parseJsonBody(req, CheckoutBody, { maxBytes: 4 * 1024 })
+    if (!parsed.ok) return parsed.response
+    const body = parsed.data
     const planKey = body.planKey
-    if (!planKey) {
-      return NextResponse.json({ error: 'Не указан тариф (planKey)' }, { status: 400 })
-    }
 
     const plan = getPlan(planKey)
     if (!plan) {

@@ -254,6 +254,9 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
       const read = (uid: string, sql: string) => asUser(db, uid, async () => (await db.query(sql, [s.companyId])).rows)
       expect(await read(s.owner, `SELECT id FROM public.report_versions WHERE company_id = $1`)).toEqual([])
       expect(await read(s.owner, `SELECT id FROM public.report_version_reviews WHERE company_id = $1`)).toEqual([])
+      // R-004 (140): an expert reads the reports of ASSIGNED clients only.
+      expect(await read(expert, `SELECT id FROM public.report_versions WHERE company_id = $1`)).toEqual([])
+      await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [s.owner, expert])
       expect((await read(expert, `SELECT id FROM public.report_versions WHERE company_id = $1`)).length).toBe(2)
       expect((await read(expert, `SELECT decision FROM public.report_version_reviews WHERE company_id = $1`))).toEqual([{ decision: 'changes_requested' }])
       const forge = asUser(db, expert, () => db.query(

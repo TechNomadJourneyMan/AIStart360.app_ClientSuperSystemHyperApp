@@ -223,7 +223,9 @@ describe('simulateCash — identities and safety', () => {
   })
 
   it('bad input is a ModelInputError, not a NaN', () => {
-    expect(() => simulateCash(cash({ margin: 0 }))).toThrow(ModelInputError)
+    // BI-28: a margin ≤ 0 (sales at or below cost) is now calculated, not rejected — only > 100% / non-finite throw.
+    expect(() => simulateCash(cash({ margin: 0 }))).not.toThrow()
+    expect(() => simulateCash(cash({ margin: Number.NaN }))).toThrow(ModelInputError)
     expect(() => simulateCash(cash({ margin: 1.2 }))).toThrow(ModelInputError)
     expect(() => simulateCash(cash({ revenue: [] }))).toThrow(ModelInputError)
     expect(() => simulateCash(cash({ revenue: [1, Number.NaN, 1] }))).toThrow(ModelInputError)
@@ -341,14 +343,16 @@ describe('computeModel — level 2', () => {
   })
 
   it('profit positive but a cash gap in the aggressive scenario (working capital and capex eat the cash)', () => {
-    const r = computeModel(modelInputsL2({}, { cash_balance: 500_000 }))
+    // R-038: the aggressive scenario raises the check; COGS now follows the volume, not the price, so its profit is
+    // higher and 500 000 ₸ no longer runs out (was a gap in month 3). With 100 000 ₸ on the account the gap is in month 1.
+    const r = computeModel(modelInputsL2({}, { cash_balance: 100_000 }))
     const [cautious, moderate, aggressive] = r.scenarios
-    expect(aggressive.finance!.cashGapMonth).toBe(3)
+    expect(aggressive.finance!.cashGapMonth).toBe(1)
     expect(aggressive.finance!.totals.netProfit).toBeGreaterThan(0)
     expect(aggressive.finance!.minCash.value).toBeLessThan(0)
     expect(cautious.finance!.cashGapMonth).toBeNull()
     expect(moderate.finance!.cashGapMonth).toBeNull()
-    expect(aggressive.risks.some((t) => /^Кассовый разрыв в месяце 3/.test(t))).toBe(true)
+    expect(aggressive.risks.some((t) => /^Кассовый разрыв в месяце 1/.test(t))).toBe(true)
     expect(aggressive.risks.some((t) => /^Нужно финансирование около/.test(t))).toBe(true)
     expect(aggressive.risks.some((t) => /Оборотный капитал и платежи съедают деньги/.test(t))).toBe(true)
     // profit and cash are visibly different series

@@ -6,6 +6,7 @@ export const maxDuration = 300
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { runInBackground } from '@/lib/background'
+import { webhookRefusal } from '@/lib/runtime/webhook-log'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import {
   getTelegramBotWebhookTarget,
@@ -46,30 +47,32 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { connectionId: string } },
 ): Promise<NextResponse> {
+  // R-138: one structured line per refusal / failure; never the update or the chat.
+  const refuse = webhookRefusal('webhooks/telegram-inbox', req)
   const connectionId = params?.connectionId ?? ''
-  if (!UUID.test(connectionId)) return response(404)
+  if (!UUID.test(connectionId)) return refuse(404, 'bad_connection_id', response)
 
   const declaredLength = Number(req.headers.get('content-length'))
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) return response(413)
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) return refuse(413, 'body_too_large', response)
 
   let target: Awaited<ReturnType<typeof getTelegramBotWebhookTarget>>
   try {
     target = await getTelegramBotWebhookTarget(connectionId)
-  } catch {
-    return response(503)
+  } catch (error) {
+    return refuse(503, 'target_lookup_failed', response, error)
   }
-  if (!target) return response(404)
+  if (!target) return refuse(404, 'unknown_connection', response)
   if (!telegramWebhookSecretMatches(target.webhookSecretHash, req.headers.get('x-telegram-bot-api-secret-token'))) {
-    return response(403)
+    return refuse(403, 'bad_secret_token', response)
   }
 
   let raw: string
   try {
     raw = await req.text()
   } catch {
-    return response(400)
+    return refuse(400, 'body_unreadable', response)
   }
-  if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return response(413)
+  if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return refuse(413, 'body_too_large', response)
   let update: unknown
   try {
     update = JSON.parse(raw) as unknown
@@ -95,9 +98,9 @@ export async function POST(
 
   try {
     const result = await ingestTelegramInboxUpdate(parsed)
-    if (result.outcome === 'in_flight') return response(503)
-  } catch {
-    return response(500)
+    if (result.outcome === 'in_flight') return refuse(503, 'claim_in_flight', response)
+  } catch (error) {
+    return refuse(500, 'ingest_failed', response, error)
   }
 
   void runInBackground('telegram-inbox-heartbeat', () => touchTelegramBotLastUpdate(target!))

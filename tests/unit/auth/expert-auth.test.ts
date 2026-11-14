@@ -20,9 +20,20 @@ const s = vi.hoisted(() => ({
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: s.user } }) } }),
 }))
-vi.mock('next/headers', () => ({
-  cookies: () => ({ get: (name: string) => (name === 'aistart360_mfa' && s.mfaCookie ? { value: s.mfaCookie } : undefined) }),
-}))
+// R-132: the step-up proof is bound to the Supabase session of the request,
+// read from its auth cookie (lib/mfa/session-binding.ts).
+const SESSION_ID = '11111111-1111-4111-8111-111111111111'
+vi.mock('next/headers', () => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const token = `${b64({ alg: 'HS256' })}.${b64({ sub: 'e-1', session_id: '11111111-1111-4111-8111-111111111111' })}.sig`
+  const auth = { name: 'sb-sb-auth-token', value: `base64-${b64({ access_token: token })}` }
+  return {
+    cookies: () => ({
+      get: (name: string) => (name === 'aistart360_mfa' && s.mfaCookie ? { value: s.mfaCookie } : undefined),
+      getAll: () => [auth],
+    }),
+  }
+})
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: (table: string) =>
@@ -86,9 +97,9 @@ describe('requireExpert', () => {
 
   it('admits the session with the step-up cookie of the same user only', async () => {
     s.user!.app_metadata = { mfa_totp: true }
-    s.mfaCookie = signStepUp('someone-else')
+    s.mfaCookie = signStepUp('someone-else', SESSION_ID)
     expect(await requireExpert()).toBeNull()
-    s.mfaCookie = signStepUp('e-1')
+    s.mfaCookie = signStepUp('e-1', SESSION_ID)
     expect(await requireExpert()).toMatchObject({ id: 'e-1' })
   })
 

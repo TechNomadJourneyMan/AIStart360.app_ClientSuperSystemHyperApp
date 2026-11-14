@@ -34,7 +34,7 @@ import {
   type ChatMessage,
   type ClientFailure,
 } from './providers/client'
-import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
+import { aiDeadlineMs, isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveCandidates, resolveTarget } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
@@ -114,6 +114,11 @@ interface ChatOptions {
    * slow Sonnet/Opus generation); pass a smaller value on latency-critical paths.
    */
   timeoutMs?: number
+  /**
+   * One budget for all failover attempts together (R-016). Default AI_CALL_DEADLINE_MS / 45 s,
+   * never below `timeoutMs`; background callers pass a larger one.
+   */
+  deadlineMs?: number
   /** Avoid logging provider bodies/errors that may echo customer content. */
   privacySensitive?: boolean
   /** Feature name for the spend ledger (ai_usage_ledger.source = `feature:<label>`); defaults to `feature`. */
@@ -215,15 +220,17 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
 
   const run = await runWithFailover(
     resolved.candidates,
-    (target) => chatCompletion(target, {
+    (target, budget) => chatCompletion(target, {
       messages,
       maxTokens,
       temperature: opts.temperature === null ? null : (opts.temperature ?? 0.7),
       json: opts.jsonMode,
       jsonSchema: opts.jsonSchema,
-      timeoutMs,
+      timeoutMs: budget.timeoutMs,
     }),
     {
+      attemptTimeoutMs: timeoutMs,
+      deadlineMs: opts.deadlineMs ?? aiDeadlineMs('user', timeoutMs),
       budgetCheck: providerBudgetRefusal,
       // Structured calls (json_schema / json_object) on a cheap model, or a
       // misregistered model id: another candidate can answer the same request.

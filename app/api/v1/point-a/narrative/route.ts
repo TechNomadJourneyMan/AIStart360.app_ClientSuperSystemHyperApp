@@ -7,7 +7,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { generateNarrative, type NarrativeInput } from '@/lib/point-a/narrative'
 import { readNarrative } from '@/lib/point-a/ai-analysis'
-import type { Company, Diagnostic, PointA } from '@/types/onboarding'
+import type { BlockScore, Company, Diagnostic, PointA } from '@/types/onboarding'
+import { loadOfficialSnapshot, officialPointA } from '@/lib/point-a/official'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { apiError, dbError } from '@/lib/api-error'
 import { guardAiBudget } from '@/lib/ai/budget'
@@ -69,6 +70,13 @@ export async function POST(req: NextRequest) {
 
   const diagnostic = diagRow as Diagnostic & { ai_narrative?: unknown }
 
+  // The official Point A (R-033): no executive summary of a score that does not
+  // exist — before the full questionnaire, or when v4 found too little data.
+  const official = officialPointA(diagRow as Record<string, unknown>, await loadOfficialSnapshot(sb, user.id))
+  if (official.state !== 'scored' || official.overall === null) {
+    return apiError('Резюме появится, когда у Точки А будет оценка: отправьте полную анкету и добавьте данные по пустым блокам', 409)
+  }
+
   // 3. Stored narrative (never an AI analysis that happens to sit in ai_analysis).
   const stored = readNarrative(diagnostic)
   if (!regenerate && stored) {
@@ -87,22 +95,29 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   const company = (companyRow ?? null) as Company | null
 
-  // Build PointA structure from the diagnostic row.
+  // PointA for the prompt from the OFFICIAL Point A: a block without data keeps
+  // a placeholder and is listed in blocksWithoutData, so the model reads
+  // «нет данных», never «0/100 (критично)».
+  const blockOf = (key: keyof PointA['blocks']): BlockScore => {
+    const b = official.blocks.find((x) => x.key === key)
+    if (!b || b.score === null || b.status === 'no_data') return emptyBlock()
+    return { score: b.score, status: b.status, top_issues: b.top_issues, recommendations: b.recommendations }
+  }
   const pointA: PointA = {
-    overall_score: diagnostic.overall_score ?? 0,
-    health_index: diagnostic.health_index ?? 0,
-    stage: diagnostic.stage ?? 'seed',
+    overall_score: official.overall,
+    health_index: official.health_index ?? official.overall,
+    stage: official.stage ?? 'seed',
     blocks: {
-      finance: diagnostic.finance_score ?? emptyBlock(),
-      marketing: diagnostic.marketing_score ?? emptyBlock(),
-      operations: diagnostic.operations_score ?? emptyBlock(),
-      strategy: diagnostic.strategy_score ?? emptyBlock(),
-      sales: diagnostic.sales_score ?? emptyBlock(),
+      finance: blockOf('finance'),
+      marketing: blockOf('marketing'),
+      operations: blockOf('operations'),
+      strategy: blockOf('strategy'),
+      sales: blockOf('sales'),
     },
-    risks: diagnostic.risks ?? [],
-    insights: diagnostic.insights ?? [],
-    quick_wins: diagnostic.quick_wins ?? [],
-    data_gaps: diagnostic.data_gaps ?? [],
+    risks: official.risks,
+    insights: official.insights,
+    quick_wins: official.quick_wins,
+    data_gaps: official.data_gaps,
   }
 
   const input: NarrativeInput = {
@@ -110,6 +125,7 @@ export async function POST(req: NextRequest) {
     companyName: company?.name ?? 'Компания',
     industry: company?.industry ?? null,
     stage: company?.stage ?? null,
+    blocksWithoutData: official.blocksWithoutData,
   }
 
   // 5. Generate and store in its own column.
@@ -135,7 +151,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, data: narrative, persisted: true })
 }
 
-function emptyBlock() {
+/** Placeholder of a block without data — never read as a score (blocksWithoutData says so). */
+function emptyBlock(): BlockScore {
   return {
     score: 0,
     status: 'critical' as const,

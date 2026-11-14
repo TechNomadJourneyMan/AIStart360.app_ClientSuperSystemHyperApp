@@ -28,6 +28,10 @@ export const fakeDb = {
   budgets: null as BudgetsRow | null,
   spendToday: {} as Record<string, number>,
   loads: 0,
+  /** BE-09: loadSnapshot rejects with this (the database is unreachable). */
+  loadError: null as Error | null,
+  /** BE-09: loadSnapshot answers only after this many ms (a database that hangs). */
+  loadDelayMs: 0,
 }
 
 export function resetFakeDb(): void {
@@ -38,6 +42,8 @@ export function resetFakeDb(): void {
   fakeDb.budgets = null
   fakeDb.spendToday = {}
   fakeDb.loads = 0
+  fakeDb.loadError = null
+  fakeDb.loadDelayMs = 0
   resetHealth()
 }
 
@@ -235,6 +241,8 @@ export const fakeStoreModule = {
   },
   async loadSnapshot(): Promise<ProviderSnapshot> {
     fakeDb.loads += 1
+    if (fakeDb.loadDelayMs > 0) await new Promise((r) => setTimeout(r, fakeDb.loadDelayMs))
+    if (fakeDb.loadError) throw fakeDb.loadError
     return {
       providers: structuredClone(fakeDb.providers),
       credentials: structuredClone(fakeDb.credentials),

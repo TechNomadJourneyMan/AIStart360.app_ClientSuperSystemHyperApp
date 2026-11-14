@@ -35,6 +35,34 @@ const OPEN: AccessMe = {
 
 export const ACCESS_ME_KEY = ['access-me'] as const
 
+/**
+ * R-030: platform sections the old menus (Sidebar, MobileNav) mark «Pro» for a
+ * client. The key is the section root; deeper paths belong to it.
+ */
+export const PREMIUM_SECTIONS = ['/metrics', '/market', '/point-b'] as const
+export type PremiumSection = (typeof PREMIUM_SECTIONS)[number]
+
+/** The «Pro» section an href belongs to, or null. */
+export function premiumSectionOf(href: string): PremiumSection | null {
+  return PREMIUM_SECTIONS.find((p) => href === p || href.startsWith(p + '/')) ?? null
+}
+
+/**
+ * R-030: is the section behind a lock for this viewer?
+ * - only a client is ever locked (staff see everything);
+ * - gates off (access_gates, the fail-safe default) or still loading (OPEN) → nothing is locked;
+ * - gates on → the real right: Точка Б by the `point_b` entitlement (the server
+ *   enforces exactly that); Метрики / Рынок have no entitlement of their own and
+ *   no server gate, so they follow the account tier (Pro) as before.
+ */
+export function isSectionLocked(href: string, role: string | null | undefined, access: AccessMe): boolean {
+  if (role !== 'client' || !access.gatesEnabled) return false
+  const section = premiumSectionOf(href)
+  if (!section) return false
+  if (section === '/point-b') return !access.point_b
+  return access.tier !== 'pro'
+}
+
 /** Снимок прав или OPEN (гейты выключены / ответ не ok). Ошибка сети — исключение. */
 async function fetchAccessMe(): Promise<AccessMe> {
   const r = await fetch('/api/v1/access/me', { credentials: 'include' })

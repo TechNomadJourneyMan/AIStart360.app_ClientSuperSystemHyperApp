@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import type { ClientScope } from '@/lib/admin/rbac'
+import type { ClientScope, Permission } from '@/lib/admin/rbac'
+import { requireGiga, type GigaGuard } from '@/lib/admin/giga-actor'
 
 /**
  * Область видимости клиентов для сотрудника (F-008).
@@ -112,4 +113,93 @@ export function filterByScope<T>(rows: T[], allowed: string[] | null, key: (r: T
     const id = key(r)
     return !!id && set.has(id)
   })
+}
+
+// ─── One-call guards for client-specific GIGA routes (R-047) ────────────────
+//
+// Every /api/giga-admin route that works with ONE client (a user id, a company
+// id, a report of a company) authorises through one of these, instead of
+// requireGiga + a hand-written guardClientAccess: the scope check cannot be
+// forgotten. tests/unit/giga-admin/client-scope-routes.test.ts lists the
+// client-specific routes and fails when one of them skips these helpers.
+
+/** requireGiga(permission) + the client scope of `userId` (400 / 403 / 404 as guardClientAccess). */
+export async function requireGigaClient(
+  req: NextRequest,
+  permission: Permission | Permission[],
+  userId: string,
+  opts: { clientOnly?: boolean } = {},
+): Promise<GigaGuard> {
+  const guard = await requireGiga(req, permission)
+  if (guard.response) return guard
+  const denied = await guardClientAccess(guard.actor, userId, opts)
+  return denied ? { response: denied, staff: true } : guard
+}
+
+/** Owner (companies.user_id) of a company; undefined when the company does not exist; throws on DB error. */
+export async function companyOwnerId(companyId: string): Promise<string | null | undefined> {
+  const { data, error } = await createServiceClient().from('companies').select('user_id').eq('id', companyId).maybeSingle()
+  if (error) throw new Error('company owner unavailable')
+  if (!data) return undefined
+  return (data as { user_id?: string | null }).user_id ?? null
+}
+
+/**
+ * Scope check for a company: the actor must have access to its owner. A
+ * company without an owner is visible only with scope 'all'. null — continue.
+ */
+export async function guardCompanyAccess(actor: ScopedActor, companyId: string): Promise<NextResponse | null> {
+  if (actor.clientScope !== 'assigned') return null
+  let owner: string | null | undefined
+  try {
+    owner = await companyOwnerId(companyId)
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Не удалось проверить доступ' }, { status: 503 })
+  }
+  if (owner === undefined) return NextResponse.json({ ok: false, error: 'Компания не найдена' }, { status: 404 })
+  if (!owner || !(await canAccessClient(actor, owner))) {
+    return NextResponse.json({ ok: false, error: NOT_ASSIGNED_ERROR }, { status: 403 })
+  }
+  return null
+}
+
+/** requireGiga(permission) + the client scope of the company's owner. */
+export async function requireGigaCompany(
+  req: NextRequest,
+  permission: Permission | Permission[],
+  companyId: string,
+): Promise<GigaGuard> {
+  const guard = await requireGiga(req, permission)
+  if (guard.response) return guard
+  const denied = await guardCompanyAccess(guard.actor, companyId)
+  return denied ? { response: denied, staff: true } : guard
+}
+
+/** Companies visible to the actor among `companyIds` (null — no restriction). */
+export async function scopedCompanyIds(actor: ScopedActor): Promise<string[] | null> {
+  const users = await scopedClientIds(actor)
+  if (users === null) return null
+  if (!users.length) return []
+  const { data, error } = await createServiceClient().from('companies').select('id').in('user_id', users).limit(10000)
+  if (error) return []
+  return ((data ?? []) as Array<{ id: string }>).map((r) => r.id)
+}
+
+/**
+ * requireGiga(permission) + the client scope of the company a report version
+ * belongs to (report_versions.company_id). An unknown / malformed id passes
+ * through — the route answers its own 404.
+ */
+export async function requireGigaReport(
+  req: NextRequest,
+  permission: Permission | Permission[],
+  versionId: string,
+): Promise<GigaGuard> {
+  const guard = await requireGiga(req, permission)
+  if (guard.response || guard.actor.clientScope !== 'assigned' || !isUuid(versionId)) return guard
+  const { data, error } = await createServiceClient().from('report_versions').select('company_id').eq('id', versionId).maybeSingle()
+  if (error) return { staff: true, response: NextResponse.json({ ok: false, error: 'Не удалось проверить доступ' }, { status: 503 }) }
+  if (!data) return guard
+  const denied = await guardCompanyAccess(guard.actor, (data as { company_id: string }).company_id)
+  return denied ? { response: denied, staff: true } : guard
 }

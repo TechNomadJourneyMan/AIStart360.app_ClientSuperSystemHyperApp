@@ -18,6 +18,8 @@ export const commEscalations = inngest.createFunction(
     id: 'comm-escalations',
     retries: 0,
     concurrency: { limit: 1 },
+    // BE-06 (lib/functions/limits.ts): start < the 5-minute period; the work has a 30 s budget.
+    timeouts: { start: '4m', finish: '2m' },
     triggers: [{ cron: '*/5 * * * *' }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -41,6 +43,9 @@ export const commBotReply = inngest.createFunction(
     id: 'comm-bot-reply',
     retries: 0,
     concurrency: { limit: 1 },
+    // BE-06: a bot answer 10 min late is no longer «auto» (the 30-minute escalation takes over);
+    // the run is a pause of 2–8 s and one AI answer (≤ 45 s).
+    timeouts: { start: '10m', finish: '5m' },
     triggers: [{ event: COMM_BOT_REPLY_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

@@ -61,10 +61,23 @@ describe('a form toggle counts by its saved step only after the full questionnai
 
 describe('health index does not punish missing data', () => {
   const strongOps = { s4_has_org_chart: true, s4_has_dept_kpi: true, s4_has_regular_meetings: true, s4_reporting_tool: 'bi', s4_task_manager: 'notion', s4_management_method: 'kpi' }
-  it('bonuses are spread over the key blocks that have a score', () => {
+  it('R-032: operations only (15 % of the weight, no finance / sales) → no overall, no health, no stage', () => {
     const r = v4(strongOps)
-    // only operations scored (100): 100 × 0.6 + 40 × (10 / 10) = 100
-    expect(r.overall).toBe(100)
-    expect(r.health_index).toBe(100)
+    // was: only operations scored (100) → 100/100 «масштаб»
+    expect(r.blocks.find((b) => b.key === 'operations')!.score).toBe(100)
+    expect(r.overall).toBeNull()
+    expect(r.health_index).toBeNull()
+    expect(r.stage).toBeNull()
+  })
+  it('bonuses are spread over the key blocks that have a score (sales without data is not counted)', () => {
+    const marketing = { s5_marketing_channels: ['SEO', 'Контекстная реклама'], s5_marketing_budget_pct: 6, s5_has_competitor_analysis: true }
+    const r = v4({ ...strongOps, ...marketing, s9n_revenue_2024: 100_000_000, s9n_change_vs_2023: '+25%', s9n_net_margin: 35, s9n_debts_amount: 0, s9n_breakeven_point: 5_000_000, s2n_goal_12m_what: 'Рост', s2n_goal_3y_what: 'Сеть', s6_main_pain: 'Найм' })
+    const fin = r.blocks.find((b) => b.key === 'finance')!.score!
+    const ops = r.blocks.find((b) => b.key === 'operations')!.score!
+    expect(r.blocks.find((b) => b.key === 'sales')!.score).toBeNull()
+    expect(r.overall).not.toBeNull()
+    // finance (20) and operations (10) have a score, sales (10) none → possible 30, not 40
+    const earned = (fin > 50 ? 20 : 0) + (ops > 50 ? 10 : 0)
+    expect(r.health_index).toBe(Math.round(Math.min(100, r.overall! * 0.6 + (40 * earned) / 30)))
   })
 })

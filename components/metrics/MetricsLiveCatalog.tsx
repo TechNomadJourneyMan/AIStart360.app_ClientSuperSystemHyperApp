@@ -116,6 +116,9 @@ export default function MetricsLiveCatalog({ companyId = null }: Props) {
   // ── Auto-materialize once when every value is empty ──────────────────────
   const materializeAttempted = useRef(false)
   const [materializeStatus, setMaterializeStatus] = useState<'idle' | 'running' | 'error'>('idle')
+  // A viewer / member without the right to manage the company: POST answers 403 `read_only` (R-147) —
+  // an expected state, not a failure; the «Пересчитать» button is then hidden.
+  const [readOnly, setReadOnly] = useState(false)
 
   const runMaterialize = useCallback(
     async (force = false) => {
@@ -124,10 +127,16 @@ export default function MetricsLiveCatalog({ companyId = null }: Props) {
       setMaterializeStatus('running')
       try {
         const res = await fetch('/api/v1/metrics/materialize', { method: 'POST', cache: 'no-store' })
-        const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+        const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string } | null
         if (!json?.ok) {
           // `no_company` is an expected empty state, not a failure.
           if (json?.error === 'no_company') {
+            setMaterializeStatus('idle')
+            return
+          }
+          // No right to recalculate (viewer / member): nothing failed, the values stay as they are.
+          if (json?.code === 'read_only') {
+            setReadOnly(true)
             setMaterializeStatus('idle')
             return
           }
@@ -243,16 +252,18 @@ export default function MetricsLiveCatalog({ companyId = null }: Props) {
             </span>
           )}
           <MetricSortToggle value={sort} onChange={setSort} />
-          <button
-            type="button"
-            onClick={() => void runMaterialize(true)}
-            disabled={materializeStatus === 'running'}
-            className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant border border-white/[0.04] hover:border-primary/40 hover:text-primary rounded-xl px-3 py-2 transition-colors disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary/40"
-            title="Пересчитать значения метрик из анкеты и документов"
-          >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">refresh</span>
-            Пересчитать
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => void runMaterialize(true)}
+              disabled={materializeStatus === 'running'}
+              className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant border border-white/[0.04] hover:border-primary/40 hover:text-primary rounded-xl px-3 py-2 transition-colors disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              title="Пересчитать значения метрик из анкеты и документов"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">refresh</span>
+              Пересчитать
+            </button>
+          )}
         </div>
       </div>
 

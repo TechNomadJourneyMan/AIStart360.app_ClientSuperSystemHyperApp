@@ -32,6 +32,7 @@ import {
 import { getRecipient } from '@/lib/notifications/store'
 import { getSetting } from '@/lib/settings/store'
 import { addDays, DAY_MS, daysBetween, localDate, mondayOf } from '@/lib/automation/time'
+import { maintenanceSkipReason, type MaintenanceSkipReason } from '@/lib/automation/maintenance-gate'
 
 export interface DigestInput {
   userId: string
@@ -133,6 +134,8 @@ export interface DigestRunStats {
   failed: number
   /** Дайджест выключен в настройках платформы (client_digest_enabled). */
   switchedOff: boolean
+  /** R-026: the run was skipped as a whole (the cabinet is in maintenance, or that is unknown). */
+  skippedReason?: MaintenanceSkipReason
 }
 
 export async function runClientDigest(now: Date = new Date()): Promise<DigestRunStats> {
@@ -144,6 +147,9 @@ export async function runClientDigest(now: Date = new Date()): Promise<DigestRun
     /* настройки недоступны — по умолчанию включено */
   }
   if (!enabled) return { ...stats, switchedOff: true }
+  // R-026: no digest into a cabinet that is closed for maintenance.
+  const skip = await maintenanceSkipReason('client-digest')
+  if (skip) return { ...stats, skippedReason: skip }
   const approved = (await fetchClientStates()).filter((s) => s.status === 'approved').map((s) => s.user_id)
   if (!approved.length) return stats
 

@@ -11,7 +11,7 @@ import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity } from '@/lib/mfa/store'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
 import { countCredentials } from '@/lib/webauthn/store'
 import { logActivity } from '@/lib/activity/log'
 
@@ -33,6 +33,14 @@ export async function POST(request: Request) {
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
 
+  // R-132: the proof is bound to this Supabase session (a new sign-in is a new
+  // session and needs the second factor again). Checked before a backup code
+  // is consumed.
+  const sessionKey = currentStepUpSessionKey()
+  if (!sessionKey) {
+    return NextResponse.json({ ok: false, error: 'Сессия не найдена. Войдите заново.' }, { status: 401 })
+  }
+
   const row = await getUserSecurity(user.id)
   // Accept a TOTP code (if enrolled) OR a backup code (which also covers
   // passkey-only users recovering on a device without their passkey).
@@ -43,7 +51,7 @@ export async function POST(request: Request) {
     // The second case can happen for users who enrolled a passkey before
     // auto-issue-backup-codes was added — they must use the passkey button, or
     // an admin must reset MFA (/api/giga-admin/users/:id/2fa-reset).
-    const passkeys = await countCredentials(user.id)
+    const passkeys = await countCredentials(user.id).catch(() => 0)
     return NextResponse.json({
       ok: false,
       error: passkeys > 0 ? 'no_backup_codes' : 'not_enrolled',
@@ -84,7 +92,7 @@ export async function POST(request: Request) {
   }
 
   const jar = await cookies()
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)
+  jar.set(MFA_COOKIE_NAME, signStepUp(user.id, sessionKey), MFA_COOKIE_OPTIONS)
 
   await logActivity({
     userId: user.id,

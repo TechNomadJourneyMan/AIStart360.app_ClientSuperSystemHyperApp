@@ -82,4 +82,27 @@ describe('WhatsApp Web bridge signatures', () => {
       nowSeconds: 1_750_000_030,
     })).toEqual({ ok: false, reason: 'unknown_key' })
   })
+
+  it('R-234: prototype keys as key id are an unknown key, not an exception', () => {
+    for (const keyId of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+      expect(() => verifySignedBridgeRequest({
+        method: 'POST',
+        path: '/v1/messages',
+        body,
+        headers: headers({ 'x-wa-bridge-key-id': keyId }),
+        expectedAudience: WHATSAPP_WEB_BRIDGE_AUDIENCE,
+        secrets: { primary: secret },
+        nowSeconds: 1_750_000_030,
+      })).not.toThrow()
+      expect(verifySignedBridgeRequest({
+        method: 'POST',
+        path: '/v1/messages',
+        body,
+        headers: headers({ 'x-wa-bridge-key-id': keyId }),
+        expectedAudience: WHATSAPP_WEB_BRIDGE_AUDIENCE,
+        secrets: { primary: secret },
+        nowSeconds: 1_750_000_030,
+      })).toEqual({ ok: false, reason: 'unknown_key' })
+    }
+  })
 })

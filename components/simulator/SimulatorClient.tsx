@@ -43,6 +43,17 @@ const CONFIDENCE_META: Record<SimResult['confidence'], { label: string; variant:
 
 const DISCLAIMER = 'Это сценарная оценка на ваших данных, а не прогноз-обещание.'
 
+/** R-039: the goal is a separate line with a verdict; it never becomes the forecast. */
+const VERDICT_META: Record<NonNullable<SimResult['target']>['verdict'], { label: string; variant: 'success' | 'warning' | 'error' | 'default' }> = {
+  reached: { label: 'Цель достигнута', variant: 'success' },
+  on_track: { label: 'Достигается при текущем темпе', variant: 'success' },
+  stretch: { label: 'Только в оптимистичном сценарии', variant: 'warning' },
+  unrealistic: { label: 'Нереально при текущем темпе', variant: 'error' },
+  no_forecast: { label: 'Нет прогноза', variant: 'default' },
+}
+
+export const NO_HISTORY_NOTE = 'Недостаточно истории для прогноза: нужно 6 месяцев'
+
 // ── Money formatting: «12,5 млн ₸» ───────────────────────────────────────────
 function moneyParts(n: number): { value: string; unit: string } {
   const abs = Math.abs(n)
@@ -227,7 +238,11 @@ export default function SimulatorClient() {
   // Bars for the realistic scenario: height ∝ midpoint of revenueRange.
   const realistic = result?.scenarios?.realistic
   const mids = realistic?.monthly?.map((p) => (p.revenueRange[0] + p.revenueRange[1]) / 2) ?? []
-  const maxMid = Math.max(1, ...mids)
+  const goal = result?.target ?? null
+  // Saved results from before R-039 carry no forecastAvailable: they are shown as they were.
+  const noForecast = result ? result.forecastAvailable === false : false
+  const maxMid = Math.max(1, ...mids, goal?.revenueMonthly ?? 0)
+  const goalPct = goal ? Math.min(100, Math.round((goal.revenueMonthly / maxMid) * 100)) : null
 
   const scenarioEntries = result
     ? ([
@@ -319,7 +334,7 @@ export default function SimulatorClient() {
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 leftIcon="flag"
-                hint="Без цели возьмём модельный темп роста"
+                hint="Цель — отдельная линия: прогноз строится по вашей истории выручки"
               />
             ) : (
               <>
@@ -404,6 +419,50 @@ export default function SimulatorClient() {
                   <p className="text-[11px] text-on-surface-variant/80">{DISCLAIMER}</p>
                 </div>
 
+                {/* No history → no forecast (R-039) */}
+                {noForecast && (
+                  <Card
+                    variant="default"
+                    padding="sm"
+                    className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04]"
+                    data-testid="sim-no-history"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-[18px] text-amber-400/90" aria-hidden>
+                        history
+                      </span>
+                      <div>
+                        <p className="text-sm text-on-surface font-medium">{NO_HISTORY_NOTE}</p>
+                        <p className="text-xs text-on-surface-variant mt-1">
+                          Сценарии ниже — условный коридор вокруг текущей выручки, а не прогноз. Загрузите отчёты
+                          о выручке по месяцам или подключите учётную систему — тогда темп посчитаем по вашим данным.
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Goal verdict (R-039) */}
+                {goal && (
+                  <Card
+                    variant="default"
+                    padding="sm"
+                    className="rounded-2xl border border-white/[0.04]"
+                    data-testid="sim-goal-verdict"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <span className="material-symbols-outlined text-[18px] text-tertiary" aria-hidden>
+                        flag
+                      </span>
+                      <p className="text-sm text-on-surface font-medium">Цель: {formatMoney(goal.revenueMonthly)}/мес</p>
+                      <Badge variant={VERDICT_META[goal.verdict]?.variant ?? 'default'}>
+                        {VERDICT_META[goal.verdict]?.label ?? goal.verdict}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">{goal.text}</p>
+                  </Card>
+                )}
+
                 {/* Three scenario cards */}
                 <div className="grid gap-3 sm:grid-cols-3">
                   {scenarioEntries.map(([key, sc]) => (
@@ -457,9 +516,20 @@ export default function SimulatorClient() {
                 {realistic && realistic.monthly.length > 0 && (
                   <Card variant="default" padding="md" className="rounded-2xl border border-white/[0.04] shadow-card">
                     <p className="text-[10px] font-mono text-on-surface-variant/70 uppercase tracking-[0.15em] mb-4">
-                      Выручка по месяцам · реалистичный сценарий
+                      {noForecast ? 'Выручка по месяцам · условный коридор (не прогноз)' : 'Выручка по месяцам · реалистичный сценарий'}
                     </p>
-                    <div className="flex items-end gap-1.5 h-36" role="img" aria-label="Помесячная проекция выручки, реалистичный сценарий">
+                    <div className="relative flex items-end gap-1.5 h-36" role="img" aria-label={goal ? `Помесячная проекция выручки, реалистичный сценарий; линия цели ${formatMoney(goal.revenueMonthly)} в месяц` : 'Помесячная проекция выручки, реалистичный сценарий'}>
+                      {goal && goalPct !== null && (
+                        <div
+                          className="pointer-events-none absolute inset-x-0 border-t border-dashed border-tertiary/70"
+                          style={{ bottom: `${goalPct}%` }}
+                          data-testid="sim-goal-line"
+                        >
+                          <span className="absolute right-0 -top-4 text-[9px] font-mono text-tertiary">
+                            цель {formatMoney(goal.revenueMonthly)}
+                          </span>
+                        </div>
+                      )}
                       {realistic.monthly.map((p, i) => {
                         const mid = (p.revenueRange[0] + p.revenueRange[1]) / 2
                         const h = Math.max(4, Math.round((mid / maxMid) * 100))

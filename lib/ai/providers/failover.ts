@@ -18,7 +18,16 @@
  * Callers keep their per-attempt accounting in `onFailure` (ledger of
  * timed-out attempts, logs). With a single candidate, `retryAlone` retries a
  * retryable error once after a pause (the gateway's pre-A1 behaviour).
+ *
+ * Deadline (R-016): `deadlineMs` is ONE budget for the whole chain — before it, 4 attempts of
+ * 45–60 s each could keep a user waiting 240 s. Each attempt is handed the time it may take
+ * (`budget.timeoutMs` = its own `attemptTimeoutMs`, never past the deadline, nor past the
+ * ambient deadline of the request, lib/runtime/deadline.ts); no attempt starts with less than
+ * `minAttemptMs` left. A spent budget ends the chain with a TIMEOUT failure (DEADLINE_MESSAGE):
+ * callers already turn a failure into their «ИИ недоступен» answer (chatWithOpenRouter → null,
+ * callLlm → error 'TIMEOUT').
  */
+import { deadlineRemainingMs } from '@/lib/runtime/deadline'
 import type { ClientFailure } from './client'
 import { markFailure, markSuccess } from './health'
 import type { ProviderTarget } from './types'
@@ -57,6 +66,38 @@ function failureText(f: ClientFailure): string {
   return `HTTP ${f.status}${why}`
 }
 
+/**
+ * Default budgets (R-016):
+ *   - userMs 45 s: someone is waiting for the answer. 45 s already is the per-attempt timeout the
+ *     chat callers used; a slow Sonnet answer still fits, a failover after a hung provider too
+ *     when the first one fails fast (a 4xx / 5xx / network error comes back in < 1–2 s);
+ *   - backgroundMs 120 s: agent runs. Below the 125 s worst case the agent queue plans one model
+ *     call with (lib/agents/queue.ts LLM_CALL_WORST_MS), so a drain never claims a task it cannot finish.
+ * Env: AI_CALL_DEADLINE_MS, AI_BACKGROUND_DEADLINE_MS.
+ */
+export const AI_DEADLINE_DEFAULTS = Object.freeze({ userMs: 45_000, backgroundMs: 120_000 })
+
+export const DEADLINE_MESSAGE = 'истёк общий лимит времени ответа ИИ'
+
+/**
+ * The budget of one call chain: the default for its kind (env-tunable), but never below the
+ * caller's own per-attempt timeout — a caller that asks for one 90 s attempt still gets it.
+ */
+export function aiDeadlineMs(
+  kind: 'user' | 'background',
+  attemptTimeoutMs: number,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = Number(env[kind === 'user' ? 'AI_CALL_DEADLINE_MS' : 'AI_BACKGROUND_DEADLINE_MS'])
+  const base = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : kind === 'user' ? AI_DEADLINE_DEFAULTS.userMs : AI_DEADLINE_DEFAULTS.backgroundMs
+  return Math.max(base, attemptTimeoutMs)
+}
+
+/** What one attempt may spend. */
+export interface AttemptBudget {
+  timeoutMs: number
+}
+
 export interface FailoverOptions {
   /** A refusal message skips the candidate (provider budget spent). */
   budgetCheck?: (target: ProviderTarget) => Promise<string | null>
@@ -69,6 +110,14 @@ export interface FailoverOptions {
   retryDelayMs?: number
   /** Upper bound of attempts across all candidates (default 4). */
   maxAttempts?: number
+  /** One budget for every attempt and pause together (R-016). Unset: only the ambient deadline. */
+  deadlineMs?: number
+  /** Timeout of one attempt (handed to `attempt` as budget.timeoutMs). Default 45 s. */
+  attemptTimeoutMs?: number
+  /** No attempt starts with less time than this left (default 1 s). */
+  minAttemptMs?: number
+  /** Clock (tests). Default Date.now. */
+  now?: () => number
 }
 
 export type FailoverResult<S> =
@@ -88,10 +137,25 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function runWithFailover<S extends { ok: true }>(
   candidates: readonly ProviderTarget[],
-  attempt: (target: ProviderTarget) => Promise<S | ClientFailure>,
+  attempt: (target: ProviderTarget, budget: AttemptBudget) => Promise<S | ClientFailure>,
   opts: FailoverOptions = {},
 ): Promise<FailoverResult<S>> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? 4)
+  const now = opts.now ?? Date.now
+  const attemptTimeoutMs = opts.attemptTimeoutMs ?? 45_000
+  const minAttemptMs = opts.minAttemptMs ?? 1_000
+  const ambient = deadlineRemainingMs()
+  const total = opts.deadlineMs === undefined ? ambient : ambient === null ? opts.deadlineMs : Math.min(opts.deadlineMs, ambient)
+  const deadlineAt = total === null ? Number.POSITIVE_INFINITY : now() + total
+  const left = () => deadlineAt - now()
+  const spent = (attempts: number, tried: ProviderTarget[], target: ProviderTarget | null): FailoverResult<S> => ({
+    ok: false,
+    failure: { ok: false, code: 'TIMEOUT', status: null, message: DEADLINE_MESSAGE, retryable: false, detail: null },
+    refusal: null,
+    target,
+    attempts,
+    tried,
+  })
   let attempts = 0
   let lastFailure: ClientFailure | null = null
   let lastTarget: ProviderTarget | null = null
@@ -105,13 +169,15 @@ export async function runWithFailover<S extends { ok: true }>(
       refusal = refusal ?? refused
       continue
     }
+    if (left() < minAttemptMs) return spent(attempts, tried, lastTarget)
     tried.push(target)
     const alone = candidates.length === 1 && opts.retryAlone
     const rounds = alone ? 2 : 1
     for (let round = 1; round <= rounds && attempts < maxAttempts; round++) {
+      if (left() < minAttemptMs) return spent(attempts, tried, lastTarget)
       attempts += 1
       lastTarget = target
-      const res = await attempt(target)
+      const res = await attempt(target, { timeoutMs: Math.max(1, Math.min(attemptTimeoutMs, left())) })
       if (res.ok) {
         markSuccess(target)
         return { ok: true, result: res as S, target, attempts, tried }
@@ -122,7 +188,9 @@ export async function runWithFailover<S extends { ok: true }>(
       const worthy = isFailoverWorthy(f)
       if (worthy) markFailure(target, failureText(f))
       if (round < rounds && f.retryable) {
-        await sleep(opts.retryDelayMs ?? 1500)
+        const delay = opts.retryDelayMs ?? 1500
+        if (left() < delay + minAttemptMs) return spent(attempts, tried, target)
+        await sleep(delay)
         continue
       }
       if (!worthy && !opts.alsoFailoverOn?.(target, f)) {

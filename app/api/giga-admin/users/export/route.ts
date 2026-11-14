@@ -8,6 +8,7 @@ import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { csvFilename, csvResponse, toCsv } from '@/lib/admin/csv'
 import { SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
 import { scopedClientIds } from '@/lib/admin/client-scope'
+import { recordAdminAction } from '@/lib/admin/audit'
 import {
   USER_LIST_ROLES, USER_LIST_SEGMENTS, USER_LIST_SORTS, USER_LIST_STATUSES, assigneeParam, scanAdminListUsers,
 } from '@/lib/admin/list-users'
@@ -20,6 +21,10 @@ import {
  *
  * Контакты маскируются тем же правилом, что и в списке: у роли без доступа к
  * личным данным выгрузка не должна становиться обходным путём.
+ *
+ * Каждая выгрузка пишется в журнал действий персонала (R-134) ДО отдачи
+ * файла: кто, с какими фильтрами, сколько строк, с контактами или маской.
+ * Журнал недоступен — файла нет (до 5000 строк с e-mail и телефонами).
  */
 
 // One list of allowed filter values with the broadcast audience (lib/admin/list-users.ts).
@@ -63,6 +68,22 @@ export async function GET(req: NextRequest) {
 
   const sensitive = hasPermission(guard.actor.role, 'users.sensitive')
   const rows = data as Array<Record<string, unknown>>
+
+  try {
+    await recordAdminAction(guard.actor, {
+      action: 'users.exported',
+      entityType: 'user',
+      entityId: `export:${rows.length}`,
+      metadata: {
+        rows: rows.length,
+        sensitive,
+        scope: guard.actor.clientScope ?? 'all',
+        filters: { q: (sp.get('q') ?? '').trim().slice(0, 100) || null, status: status || null, role: role || null, segment: segment || null, assignee: sp.get('assignee') ?? null, sort },
+      },
+    }, req, { required: true })
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Журнал действий недоступен — выгрузка не выполнена' }, { status: 503 })
+  }
 
   const headers = [
     'Компания', 'Имя', 'Email', 'Телефон', 'Статус', 'Роль', 'Роль персонала', 'Тариф',

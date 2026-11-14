@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { formatGri, griNeedsAttention, meanGri, toGri, GRI_ATTENTION_BELOW } from '@/lib/format/gri'
 
 interface ExpertClient {
   id: string
@@ -18,8 +19,11 @@ interface ExpertClient {
   companyName: string | null
   industry: string | null
   stage: string | null
+  /** Point A overall (diagnostics, 0–100) — NOT GRI. */
   overallScore: number | null
   healthIndex: number | null
+  /** Official GRI, 0–10 (lib/gri/official.ts); null = нет данных. */
+  griIndex?: number | null
   commentsCount: number
   calculatedAt: string | null
   createdAt: string | null
@@ -60,15 +64,12 @@ export default function ExpertDashboardPage() {
   const stats = useMemo(() => {
     const total = clients.length
     const totalComments = clients.reduce((s, c) => s + (c.commentsCount ?? 0), 0)
-    const withScore = clients.filter((c) => typeof c.overallScore === 'number')
-    const avgScore =
-      withScore.length > 0
-        ? withScore.reduce((s, c) => s + (c.overallScore ?? 0), 0) / withScore.length
-        : null
-    const attention = clients.filter(
-      (c) => typeof c.overallScore === 'number' && (c.overallScore ?? 0) < 40,
-    ).length
-    return { total, totalComments, avgScore, attention }
+    // GRI on its own scale 0–10 (R-036): the official GRI, never Point A.
+    const griValues = clients.map((c) => c.griIndex ?? null)
+    const avgGri = meanGri(griValues)
+    const griCount = griValues.filter((v) => toGri(v) !== null).length
+    const attention = clients.filter((c) => griNeedsAttention(c.griIndex)).length
+    return { total, totalComments, avgGri, griCount, attention }
   }, [clients])
 
   const recentlyActive = useMemo(() => {
@@ -130,9 +131,9 @@ export default function ExpertDashboardPage() {
         />
         <KpiCard
           label="Средний GRI"
-          value={stats.avgScore !== null ? stats.avgScore.toFixed(1) : '—'}
+          value={formatGri(stats.avgGri, { empty: '—' })}
           icon="radar"
-          subtitle={stats.avgScore === null ? 'нет оценок' : `по ${clients.filter(c => typeof c.overallScore === 'number').length} клиентам`}
+          subtitle={stats.avgGri === null ? 'нет оценок GRI' : `из 10 · по ${stats.griCount} клиентам`}
           loading={loadingClients}
         />
         <KpiCard
@@ -146,7 +147,7 @@ export default function ExpertDashboardPage() {
           label="Требуют внимания"
           value={stats.attention.toString()}
           icon="warning"
-          subtitle="GRI < 40"
+          subtitle={`GRI < ${GRI_ATTENTION_BELOW} из 10`}
           tone={stats.attention > 0 ? 'error' : 'default'}
           loading={loadingClients}
         />
@@ -202,12 +203,20 @@ export default function ExpertDashboardPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
+                    {c.griIndex != null && (
+                      <div className="text-right">
+                        <p className="text-sm font-mono font-bold text-on-surface leading-none">
+                          {formatGri(c.griIndex)}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant">GRI / 10</p>
+                      </div>
+                    )}
                     {typeof c.overallScore === 'number' && (
                       <div className="text-right">
                         <p className="text-sm font-mono font-bold text-on-surface leading-none">
                           {c.overallScore.toFixed(0)}
                         </p>
-                        <p className="text-[10px] text-on-surface-variant">GRI</p>
+                        <p className="text-[10px] text-on-surface-variant">Точка А / 100</p>
                       </div>
                     )}
                     {c.commentsCount > 0 && (

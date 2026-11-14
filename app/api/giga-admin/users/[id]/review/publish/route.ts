@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireGigaClient } from '@/lib/admin/client-scope'
 import { z } from 'zod'
-import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
+import { forbidTarget } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
@@ -28,7 +29,7 @@ import { REVIEW_COLUMNS, UUID_RE, displayNameOf, findDraftReview, listDraftComme
 const bodySchema = z.object({ expectedCount: z.number().int().min(0).optional() })
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'clients.review')
+  const guard = await requireGigaClient(req, 'clients.review', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const denied = await forbidTarget(guard.actor, params.id)

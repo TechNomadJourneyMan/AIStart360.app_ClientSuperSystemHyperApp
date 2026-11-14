@@ -42,6 +42,7 @@ import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { expressSummary } from '@/lib/survey/express'
 import { recommendedBlocks } from '@/lib/survey/blocks'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
+import { maintenanceSkipReason, type MaintenanceSkipReason } from '@/lib/automation/maintenance-gate'
 
 export type ReminderKind = 'gri_draft_reminder' | 'survey_reminder' | 'welcome' | 'gri_start_reminder' | 'pulse_reminder'
 
@@ -323,6 +324,8 @@ export interface ReminderRunStats {
   disabled: number
   failed: number
   byKind: Record<string, number>
+  /** R-026: the run was skipped as a whole (the cabinet is in maintenance, or that is unknown). */
+  skippedReason?: MaintenanceSkipReason
 }
 
 /** Отправляет касания по плану: первое неотправленное, не больше одного на клиента. */
@@ -374,6 +377,9 @@ export async function deliverPlanned(
 
 export async function runReminders(now: Date = new Date()): Promise<ReminderRunStats> {
   const stats: ReminderRunStats = { clients: 0, candidates: 0, sent: 0, capped: 0, duplicate: 0, disabled: 0, failed: 0, byKind: {} }
+  // R-026: no reminders into a cabinet that is closed for maintenance.
+  const skip = await maintenanceSkipReason('reminders')
+  if (skip) return { ...stats, skippedReason: skip }
   const states = (await fetchClientStates()).filter((s) => s.status === 'approved')
   stats.clients = states.length
 

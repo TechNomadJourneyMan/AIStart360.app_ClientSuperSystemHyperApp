@@ -11,6 +11,7 @@ import { Commentable } from '@/components/expert/Commentable'
 interface DashboardData {
   diagnostic: {
     overall_score: number | null
+    health_index?: number | null
     finance_score: number | null
     sales_score: number | null
     operations_score: number | null
@@ -89,10 +90,11 @@ export function DashboardTab({ clientId }: Props) {
       {/* KPI Cards */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Commentable targetId="dashboard:kpi:overallScore">
-          <KpiCard label="Overall Score" value={formatScore(diag?.overall_score)} icon="trending_up" />
+          {/* The route sends the OFFICIAL row: null = no score yet (R-032/R-033), never 0. */}
+          <KpiCard label="Overall Score" value={diag && diag.overall_score == null ? 'Балл появится, когда данных хватит' : formatScore(diag?.overall_score)} icon="trending_up" />
         </Commentable>
         <Commentable targetId="dashboard:kpi:healthIndex">
-          <KpiCard label="Health Index" value={formatScore(diag?.overall_score)} icon="favorite" />
+          <KpiCard label="Health Index" value={formatScore(diag?.health_index)} icon="favorite" />
         </Commentable>
         <Commentable targetId="dashboard:kpi:documents">
           <KpiCard label="Документы" value={data?.company?.industry ?? '—'} icon="description" />
@@ -184,8 +186,10 @@ export function DashboardTab({ clientId }: Props) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** A score or a diagnostics block column ({ score, … }); null = «нет данных». */
 function formatScore(s: unknown): string {
-  if (s === null || s === undefined || s === '') return '—'
+  if (s && typeof s === 'object') s = (s as { score?: unknown }).score
+  if (s === null || s === undefined || s === '') return 'нет данных'
   const n = typeof s === 'number' ? s : Number(s)
   if (!Number.isFinite(n)) return '—'
   return n.toFixed(1)

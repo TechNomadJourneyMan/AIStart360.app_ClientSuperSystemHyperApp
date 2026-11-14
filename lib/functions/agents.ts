@@ -20,6 +20,9 @@ export const agentsTaskRequested = inngest.createFunction(
     // Each run holds DB connections (Prisma pool of 5) — 2 at a time keeps the
     // Supabase pooler free for the site (5 starved it, 2026-10-15).
     concurrency: { limit: 2 },
+    // BE-06 (lib/functions/limits.ts): the task is in the Postgres queue too — a run that waited
+    // 5 min is dropped and the drain starts the task; finish above the longest lease (360 s).
+    timeouts: { start: '5m', finish: '10m' },
     triggers: [{ event: AGENT_TASK_REQUESTED_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -44,6 +47,9 @@ export const agentsMaintenance = inngest.createFunction(
     id: 'agents-maintenance',
     retries: 0,
     concurrency: { limit: 1 },
+    // BE-06: a run that waited most of its minute is skipped (the next one is due); finish above
+    // a drained task's worst case (≤ 300 s, drainQueue maxDurationMs) so runs never overlap.
+    timeouts: { start: '50s', finish: '6m' },
     triggers: [{ cron: '* * * * *' }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

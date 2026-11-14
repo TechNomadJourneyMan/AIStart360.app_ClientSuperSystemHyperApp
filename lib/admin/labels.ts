@@ -63,6 +63,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   'user.invited': 'Приглашение отправлено',
   'settings.changed': 'Настройки платформы изменены',
   'analytics.exported': 'Выгрузка аналитики (CSV)',
+  'users.exported': 'Выгрузка пользователей (CSV)',
   'system.events_purged': 'Старые события удалены',
   'insight.published': 'Инсайт опубликован',
   'insight.rejected': 'Инсайт отклонён',

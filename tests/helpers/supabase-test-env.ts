@@ -12,6 +12,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { rememberedAppSupabaseUrls } from './test-env-guard'
 
 export interface SupabaseTestEnv {
   url: string
@@ -49,4 +50,6 @@ export const supabaseTestEnv: SupabaseTestEnv | null = resolveSupabaseTestEnv(pr
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_URL,
   envLocalSupabaseUrl(),
+  // env-setup.ts replaces the app URLs with local dummies; compare against the originals too.
+  ...rememberedAppSupabaseUrls(),
 ])

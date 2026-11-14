@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
+import { formatGri, griColor, griPercentOfScale, griTone, griZone, toGri, GRI_TONE_TEXT_CLASS } from '@/lib/format/gri'
 
 // 7 GRI blocks (section ids ↔ Russian labels + icons) in canonical order.
 const BLOCKS: { id: string; label: string; icon: string; desc: string }[] = [
@@ -29,21 +30,21 @@ interface GriCurrent {
 }
 
 function ScoreBar({ score }: { score: number }) {
-  const bar = score >= 8 ? 'bg-primary' : score >= 4 ? 'bg-yellow-400' : 'bg-error'
+  const tone = griTone(score)
+  const bar = tone === 'green' ? 'bg-primary' : tone === 'amber' ? 'bg-yellow-400' : 'bg-error'
   return (
     <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
       <div
         className={`h-full ${bar} rounded-full transition-all duration-700`}
-        style={{ width: `${score * 10}%` }}
+        style={{ width: `${griPercentOfScale(score)}%` }}
       />
     </div>
   )
 }
 
 function ScoreColor(score: number) {
-  if (score >= 8) return 'text-primary'
-  if (score >= 4) return 'text-yellow-400'
-  return 'text-error'
+  const tone = griTone(score)
+  return tone ? GRI_TONE_TEXT_CLASS[tone] : 'text-on-surface-variant'
 }
 
 export default function ExpertGriPage() {
@@ -69,7 +70,7 @@ export default function ExpertGriPage() {
   }, [])
 
   const sectionAvgs = current?.section_avgs ?? {}
-  const totalScore = typeof current?.gri_index === 'number' ? current.gri_index : 0
+  const totalScore = toGri(current?.gri_index) ?? 0
   const hasAssessment =
     !!current &&
     typeof current.gri_index === 'number' &&
@@ -83,8 +84,9 @@ export default function ExpertGriPage() {
 
   const topLimits = current?.top_5_limits ?? []
   const circumference = 2 * Math.PI * 64
-  const dialColor = totalScore >= 8 ? '#6effc0' : totalScore >= 4 ? '#facc15' : '#ef4444'
-  const dialLabel = totalScore >= 8 ? 'Готов к росту' : totalScore >= 4 ? 'Средний уровень' : 'Критический уровень'
+  // One set of GRI zones and one formatter (lib/format/gri.ts, R-036).
+  const dialColor = griColor(totalScore)
+  const dialLabel = griZone(totalScore)?.label ?? 'нет данных'
 
   return (
     <div className="space-y-8">
@@ -126,7 +128,7 @@ export default function ExpertGriPage() {
                     strokeDasharray={`${circumference * (totalScore / 10)} ${circumference}`} />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-mono font-bold text-on-surface">{totalScore}</span>
+                  <span className="text-4xl font-mono font-bold text-on-surface">{formatGri(totalScore, { empty: '—' })}</span>
                   <span className="text-[10px] font-mono text-on-surface-variant">/ 10</span>
                 </div>
               </div>
@@ -171,7 +173,7 @@ export default function ExpertGriPage() {
                         <p className="text-sm font-medium text-on-surface">{block.label}</p>
                       </div>
                     </div>
-                    <span className={`text-xl font-mono font-bold ${ScoreColor(block.score)}`}>{block.score}</span>
+                    <span className={`text-xl font-mono font-bold ${ScoreColor(block.score)}`}>{formatGri(block.score, { empty: '—' })}</span>
                   </div>
                   <ScoreBar score={block.score} />
                   <p className="text-[11px] text-on-surface-variant mt-2">{block.desc}</p>

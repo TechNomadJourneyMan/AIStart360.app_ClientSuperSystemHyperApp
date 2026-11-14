@@ -10,6 +10,7 @@ import { visibleSectionsFor } from '@/lib/platform/sections'
 import { visiblePagesFor } from '@/lib/cms/server'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
+import { ReportReadyCard, pickPublishedReport } from '@/components/reports/ReportReadyCard'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
@@ -25,14 +26,23 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   // Point A today is the v4 snapshot (the same score as the Point A page and the
   // dashboard); the v1 diagnostics row is only the fallback for older accounts.
   // The snapshot follows the company row only, not the slowest read of the page.
-  const snapshotP = Promise.resolve(sb.from('companies').select('id').eq('user_id', user.id).maybeSingle()).then(async (companyRes) => {
-    const companyId = (companyRes.data as { id?: unknown } | null)?.id
+  const companyIdP = Promise.resolve(sb.from('companies').select('id').eq('user_id', user.id).maybeSingle())
+    .then((companyRes) => (companyRes.data as { id?: unknown } | null)?.id ?? null)
+  const snapshotP = companyIdP.then(async (companyId) => {
     if (companyId == null) return null
     // `blocks`: a block without data → «Первичная · по быстрым данным» (survey Ф5).
     const snapshotRes = await sb.from('point_a_snapshots').select('overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
     return snapshotRes.error ? null : (snapshotRes.data as { overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
   })
-  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot] = await Promise.all([
+  // R-025: the latest report version an expert published («Ваш отчёт готов»), read
+  // next to the snapshot (same wave). RLS shows a tenant only published versions;
+  // the query asks for them explicitly too. A failed read only hides the card.
+  const reportP = companyIdP.then(async (companyId) => {
+    if (companyId == null) return null
+    const res = await sb.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
+    return res.error ? null : pickPublishedReport(res.data as Array<Record<string, unknown>> | null)
+  }).catch(() => null)
+  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', user.id),
     sb.from('diagnostics').select('overall_score, health_index, stage, calculated_at').eq('user_id', user.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -41,6 +51,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     visibleSectionsFor(user.id),
     visiblePagesFor(user.id),
     snapshotP,
+    reportP,
   ])
 
   const rows = (answersRes.data ?? []).filter((r) => isWizardVisibleKey(String(r.question_key)))
@@ -89,5 +100,13 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     unavailableSection: typeof searchParams?.unavailable === 'string' ? searchParams.unavailable.slice(0, 40) : null,
   }
 
-  return <UserHome data={data} />
+  if (!report) return <UserHome data={data} />
+  return (
+    <>
+      <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6 sm:pt-8">
+        <ReportReadyCard report={report} />
+      </div>
+      <UserHome data={data} />
+    </>
+  )
 }

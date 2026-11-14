@@ -51,13 +51,13 @@ describe('forecast', () => {
   })
 
   it('respects the horizon option', () => {
-    const series = monthly([10, 20, 30, 40, 50])
+    const series = monthly([10, 20, 30, 40, 50, 60]) // R-040: a forecast needs ≥ 6 business periods
     expect(forecast(series, { horizon: 2 })).toHaveLength(2)
     expect(forecast(series, { horizon: 6 })).toHaveLength(6)
   })
 
   it('infers monthly cadence and labels future months', () => {
-    const series = monthly([10, 20, 30, 40, 50])
+    const series = monthly([10, 20, 30, 40, 50, 60]) // R-040: a forecast needs ≥ 6 business periods
     const out = forecast(series, { horizon: 3 })
     // Monthly labels look like "<mon> '<YY>" — three characters of
     // Cyrillic month + apostrophe + 2-digit year.
@@ -65,7 +65,7 @@ describe('forecast', () => {
   })
 
   it('infers quarterly cadence and labels future quarters', () => {
-    const series = quarterly([10, 20, 30, 40, 50])
+    const series = quarterly([10, 20, 30, 40, 50, 60]) // R-040: ≥ 6 periods
     const out = forecast(series, { horizon: 2 })
     // Quarterly labels look like "Q1 '26".
     expect(out[0].label).toMatch(/^Q[1-4] '\d{2}$/)

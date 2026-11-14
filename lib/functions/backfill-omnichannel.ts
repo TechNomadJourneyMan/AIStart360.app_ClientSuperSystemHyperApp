@@ -25,6 +25,8 @@ export const backfillOmnichannel = inngest.createFunction(
     id: 'backfill-omnichannel',
     retries: 2,
     concurrency: { limit: 1 },
+    // BE-06 (lib/functions/limits.ts): a backfill is paged in steps; 6 h is far above a channel's history.
+    timeouts: { start: '1h', finish: '6h' },
     triggers: [{ event: OMNICHANNEL_BACKFILL_REQUESTED_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

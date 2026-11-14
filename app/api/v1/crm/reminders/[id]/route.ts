@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmReminderPatchBody } from '@/lib/validation/schemas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const REMINDER_STATUSES = ['done', 'dismissed'] as const
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
@@ -17,25 +18,17 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
   const userId = userData.user.id
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
-  }
-  const b = (body ?? {}) as Record<string, unknown>
-
-  const status = String(b.status ?? '')
-  if (!(REMINDER_STATUSES as readonly string[]).includes(status)) {
-    return NextResponse.json({ ok: false, error: 'status must be done or dismissed' }, { status: 400 })
-  }
+  // R-149: { status: done|dismissed, next_contact_at? } only.
+  const body = await parseJsonBody(request, CrmReminderPatchBody)
+  if (!body.ok) return body.response
+  const { status } = body.data
 
   // next_contact_at опционален и валиден только при done — «предложить следующий контакт».
   let nextContactAt: string | undefined
-  if (b.next_contact_at != null && b.next_contact_at !== '') {
-    const d = new Date(String(b.next_contact_at))
+  if (body.data.next_contact_at != null && body.data.next_contact_at !== '') {
+    const d = new Date(body.data.next_contact_at)
     if (Number.isNaN(d.getTime())) {
-      return NextResponse.json({ ok: false, error: 'next_contact_at must be an ISO date' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'next_contact_at must be an ISO date', code: 'invalid_body', field: 'next_contact_at' }, { status: 400 })
     }
     nextContactAt = d.toISOString()
   }

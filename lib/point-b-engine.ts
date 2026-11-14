@@ -90,12 +90,20 @@ function effortFromGap(gap: number): string {
 export function calculatePointB(
   pointA: PointA,
   answers: Record<string, unknown>,
+  /**
+   * Blocks the official Point A has no data for (lib/point-a/official.ts):
+   * their PointA block is a placeholder, so they get no target, no gap and no
+   * weight in the target overall — «нет данных» is not a 0 to grow from.
+   */
+  opts: { blocksWithoutData?: readonly string[] } = {},
 ): PointB {
   const stage = pointA.stage ?? 'seed'
+  const noData = new Set(opts.blocksWithoutData ?? [])
+  const keys = BLOCK_KEYS.filter((k) => !noData.has(k))
 
   // 1. Target blocks
   const targetBlocks: Record<string, TargetBlock> = {}
-  for (const key of BLOCK_KEYS) {
+  for (const key of keys) {
     const current = pointA.blocks[key]?.score ?? 0
     const potential = improvementPotential(current, stage)
     const target = Math.min(100, current + potential)
@@ -111,19 +119,20 @@ export function calculatePointB(
 
   // 2. Target overall & health
   const weights = { finance: 0.30, sales: 0.25, operations: 0.20, marketing: 0.15, strategy: 0.10 }
-  const targetOverall = Math.round(
-    BLOCK_KEYS.reduce((sum, k) => sum + targetBlocks[k].target * weights[k], 0)
-  )
+  const weightSum = keys.reduce((sum, k) => sum + weights[k], 0)
+  const targetOverall = weightSum > 0
+    ? Math.round(keys.reduce((sum, k) => sum + targetBlocks[k].target * weights[k], 0) / weightSum)
+    : pointA.overall_score
   const targetHealth = Math.min(100, Math.round(
     targetOverall * 0.6 +
-    (targetBlocks.finance.target > 50 ? 20 : 0) +
-    (targetBlocks.sales.target > 50 ? 10 : 0) +
-    (targetBlocks.operations.target > 50 ? 10 : 0)
+    ((targetBlocks.finance?.target ?? 0) > 50 ? 20 : 0) +
+    ((targetBlocks.sales?.target ?? 0) > 50 ? 10 : 0) +
+    ((targetBlocks.operations?.target ?? 0) > 50 ? 10 : 0)
   ))
   const targetStage = nextStage(stage)
 
   // 3. GAP analysis (sorted by gap desc)
-  const gapAnalysis = BLOCK_KEYS
+  const gapAnalysis = keys
     .map(key => ({
       block: key,
       label: BLOCK_LABELS[key],

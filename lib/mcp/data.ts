@@ -11,6 +11,7 @@
  */
 import { prisma } from '@/lib/db'
 import { contactEmail, contactPhone, freeText } from './pii'
+import { officialBlockScore, officialPointA, officialScore, snapshotFromJoined } from '@/lib/point-a/official'
 
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
 const num = (v: unknown): number | null => {
@@ -73,13 +74,19 @@ export async function searchClients(p: { query: string | null; pii: boolean; lim
   const pat = term ? like(term) : null
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT c.id, c.name, c.industry, c.stage, p.id::text AS owner_id, p.full_name, p.email, p.status AS owner_status,
-           d.overall_score::float AS score, d.calculated_at
+           d.overall_score::float AS score, d.has_diag, d.calculated_at,
+           s.snap_engine, s.snap_config_version, s.snap_blocks, s.snap_v4, s.snap_overall, s.snap_stage
     FROM public.companies c
     LEFT JOIN public.profiles p ON p.id = c.user_id
     LEFT JOIN LATERAL (
-      SELECT overall_score, calculated_at FROM public.diagnostics
+      SELECT overall_score, true AS has_diag, calculated_at FROM public.diagnostics
       WHERE company_id = c.id AND is_current ORDER BY calculated_at DESC LIMIT 1
     ) d ON true
+    LEFT JOIN LATERAL (
+      SELECT ps.engine AS snap_engine, ps.config_version AS snap_config_version, ps.blocks AS snap_blocks,
+             ps.v4 AS snap_v4, ps.overall::float AS snap_overall, ps.stage AS snap_stage
+      FROM public.point_a_snapshots ps WHERE ps.company_id = c.id ORDER BY ps.created_at DESC LIMIT 1
+    ) s ON true
     WHERE (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
       AND (${term}::text IS NULL
@@ -97,17 +104,12 @@ export async function searchClients(p: { query: string | null; pii: boolean; lim
       owner: r.owner_id
         ? { user_id: String(r.owner_id), full_name: (r.full_name as string | null) ?? null, email: contactEmail(r.email as string | null, p.pii), status: (r.owner_status as string | null) ?? null }
         : null,
-      overall_score: num(r.score),
+      // The OFFICIAL score (lib/point-a/official.ts): null without one, never a v1 number.
+      overall_score: officialScore(officialPointA(r.has_diag ? { overall_score: r.score } : null, snapshotFromJoined(r))),
       diagnostic_at: iso(r.calculated_at),
     })),
     hasMore: rows.length > p.limit,
   }
-}
-
-function areaScore(v: unknown): number | null {
-  if (typeof v === 'number' || typeof v === 'string') return num(v)
-  if (v && typeof v === 'object') return num((v as Record<string, unknown>).score ?? (v as Record<string, unknown>).value)
-  return null
 }
 
 function gapList(raw: unknown): string[] {
@@ -147,6 +149,12 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
     SELECT overall_score::float AS score, health_index::float AS health, stage, finance_score, sales_score,
            operations_score, marketing_score, strategy_score, data_gaps, calculated_at
     FROM public.diagnostics WHERE company_id = ${id} AND is_current ORDER BY calculated_at DESC LIMIT 1`
+  const [snapRow] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT engine AS snap_engine, config_version AS snap_config_version, blocks AS snap_blocks, v4 AS snap_v4,
+           overall::float AS snap_overall, stage AS snap_stage
+    FROM public.point_a_snapshots WHERE company_id = ${id} ORDER BY created_at DESC LIMIT 1`
+  // The OFFICIAL Point A (R-033): «нет данных» = null, never a 0.
+  const official = diag ? officialPointA({ ...diag, overall_score: diag.score, health_index: diag.health }, snapshotFromJoined(snapRow)) : null
   const [sess] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT id::text, kind, status, completeness::float AS completeness, started_at, completed_at
     FROM public.diagnostic_sessions WHERE company_id = ${id} ORDER BY started_at DESC LIMIT 1`
@@ -194,17 +202,20 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
       registered_at: iso(c.owner_created_at),
       last_seen_at: iso(c.last_seen_at),
     } : null,
-    current_diagnostic: diag ? {
-      overall_score: num(diag.score),
-      health_index: num(diag.health),
-      stage: (diag.stage as string | null) ?? null,
+    current_diagnostic: diag && official ? {
+      overall_score: officialScore(official),
+      health_index: official.state === 'scored' ? official.health_index : null,
+      stage: official.state === 'scored' ? official.stage : null,
+      assessment: official.state,
+      // null = no data (or the full questionnaire not sent yet) — never a 0.
       area_scores: {
-        finance: areaScore(diag.finance_score),
-        sales: areaScore(diag.sales_score),
-        operations: areaScore(diag.operations_score),
-        marketing: areaScore(diag.marketing_score),
-        strategy: areaScore(diag.strategy_score),
+        finance: officialBlockScore(official, 'finance'),
+        sales: officialBlockScore(official, 'sales'),
+        operations: officialBlockScore(official, 'operations'),
+        marketing: officialBlockScore(official, 'marketing'),
+        strategy: officialBlockScore(official, 'strategy'),
       },
+      blocks_without_data: official.blocksWithoutData,
       data_gaps: gapList(diag.data_gaps),
       calculated_at: iso(diag.calculated_at),
     } : null,

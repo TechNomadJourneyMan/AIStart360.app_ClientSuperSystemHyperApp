@@ -230,10 +230,10 @@ export const metricsAgent = stageAgent({
     if (m.errors > 0 && m.written === 0 && m.total > 0) {
       throw new AgentError('MATERIALIZE_FAILED', `метрики не записаны: ошибок ${m.errors}`, true)
     }
-    const s = await ctx.tool<{ no_data?: boolean; reason?: string; diagnostic_id?: string; reused?: boolean; overall_score?: number; critical_risks?: number }>('diagnostics.score', {})
+    const s = await ctx.tool<{ no_data?: boolean; reason?: string; diagnostic_id?: string; reused?: boolean; overall_score?: number | null; critical_risks?: number }>('diagnostics.score', {})
     if (s.no_data) return { summary: `метрик записано ${m.written}; индекс не рассчитан`, stop: s.reason ?? 'Анкета не заполнена' }
     return {
-      summary: `метрик записано ${m.written} из ${m.total}${m.errors ? ` (ошибок ${m.errors})` : ''}; индекс ${s.overall_score}${s.reused ? ' (актуальный расчёт)' : ''}`,
+      summary: `метрик записано ${m.written} из ${m.total}${m.errors ? ` (ошибок ${m.errors})` : ''}; ${s.overall_score === null || s.overall_score === undefined ? 'индекса нет (мало данных или анкета не отправлена)' : `индекс ${s.overall_score}`}${s.reused ? ' (актуальный расчёт)' : ''}`,
       data: { metrics_written: m.written, metrics_total: m.total, metric_errors: m.errors, diagnostic_id: s.diagnostic_id, reused: s.reused, critical_risks: s.critical_risks },
     }
   },

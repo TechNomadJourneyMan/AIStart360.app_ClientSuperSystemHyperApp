@@ -9,7 +9,9 @@ import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
 
 // Coerce any DB-returned value (number | string | null) to a safe display string
+// A diagnostics block column is { score, … }; null = «нет данных» (official row).
 function fmt(v: unknown): string {
+  if (v && typeof v === 'object') v = (v as { score?: unknown }).score
   if (v === null || v === undefined || v === '') return '—'
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n)) return '—'
@@ -118,14 +120,14 @@ export function PointATab({ clientId }: Props) {
               <circle cx="80" cy="80" r="64" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
               <circle
                 cx="80" cy="80" r="64" fill="none" stroke="#6effc0" strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={`${2 * Math.PI * 64 * (toNumber(diag?.overall_score) / 10)} ${2 * Math.PI * 64}`}
+                strokeDasharray={`${2 * Math.PI * 64 * (Math.min(100, toNumber(diag?.overall_score)) / 100)} ${2 * Math.PI * 64}`}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-3xl font-mono font-bold text-primary">
                 {fmt(diag?.overall_score)}
               </span>
-              <span className="text-[9px] font-mono text-on-surface-variant">/ 10</span>
+              <span className="text-[9px] font-mono text-on-surface-variant">/ 100</span>
             </div>
           </div>
           <div>
@@ -136,7 +138,9 @@ export function PointATab({ clientId }: Props) {
               Точка А
             </h2>
             <p className="text-sm text-on-surface-variant mt-1">
-              Стартовая оценка по 5 направлениям
+              {diag && diag.overall_score == null
+                ? 'Балл появится, когда данных хватит: нужна полная анкета и данные по блокам «Финансы» или «Продажи»'
+                : 'Стартовая оценка по 5 направлениям'}
             </p>
           </div>
         </section>

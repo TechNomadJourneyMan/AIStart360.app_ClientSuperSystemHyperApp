@@ -12,6 +12,73 @@ import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
 
+interface QuickAction {
+  label: string
+  icon: string
+  href: string
+  reqPermission?: string
+  /** Only these roles see the action (the section is closed to the others). */
+  roles?: UserRole[]
+}
+interface QuickActionGroup {
+  title: string
+  items: QuickAction[]
+}
+
+// /insights and /reports are staff surfaces: middleware keeps them in
+// ADMIN_PATHS and lib/navigation shows them to super_admin/admin only — a client
+// (or an expert) following the quick action was bounced to another page.
+const STAFF_SECTION_ROLES: UserRole[] = ['super_admin', 'admin']
+
+export const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
+  {
+    title: 'Файлы',
+    items: [
+      { label: 'Загрузить файл', icon: 'upload_file', href: '#upload' },
+      { label: 'Мои документы',  icon: 'folder_open', href: '/point-a#files' },
+    ],
+  },
+  {
+    title: 'Диагностика',
+    items: [
+      { label: 'Заполнить анкету',  icon: 'edit_note',  href: '/client/onboarding' },
+      { label: 'GRI Assessment',    icon: 'radar',      href: '/gri' },
+      { label: 'Точка А',           icon: 'my_location', href: '/point-a' },
+    ],
+  },
+  {
+    title: 'Аналитика',
+    items: [
+      { label: 'Метрики роста',  icon: 'monitoring',  href: '/metrics' },
+      { label: 'Инсайты',        icon: 'lightbulb',   href: '/insights', roles: STAFF_SECTION_ROLES },
+      { label: 'Отчёты',         icon: 'description', href: '/reports',  roles: STAFF_SECTION_ROLES },
+    ],
+  },
+  {
+    title: 'Стратегия',
+    items: [
+      { label: 'Точка Б — цели роста', icon: 'flag', href: '/point-b' },
+    ],
+  },
+  {
+    title: 'Команда',
+    items: [
+      { label: 'Новый клиент',        icon: 'person_add', href: '/clients', reqPermission: 'clients.write' },
+      { label: 'Управление командой', icon: 'groups',     href: '/team',    reqPermission: 'team.write'    },
+    ],
+  },
+]
+
+/** The quick actions a role may follow: permission and section roles; empty groups drop out. */
+export function visibleQuickActionGroups(role: UserRole): QuickActionGroup[] {
+  return QUICK_ACTION_GROUPS
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((a) => (!a.reqPermission || hasPermission(role, a.reqPermission)) && (!a.roles || a.roles.includes(role))),
+    }))
+    .filter((g) => g.items.length > 0)
+}
+
 export function Header() {
   const { sidebarCollapsed } = useUIStore()
   const { unreadCount } = useNotificationsStore()
@@ -36,65 +103,10 @@ export function Header() {
   // server route handlers (AI insights, new-module labels) pick up the change.
   const toggleLocale = () => setClientLocale(locale === 'ru' ? 'en' : 'ru')
 
-  interface QuickAction {
-    label: string
-    icon: string
-    href: string
-    reqPermission?: string
-  }
-  interface QuickActionGroup {
-    title: string
-    items: QuickAction[]
-  }
-
-  const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
-    {
-      title: 'Файлы',
-      items: [
-        { label: 'Загрузить файл', icon: 'upload_file', href: '#upload' },
-        { label: 'Мои документы',  icon: 'folder_open', href: '/point-a#files' },
-      ],
-    },
-    {
-      title: 'Диагностика',
-      items: [
-        { label: 'Заполнить анкету',  icon: 'edit_note',  href: '/client/onboarding' },
-        { label: 'GRI Assessment',    icon: 'radar',      href: '/gri' },
-        { label: 'Точка А',           icon: 'my_location', href: '/point-a' },
-      ],
-    },
-    {
-      title: 'Аналитика',
-      items: [
-        { label: 'Метрики роста',  icon: 'monitoring',  href: '/metrics' },
-        { label: 'Инсайты',        icon: 'lightbulb',   href: '/insights' },
-        { label: 'Отчёты',         icon: 'description', href: '/reports' },
-      ],
-    },
-    {
-      title: 'Стратегия',
-      items: [
-        { label: 'Точка Б — цели роста', icon: 'flag', href: '/point-b' },
-      ],
-    },
-    {
-      title: 'Команда',
-      items: [
-        { label: 'Новый клиент',        icon: 'person_add', href: '/clients', reqPermission: 'clients.write' },
-        { label: 'Управление командой', icon: 'groups',     href: '/team',    reqPermission: 'team.write'    },
-      ],
-    },
-  ]
-
   // FE-01/02: canonical lowercase role (matches ROLE_PERMISSIONS keys); the old
   // toUpperCase() produced values that never matched the lowercase perms map.
   const userRole: UserRole = (user?.role as UserRole | undefined) ?? 'client'
-  const visibleGroups = QUICK_ACTION_GROUPS
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((a) => !a.reqPermission || hasPermission(userRole, a.reqPermission)),
-    }))
-    .filter((g) => g.items.length > 0)
+  const visibleGroups = visibleQuickActionGroups(userRole)
 
   const triggerFilePicker = () => {
     setShowQuickAction(false)

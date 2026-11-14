@@ -194,7 +194,22 @@ export function effectiveBlocks(template: BlockTemplate, cfg: CompanyBlockConfig
  * the next recalculation of every company then writes a new Point A instead
  * of stopping at «inputs unchanged».
  */
-export const POINT_A_RULES_VERSION = 'r1'
+export const POINT_A_RULES_VERSION = 'r2'
+
+/**
+ * R-032 (решение PO 2026-11-14) — когда у Точки А есть ОБЩИЙ балл и стадия.
+ * ВРЕМЕННЫЕ значения — до утверждения экспертом (меняются только здесь).
+ *
+ * Общий балл и стадия появляются, только если: (а) полная анкета отправлена,
+ * (б) блоки с баллом покрывают не меньше MIN_OVERALL_WEIGHT_COVERAGE
+ * суммарного веса взвешенных блоков, (в) среди блоков с баллом есть хотя бы
+ * один из OVERALL_REQUIRED_ANY_OF. Иначе overall / stage / health = null, а
+ * блоки с данными сохраняют свои баллы. r1 → r2: правило меняет баллы, поэтому
+ * следующий пересчёт каждой компании записывает новую Точку А.
+ */
+export const MIN_OVERALL_WEIGHT_COVERAGE = 0.6
+/** ВРЕМЕННО (R-032): хотя бы один из этих блоков должен иметь балл. */
+export const OVERALL_REQUIRED_ANY_OF: readonly BlockKey[] = ['finance', 'sales']
 
 /** Stable version of the effective configuration (for snapshots). */
 /**

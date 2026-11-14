@@ -133,12 +133,23 @@ describe('keys, decisions and responses', () => {
     const store = recordingStore(() => ({ allowed: true, remaining: 4, retryAfterSeconds: 0 }))
     rl.__setRateLimitStoreForTests(store)
     await rl.isRateLimitedKey('3f2c9a10-user-id', 'mfa-challenge')
-    await rl.isRateLimited(new Request('http://x', { headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' } }), 'demo-access')
+    // R-049: the leftmost XFF entry is client-typed; the key uses the one our proxy appended.
+    await rl.isRateLimited(new Request('http://x', { headers: { 'x-forwarded-for': '10.9.9.9, 203.0.113.7' } }), 'demo-access')
     expect(store.keys[0]).toMatch(/^mfa-challenge:[A-Za-z0-9_-]{32}$/)
     expect(store.keys[1]).toMatch(/^demo-access:[A-Za-z0-9_-]{32}$/)
     expect(store.keys.join()).not.toContain('3f2c9a10')
     expect(store.keys.join()).not.toContain('203.0.113.7')
     expect(store.keys[1]).toBe(`demo-access:${rl.hashIdentifier('203.0.113.7')}`)
+  })
+
+  it('R-049: rotating the client-typed X-Forwarded-For prefix does not change the key', async () => {
+    const store = recordingStore(() => ({ allowed: true, remaining: 4, retryAfterSeconds: 0 }))
+    rl.__setRateLimitStoreForTests(store)
+    for (const spoof of ['1.1.1.1', '2.2.2.2', '3.3.3.3']) {
+      await rl.isRateLimited(new Request('http://x', { headers: { 'x-forwarded-for': `${spoof}, 203.0.113.7` } }), 'auth')
+    }
+    expect(new Set(store.keys).size).toBe(1)
+    expect(rl.clientIp(new Request('http://x', { headers: { 'x-real-ip': '198.51.100.4', 'x-forwarded-for': '1.1.1.1' } }))).toBe('198.51.100.4')
   })
 
   it('passes max and the window in whole seconds to the store', async () => {

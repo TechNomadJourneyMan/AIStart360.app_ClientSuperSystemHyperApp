@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaClient } from '@/lib/admin/client-scope'
+
 import { hasPermission } from '@/lib/admin/rbac'
 import { createServiceClient } from '@/lib/supabase-service'
 import { GIGA_BASE, SUPER_EXPERT_BASE } from '@/lib/admin/nav'
@@ -26,7 +27,7 @@ const MAX_LIMIT = 100
 type Rows<T> = { data: T[] | null; error: { message: string } | null }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'users.view')
+  const guard = await requireGigaClient(req, 'users.view', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const actor = guard.actor

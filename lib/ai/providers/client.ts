@@ -230,6 +230,9 @@ async function postJson(
       method: 'POST',
       headers: headersFor(target),
       body: JSON.stringify(body),
+      // R-225: never follow a provider's redirect (a configured base URL must not bounce the
+      // request, with its Authorization header, to another host). A 3xx is a provider error.
+      redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
@@ -452,6 +455,9 @@ export async function transcribeAudioRequest(
       method: 'POST',
       headers,
       body: form,
+      // R-225: never follow a provider's redirect (a configured base URL must not bounce the
+      // request, with its Authorization header, to another host). A 3xx is a provider error.
+      redirect: 'manual',
       signal: AbortSignal.timeout(p.timeoutMs ?? 60_000),
     })
   } catch (err) {
@@ -545,6 +551,9 @@ export async function rerankDocuments(
       method: 'POST',
       headers: headersFor(target),
       body: JSON.stringify(rerankAdapter.request(target.model, p.query, p.documents, p.topN)),
+      // R-225: never follow a provider's redirect (a configured base URL must not bounce the
+      // request, with its Authorization header, to another host). A 3xx is a provider error.
+      redirect: 'manual',
       signal: AbortSignal.timeout(p.timeoutMs ?? 20_000),
     })
   } catch (err) {
@@ -606,6 +615,9 @@ export async function listRemoteModels(
     res = await doFetch(joinUrl(target.baseUrl, '/models'), {
       method: 'GET',
       headers: headersFor(target),
+      // R-225: never follow a provider's redirect (a configured base URL must not bounce the
+      // request, with its Authorization header, to another host). A 3xx is a provider error.
+      redirect: 'manual',
       signal: AbortSignal.timeout(p.timeoutMs ?? 15_000),
     })
   } catch (err) {

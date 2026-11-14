@@ -22,6 +22,7 @@ import { portalRole } from '@/lib/runtime/role'
 import { alertStuckTasks, notifyTaskFinished, notifyTaskStarted, safely } from './lifecycle'
 import { getAgent, listAgents } from './registry'
 import { kickAgentsService } from './remote-kick'
+import { agentRunSlots } from './run-slots'
 import { runClaimedTask, type RunReport } from './runner'
 import type { AgentDefinition, AgentTaskRow } from './types'
 import * as store from './store'
@@ -85,18 +86,31 @@ export function kickTask(taskId: string): void {
   }
 }
 
-/** Claim a specific task and run it. Returns null when someone else holds it or it is not due. */
+/**
+ * Claim a specific task and run it. Returns null when someone else holds it or it is not due —
+ * and when this process has no free run slot (R-017, lib/agents/run-slots.ts): the task then
+ * stays pending, unclaimed, and the per-minute drain starts it.
+ */
 export async function executeTaskById(taskId: string): Promise<RunReport | null> {
-  const task = await store.getTask(taskId)
-  if (!task) return null
-  const def = getAgent(task.agent_key)
-  if (!def) {
-    console.error(`[agents] task ${taskId}: unknown agent ${task.agent_key}`)
+  const release = await agentRunSlots().acquire()
+  if (!release) {
+    console.warn(JSON.stringify({ event: 'agent_task_deferred', task_id: taskId, reason: 'concurrency_limit' }))
     return null
   }
-  const claimed = await store.claimTask(taskId, def.limits.leaseSeconds)
-  if (!claimed) return null
-  return runAndReport(claimed, def)
+  try {
+    const task = await store.getTask(taskId)
+    if (!task) return null
+    const def = getAgent(task.agent_key)
+    if (!def) {
+      console.error(`[agents] task ${taskId}: unknown agent ${task.agent_key}`)
+      return null
+    }
+    const claimed = await store.claimTask(taskId, def.limits.leaseSeconds)
+    if (!claimed) return null
+    return await runAndReport(claimed, def)
+  } finally {
+    release()
+  }
 }
 
 /**
@@ -188,17 +202,24 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number; maxD
     const fitting = known.filter((a) => elapsed + worstCaseRunMs(a) + DRAIN_TAIL_MS <= maxDurationMs)
     if (!fitting.length) break
     const lease = Math.max(...fitting.map((a) => a.limits.leaseSeconds))
-    const [task] = await store.claimDueTasks(1, lease, fitting.map((a) => a.key))
-    if (!task) break
-    const def = getAgent(task.agent_key)
-    if (!def) {
-      await store.finishTask({
-        taskId: task.id, leaseToken: task.lease_token!, outcome: 'failed',
-        errorCode: 'UNKNOWN_AGENT', error: `agent ${task.agent_key} is not registered`, retryable: false,
-      })
-      continue
+    // R-017: the drain shares the process's run slots with the kicks; it never waits for one.
+    const release = agentRunSlots().tryAcquire()
+    if (!release) break
+    try {
+      const [task] = await store.claimDueTasks(1, lease, fitting.map((a) => a.key))
+      if (!task) break
+      const def = getAgent(task.agent_key)
+      if (!def) {
+        await store.finishTask({
+          taskId: task.id, leaseToken: task.lease_token!, outcome: 'failed',
+          errorCode: 'UNKNOWN_AGENT', error: `agent ${task.agent_key} is not registered`, retryable: false,
+        })
+        continue
+      }
+      executed.push(await runAndReport(task, def))
+    } finally {
+      release()
     }
-    executed.push(await runAndReport(task, def))
   }
   const { failStalledSessions } = await import('@/lib/diagnostics/sessions')
   const sessionsFailed = (await failStalledSessions()).length

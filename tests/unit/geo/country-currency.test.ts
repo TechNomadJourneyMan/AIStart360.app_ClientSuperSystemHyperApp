@@ -28,9 +28,9 @@ describe('countryFromHeaders', () => {
     expect(lookup).not.toHaveBeenCalled()
   })
 
-  it('looks up the first x-forwarded-for address (the client, not the proxies behind it)', () => {
+  it('R-049: looks up the x-forwarded-for entry our proxy appended (rightmost), not the client-typed one', () => {
     const lookup = vi.fn(() => 'KZ')
-    expect(countryFromHeaders(headers({ 'x-forwarded-for': '5.34.0.1, 10.0.0.1' }), lookup)).toBe('KZ')
+    expect(countryFromHeaders(headers({ 'x-forwarded-for': '8.8.8.8, 5.34.0.1' }), lookup)).toBe('KZ')
     expect(lookup).toHaveBeenCalledTimes(1)
     expect(lookup).toHaveBeenCalledWith('5.34.0.1')
   })
@@ -89,16 +89,16 @@ describe('countryFromHeaders', () => {
     expect(lookup).not.toHaveBeenCalled()
   })
 
-  it('does not fall through to a later address when the first one is private', () => {
-    // The first x-forwarded-for entry is the client; if it is private, the request came from inside.
+  it('R-049: does not fall back to a client-typed address when the trusted one is private', () => {
+    // The rightmost entry is what our proxy saw; if it is private, the request came from inside.
     const lookup = vi.fn(() => 'KZ')
-    expect(countryFromHeaders(headers({ 'x-forwarded-for': '10.0.0.1, 5.34.0.1' }), lookup)).toBeNull()
+    expect(countryFromHeaders(headers({ 'x-forwarded-for': '5.34.0.1, 10.0.0.1' }), lookup)).toBeNull()
     expect(lookup).not.toHaveBeenCalled()
   })
 
   it('hands the lookup the bare address: whitespace, port and brackets are stripped', () => {
     const lookup = vi.fn(() => 'KZ')
-    countryFromHeaders(headers({ 'x-forwarded-for': '  5.34.0.1:51234 , 10.0.0.1' }), lookup)
+    countryFromHeaders(headers({ 'x-forwarded-for': ' 10.0.0.1 ,  5.34.0.1:51234 ' }), lookup)
     expect(lookup).toHaveBeenLastCalledWith('5.34.0.1')
     countryFromHeaders(headers({ 'x-real-ip': '[2a02:6b8::feed:0ff]:443' }), lookup)
     expect(lookup).toHaveBeenLastCalledWith('2a02:6b8::feed:0ff')
@@ -123,7 +123,7 @@ describe('countryFromHeaders with the bundled GeoIP database', () => {
   it('finds a Kazakh, a Russian and an American address', () => {
     expect(countryFromHeaders(headers({ 'x-real-ip': '5.34.0.1' }))).toBe('KZ')
     expect(countryFromHeaders(headers({ 'x-forwarded-for': '2a02:6b8::2:242' }))).toBe('RU')
-    expect(countryFromHeaders(headers({ 'x-forwarded-for': '8.8.8.8, 10.0.0.1' }))).toBe('US')
+    expect(countryFromHeaders(headers({ 'x-forwarded-for': '10.0.0.1, 8.8.8.8' }))).toBe('US')
   })
 
   it('returns null for an address the database has no country for', () => {

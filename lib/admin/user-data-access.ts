@@ -5,6 +5,7 @@ import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import type { Permission } from '@/lib/admin/rbac'
 import { isClientProfileRole } from '@/lib/profiles/client-roles'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * Read access to one user's data, shared by GIGA-CRM and the expert portal.
@@ -19,6 +20,8 @@ import { isClientProfileRole } from '@/lib/profiles/client-roles'
  *    resolveExpert) may read CLIENT accounts only — never staff, owners or
  *    other experts.
  *
+ *  - GIGA staff stay inside their client scope (guardClientAccess, R-047);
+ *
  * Reads then go through the service client: a staff_cookie actor (during
  * impersonation) has no own Supabase session, so an RLS-scoped client would
  * silently return nothing.
@@ -31,7 +34,15 @@ export async function authorizeUserDataRead(
   if (!isSameOriginMutation(req)) return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   const guard = await requireGiga(req, permission)
   const sb = createServiceClient()
-  if (guard.actor) return { sb, userId: await resolveUserId(sb), viewer: guard.actor.id }
+  if (guard.actor) {
+    const userId = await resolveUserId(sb)
+    // The client scope of the staff member (R-047): 'assigned' staff read only their clients.
+    if (userId) {
+      const denied = await guardClientAccess(guard.actor, userId)
+      if (denied) return { response: denied }
+    }
+    return { sb, userId, viewer: guard.actor.id }
+  }
   // Staff are governed only by RBAC and the second-factor gate: an MFA-blocked
   // or under-privileged staff member (or one whose role could not be read)
   // must NOT fall through to the expert path.

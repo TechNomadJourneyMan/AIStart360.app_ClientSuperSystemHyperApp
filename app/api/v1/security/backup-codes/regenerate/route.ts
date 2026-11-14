@@ -11,6 +11,7 @@ import { verifyTOTP } from '@/lib/mfa/totp'
 import { generateBackupCodes, hashBackupCodes } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity } from '@/lib/mfa/store'
 import { logActivity } from '@/lib/activity/log'
+import { guardFactorChange } from '@/lib/mfa/factor-guard'
 
 const SCHEMA = z.object({ code: z.string().trim().min(6).max(10) })
 
@@ -28,6 +29,11 @@ export async function POST(request: Request) {
 
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
+
+  // R-003: re-issuing the recovery codes is a factor operation — step-up of
+  // this session first (the TOTP code below stays as a second check).
+  const guard = await guardFactorChange(request, user, 'backup_codes.regenerate')
+  if (!guard.ok) return guard.response
 
   const row = await getUserSecurity(user.id)
   if (!row?.totp_enabled || !row.totp_secret_enc) {
@@ -49,7 +55,7 @@ export async function POST(request: Request) {
     userId: user.id,
     action: 'security.backup_codes_regenerated',
     category: 'security',
-    severity: 'warning',
+    severity: 'critical',
     description: 'Резервные коды перевыпущены',
     req: request,
   })

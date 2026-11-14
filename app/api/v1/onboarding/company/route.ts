@@ -4,13 +4,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { flattenText, profanityResponse } from '@/lib/moderation/http'
+import { parseBody, readJsonBody } from '@/lib/validation/http'
+import { OnboardingCompanyBody } from '@/lib/validation/schemas'
 
 // POST /api/v1/onboarding/company — upsert the caller's own company record.
 // user_id comes from the session, never the body. See technical-audit A5.
+//
+// R-053: only the step-1 fields of the questionnaire are written (whitelist,
+// OnboardingCompanyBody is .strict()). partner_id, status, stage, id,
+// target_revenue_* and the rest are owned by the server / the staff: a body
+// with any of them is a 400 and nothing is written. `user_id` in the body is
+// still tolerated and dropped (older clients sent it).
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { user_id: _ignored, ...companyData } = body
+    const read = await readJsonBody(req)
+    if (!read.ok) return read.response
+    const raw = read.value
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'user_id' in raw) {
+      delete (raw as Record<string, unknown>).user_id
+    }
+    const parsed = parseBody(raw, OnboardingCompanyBody)
+    if (!parsed.ok) return parsed.response
+    // Undefined keys are not sent at all: an update touches only what came.
+    const companyData = Object.fromEntries(
+      Object.entries(parsed.data).filter(([, v]) => v !== undefined),
+    ) as Partial<OnboardingCompanyBody>
     // Названия и тексты компании: проверяем все строковые поля (и списки — регионы).
     const profane = profanityResponse(flattenText(companyData))
     if (profane) return profane
@@ -37,9 +55,15 @@ export async function POST(req: NextRequest) {
         .single()
       result = { data, error }
     } else {
+      if (!companyData.name) {
+        return NextResponse.json(
+          { ok: false, error: 'Укажите название компании', code: 'invalid_body', field: 'name' },
+          { status: 400 },
+        )
+      }
       const { data, error } = await sb
         .from('companies')
-        .insert({ user_id, ...companyData })
+        .insert({ ...companyData, user_id })
         .select()
         .single()
       result = { data, error }

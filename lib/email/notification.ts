@@ -14,6 +14,7 @@
 import { Resend } from 'resend'
 import { emailFrom, emailReplyTo } from './brand'
 import { renderEmail, safeUrl } from './layout'
+import { maskEmail } from './mask'
 
 export const sendNotificationEmail = async ({
   to,
@@ -84,13 +85,14 @@ export async function sendUserEmail(opts: {
     const error = (res as { error?: unknown } | null)?.error
     if (error) {
       const msg = typeof error === 'string' ? error : (error as { message?: string })?.message ?? JSON.stringify(error)
-      console.error(`[email] delivery failed → ${opts.to} "${opts.subject}": ${msg}`)
+      // R-138: masked address, no subject (it may name the client).
+      console.error(`[email] delivery failed → ${maskEmail(opts.to)}: ${msg}`)
       return { ok: false, error: msg }
     }
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    console.error(`[email] send threw → ${opts.to} "${opts.subject}": ${msg}`)
+    console.error(`[email] send threw → ${maskEmail(opts.to)}: ${msg}`)
     return { ok: false, error: msg }
   }
 }

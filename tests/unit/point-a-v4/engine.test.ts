@@ -42,7 +42,7 @@ describe('block configuration', () => {
   })
 
   it('config version', () => {
-    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/r1')
+    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/r2')
   })
 })
 
@@ -65,8 +65,8 @@ describe('calculatePointAV4', () => {
     expect(fin.score).toBeGreaterThan(v1.blocks.finance.score)
     expect(fin.coverage).toBeLessThan(1)
     expect(fin.needs.length).toBeGreaterThan(0)
-    // only finance has data → the overall equals it
-    expect(r.overall).toBe(fin.score)
+    // only finance has data (25 % of the weight) → no overall (R-032, PO 2026-11-14)
+    expect(r.overall).toBeNull()
   })
 
   it('a full questionnaire scores every v1 block and stays close to v1', () => {
@@ -118,10 +118,11 @@ describe('calculatePointAV4', () => {
   })
 
   it('compat row: the five v1 columns from v4 blocks, v1 lists kept', () => {
-    const v1 = calculatePointA(CURRENT_TYPICAL)
-    const r = v4(CURRENT_TYPICAL)
+    const v1 = calculatePointA(CURRENT_FULL_STRONG)
+    const r = v4(CURRENT_FULL_STRONG)
     const row = toCompatPointA(r, v1)
-    expect(row.overall_score).toBe(r.overall ?? 0)
+    expect(r.overall).not.toBeNull()
+    expect(row.overall_score).toBe(r.overall)
     expect(row.risks).toEqual(v1.risks)
     expect(Object.keys(row.blocks).sort()).toEqual(['finance', 'marketing', 'operations', 'sales', 'strategy'])
   })

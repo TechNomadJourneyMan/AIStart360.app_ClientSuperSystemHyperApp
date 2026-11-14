@@ -11,8 +11,14 @@
 // 3. EMA(α=0.3) on the same window, then propagated forward as a
 //    flat continuation (EMA naturally damps swings).
 // 4. Output = blend·LR + (1-blend)·EMA  (blend default 0.6).
-// 5. Confidence band = ±1.96·residualStddev where residuals are the
-//    regression residuals on the observed window.
+// 5. Confidence band = ±1.96·s·√(h + 1/n + (x−x̄)²/Sxx): s is the residual
+//    std of the regression, the band widens with the horizon h (R-040).
+// 0. (R-040, BI-43) Only BUSINESS PERIODS are forecast: points marked
+//    `basis: 'event'` (input edits / source changes, lib/metrics/timeseries-fetch)
+//    are dropped, one point per period (the latest), one grain (month /
+//    quarter / year); fewer than FORECAST_MIN_POINTS periods → no forecast.
+//    A metric that was never negative is not forecast below 0; `upperBound`
+//    caps a bounded metric (a percentage ≤ 100).
 // 6. Cadence (daily / weekly / monthly / quarterly) is inferred from
 //    the gap between the last two observed timestamps; forecast
 //    timestamps step by that delta and labels follow the same shape
@@ -28,12 +34,42 @@ export interface ForecastOptions {
   alpha?: number
   /** Weight of LR in the LR+EMA blend (default 0.6). */
   blend?: number
+  /** Never forecast below 0. Default: true when no observed value is negative. */
+  nonNegative?: boolean
+  /** Cap of a bounded metric (e.g. 100 for a percentage). Default: none. */
+  upperBound?: number | null
 }
 
-const DEFAULTS: Required<ForecastOptions> = {
+const DEFAULTS = {
   horizon: 4,
   alpha: 0.3,
   blend: 0.6,
+}
+
+/** Fewer business periods than this → no forecast («мало данных»). R-040, BI-43. */
+export const FORECAST_MIN_POINTS = 6
+
+/**
+ * A series point as lib/metrics/timeseries-fetch builds it: `basis: 'period'` — the value of a business period
+ * (`period` = '2025' | '2025-Q1' | '2025-03'); `basis: 'event'` — an input edit / source change at a moment,
+ * NOT a business period. A point without `basis` (a caller's own series) counts as a business period.
+ */
+export interface SeriesPoint extends TimeseriesPoint {
+  basis?: 'period' | 'event'
+  period?: string
+}
+
+export type ForecastStatus = 'ok' | 'insufficient_data' | 'not_business_periods'
+
+export interface ForecastOutcome {
+  points: ForecastPoint[]
+  status: ForecastStatus
+  /** Why there is no forecast (for the UI), null when there is one. */
+  reason: string | null
+  /** Business periods the forecast is built on. */
+  n: number
+  /** 0..1 from the fit (1 − residual std / mean level); null without a forecast. */
+  confidence: number | null
 }
 
 const MS_DAY = 24 * 60 * 60 * 1000
@@ -115,12 +151,59 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function grainOf(period: string | undefined): 'year' | 'quarter' | 'month' | null {
+  if (!period) return null
+  if (/^\d{4}$/.test(period)) return 'year'
+  if (/^\d{4}-Q[1-4]$/i.test(period)) return 'quarter'
+  if (/^\d{4}-\d{2}$/.test(period)) return 'month'
+  return null
+}
+
+/** Business periods only, one point per period (the latest), one grain, sorted by time. */
+export function businessPeriods(series: ReadonlyArray<SeriesPoint>): SeriesPoint[] {
+  const periodic = series.filter((p) => p.basis !== 'event' && Number.isFinite(p.value) && !Number.isNaN(Date.parse(p.timestamp)))
+  // one grain: the one with the most points (ties → the finer one)
+  const counts = { month: 0, quarter: 0, year: 0 }
+  for (const p of periodic) {
+    const g = grainOf(p.period)
+    if (g) counts[g]++
+  }
+  const grain = counts.month + counts.quarter + counts.year === 0 ? null
+    : (['month', 'quarter', 'year'] as const).reduce((best, g) => (counts[g] > counts[best] ? g : best), 'month' as 'month' | 'quarter' | 'year')
+  const sameGrain = grain === null ? periodic : periodic.filter((p) => grainOf(p.period) === grain)
+  const byKey = new Map<string, SeriesPoint>()
+  for (const p of sameGrain) byKey.set(p.period ?? p.timestamp, p) // a later duplicate (the latest version) wins
+  return [...byKey.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+}
+
+/** The forecast with its status: why there is none, how many periods it rests on, a computed confidence. */
+export function forecastSeries(
+  series: ReadonlyArray<SeriesPoint>,
+  opts?: ForecastOptions,
+): ForecastOutcome {
+  const none = (status: ForecastStatus, reason: string, n: number): ForecastOutcome => ({ points: [], status, reason, n, confidence: null })
+  const input = series ?? []
+  if (input.length > 0 && input.every((p) => p.basis === 'event')) {
+    return none('not_business_periods', 'Прогноз строится только по бизнес-периодам (месяц, квартал, год). Сейчас есть лишь история правок значения — это не динамика бизнеса.', 0)
+  }
+  const periods = businessPeriods(input)
+  if (periods.length < FORECAST_MIN_POINTS) {
+    return none('insufficient_data', `Мало данных для прогноза: нужно не меньше ${FORECAST_MIN_POINTS} периодов, сейчас ${periods.length}.`, periods.length)
+  }
+  const { points, confidence } = project(periods, opts)
+  return { points, status: 'ok', reason: null, n: periods.length, confidence }
+}
+
+/** Forecast points only (see forecastSeries for the status and the reason). */
 export function forecast(
-  series: TimeseriesPoint[],
+  series: SeriesPoint[],
   opts?: ForecastOptions,
 ): ForecastPoint[] {
+  return forecastSeries(series, opts).points
+}
+
+function project(series: SeriesPoint[], opts?: ForecastOptions): { points: ForecastPoint[]; confidence: number } {
   const cfg = { ...DEFAULTS, ...(opts ?? {}) }
-  if (!series || series.length < 2) return []
   const horizon = Math.max(1, Math.min(12, cfg.horizon))
 
   const windowSize = Math.min(12, series.length)
@@ -133,7 +216,20 @@ export function forecast(
   const prev = series[series.length - 2]
   const { cadence, deltaMs } = inferCadence(prev.timestamp, last.timestamp)
   const lastDate = new Date(last.timestamp)
-  const band = 1.96 * residStd
+  const n = values.length
+  const xMean = (n - 1) / 2
+  let sxx = 0
+  for (let i = 0; i < n; i++) sxx += (i - xMean) ** 2
+  const nonNegative = opts?.nonNegative ?? series.every((p) => p.value >= 0)
+  const upper = typeof opts?.upperBound === 'number' && Number.isFinite(opts.upperBound) ? opts.upperBound : null
+  const clamp = (v: number): number => {
+    let out = v
+    if (nonNegative) out = Math.max(0, out)
+    if (upper !== null) out = Math.min(upper, out)
+    return out
+  }
+  const meanAbs = values.reduce((acc, v) => acc + Math.abs(v), 0) / n
+  const confidence = meanAbs > 0 ? round2(Math.max(0, Math.min(1, 1 - residStd / meanAbs))) : 0
 
   const points: ForecastPoint[] = []
   for (let h = 1; h <= horizon; h++) {
@@ -145,15 +241,19 @@ export function forecast(
     const emaVal = emaLast + b * h
     const blended = cfg.blend * lrVal + (1 - cfg.blend) * emaVal
 
+    // The band widens with the horizon (√h) and with the distance from the fitted window.
+    const band = 1.96 * residStd * Math.sqrt(h + 1 / n + (sxx > 0 ? (idx - xMean) ** 2 / sxx : 0))
+    const value = clamp(blended)
+
     const date = stepDate(lastDate, cadence, deltaMs, h)
     points.push({
       timestamp: date.toISOString(),
-      value: round2(blended),
+      value: round2(value),
       label: buildLabel(date, cadence),
       isForecast: true,
-      confidenceLow: round2(blended - band),
-      confidenceHigh: round2(blended + band),
+      confidenceLow: round2(Math.min(value, clamp(blended - band))),
+      confidenceHigh: round2(Math.max(value, clamp(blended + band))),
     })
   }
-  return points
+  return { points, confidence }
 }

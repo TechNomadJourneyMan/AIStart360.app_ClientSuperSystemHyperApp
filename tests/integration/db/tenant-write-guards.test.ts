@@ -137,9 +137,12 @@ describe.skipIf(!dbTestsEnabled)('tenant write guards (096)', () => {
         expect(await pgErrorCode(asUser(db, exOwner, () =>
           db.query(`UPDATE public.gri_assessments SET gri_index = 9 WHERE user_id = $1 AND company_id = $2`, [exOwner, w.companyA]))),
         ).toBe('42501')
-        // Legacy staff (profiles.role) editing a client's survey through survey_admin_insert.
+        // Staff admins (staff_roles, 140) editing a client's survey through survey_admin_insert.
+        // A legacy profiles.role 'manager' without staff_roles no longer can (R-002).
+        const staffAdmin = await seedStaff(db, 'admin')
+        expect(await pgErrorCode(asUser(db, staffAdmin, () => upsertSurvey(db, w.ownerA, w.companyA, 's2_x')))).toBeNull()
         const manager = await seedUser(db, { status: 'approved', role: 'manager' })
-        expect(await pgErrorCode(asUser(db, manager, () => upsertSurvey(db, w.ownerA, w.companyA, 's2_x')))).toBeNull()
+        expect(await pgErrorCode(asUser(db, manager, () => upsertSurvey(db, w.ownerA, w.companyA, 's2_y')))).toBe('42501')
       }))
   })
 
@@ -292,8 +295,12 @@ describe.skipIf(!dbTestsEnabled)('tenant write guards (096)', () => {
           (await db.query(`SELECT expert_notes FROM public.point_b_versions ORDER BY expert_notes`)).rows.map((r) => r.expert_notes))
         expect(await notes(w.ownerA)).toEqual(['approved'])
         expect(await notes(w.ownerB)).toEqual([])
+        // An expert sees drafts of ASSIGNED clients only (R-004, 140); staff admins of all.
         const expert = await seedUser(db, { status: 'approved', role: 'expert' })
+        expect(await notes(expert)).toEqual([])
+        await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [w.ownerA, expert])
         expect(await notes(expert)).toEqual(['approved', 'draft'])
+        expect(await notes(await seedStaff(db, 'admin'))).toEqual(['approved', 'draft'])
       }))
   })
 

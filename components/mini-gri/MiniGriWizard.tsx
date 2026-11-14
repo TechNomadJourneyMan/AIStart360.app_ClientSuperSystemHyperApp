@@ -10,8 +10,10 @@ const MiniGriRadar = dynamic(() => import('./MiniGriRadar'), {
   ssr: false,
   loading: () => <div className="h-full w-full skeleton rounded-xl" />,
 })
+import { formatGri } from '@/lib/format/gri'
 import {
   computeMiniGri,
+  miniGriZone,
   zoneForScore,
   type MiniGriAnswers,
   type MiniGriResult,
@@ -128,11 +130,15 @@ const DEFAULT_ANSWERS: MiniGriAnswers = {
 // Zone styling
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ZONE: Record<MiniGriZone, { color: string; label: string; ring: string; text: string }> = {
-  red:   { color: '#ff5d6c', label: 'Зона риска',   ring: 'ring-error/40',   text: 'text-error' },
-  amber: { color: '#ffc24b', label: 'Требует роста', ring: 'ring-[#ffc24b]/40', text: 'text-[#ffc24b]' },
-  green: { color: '#6effc0', label: 'Сильно',        ring: 'ring-primary/40', text: 'text-primary' },
+// Colours per tone; the zone LABEL comes from GRI_ZONES (lib/format/gri.ts) — R-036.
+const ZONE: Record<MiniGriZone, { color: string; ring: string; text: string }> = {
+  red:   { color: '#ff5d6c', ring: 'ring-error/40',   text: 'text-error' },
+  amber: { color: '#ffc24b', ring: 'ring-[#ffc24b]/40', text: 'text-[#ffc24b]' },
+  green: { color: '#6effc0', ring: 'ring-primary/40', text: 'text-primary' },
 }
+
+/** Mini-GRI on the GRI scale: «6.2 / 10» (0 is a real result here). */
+const fmtMini = (index: number, scale = false) => formatGri(index, { allowZero: true, scale })
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -316,7 +322,7 @@ export function MiniGriWizard() {
         <div className="p-6 md:p-8 border-b border-white/[0.06]">
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
-              Ваш предварительный GRI
+              Ваш предварительный GRI · 3 из 7 блоков
             </span>
             <button
               type="button"
@@ -330,17 +336,17 @@ export function MiniGriWizard() {
           </div>
           <div className="flex flex-col md:flex-row md:items-center gap-6 mt-4">
             {/* Gauge */}
-            <OverallGauge score={result.overall} zone={overallZone} />
+            <OverallGauge score={result.overall} index={result.index} zone={overallZone} />
 
             {/* Insight */}
             <div className="flex-1">
               <h2 className="font-headline text-2xl font-bold text-on-surface">
-                {result.overall} / 100
+                {fmtMini(result.index, true)}
               </h2>
               <p
                 className={`text-sm font-mono uppercase tracking-[0.15em] mt-1 ${ZONE[overallZone].text}`}
               >
-                {ZONE[overallZone].label}
+                {miniGriZone(result.overall).label}
               </p>
               <div className="mt-4 flex items-start gap-2 rounded-xl bg-surface-container-high border border-white/[0.04] p-3">
                 <span className="material-symbols-outlined text-primary text-lg mt-0.5">
@@ -351,7 +357,7 @@ export function MiniGriWizard() {
                   <span className={`font-semibold ${ZONE[zoneForScore(weakest.score)].text}`}>
                     {weakest.label.toLowerCase()}
                   </span>{' '}
-                  ({weakest.score}/100). Именно здесь рост даст самый быстрый эффект.
+                  ({fmtMini(weakest.index, true)}). Именно здесь рост даст самый быстрый эффект.
                 </p>
               </div>
             </div>
@@ -381,7 +387,7 @@ export function MiniGriWizard() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm text-on-surface">{b.label}</span>
                     <span className={`text-sm font-mono font-bold ${ZONE[z].text}`}>
-                      {b.score}
+                      {fmtMini(b.index)}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-surface-container-high overflow-hidden">
@@ -595,7 +601,7 @@ function ToggleControl({
   )
 }
 
-function OverallGauge({ score, zone }: { score: number; zone: MiniGriZone }) {
+function OverallGauge({ score, index, zone }: { score: number; index: number; zone: MiniGriZone }) {
   const radius = 52
   const circumference = 2 * Math.PI * radius
   const offset = circumference - (score / 100) * circumference
@@ -627,7 +633,7 @@ function OverallGauge({ score, zone }: { score: number; zone: MiniGriZone }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono text-3xl font-bold text-on-surface tabular-nums">
-          {score}
+          {fmtMini(index)}
         </span>
         <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em]">
           GRI

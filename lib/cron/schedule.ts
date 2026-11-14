@@ -36,6 +36,8 @@ export const CRON_JOBS: readonly CronJob[] = [
   { path: '/api/cron/reminders', schedule: '0 6 * * *' },
   { path: '/api/cron/analytics-rollup', schedule: '0 22 * * *' },
   { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
+  // Сторож бэкапов (R-011): ежечасно, в :07 — журнал ops_backup_runs свежее 10 ч, иначе Super Admin.
+  { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
   // The agents service has no public domain and so no Inngest: this call is its queue maintenance,
   // the stand-in for the Inngest cron `agents-maintenance` that one process for everything relies on.
   { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },

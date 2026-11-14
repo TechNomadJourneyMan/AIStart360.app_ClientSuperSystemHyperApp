@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaReport } from '@/lib/admin/client-scope'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { decideReportReview, listReviews } from '@/lib/reports/review-flow'
 import { ReviewBodySchema, reviewResponse } from '@/lib/reports/review-http'
@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** GET /api/giga-admin/reports/:id/review — the decision on this version, if any. */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireGiga(req, 'reports.review')
+  const g = await requireGigaReport(req, 'reports.review', params.id)
   if (g.response) return g.response
   if (!UUID.test(params.id)) return NextResponse.json({ ok: false, error: 'Версия отчёта не найдена' }, { status: 404 })
   const items = await listReviews({ versionId: params.id, limit: 5 })
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * the expert bot: decideReportReview.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireGiga(req, 'reports.review')
+  const g = await requireGigaReport(req, 'reports.review', params.id)
   if (g.response) return g.response
   const parsed = ReviewBodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверные данные: для правок нужен комментарий (от 3 символов)' }, { status: 400 })

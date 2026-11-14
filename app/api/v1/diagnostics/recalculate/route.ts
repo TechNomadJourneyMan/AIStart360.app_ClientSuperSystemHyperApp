@@ -87,23 +87,37 @@ export async function POST(req: NextRequest) {
     // change reasons, AI fan-out and the pipeline. Before migration 111 (or on
     // any failure there) the direct calculation below keeps working.
     if (company?.id) {
+      let snapFailed = false
       const snap = await buildPointASnapshot(String(company.id), { trigger: 'manual', force: true, lock: true, locale })
-        .catch((err) => { console.error('[recalculate] snapshot path failed, direct calculation', err instanceof Error ? err.message : err); return null })
+        .catch((err) => { snapFailed = true; console.error('[recalculate] snapshot path failed', err instanceof Error ? err.message : err); return null })
+      // A failed snapshot is not «calculate v1 instead» (I2, R-033): the v1
+      // engine scores an incomplete survey (unanswered = 0) and would replace
+      // a correct current diagnostic. The current row stays; try again later.
+      if (snapFailed) {
+        return NextResponse.json({ ok: false, error: 'Не удалось пересчитать Точку А — попробуйте через минуту' }, { status: 503 })
+      }
       if (snap?.status === 'skipped' && snap.reason === 'busy') {
         return NextResponse.json({ ok: false, error: 'Точка А уже пересчитывается — обновите страницу через минуту' }, { status: 409 })
       }
       if (snap?.status === 'written') {
-        // Before the full questionnaire there is no score to tell (PO 2026-11-02).
-        const preliminary = snap.assessment === 'preliminary'
-        const overallScore = preliminary ? null : Number(snap.written.overall_score)
+        // No official score — before the full questionnaire (PO 2026-11-02) or
+        // v4 found too little data (R-033, `scored === false`): `written` is
+        // then the internal v1 (unanswered = 0) and its numbers are never told.
+        const scored = snap.assessment !== 'preliminary' && snap.scored !== false
+        const overallScore = scored ? Number(snap.written.overall_score) : null
         runInBackground('point-a-notify', () =>
           notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore }),
         )
-        notifyAdmins('diagnostic_recalculated', { overallScore, stage: preliminary ? null : snap.written.stage ?? null, diagnosticId: snap.diagnosticId }, user_id)
-        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: preliminary ? null : snap.written, assessment: snap.assessment, snapshot_id: snap.snapshotId, engine: snap.engine } })
+        notifyAdmins('diagnostic_recalculated', { overallScore, stage: scored ? snap.written.stage ?? null : null, diagnosticId: snap.diagnosticId }, user_id)
+        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: scored ? snap.written : null, assessment: snap.assessment, scored, snapshot_id: snap.snapshotId, engine: snap.engine } })
       }
     }
 
+    // The direct calculation: only where the snapshot path does not exist yet
+    // (before migration 111) or there is no company. Without a company there is
+    // no v4 and no way to check the official rules — the row is stored WITHOUT
+    // a score (I2, R-033), no paid AI fan-out, no number in the notifications.
+    const noCompany = !company?.id
     // Calculate Point A. Materialised metric values from documents / manual /
     // external sources (LTV, CAC, margin) are used before survey answers. A
     // failed read is an error, not «no document values»: scoring from the
@@ -124,17 +138,21 @@ export async function POST(req: NextRequest) {
       userId: user_id,
       companyId: company?.id ?? null,
       result,
-      aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
+      aiStatus: process.env.OPENROUTER_API_KEY && !noCompany ? 'processing' : 'none',
+      ...(noCompany ? { preliminary: true } : {}),
     })
     if (!stored.ok) return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
     const diag = stored.diag
-    void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: diag?.id ?? null, metadata: { overall_score: Number(result.overall_score) } })
+    const overallScore = noCompany ? null : Number(result.overall_score)
+    void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: diag?.id ?? null, metadata: { overall_score: overallScore } })
 
     // Fire async AI analysis + Point B bridge (non-blocking). Base URL from
     // configuration, never the request Host in production (a spoofed Host
     // would receive the token); unknown → no fan-out.
     const baseUrl = internalBaseUrl(req)
-    if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl) {
+    if (noCompany) {
+      // nothing to analyse: no official score
+    } else if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl) {
       fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale })
     } else if (process.env.OPENROUTER_API_KEY && diag?.id) {
       console.error('[recalculate] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
@@ -148,17 +166,17 @@ export async function POST(req: NextRequest) {
 
     // Клиенту: «Точка А пересчитана» (лента; email — по настройке «reports»).
     runInBackground('point-a-notify', () =>
-      notifyPointARecalculated(user_id, { diagnosticId: diag?.id ?? null, overallScore: Number(result.overall_score) }),
+      notifyPointARecalculated(user_id, { diagnosticId: diag?.id ?? null, overallScore }),
     )
 
     // Notify admins about diagnostic recalculation
     notifyAdmins('diagnostic_recalculated', {
-      overallScore: result.overall_score,
-      stage: result.stage ?? null,
+      overallScore,
+      stage: noCompany ? null : result.stage ?? null,
       diagnosticId: diag?.id,
     }, user_id)
 
-    return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: result } })
+    return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: noCompany ? null : result, scored: !noCompany } })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }

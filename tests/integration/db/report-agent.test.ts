@@ -51,7 +51,7 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   const publishInReview = (id: string, by: string) => prisma.$transaction((tx) => publishInTx(tx, id, by, ['in_review']))
   const reportRoute = await import('@/app/api/giga-admin/reports/[id]/route')
   const reviewRoute = await import('@/app/api/giga-admin/ai-review/[kind]/[id]/route')
-  const { asUser, closeTestPool, inRollback, pgErrorCode, seedUser } = await import('../../helpers/pg-rls')
+  const { asUser, closeTestPool, inRollback, pgErrorCode, seedStaff, seedUser } = await import('../../helpers/pg-rls')
 
   const users: string[] = []
   const companies: string[] = []
@@ -325,7 +325,8 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
         (await db.query(`SELECT company_id, version, status FROM public.report_versions WHERE company_id = ANY($1) ORDER BY company_id, version`, [[a.companyId, b.companyId]])).rows)
       expect(await read(a.owner)).toEqual([{ company_id: a.companyId, version: 1, status: 'published' }])
       expect(await read(b.owner)).toEqual([]) // B has only a version waiting for the expert, and never sees A's
-      const staff = await seedUser(db, { role: 'expert', status: 'approved' })
+      // Staff with a staff_roles row read every company (R-002 / R-004, 140).
+      const staff = await seedStaff(db, 'super_expert')
       expect((await read(staff)).length).toBe(3)
       const forge = asUser(db, a.owner, () => db.query(
         `INSERT INTO public.report_versions (company_id, report_type, status, title, content, provenance, data_hash, created_by)

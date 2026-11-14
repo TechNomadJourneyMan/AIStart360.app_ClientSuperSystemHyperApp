@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   INTERNAL_COOLDOWN_MS,
   MAX_RETRIES,
+  TRANSPORT_TIMEOUT_DEFAULTS,
   RETRY_DELAYS_MS,
   createSupabaseTransportFetch,
   installSupabaseTransport,
@@ -80,6 +81,13 @@ async function active(steps: Step[]) {
 }
 
 const urls = (base: ReturnType<typeof scripted>) => base.mock.calls.map((call) => String(call[0]))
+
+/** The init a base fetch saw, minus the per-attempt signal the transport adds (R-014). */
+function withoutSignal(init: RequestInit | undefined): RequestInit | undefined {
+  if (!init) return init
+  const { signal: _signal, ...rest } = init
+  return rest
+}
 
 describe('scope: only the Supabase origin is handled', () => {
   it('passes other origins through untouched', async () => {
@@ -210,7 +218,7 @@ describe('retry', () => {
       expect(base).toHaveBeenCalledTimes(2)
       for (const call of base.mock.calls) {
         expect(call[0]).toBe(url)
-        expect(call[1]).toEqual(init)
+        expect(withoutSignal(call[1])).toEqual(init)
       }
     }
   })
@@ -548,7 +556,8 @@ describe('private path (SUPABASE_INTERNAL_URL)', () => {
 
     expect(base).toHaveBeenCalledTimes(1)
     expect(base.mock.calls[0][0]).toBe(`${INTERNAL}/rest/v1/profiles?id=eq.1&select=role,status`)
-    expect(base.mock.calls[0][1]).toEqual(init)
+    // R-014: the transport adds its own per-attempt signal; everything else is the caller's.
+    expect(withoutSignal(base.mock.calls[0][1])).toEqual(init)
     expect(lines).toEqual([])
   })
 
@@ -613,7 +622,7 @@ describe('private path (SUPABASE_INTERNAL_URL)', () => {
     expect(await transport(url, init)).toBe(good)
 
     expect(urls(base)).toEqual([`${INTERNAL}/auth/v1/token?grant_type=refresh_token`, url])
-    expect(base.mock.calls[1][1]).toEqual(init)
+    expect(withoutSignal(base.mock.calls[1][1])).toEqual(init)
     expect(lines).toEqual(['[supabase-transport] internal path failed (UND_ERR_CONNECT_TIMEOUT), using public for 60 s'])
   })
 
@@ -772,5 +781,142 @@ describe('installSupabaseTransport', () => {
     expect(installSupabaseTransport({ env })).toBe(true)
 
     expect(base).not.toHaveBeenCalled()
+  })
+})
+
+describe('R-014 timeouts: an attempt that hangs without an error', () => {
+  /** A base fetch that never answers on its own: it rejects only when its signal is aborted. */
+  function hanging(answers: Record<string, () => Response> = {}) {
+    return vi.fn<typeof fetch>((input, init) => {
+      const url = String(input)
+      for (const [prefix, make] of Object.entries(answers)) if (url.startsWith(prefix)) return Promise.resolve(make())
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (!signal) return // a request without a signal would hang forever: the test times out
+        if (signal.aborted) reject(signal.reason)
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+  }
+
+  function make(base: typeof fetch, timeouts: { attemptMs?: number; internalAttemptMs?: number; deadlineMs?: number; probeMs?: number }, internal?: string) {
+    const lines: string[] = []
+    const transport = createSupabaseTransportFetch(base, {
+      env: { NEXT_PUBLIC_SUPABASE_URL: PUBLIC, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key', SUPABASE_INTERNAL_URL: internal },
+      sleep: async () => {},
+      log: (line) => { lines.push(line) },
+      random: () => 0,
+      timeouts,
+    })
+    return { transport, lines }
+  }
+
+  it('has bounded defaults: a short internal attempt, a longer public one, a request deadline above them', () => {
+    const d = TRANSPORT_TIMEOUT_DEFAULTS
+    expect(d.internalAttemptMs).toBeGreaterThan(0)
+    expect(d.internalAttemptMs).toBeLessThan(d.attemptMs)
+    expect(d.attemptMs).toBeLessThanOrEqual(d.deadlineMs)
+    expect(d.deadlineMs).toBeLessThanOrEqual(45_000) // the project rule for one unit of work
+    expect(d.probeMs).toBeGreaterThan(0)
+  })
+
+  it('moves a GET from a hung internal path to the public origin after the internal attempt timeout', async () => {
+    const good = ok()
+    const base = hanging({ [`${INTERNAL}/auth/v1/settings`]: () => ok('{}'), [PUBLIC]: () => good })
+    const { transport, lines } = make(base, { attemptMs: 2_000, internalAttemptMs: 30, deadlineMs: 5_000 }, INTERNAL)
+    expect(await transport.probe()).toBe(true)
+
+    const started = Date.now()
+    expect(await transport(`${PUBLIC}/rest/v1/profiles?select=id`)).toBe(good)
+
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(urls(base).slice(1)).toEqual([`${INTERNAL}/rest/v1/profiles?select=id`, `${PUBLIC}/rest/v1/profiles?select=id`])
+    expect(transport.internalState()).toBe('disabled') // cooldown: the next requests go public at once
+    expect(lines).toEqual(['[supabase-transport] internal path timed out (30 ms), using public for 60 s'])
+  })
+
+  it('never re-sends a POST that timed out on the internal path (it may have been executed)', async () => {
+    const base = hanging({ [`${INTERNAL}/auth/v1/settings`]: () => ok('{}') })
+    // A POST gets the full attempt budget on the private path: there is no safe failover for it.
+    const { transport } = make(base, { attemptMs: 60, internalAttemptMs: 10, deadlineMs: 5_000 }, INTERNAL)
+    await transport.probe()
+
+    const started = Date.now()
+    await expect(transport(`${PUBLIC}/rest/v1/rpc/claim`, { method: 'POST', body: '{}' })).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(50)
+    expect(base).toHaveBeenCalledTimes(2) // probe + the one attempt
+    expect(transport.internalState()).toBe('disabled')
+  })
+
+  it('retries a hung public GET while the request deadline leaves room for it', async () => {
+    const base = hanging()
+    // attempt 1: 0–200 ms; retry 1 fits (500 ms left); attempt 2: 200–400 ms; retry 2 does not
+    // (300 ms left < the 400 ms pause before it) — the last timeout is thrown.
+    const { transport, lines } = make(base, { attemptMs: 200, deadlineMs: 700 })
+
+    const started = Date.now()
+    await expect(transport(`${PUBLIC}/rest/v1/profiles`)).rejects.toMatchObject({ name: 'TimeoutError' })
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(380)
+    expect(took).toBeLessThan(690)
+    expect(base).toHaveBeenCalledTimes(2)
+    expect(lines).toEqual(['[supabase-transport] retry 1/2 GET /rest/v1/profiles — timeout 200 ms'])
+  })
+
+  it('cuts an attempt at the request deadline', async () => {
+    const base = hanging()
+    const { transport } = make(base, { attemptMs: 5_000, deadlineMs: 60 })
+    const started = Date.now()
+    await expect(transport(`${PUBLIC}/rest/v1/profiles`)).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(base).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a hung public POST', async () => {
+    const base = hanging()
+    const { transport } = make(base, { attemptMs: 30, deadlineMs: 1_000 })
+    await expect(transport(`${PUBLIC}/rest/v1/profiles`, { method: 'POST', body: '{}' })).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(base).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the caller\'s abort through to the attempt and rethrows it at once', async () => {
+    const base = hanging()
+    const { transport } = make(base, { attemptMs: 5_000, deadlineMs: 10_000 })
+    const controller = new AbortController()
+    const pending = transport(`${PUBLIC}/rest/v1/profiles`, { signal: controller.signal })
+    const reason = new DOMException('caller gave up', 'AbortError')
+    setTimeout(() => controller.abort(reason), 20)
+    await expect(pending).rejects.toBe(reason)
+    expect(base).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops the timer once the response arrived: reading the body later is not aborted', async () => {
+    let seen: AbortSignal | undefined
+    const base = vi.fn<typeof fetch>(async (_input, init) => {
+      seen = init?.signal ?? undefined
+      return ok('[{"id":1}]')
+    })
+    const { transport } = make(base, { attemptMs: 20, deadlineMs: 40 })
+    const response = await transport(`${PUBLIC}/rest/v1/profiles`)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(seen?.aborted).toBe(false)
+    expect(await response.text()).toBe('[{"id":1}]')
+  })
+
+  it('gives up the probe after probeMs: the private path stays off, nothing hangs', async () => {
+    const base = hanging()
+    const { transport, lines } = make(base, { probeMs: 20 }, INTERNAL)
+    expect(await transport.probe()).toBe(false)
+    expect(transport.internalState()).toBe('disabled')
+    expect(lines).toEqual(['[supabase-transport] internal probe failed (TimeoutError), internal path disabled'])
+  })
+
+  it('0 turns a timeout off (the previous behaviour)', async () => {
+    const good = ok()
+    const base = vi.fn<typeof fetch>(async () => good)
+    const { transport } = make(base, { attemptMs: 0, internalAttemptMs: 0, deadlineMs: 0 })
+    const init: RequestInit = { headers: { apikey: 'anon-key' } }
+    expect(await transport(`${PUBLIC}/rest/v1/profiles`, init)).toBe(good)
+    expect(base.mock.calls[0][1]).toEqual(init)
   })
 })

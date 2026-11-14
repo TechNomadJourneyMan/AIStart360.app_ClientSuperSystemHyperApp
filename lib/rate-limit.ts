@@ -30,6 +30,7 @@
  */
 import { createHmac } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import { clientIpOrUnknown } from './net/client-ip'
 import { createMemoryStore, type MemoryStore } from './rate-limit/memory'
 import { createPostgresStore, prunePostgres } from './rate-limit/postgres'
 import { createUpstashStore, upstashConfigured } from './rate-limit/upstash'
@@ -94,14 +95,13 @@ export const FAIL_OPEN_BUCKETS: ReadonlySet<string> = new Set([
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Rate-limit key for the caller's IP. Only the trusted address counts (R-049): X-Real-IP from the
+ * edge, else the X-Forwarded-For entry our proxy appended — never the client-typed leftmost entry,
+ * which let anyone rotate keys and dodge every IP limit. See lib/net/client-ip.ts.
+ */
 export function clientIp(req: Request): string {
-  const h = req.headers
-  const value = (
-    h.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    h.get('x-real-ip')?.trim() ||
-    'unknown'
-  )
-  return value.length > 0 && value.length <= 64 ? value : 'unknown'
+  return clientIpOrUnknown(req)
 }
 
 function truthy(v: string | undefined): boolean {

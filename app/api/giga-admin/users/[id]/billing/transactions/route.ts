@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaClient } from '@/lib/admin/client-scope'
+
 import { listPayments } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
 
@@ -13,7 +14,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Read-only (users.view): payments change only through the providers.
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'users.view')
+  const guard = await requireGigaClient(req, 'users.view', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   try {

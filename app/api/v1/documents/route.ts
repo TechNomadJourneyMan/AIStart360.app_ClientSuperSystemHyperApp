@@ -6,6 +6,7 @@ export const maxDuration = 300
 
 import { NextRequest } from 'next/server'
 import { handleDocumentFinalize } from '@/lib/documents/finalize-http'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/documents — finalize an upload.
@@ -26,6 +27,13 @@ import { handleDocumentFinalize } from '@/lib/documents/finalize-http'
  *   422 { ok: false, rejected: true, code, error, data: document (parse_status 'rejected') }
  *   400 / 401 / 403 / 404 / 409 / 429 / 503 { ok: false, code, error }
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   return handleDocumentFinalize(req, 'storage_path')
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After
+ * 60 s the client gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline
+ * spent (a size-capped download and the file checks; processing itself is async). ROUTE_DEADLINE_MS_DOCUMENTS_FINALIZE overrides it; ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'documents-finalize', ms: 60_000 })

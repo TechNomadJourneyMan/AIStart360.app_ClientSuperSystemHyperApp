@@ -1,3 +1,4 @@
+import { INNGEST_FUNCTION_CONCURRENCY } from "@/lib/functions/limits";
 import { inngest } from "@/lib/inngest";
 import { humanTypingDelaySeconds } from "@/lib/omnichannel/human-reply-timing";
 import {
@@ -970,7 +971,17 @@ export const processOmnichannelMessage = inngest.createFunction(
   {
     id: "process-omnichannel-message",
     retries: 3,
-    concurrency: { limit: 1, key: "event.data.conversation_id" },
+    // BE-05: one run per conversation (order of replies), and at most
+    // INNGEST_FUNCTION_CONCURRENCY (2) executing in all. Sleeping runs (the reply
+    // delay) do not hold a slot in Inngest.
+    concurrency: [
+      { limit: INNGEST_FUNCTION_CONCURRENCY },
+      { limit: 1, key: "event.data.conversation_id" },
+    ],
+    // BE-06 (lib/functions/limits.ts): the reply delay sleeps up to 24 h
+    // (replyDelayDeadline), so `finish` is above it; a message that waited 2 h
+    // to start is left to the daily reconciliation instead of a stale auto-reply.
+    timeouts: { start: "2h", finish: "26h" },
     triggers: [{ event: OMNICHANNEL_MESSAGE_RECEIVED_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

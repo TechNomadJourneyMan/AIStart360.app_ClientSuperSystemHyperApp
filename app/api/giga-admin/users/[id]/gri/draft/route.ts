@@ -19,7 +19,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const reason = String(((await req.json().catch(() => null)) as { reason?: string } | null)?.reason ?? '').trim()
   if (reason.length < 3) return NextResponse.json({ ok: false, error: 'Укажите причину' }, { status: 400 })
   const target = await staffRoleOfUser(params.id)
-  if (!canManageTarget(guard.actor.role, target.staffRole)) return NextResponse.json({ ok: false, error: 'Недостаточно прав' }, { status: 403 })
+  if (!canManageTarget(guard.actor.role, target)) return NextResponse.json({ ok: false, error: 'Недостаточно прав' }, { status: 403 })
   const sb = createServiceClient()
   const { data: draft } = await sb.from('gri_assessment_drafts').select('state, updated_at').eq('user_id', params.id).maybeSingle()
   if (!draft) return NextResponse.json({ ok: true, alreadyEmpty: true })

@@ -12,7 +12,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getWebAuthnConfig } from '@/lib/webauthn/config'
 import { getCredentialForUser, updateCredentialCounter } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
 import { logActivity } from '@/lib/activity/log'
 
 // POST /api/v1/security/webauthn/authenticate/verify
@@ -72,7 +72,13 @@ export async function POST(request: Request) {
   }
 
   await updateCredentialCounter(cred.id, verification.authenticationInfo.newCounter)
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)
+  // R-132: the proof is bound to this Supabase session (a new sign-in is a new
+  // session and needs the second factor again).
+  const sessionKey = currentStepUpSessionKey()
+  if (!sessionKey) {
+    return NextResponse.json({ ok: false, error: 'Сессия не найдена. Войдите заново.' }, { status: 401 })
+  }
+  jar.set(MFA_COOKIE_NAME, signStepUp(user.id, sessionKey), MFA_COOKIE_OPTIONS)
 
   await logActivity({
     userId: user.id, action: 'security.2fa_passed', category: 'security',

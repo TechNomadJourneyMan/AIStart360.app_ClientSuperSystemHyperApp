@@ -9,6 +9,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { logAudit } from '@/lib/audit'
 import { MAX_PASSWORD_LENGTH, ownerEmail, verifyOwnerPassword } from '@/lib/admin/owner-password'
+// R-049: the trusted hop of X-Forwarded-For, not the first entry the client writes.
+import { clientIpOrUnknown as clientIp } from '@/lib/net/client-ip'
 
 /** Cookie старого аварийного входа (удалён) — только стираем у тех, у кого он остался. */
 const LEGACY_GIGA_COOKIE_NAME = 'aistart360_giga'
@@ -29,11 +31,6 @@ const bodySchema = z.object({
 })
 
 const INVALID = () => NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
-
-function clientIp(req: NextRequest): string {
-  const v = (req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown').trim()
-  return v.length > 0 && v.length <= 64 ? v : 'unknown'
-}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)

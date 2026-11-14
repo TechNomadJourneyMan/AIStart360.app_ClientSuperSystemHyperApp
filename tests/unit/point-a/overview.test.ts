@@ -324,6 +324,16 @@ describe('loadPointAOverview', () => {
     }
   })
 
+  it('R-033: a block without data (v1 zero in the row) is no problem zone, and no v1 overall without a v4 score', async () => {
+    const row = { ...diagnosticFrom(CURRENT_TYPICAL), overall_score: 31, finance_score: { score: 0, status: 'critical', top_issues: ['Нет данных о выручке'], recommendations: [] } }
+    const blocks = ['finance', 'sales', 'operations', 'marketing', 'strategy'].map((key, order) => ({ key, title: key, order, score: key === 'finance' ? null : 60 }))
+    const client = fakeClient({ ...base(), diagnostics: { data: [row] }, point_a_snapshots: { data: [{ engine: 'v1', config_version: 'c|v4', overall: null, v4: { assessment: 'full' }, blocks }] } })
+    const o = await loadPointAOverview(client as never, { companyId: 'co-1' }, NOW)
+    expect(o.overallScore).toBeNull()
+    expect(o.maturity).toBeNull()
+    expect(o.problemZones.find((z) => z.area === 'finance' && z.score === 0)).toBeUndefined()
+  })
+
   it('owner-scoped CRM / market counts come from the authorised counts client (members see the owner\'s CRM)', async () => {
     // The member's session sees no CRM rows of the owner (RLS: auth.uid() = user_id).
     const memberSession = fakeClient({ ...base(), crm_provider_connections: { count: 0 }, market_analysis_answers: { count: 0 } })

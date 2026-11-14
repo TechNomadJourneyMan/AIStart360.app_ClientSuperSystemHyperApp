@@ -152,9 +152,11 @@ export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string
   const g = ctx.gri
   const m = ctx.metrics
 
-  const blockLines = a.blocks
-    .map((bl) => `  - ${bl.label} (${bl.key}): ${n(bl.score)}/100 [${bl.status}]`)
-    .join('\n')
+  // Blocks the official Point A has no data for: «нет данных», never a 0 / weakness (R-033).
+  const blockLines = [
+    ...a.blocks.map((bl) => `  - ${bl.label} (${bl.key}): ${n(bl.score)}/100 [${bl.status}]`),
+    ...(a.blocks_without_data ?? []).map((label) => `  - ${label}: ${en ? 'no data (not scored — not a weakness)' : 'нет данных (не оценивался — это не слабость)'}`),
+  ].join('\n')
 
   const weakest = a.weakest_blocks.map((bl) => `${bl.label} ${n(bl.score)}`).join(', ') || '—'
   const progressBlock = formatSurveyProgress(computeCompletion(ctx), locale)

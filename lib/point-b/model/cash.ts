@@ -4,7 +4,9 @@
  *   Marketing_t = NewCustomers_t · CAC                          (CAC constant — an assumption)
  *                 or, without CAC / customers, the base marketing spend scaled with the revenue
  *   Payroll_t   = payroll · (1 + growth_t)                      growth_t: hiring over the ramp
- *   COGS_t      = Revenue_t · (1 − margin)
+ *   COGS_t      = Revenue_t · (1 − margin)                      at today's prices; when the price moves (the check),
+ *                 = VolumeRevenue_t · (1 − margin)                  COGS = volume × unit cost, i.e. the revenue valued at
+ *                                                                   today's check × (1 − margin) — `cogsPath` (R-038, BI-31)
  *   EBITDA_t    = Revenue − COGS − Marketing − Payroll − FixedCosts
  *   Interest_t  = Debt_{t−1} · rate / 12
  *   Principal_t = min(Debt_{t−1}, max(0, debtService − Interest_t));  Debt_t = Debt_{t−1} − Principal_t
@@ -69,6 +71,12 @@ export interface CashInputs {
   marketingPath?: number[]
   fixedCostsPath?: number[]
   oneOff?: number[]
+  /**
+   * COGS by month 1..H (₸) when the price differs from today's (R-038, BI-31): volume × unit cost, i.e. the
+   * revenue valued at TODAY's average check × (1 − margin). A month beyond the array keeps revenue × (1 − margin).
+   * The NWC lines (inventory, payables) follow this COGS too.
+   */
+  cogsPath?: number[]
 }
 
 /** What `simulateCash` returns: the contract plus the lines needed to check the identities. */
@@ -95,7 +103,8 @@ function validate(c: CashInputs): void {
   if (c.newCustomers !== null && (c.newCustomers.length < c.revenue.length || c.newCustomers.some((v) => !finite(v) || v < 0))) {
     throw new ModelInputError('Новые клиенты по месяцам заданы неверно')
   }
-  if (!finite(c.margin) || c.margin <= 0 || c.margin > 1) throw new ModelInputError('Валовая маржа должна быть больше нуля и не больше 100%')
+  // A margin ≤ 0 is allowed (BI-28): sales at or below cost — COGS ≥ revenue, the cash shows the damage.
+  if (!finite(c.margin) || c.margin > 1) throw new ModelInputError('Валовая маржа должна быть числом не больше 100%')
   if (c.cac !== null) nonNeg('Стоимость привлечения клиента', c.cac)
   if (c.marketingMonthlyBase !== null) nonNeg('Маркетинг базового месяца', c.marketingMonthlyBase)
   nonNeg('Базовая месячная выручка', c.revenueBaseMonthly)
@@ -113,7 +122,7 @@ function validate(c: CashInputs): void {
   nonNeg('Капитальные затраты', c.capexYear)
   nonNeg('Резерв ликвидности', c.reserveMonths)
   if (c.payrollGrowth.some((v) => !finite(v) || v < -1)) throw new ModelInputError('Рост фонда оплаты труда задан неверно')
-  for (const [what, path] of [['Маркетинг по месяцам', c.marketingPath], ['Постоянные расходы по месяцам', c.fixedCostsPath], ['Разовые расходы по месяцам', c.oneOff]] as const) {
+  for (const [what, path] of [['Маркетинг по месяцам', c.marketingPath], ['Постоянные расходы по месяцам', c.fixedCostsPath], ['Разовые расходы по месяцам', c.oneOff], ['Себестоимость по месяцам', c.cogsPath]] as const) {
     if (path !== undefined && (!Array.isArray(path) || path.some((v) => !finite(v) || v < 0))) throw new ModelInputError(`${what}: нужны числа не меньше нуля`)
   }
 }
@@ -145,7 +154,7 @@ export function simulateCash(c: CashInputs): CashSimulation {
 
   for (let t = 0; t < H; t++) {
     const revenue = c.revenue[t]
-    const cogs = revenue * (1 - c.margin)
+    const cogs = c.cogsPath && t < c.cogsPath.length ? c.cogsPath[t] : revenue * (1 - c.margin)
     const marketing = c.marketingPath && t < c.marketingPath.length ? c.marketingPath[t] : marketingOf(c, t)
     const payroll = c.payrollMonthly * (1 + (c.payrollGrowth[t] ?? 0))
     const fixed = c.fixedCostsPath && t < c.fixedCostsPath.length ? c.fixedCostsPath[t] : c.fixedCostsMonthly
@@ -193,7 +202,9 @@ export function simulateCash(c: CashInputs): CashSimulation {
 function cashAssumptions(c: CashInputs): string[] {
   const a: string[] = [
     'Прибыль и денежный поток считаются отдельно: денежный поток = EBITDA − налог − прирост оборотного капитала − проценты − погашение долга − капитальные затраты.',
-    'Себестоимость — по валовой марже; налог — доля от прибыли до налога (EBITDA − проценты), не ниже нуля, амортизация не учитывается.',
+    c.cogsPath
+      ? 'Себестоимость = объём × себестоимость единицы: изменение цены (среднего чека) меняет выручку, но не себестоимость единицы — маржа пересчитывается; налог — доля от прибыли до налога (EBITDA − проценты), не ниже нуля, амортизация не учитывается.'
+      : 'Себестоимость — по валовой марже; налог — доля от прибыли до налога (EBITDA − проценты), не ниже нуля, амортизация не учитывается.',
     `Оборотный капитал: дебиторка = выручка × ${fmtNum(c.dso, 0)}/30, запасы = себестоимость × ${fmtNum(c.dio, 0)}/30, кредиторка = себестоимость × ${fmtNum(c.dpo, 0)}/30.`,
     c.debt0 > 0
       ? `Долг ${fmtMoney(c.debt0)}: проценты по ставке ${fmtPct(c.interestRateAnnual, 1)} годовых, платёж ${fmtMoney(c.debtServiceMonthly)} в месяц идёт сначала на проценты, затем на основной долг; новых кредитов нет.`
@@ -210,10 +221,19 @@ function cashAssumptions(c: CashInputs): string[] {
 
 // ─── level 2 inside a scenario ──────────────────────────────────────────────
 
-/** The finmodel is complete, the gross margin is usable, no value is missing: level 2 can be calculated. */
+/** The gross margin as a fraction ≤ 1, null when there is no value. ≤ 0 is a value (sales below cost, BI-28). */
 export function grossMarginOf(i: ModelInputs): number | null {
   const m = i.grossMargin?.value
-  return finite(m) && m > 0 && m <= 1 ? m : null
+  return finite(m) && m <= 1 ? m : null
+}
+
+/** A margin ≤ 0 is a critical signal, not «no data» (BI-28). */
+export function marginWarnings(i: ModelInputs): string[] {
+  const m = grossMarginOf(i)
+  if (m === null || m > 0) return []
+  return [m === 0
+    ? 'Продажи в убыток: валовая маржа 0% — выручка только покрывает себестоимость, на зарплаты, аренду и маркетинг денег не остаётся. Рост выручки при такой марже не приносит денег.'
+    : `Продажи в убыток: валовая маржа ${fmtPct(m, 1)} — себестоимость выше выручки, каждая продажа уменьшает деньги. Рост выручки при такой марже увеличивает убыток; сначала цена или себестоимость.`]
 }
 
 export function financeReady(i: ModelInputs): boolean {
@@ -264,6 +284,11 @@ export interface ScenarioPath {
   revenue: number[]
   /** New customers 1..H (funnel) or null (growth). */
   newCustomers: number[] | null
+  /**
+   * Monthly revenue 1..H valued at TODAY's average check (the same volume, the old price) — given when the path
+   * moves the check: COGS = this × (1 − margin), so the unit cost does not follow the price (R-038, BI-31).
+   */
+  volumeRevenue?: number[]
 }
 
 export interface FinanceBuild {
@@ -328,6 +353,7 @@ export function cashInputsOf(
     taxRate: val(f, 'tax') ?? 0,
     capexYear: val(f, 'capex') ?? 0,
     reserveMonths: profile.reserveMonths,
+    ...(path.volumeRevenue ? { cogsPath: path.volumeRevenue.map((v) => Math.max(0, v) * (1 - margin)) } : {}),
     ...extra,
   }
 }

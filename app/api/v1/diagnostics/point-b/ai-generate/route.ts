@@ -16,6 +16,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { gateFeature } from '@/lib/access/gate'
 import { createServiceClient } from '@/lib/supabase-service'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -29,7 +30,7 @@ import { createServiceClient } from '@/lib/supabase-service'
  * ai_status='none' and return ok WITHOUT calling the LLM (never fabricate a plan).
  */
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>))
     let diagnosticId = (body.diagnostic_id as string | undefined) ?? undefined
@@ -183,3 +184,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'AI analysis failed' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After
+ * 120 s the client gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline
+ * spent (the fan-out waits 150 s (lib/point-a/diagnostic-row.ts); the model call inside is bounded by the AI deadline). ROUTE_DEADLINE_MS_POINT_B_AI_GENERATE overrides it; ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-b-ai-generate', ms: 120_000 })

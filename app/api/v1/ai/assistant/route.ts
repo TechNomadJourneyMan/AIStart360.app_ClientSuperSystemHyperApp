@@ -27,6 +27,7 @@ import { chatWithTools } from '@/lib/ai/tools-chat'
 import { retrieveCompanyChunks } from '@/lib/ai/retrieval'
 import { runChatTurn, type ChatSurface } from '@/lib/chat/engine'
 import { toolsFor, type ActionPreview, type PendingKind } from '@/lib/chat/tools'
+import { saveChatTurn } from '@/lib/chat/turn-store'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -146,11 +147,16 @@ export async function POST(req: Request): Promise<Response> {
         })
         // An AI outage / abandoned turn is not a reply worth feeding back to the model.
         if (conversationId && result.outcome !== 'ai_error' && result.outcome !== 'aborted') {
-          await sb.from('ai_messages').insert([
-            { conversation_id: conversationId, role: 'user', content: result.question, created_at: askedAt.toISOString() },
-            { conversation_id: conversationId, role: 'assistant', content: result.answer, created_at: new Date(Math.max(Date.now(), askedAt.getTime() + 1)).toISOString(), grounding: { tools: result.toolsUsed, proposals: result.proposals, surface, focus: focus ?? null } },
-          ])
-          await sb.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)
+          // R-228: the assistant's reply is written by the server (the user may insert only role = 'user',
+          // migration 141); saveChatTurn re-checks that the conversation is the caller's.
+          await saveChatTurn(service, {
+            conversationId,
+            userId: user.id,
+            messages: [
+              { role: 'user', content: result.question, created_at: askedAt.toISOString() },
+              { role: 'assistant', content: result.answer, created_at: new Date(Math.max(Date.now(), askedAt.getTime() + 1)).toISOString(), grounding: { tools: result.toolsUsed, proposals: result.proposals, surface, focus: focus ?? null } },
+            ],
+          })
         }
         send({ type: 'done', conversationId })
       } catch (err) {

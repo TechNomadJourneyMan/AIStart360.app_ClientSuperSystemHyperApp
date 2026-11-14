@@ -4,7 +4,10 @@
 // (`crypto.subtle`) exclusively, with NO reference to `node:crypto` (which would
 // break the Edge build). The Node signer/verifier lives in `step-up.ts`.
 //
-// Token format (shared): base64url(`${userId}.${expMs}`) "." hex(HMAC-SHA256).
+// Token format (shared):
+//   base64url(`v2.${userId}.${sessionKey}.${expMs}`) "." hex(HMAC-SHA256)
+// The proof is bound to the user AND the Supabase session (R-132, see
+// session-binding.ts); the old `${userId}.${expMs}` format is refused.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const MFA_COOKIE_NAME = 'aistart360_mfa'
@@ -32,10 +35,17 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0
 }
 
-/** Verify the step-up cookie on the Edge runtime. Fails closed when unset. */
-export async function verifyStepUpEdge(token: string | undefined | null, userId: string): Promise<boolean> {
+/**
+ * Verify the step-up cookie on the Edge runtime for `userId` in the session
+ * `sessionKey`. Fails closed when anything is missing.
+ */
+export async function verifyStepUpEdge(
+  token: string | undefined | null,
+  userId: string,
+  sessionKey: string | null | undefined,
+): Promise<boolean> {
   try {
-    if (!token) return false
+    if (!token || !sessionKey) return false
     const dot = token.lastIndexOf('.')
     if (dot <= 0) return false
     const payload = base64UrlToString(token.slice(0, dot))
@@ -47,8 +57,10 @@ export async function verifyStepUpEdge(token: string | undefined | null, userId:
     const expected = await hmacSha256HexEdge(secret, payload)
     if (!constantTimeEqual(expected, providedSig)) return false
 
-    const [uid, expStr] = payload.split('.')
-    return uid === userId && Number(expStr) > Date.now()
+    const parts = payload.split('.')
+    if (parts.length !== 4 || parts[0] !== 'v2') return false
+    const [, uid, sk, expStr] = parts
+    return uid === userId && sk === sessionKey && Number(expStr) > Date.now()
   } catch {
     return false
   }

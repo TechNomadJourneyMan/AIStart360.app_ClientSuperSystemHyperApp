@@ -94,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
-  if (!canManageTarget(guard.actor.role, target.staffRole)) {
+  if (!canManageTarget(guard.actor.role, target)) {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
   }
 

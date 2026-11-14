@@ -4,9 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { testProvider } from '@/lib/crm/provider-client'
 import { sealCrmToken } from '@/lib/crm/token-store'
-import type { CrmProvider } from '@/lib/crm/types'
-
-const PROVIDERS: CrmProvider[] = ['bitrix24', 'amocrm']
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmConnectionBody } from '@/lib/validation/schemas'
 
 // Никогда не отдаём access_token наружу.
 const SAFE_COLUMNS =
@@ -47,18 +46,14 @@ export async function POST(req: NextRequest) {
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
-  const body = (await req.json().catch(() => null)) as {
-    provider?: string
-    base_url?: string
-    access_token?: string
-    connection_name?: string
-  } | null
-  const provider = body?.provider as CrmProvider | undefined
-  const baseUrl = body?.base_url?.trim()
-  const token = body?.access_token?.trim()
-  if (!provider || !PROVIDERS.includes(provider) || !baseUrl || !token) {
-    return NextResponse.json({ ok: false, error: 'provider, base_url, access_token обязательны' }, { status: 422 })
-  }
+  // R-149: { provider, base_url, access_token, connection_name? } only; a bad
+  // body keeps its historical 422 (a non-string field used to be a 500).
+  const parsed = await parseJsonBody(req, CrmConnectionBody, { status: 422 })
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+  const provider = body.provider
+  const baseUrl = body.base_url
+  const token = body.access_token
 
   // Честная проверка связи до сохранения — не даём «подключить» нерабочий токен.
   // testProvider сначала проверяет домен (allowlist CRM + только публичные адреса).
@@ -75,7 +70,7 @@ export async function POST(req: NextRequest) {
         provider,
         base_url: baseUrl,
         access_token: sealCrmToken(token),
-        connection_name: body?.connection_name?.trim() || null,
+        connection_name: body.connection_name || null,
         is_active: true,
         last_sync_status: null,
         last_sync_error: null,

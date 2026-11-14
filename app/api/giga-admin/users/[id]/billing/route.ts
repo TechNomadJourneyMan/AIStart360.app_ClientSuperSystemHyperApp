@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaClient } from '@/lib/admin/client-scope'
+import { forbidTarget } from '@/lib/admin/giga-actor'
 import { NOTE_MAX, addMonths, getEffectivePlan, isPlanTier, setPlan, type PlanTier } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
 
@@ -10,7 +11,7 @@ const MAX_MONTHS = 36
 
 /** GET /api/giga-admin/users/:id/billing — the client's effective plan (users.view). */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'users.view')
+  const guard = await requireGigaClient(req, 'users.view', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   try {
@@ -55,7 +56,7 @@ const invalid = (message: string) => NextResponse.json({ ok: false, error: 'inva
  * journalled before the write (lib/payments/billing.ts).
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'users.manage')
+  const guard = await requireGigaClient(req, 'users.manage', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const denied = await forbidTarget(guard.actor, params.id)

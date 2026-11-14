@@ -268,11 +268,15 @@ registerTool({
       const r = await scoreCompany(companyId, sessionId)
       await recordStage(sessionId, ownStage(ctx), {}, { diagnosticId: r.diagnosticId })
       ctx.source({ type: 'diagnostic', ref: r.diagnosticId })
+      // The official Point A (R-033): no score / stage → null, never a 0.
+      const scored = r.official.state === 'scored'
       return {
         diagnostic_id: r.diagnosticId,
         reused: r.reused,
-        overall_score: r.pointA.overall_score,
-        stage: r.pointA.stage,
+        overall_score: scored ? r.official.overall : null,
+        stage: scored ? r.official.stage : null,
+        assessment: r.official.state,
+        blocks_without_data: r.official.blocksWithoutData,
         critical_risks: r.pointA.risks.filter((x) => x.level === 'critical').length,
         answered_keys: r.answeredKeys,
       }
@@ -281,8 +285,10 @@ registerTool({
       throw err
     }
   },
-  summarize: (r: { overall_score?: number; reused?: boolean; no_data?: boolean }) =>
-    r.no_data ? 'нет данных анкеты' : `индекс ${r.overall_score}${r.reused ? ' (актуальный расчёт)' : ''}`,
+  summarize: (r: { overall_score?: number | null; reused?: boolean; no_data?: boolean }) =>
+    r.no_data ? 'нет данных анкеты'
+      : r.overall_score === null || r.overall_score === undefined ? `индекса нет (мало данных или анкета не отправлена)${r.reused ? ' (актуальный расчёт)' : ''}`
+        : `индекс ${r.overall_score}${r.reused ? ' (актуальный расчёт)' : ''}`,
 })
 
 registerTool({
@@ -299,7 +305,10 @@ registerTool({
     if (diag) ctx.source({ type: 'diagnostic', ref: diag.id })
     return {
       diagnostic_id: diag?.id ?? null,
+      // Blocks without data are null in pointA (officialDiagnosticRow); the
+      // official reading says whether there is an overall score at all.
       point_a: diag?.pointA ?? null,
+      official: diag ? { state: diag.official.state, overall: diag.official.overall, stage: diag.official.stage, blocks_without_data: diag.official.blocksWithoutData } : null,
       profile: profile ? { industry: profile.industry, stage: profile.stage, size: profile.size, business_model: profile.businessModel } : null,
     }
   },

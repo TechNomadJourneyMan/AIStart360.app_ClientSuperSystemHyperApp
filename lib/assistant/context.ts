@@ -28,6 +28,7 @@ import type {
   AssistantGri,
 } from './types'
 import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
+import { getOfficialPointA, officialDiagnosticRow, type OfficialPointA } from '@/lib/point-a/official'
 
 // ─── Point A reconstruction (mirrors point-b/route.ts diagToPointA) ─────────
 
@@ -95,9 +96,10 @@ function griTop5ToOption(top5: AssistantGri['top_5_limits']): PointBOptions['gri
   return top5.map((t) => ({ rank: t.rank, title: t.title, block: t.block, severity: 'high' }))
 }
 
-function toAssistantBlocks(pointA: PointA): AssistantBlock[] {
+/** Blocks WITH official data only — a block without data is listed apart, never as a 0. */
+function toAssistantBlocks(pointA: PointA, noData: ReadonlySet<string>): AssistantBlock[] {
   const order = ['finance', 'sales', 'operations', 'marketing', 'strategy'] as const
-  return order.map((key) => {
+  return order.filter((key) => !noData.has(key)).map((key) => {
     const b = pointA.blocks[key] ?? EMPTY_BLOCK
     return { key, label: BLOCK_LABELS[key] ?? key, score: b.score, status: b.status }
   })
@@ -123,7 +125,14 @@ export async function buildAssistantContext(
     .maybeSingle()
 
   const hasDiagnostic = !!diag
-  const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : diagToPointA({})
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): no overall /
+  // stage / health without an official score, a block without data is «нет
+  // данных» — never `?? 0`. A failed read degrades to «no Point A».
+  const official: OfficialPointA | null = diag ? await getOfficialPointA(sb, userId).catch(() => null) : null
+  const officialRow = diag && official ? officialDiagnosticRow(diag as Record<string, unknown>, official) : null
+  const pointA = officialRow ? diagToPointA(officialRow) : diagToPointA({})
+  const scored = official?.state === 'scored'
+  const noData = new Set<string>(official ? official.blocks.filter((b) => b.score === null || !['scored', 'no_score'].includes(official.state)).map((b) => b.key) : ['finance', 'sales', 'operations', 'marketing', 'strategy'])
   const diagnosticId = (diag?.id as string | undefined) ?? null
 
   // 2. Survey answers → flat { question_key: value } map (answer.value unwrap —
@@ -195,6 +204,7 @@ export async function buildAssistantContext(
   // 6. Compute Point B (gap / realism / data_sufficiency) — never fabricated.
   const pointBV2 = calculatePointBV2(pointA, answers, {
     diagnosticId,
+    blocksWithoutData: [...noData],
     griTop5: griTop5ToOption(griTop5),
     currentRevenueYear,
     goal12mYear: target12m,
@@ -203,16 +213,18 @@ export async function buildAssistantContext(
 
   // ── Assemble the curated snapshot ──────────────────────────────────────────
 
-  const blocks = toAssistantBlocks(pointA)
+  const blocks = toAssistantBlocks(pointA, noData)
   const weakest = [...blocks].sort((a, b) => a.score - b.score)
 
   const assistantPointA: AssistantPointA = {
     has_diagnostic: hasDiagnostic,
-    overall_score: hasDiagnostic ? pointA.overall_score : null,
-    health_index: hasDiagnostic ? pointA.health_index : null,
-    stage: hasDiagnostic ? pointA.stage : null,
+    overall_score: scored ? official!.overall : null,
+    health_index: scored ? official!.health_index : null,
+    stage: scored ? official!.stage : null,
     blocks,
     weakest_blocks: weakest.slice(0, 3),
+    blocks_without_data: hasDiagnostic ? [...noData].filter((k) => BLOCK_LABELS[k]).map((k) => BLOCK_LABELS[k]) : [],
+    assessment: official?.state ?? 'none',
     risks: pointA.risks.map((r) => ({ level: r.level, area: r.area, text: r.text })),
     data_gaps: pointA.data_gaps.map((g) => ({ field: g.field, step: g.step, impact: g.impact })),
     quick_wins: pointA.quick_wins.map((q) => ({

@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
-  if (!canManageTarget(guard.actor.role, target.staffRole) || target.staffRole === 'super_admin') {
+  if (!canManageTarget(guard.actor.role, target) || target.staffRole === 'super_admin') {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
   }
   const { action, reason } = parsed.data

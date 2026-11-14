@@ -6,12 +6,14 @@ import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-da
 /**
  * GET /api/giga-admin/requests/[id]/diagnostics
  * Returns Point A diagnostics for the client associated with this request.
+ * The diagnostics carry the client's finances: users.sensitive is required
+ * (R-133), the client scope is checked by authorizeUserDataRead (R-047).
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const access = await authorizeUserDataRead(req, 'users.view', (sb) => resolveRequestUserId(sb, params.id))
+  const access = await authorizeUserDataRead(req, ['users.view', 'users.sensitive'], (sb) => resolveRequestUserId(sb, params.id))
   if ('response' in access) return access.response
 
   try {

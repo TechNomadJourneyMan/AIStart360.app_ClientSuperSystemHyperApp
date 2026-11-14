@@ -12,6 +12,7 @@ import {
   type BenchmarkRating,
 } from '@/lib/point-a/benchmarks'
 import { safeErrorMessage } from '@/lib/api-error'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 const BLOCK_KEYS: BenchmarkBlockKey[] = [
   'finance',
@@ -153,7 +154,11 @@ export async function GET(req: NextRequest) {
       // A failed read is not "no diagnostic".
       if (error) throw new Error(`diagnostics read failed (${error.code ?? 'unknown'})`)
       if (diagnostic) {
-        comparison = buildComparison(benchmark, diagnostic as Record<string, unknown>)
+        // The official numbers (R-033): no v1 overall where v4 has none, no
+        // v1 zero for a block without data.
+        const row = diagnostic as Record<string, unknown>
+        const official = officialPointA(row, await loadOfficialSnapshot(supabase, userId))
+        comparison = buildComparison(benchmark, officialDiagnosticRow(row, official))
       }
     }
 

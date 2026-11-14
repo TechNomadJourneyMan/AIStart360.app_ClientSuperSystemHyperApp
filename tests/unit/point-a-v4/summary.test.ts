@@ -10,12 +10,21 @@ describe('overviewSummary', () => {
     expect(overviewSummary(r).headline).toMatch(/^Данных пока недостаточно/)
   })
   it('a score: the number, the stage, the strongest / weakest block and blocks without data', () => {
-    const r = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+    // CURRENT_TYPICAL + marketing: ≥ 60 % of the weight with finance (R-032), sales without data.
+    const marketing = { s5_marketing_channels: ['SEO', 'Контекстная реклама'], s5_marketing_budget_pct: 6, s5_has_competitor_analysis: true }
+    const r = calculatePointAV4({ answers: { ...CURRENT_TYPICAL, ...marketing }, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
     const o = overviewSummary(r)
+    expect(r.overall).not.toBeNull()
     expect(o.headline).toContain(`Общий балл ${r.overall} из 100`)
     expect(o.headline).toMatch(/Без оценки из-за нехватки данных: .*«Продажи»/)
     expect(o.risks.length).toBeGreaterThan(0)
     expect(o.risks.every((x) => typeof x.text === 'string' && x.text.length > 0)).toBe(true)
+  })
+  it('R-032: the full questionnaire with too little data → «данных пока недостаточно», no number', () => {
+    const r = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+    expect(r.overall).toBeNull()
+    expect(overviewSummary(r).headline).toMatch(/^Данных пока недостаточно/)
+    expect(overviewSummary(r).headline).not.toMatch(/из 100|null/)
   })
   it('preliminary (PO 2026-11-02): findings, never a number', () => {
     const r = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE), surveyComplete: false })

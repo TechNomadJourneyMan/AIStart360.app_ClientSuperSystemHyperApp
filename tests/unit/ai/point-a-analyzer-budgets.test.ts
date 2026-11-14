@@ -33,4 +33,15 @@ describe('analyzePointA budgets', () => {
       ['point-a:blocksB', 4000, 'medium'],
     ])
   })
+
+  // I2 (R-033): a block the official Point A has no data for is «no data» in the prompt.
+  it('a block without data is NO DATA in the prompt, never «0/100 (Critical)»', async () => {
+    structured.generate.mockClear()
+    const zero = { ...pointA, blocks: { ...pointA.blocks, finance: { score: 0 } } } as unknown as PointA
+    await analyzePointA({}, zero, null, null, 'ru', ['finance'])
+    const user = (structured.generate.mock.calls as unknown as Array<[{ user: string }]>)[0][0].user
+    expect(user).toContain('Finance Block: NO DATA')
+    expect(user).not.toContain('Finance Block: 0/100')
+    expect(user).toContain('Sales Block: 50/100 (Average)')
+  })
 })

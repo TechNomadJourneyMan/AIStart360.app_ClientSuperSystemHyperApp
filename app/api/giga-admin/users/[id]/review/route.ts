@@ -1,8 +1,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireGigaClient } from '@/lib/admin/client-scope'
 import { z } from 'zod'
-import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
+import { forbidTarget } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { reviewBlockLabel } from '@/lib/expert-review/blocks'
@@ -33,7 +34,7 @@ const bodySchema = z.object({
 })
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'clients.review')
+  const guard = await requireGigaClient(req, 'clients.review', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
 
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'clients.review')
+  const guard = await requireGigaClient(req, 'clients.review', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const denied = await forbidTarget(guard.actor, params.id)

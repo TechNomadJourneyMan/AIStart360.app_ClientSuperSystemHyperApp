@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { CATEGORIES } from '@/lib/gri-calculator/gri-data'
+import { toGri } from '@/lib/format/gri'
 
 /** Expert tab category → gri_assessments.section_avgs key. */
 const GRI_SECTION_BY_CATEGORY: Readonly<Record<(typeof CATEGORIES)[number], string>> = {
@@ -33,11 +34,8 @@ interface AssessmentRow {
   created_at: string | null
 }
 
-function num(v: unknown): number | null {
-  if (v === null || v === undefined || v === '') return null
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? n : null
-}
+/** GRI 0–10; 0 («не отвечено») and garbage → null (lib/format/gri.ts, R-036). */
+const num = (v: unknown): number | null => toGri(v)
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await resolveExpert()
