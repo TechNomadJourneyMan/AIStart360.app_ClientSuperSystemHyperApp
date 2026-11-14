@@ -7,7 +7,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { NOTE_MAX, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
 import { planPeriodEnd, proAssignment } from '@/lib/payments/plan-period'
-import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
+import { claimAccessRequest, completePaidAccessGrant, releaseAccessRequest } from '@/lib/access/paid-access-grant'
 import { featureLabel, isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -22,8 +22,10 @@ const invalid = (message: string) => NextResponse.json({ ok: false, error: 'inva
  * Body: { periodEnd?: 'YYYY-MM-DD' | ISO, months?: 1..36, note? } — periodEnd
  * wins over months; neither = Pro without an end date (lib/payments/plan-period.ts).
  * Never shortens a live paid plan (review L-5, proAssignment): months are added
- * to the end of the current paid period, an open-ended plan stays open-ended,
- * Enterprise stays Enterprise; an earlier explicit date → 422.
+ * to the end of the current paid period (atomically in SQL via extendMonths),
+ * an open-ended plan stays open-ended (`unchanged`), Enterprise stays
+ * Enterprise; an earlier explicit date → 422. The request is CLAIMED (closed
+ * while open) before the plan changes: a second concurrent press → 409.
  *
  * The same path and the same rights as User 360 → Биллинг
  * (PATCH /api/giga-admin/users/:id/billing): users.manage, the client scope of
@@ -78,14 +80,41 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (denied) return denied
 
   const features = Array.isArray(r.payload?.features) ? (r.payload.features as unknown[]).filter((f): f is string => typeof f === 'string') : []
+  let current: Awaited<ReturnType<typeof getEffectivePlan>>
   try {
-    const current = await getEffectivePlan({ userId }, svc)
-    const plan = proAssignment(current, { periodEnd: period.periodEnd, months: period.months, explicitDate: body.periodEnd !== undefined && body.periodEnd !== null && body.periodEnd !== '' })
-    if ('error' in plan) return invalid(plan.error)
+    current = await getEffectivePlan({ userId }, svc)
+  } catch (e) {
+    return billingErrorResponse(e, 'giga-admin/requests/assign-pro')
+  }
+  const plan = proAssignment(current, { periodEnd: period.periodEnd, months: period.months, explicitDate: body.periodEnd !== undefined && body.periodEnd !== null && body.periodEnd !== '' })
+  if ('error' in plan) return invalid(plan.error)
+
+  // Verify (L-5 race): claim the request FIRST — of two concurrent presses one
+  // wins, the other gets 409; the plan is assigned / extended once.
+  const previousStatus = String(r.status ?? 'new')
+  let claimed: boolean
+  try {
+    claimed = await claimAccessRequest(svc, r.id)
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Не удалось закрыть заявку' }, { status: 500 })
+  }
+  if (!claimed) return NextResponse.json({ ok: false, error: 'closed', message: 'Заявка уже закрыта' }, { status: 409 })
+
+  const grantOf = (before: Pick<typeof current, 'accessTier'>, after: Pick<typeof current, 'accessTier' | 'periodEnd'> | null) =>
+    completePaidAccessGrant({ userId, actor, before, after, via: 'request', requestId: r.id, claimed: [r.id], ipAddress: req.headers.get('x-forwarded-for') ?? undefined, svc })
+
+  // Already paid and open-ended: nothing to assign — the request is closed honestly (verify Info).
+  if (plan.unchanged) {
+    const grant = await grantOf(current, current)
+    return NextResponse.json({ ok: true, userId, plan: current, unchanged: true, requestClosed: true, extended: false, closedRequests: grant.closed, notified: grant.notified })
+  }
+
+  try {
     const result = await setPlan({
       userId,
       tier: plan.tier,
       periodEnd: plan.periodEnd,
+      ...(plan.extendMonths ? { extendMonths: plan.extendMonths } : {}),
       source: 'admin',
       actor,
       note: note || `По заявке на доступ${features.length ? `: ${features.map(featureLabel).join(', ')}` : ''}`,
@@ -93,18 +122,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       meta: { action: 'set', via: 'access_request', request_id: r.id, ...(period.months ? { months: period.months } : {}), ...(plan.extended ? { extended_from: current.periodEnd } : {}) },
     })
     if (!result.applied) {
+      await releaseAccessRequest(svc, r.id, previousStatus)
       return NextResponse.json({ ok: false, error: 'not_applied', reason: result.reason ?? null, message: 'Тариф не изменён' }, { status: 409 })
     }
-    const grant = await completePaidAccessGrant({
-      userId,
-      actor,
-      before: result.before,
-      after: result.after,
-      via: 'request',
-      requestId: r.id,
-      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-      svc,
-    })
+    const grant = await grantOf(result.before, result.after)
     return NextResponse.json({
       ok: true,
       userId,
@@ -115,6 +136,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       notified: grant.notified,
     })
   } catch (e) {
+    await releaseAccessRequest(svc, r.id, previousStatus)
     return billingErrorResponse(e, 'giga-admin/requests/assign-pro')
   }
 }

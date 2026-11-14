@@ -52,6 +52,11 @@ export async function closeOpenAccessRequests(
     .select('id')
   if (error) throw new Error(`admin_requests update failed: ${error.message}`)
   const ids = ((data ?? []) as Array<{ id: unknown }>).map((r) => String(r.id))
+  await auditApproved(ids, userId, actor, opts)
+  return ids
+}
+
+async function auditApproved(ids: string[], userId: string, actor: GrantActor, opts: { via: GrantVia; requestId?: string | null; ipAddress?: string }): Promise<void> {
   for (const id of ids) {
     try {
       await logAudit({
@@ -66,7 +71,33 @@ export async function closeOpenAccessRequests(
       console.error('[paid-access-grant] audit failed:', err instanceof Error ? err.message : err)
     }
   }
-  return ids
+}
+
+/**
+ * R2-C (verify, L-5 race): «Назначить Pro» CLAIMS its request first — closes it
+ * as approved only while it is still open (one conditional UPDATE). Of two
+ * concurrent presses exactly one wins; the other gets null → 409, and the plan
+ * is assigned (extended) once. If the plan then cannot be assigned, the claim
+ * is undone (releaseAccessRequest).
+ */
+export async function claimAccessRequest(svc: SupabaseClient, requestId: string): Promise<boolean> {
+  const { data, error } = await svc
+    .from('admin_requests')
+    .update({ status: 'approved', updatedAt: new Date().toISOString() })
+    .eq('id', requestId)
+    .in('status', [...OPEN_REQUEST_STATUSES])
+    .select('id')
+  if (error) throw new Error(`admin_requests claim failed: ${error.message}`)
+  return Array.isArray(data) && data.length > 0
+}
+
+/** Undo a claim: the request is open again with its previous status. Best effort. */
+export async function releaseAccessRequest(svc: SupabaseClient, requestId: string, previousStatus: string): Promise<void> {
+  try {
+    await svc.from('admin_requests').update({ status: previousStatus, updatedAt: new Date().toISOString() }).eq('id', requestId).eq('status', 'approved')
+  } catch (err) {
+    console.error('[paid-access-grant] claim not released:', err instanceof Error ? err.message : err)
+  }
 }
 
 export interface GrantResult {
@@ -86,14 +117,18 @@ export async function completePaidAccessGrant(args: {
   via: GrantVia
   /** The request «Назначить Pro» was pressed in (dedupe key of the notice). */
   requestId?: string | null
+  /** Requests already closed by this action (claimAccessRequest): audited and counted here. */
+  claimed?: string[]
   ipAddress?: string
   svc?: SupabaseClient
 }): Promise<GrantResult> {
   if (!args.after || args.after.accessTier !== 'pro') return { closed: [], notified: false }
-  let closed: string[] = []
+  const claimed = args.claimed ?? []
+  if (claimed.length) await auditApproved(claimed, args.userId, args.actor, { via: args.via, requestId: args.requestId, ipAddress: args.ipAddress })
+  let closed: string[] = [...claimed]
   let requestsError = false
   try {
-    closed = await closeOpenAccessRequests(args.svc ?? createServiceClient(), args.userId, args.actor, { via: args.via, requestId: args.requestId, ipAddress: args.ipAddress })
+    closed = closed.concat(await closeOpenAccessRequests(args.svc ?? createServiceClient(), args.userId, args.actor, { via: args.via, requestId: args.requestId, ipAddress: args.ipAddress }))
   } catch (err) {
     requestsError = true
     console.error('[paid-access-grant] requests not closed:', err instanceof Error ? err.message : err)

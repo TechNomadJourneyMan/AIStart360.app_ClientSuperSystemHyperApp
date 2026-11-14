@@ -27,15 +27,16 @@ vi.mock('@/lib/access/recipient', () => ({
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => (s.ownerError ? { data: null, error: { message: 'x' } } : { data: s.owner === null ? { user_id: null } : { user_id: s.owner }, error: null }) }) }) }),
-    rpc: async (fn: string, args: { p_company_ids: string[]; p_section: string }) => {
-      s.rpc.push({ fn, args })
+    rpc: async (fn: string, args: { p_company_ids?: string[]; p_user_ids?: string[]; p_section: string }) => {
+      s.rpc.push({ fn, args: args as never })
       if (s.rpcFails) return { data: null, error: { message: 'down' } }
-      return { data: args.p_company_ids.filter((id) => id !== 'gone').map((id) => ({ company_id: id, owner_id: `o-${id}`, open: !id.startsWith('free') })), error: null }
+      if (fn === 'paid_sections_for_users') return { data: (args.p_user_ids ?? []).map((id) => ({ user_id: id, open: !id.startsWith('f') })), error: null }
+      return { data: (args.p_company_ids ?? []).filter((id) => id !== 'gone').map((id) => ({ company_id: id, owner_id: `o-${id}`, open: !id.startsWith('free') })), error: null }
     },
   }),
 }))
 
-const { companiesOwnerSectionOpen, companiesWithClosedSection, companyOwnerSectionOpen, ownerSectionOpen, REPORT_SECTION, shareSection } = await import('@/lib/access/owner-access')
+const { companiesOwnerSectionOpen, companiesWithClosedSection, companyOwnerSectionOpen, ownerSectionOpen, REPORT_SECTION, shareSection, usersWithClosedSection } = await import('@/lib/access/owner-access')
 
 beforeEach(() => {
   s.gates = true
@@ -98,5 +99,14 @@ describe('owner-access', () => {
     s.rpcFails = true
     expect((await companiesOwnerSectionOpen(['c1', 'free-2'], 'point_a')).size).toBe(0)
     expect((await companiesWithClosedSection(['c1', 'free-2'], 'point_a')).size).toBe(0)
+  })
+
+  it('verify H-1: given CLIENTS in ONE call (SQL paid_sections_for_users); only known-closed ones; a failure → none', async () => {
+    const F = 'f0000000-0000-4000-8000-000000000001'
+    const P = 'a0000000-0000-4000-8000-000000000002'
+    expect(await usersWithClosedSection([F, P, F, 'not-a-uuid'], 'point_a')).toEqual(new Set([F]))
+    expect(s.rpc.at(-1)).toEqual({ fn: 'paid_sections_for_users', args: { p_user_ids: [F, P], p_section: 'point_a' } })
+    s.rpcFails = true
+    expect((await usersWithClosedSection([F], 'point_a')).size).toBe(0)
   })
 })

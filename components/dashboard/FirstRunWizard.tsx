@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { freeNextStep, type FreeNextStep } from '@/lib/client-shell/free-step'
 
 /**
  * First-run wizard (ON-1). Shown to a client who hasn't produced a diagnostic
@@ -11,24 +12,29 @@ import Link from 'next/link'
  * built from the account's own questionnaire — instead of the paywall of /gri.
  * NOT the public mini-GRI /gri-free: that is a lead magnet for visitors
  * («без регистрации», e-mail form, «Зарегистрируйтесь»), its result is not
- * tied to the account. With the full GRI open — as before.
+ * tied to the account. The snapshot is a screen of the express survey mode:
+ * while that mode is off the step is the (free) questionnaire instead —
+ * lib/client-shell/free-step.ts (R2-C verify). With the full GRI open — as before.
  */
 
-/** «Снимок бизнеса» — the free express assessment in the cabinet (app/client/onboarding/snapshot). */
-export const FREE_SNAPSHOT_HREF = '/client/onboarding/snapshot'
+export { FREE_SNAPSHOT_HREF } from '@/lib/client-shell/free-step'
 
 export function FirstRunWizard({
   surveyStepsDone,
   docsCount,
   hasDiagnostic,
   griLocked = false,
+  freeStep,
 }: {
   surveyStepsDone: number
   docsCount: number
   hasDiagnostic: boolean
   /** Полный GRI закрыт для аккаунта (решение сервера, lib/access/decision.ts). */
   griLocked?: boolean
+  /** The free step while the full GRI is closed (default: by the survey modes switched on). */
+  freeStep?: FreeNextStep
 }) {
+  const free = freeStep ?? freeNextStep()
   const surveyDone = surveyStepsDone > 0
   const docsDone = docsCount > 0
 
@@ -56,11 +62,11 @@ export function FirstRunWizard({
     griLocked
       ? {
           done: hasDiagnostic,
-          title: 'Получите экспресс-оценку',
-          desc: '«Снимок бизнеса» по вашей анкете — бесплатно. Полный GRI и Точка А — в платном доступе.',
-          href: FREE_SNAPSHOT_HREF,
-          cta: 'Открыть снимок бизнеса',
-          icon: 'insights',
+          title: free.title,
+          desc: free.desc,
+          href: free.href,
+          cta: free.cta,
+          icon: free.icon,
         }
       : {
           done: hasDiagnostic,
@@ -96,7 +102,9 @@ export function FirstRunWizard({
           </h2>
           <p className="text-sm text-on-surface-variant mt-1.5 max-w-lg leading-relaxed">
             {griLocked
-              ? 'Заполните анкету и загрузите документы — получите бесплатный «Снимок бизнеса».'
+              ? (free.kind === 'snapshot'
+                ? 'Заполните анкету и загрузите документы — получите бесплатный «Снимок бизнеса».'
+                : 'Заполните анкету и загрузите документы — по ним эксперт быстрее соберёт картину бизнеса.')
               : 'Пройдите диагностику готовности к росту — увидите точку А, разрывы и план пути к $2M.'}
           </p>
         </div>

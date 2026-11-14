@@ -211,10 +211,36 @@ describe('review L-5: «Назначить Pro» never shortens what the client 
     expect(s.setPlan[0]).toMatchObject({ tier: 'pro' })
   })
 
-  it('an open-ended paid plan stays open-ended; Enterprise stays Enterprise', async () => {
+  it('verify (Info): an open-ended paid plan (Enterprise) → nothing assigned, honest «unchanged», the request is closed', async () => {
     s.current = { tier: 'enterprise', status: 'active', periodEnd: null, accessTier: 'pro' }
+    const res = await assign('req-1', { months: 2 })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, unchanged: true, requestClosed: true, plan: { tier: 'enterprise' } })
+    expect(s.setPlan).toHaveLength(0)
+    expect(statusOf('req-1')).toBe('approved')
+  })
+
+  it('verify (L-5 race): a live paid period + N months → extendMonths (the SQL adds them to the live end under the row locks), not a date computed in JS', async () => {
+    s.current = { tier: 'pro', status: 'active', periodEnd: new Date(Date.now() + 20 * DAY).toISOString(), accessTier: 'pro' }
     expect((await assign('req-1', { months: 2 })).status).toBe(200)
-    expect(s.setPlan[0]).toMatchObject({ tier: 'enterprise', periodEnd: null })
+    expect(s.setPlan[0]).toMatchObject({ tier: 'pro', extendMonths: 2, periodEnd: null })
+  })
+
+  it('verify (L-5 race): two presses at once → one assigns, the other gets 409; the plan changes ONCE', async () => {
+    s.current = { tier: 'pro', status: 'active', periodEnd: new Date(Date.now() + 20 * DAY).toISOString(), accessTier: 'pro' }
+    const [a, b] = await Promise.all([assign('req-1', { months: 1 }), assign('req-1', { months: 1 })])
+    expect([a.status, b.status].sort()).toEqual([200, 409])
+    expect(s.setPlan).toHaveLength(1)
+    // and a repeat on the closed request is 409, never a second extension
+    expect((await assign('req-1', { months: 1 })).status).toBe(409)
+    expect(s.setPlan).toHaveLength(1)
+  })
+
+  it('the plan could not be assigned → the claim is undone: the request is open again (its status before)', async () => {
+    s.db.rows.find((r) => r.id === 'req-old')!.status = 'in_review'
+    s.applied = false
+    expect((await assign('req-old', { months: 1 })).status).toBe(409)
+    expect(statusOf('req-old')).toBe('in_review')
   })
 
   it('an explicit date earlier than the current paid end → 422, nothing changed; a later date is fine', async () => {

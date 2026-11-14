@@ -6,7 +6,7 @@
 -- inheritance), drops the «paid section» SELECT policies of the report tables
 -- (incl. diagnostic_sessions) and the helper functions (paid_right_of,
 -- company_rights_of, company_inherited_rights, paid_section_of,
--- paid_sections_for_owners). No data is changed. After it:
+-- paid_sections_for_owners, paid_sections_for_users). No data is changed. After it:
 --   • a member of a paid company is again limited to his own tariff in the DB
 --     (the portal code of R2-C still lets him in — roll the code back too);
 --   • a Free client can again read his published report / expert comments /
@@ -79,6 +79,7 @@ BEGIN
   END LOOP;
 END $$;
 
+DROP FUNCTION IF EXISTS public.paid_sections_for_users(uuid[], text);
 DROP FUNCTION IF EXISTS public.paid_sections_for_owners(text[], text);
 DROP FUNCTION IF EXISTS public.paid_section_of(uuid, text);
 DROP FUNCTION IF EXISTS public.company_inherited_rights(uuid);

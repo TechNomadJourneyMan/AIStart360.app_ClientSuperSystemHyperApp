@@ -146,6 +146,7 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
     if (opts.flags) await db.query(`UPDATE public.profiles SET feature_flags = $2::jsonb WHERE id = $1`, [uid, JSON.stringify(opts.flags)])
     return uid
   }
+  const memberOf = (db: Db, w: World) => member(db, w)
   const sectionsOf = async (db: Db, uid: string) =>
     asUser(db, uid, async () => {
       const out: Record<string, boolean> = {}
@@ -350,6 +351,28 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
     })
   })
 
+  it('verify H-1: paid_sections_for_users answers for given CLIENTS exactly like has_paid_section of each (unknown ids absent)', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      const free = await seedUser(db, { status: 'approved' })
+      const member = await memberOf(db, w)
+      const opened = await seedUser(db, { status: 'approved' })
+      await db.query(`UPDATE public.profiles SET feature_flags = '{"point_a": true}'::jsonb WHERE id = $1`, [opened])
+      const ids = [w.client, free, member, opened]
+      const got = await asService(db, async () => {
+        const { rows } = await db.query(`SELECT user_id, open FROM public.paid_sections_for_users($1::uuid[], 'point_a')`, [[...ids, '00000000-0000-4000-8000-00000000dead']])
+        return new Map(rows.map((r) => [r.user_id as string, r.open as boolean]))
+      })
+      expect(got.size).toBe(4)
+      for (const uid of ids) {
+        const own = await asUser(db, uid, async () => (await db.query(`SELECT public.has_paid_section('point_a') AS ok`)).rows[0].ok as boolean)
+        expect(got.get(uid), uid).toBe(own)
+      }
+      expect(ids.map((u) => got.get(u))).toEqual([true, false, true, true])
+    })
+  })
+
   it('review F8: the batch and the internal rule are not callable by a client (other people\'s tariffs)', async () => {
     await inRollback(async (db) => {
       const w = await world(db, true)
@@ -364,6 +387,7 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
         }
       })
       expect(await code(`SELECT * FROM public.paid_sections_for_owners($1::text[], 'point_a')`, [[w.company]])).toBe('42501')
+      expect(await code(`SELECT * FROM public.paid_sections_for_users($1::uuid[], 'point_a')`, [[w.client]])).toBe('42501')
       expect(await code(`SELECT public.paid_section_of($1, 'point_a')`, [w.client])).toBe('42501')
       expect(await code(`SELECT public.company_rights_of($1)`, [w.client])).toBe('42501')
     })

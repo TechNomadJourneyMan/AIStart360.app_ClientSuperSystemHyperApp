@@ -62,18 +62,40 @@ describe('M-4: the expert\'s review queue tells the expert the client is on Free
 
 })
 
-describe('Q4 + review M-1 / L-9: the first steps of a Free account lead to the free «Снимок бизнеса»', () => {
-  it('FirstRunWizard: full GRI closed → the third step is «Снимок бизнеса» in the cabinet (not the public /gri-free, not /gri)', async () => {
-    const { FirstRunWizard, FREE_SNAPSHOT_HREF } = await import('@/components/dashboard/FirstRunWizard')
-    const out = html(React.createElement(FirstRunWizard, { surveyStepsDone: 2, docsCount: 0, hasDiagnostic: false, griLocked: true }))
-    expect(FREE_SNAPSHOT_HREF).toBe('/client/onboarding/snapshot')
+describe('Q4 + review M-1 / L-9 + verify: the first steps of a Free account lead to a REAL free step', () => {
+  it('freeNextStep: «Снимок бизнеса» only while the express survey mode is on (the questionnaire helper); otherwise the questionnaire', async () => {
+    const { freeNextStep } = await import('@/lib/client-shell/free-step')
+    const { enabledSurveyModes } = await import('@/lib/survey/modes')
+    expect(freeNextStep(['full', 'express'])).toMatchObject({ kind: 'snapshot', href: '/client/onboarding/snapshot' })
+    expect(freeNextStep(['full', 'chat'])).toMatchObject({ kind: 'survey', href: '/client/onboarding' })
+    expect(freeNextStep(['full'])).toMatchObject({ kind: 'survey', title: 'Дополните анкету', cta: 'Открыть анкету' })
+    // the default reads the same flag as the questionnaire (NEXT_PUBLIC_SURVEY_MODES)
+    expect(freeNextStep()).toEqual(freeNextStep(enabledSurveyModes()))
+    expect(freeNextStep(enabledSurveyModes('full,express')).kind).toBe('snapshot')
+    expect(freeNextStep(enabledSurveyModes('')).kind).toBe('survey')
+    // the questionnaire branch promises no snapshot
+    expect(JSON.stringify(freeNextStep(['full']))).not.toMatch(/[Сс]нимок/)
+  })
+
+  it('FirstRunWizard, express on: the third step is «Снимок бизнеса» in the cabinet (not /gri-free, not /gri)', async () => {
+    const { FirstRunWizard } = await import('@/components/dashboard/FirstRunWizard')
+    const { freeNextStep } = await import('@/lib/client-shell/free-step')
+    const out = html(React.createElement(FirstRunWizard, { surveyStepsDone: 2, docsCount: 0, hasDiagnostic: false, griLocked: true, freeStep: freeNextStep(['full', 'express']) }))
     expect(out).toContain('href="/client/onboarding/snapshot"')
     expect(out).toContain('Открыть снимок бизнеса')
     expect(out).not.toContain('/gri-free')
     expect(out).not.toContain('href="/gri"')
-    expect(out).not.toContain('мини-GRI')
-    // the mascot markers stay
     expect(out).toContain('data-first-run-wizard')
+  })
+
+  it('FirstRunWizard, express off: the third step is the questionnaire with a true text — no snapshot promised', async () => {
+    const { FirstRunWizard } = await import('@/components/dashboard/FirstRunWizard')
+    const { freeNextStep } = await import('@/lib/client-shell/free-step')
+    const out = html(React.createElement(FirstRunWizard, { surveyStepsDone: 2, docsCount: 0, hasDiagnostic: false, griLocked: true, freeStep: freeNextStep(['full']) }))
+    expect(out).not.toContain('/client/onboarding/snapshot')
+    expect(out).not.toMatch(/[Сс]нимок/)
+    expect(out).toContain('Дополните анкету')
+    expect(out).not.toContain('href="/gri"')
   })
 
   it('FirstRunWizard: full GRI open (or not said) → as before', async () => {
@@ -85,24 +107,31 @@ describe('Q4 + review M-1 / L-9: the first steps of a Free account lead to the f
     }
   })
 
-  it('/dashboard hero: ONE call — closed → «Снимок бизнеса», no «Пройти GRI-диагностику» to the paywall; open → GRI as before', async () => {
+  it('/dashboard hero: ONE call — closed → the same free step as the wizard (both branches); open → GRI as before', async () => {
     const { default: GrowthSnapshotHero } = await import('@/components/dashboard/GrowthSnapshotHero')
+    const { freeNextStep } = await import('@/lib/client-shell/free-step')
     const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
     const hero = (props: Record<string, unknown>) => React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(GrowthSnapshotHero, props))
-    const locked = html(hero({ visibleSections: ['gri', 'point_a'], hideSnapshot: true, griLocked: true }))
-    expect(locked).toContain('data-next-step="snapshot"')
-    expect(locked).toContain('href="/client/onboarding/snapshot"')
-    expect(locked).not.toContain('Пройти GRI-диагностику')
-    expect(locked).not.toContain('href="/gri"')
+    const snap = html(hero({ visibleSections: ['gri', 'point_a'], hideSnapshot: true, griLocked: true, freeStep: freeNextStep(['full', 'express']) }))
+    expect(snap).toContain('data-next-step="snapshot"')
+    expect(snap).toContain('href="/client/onboarding/snapshot"')
+    expect(snap).not.toContain('Пройти GRI-диагностику')
+    expect(snap).not.toContain('href="/gri"')
+    const survey = html(hero({ visibleSections: ['gri', 'point_a'], hideSnapshot: true, griLocked: true, freeStep: freeNextStep(['full']) }))
+    expect(survey).toContain('data-next-step="survey"')
+    expect(survey).not.toContain('/client/onboarding/snapshot')
+    expect(survey).not.toContain('Пройти GRI-диагностику')
     const open = html(hero({ visibleSections: ['gri', 'point_a'], hideSnapshot: true }))
     expect(open).toContain('Пройти GRI-диагностику')
-    expect(open).not.toContain('data-next-step="snapshot"')
+    expect(open).not.toContain('data-next-step=')
   })
 
-  it('/dashboard passes the same server decision of gri_full to the hero and the wizard', () => {
+  it('/dashboard passes ONE server decision of gri_full and ONE free step to the hero and the wizard', () => {
     const src = readFileSync('app/(dashboard)/dashboard/page.tsx', 'utf8')
     expect(src).toMatch(/const griOpen = sections\?\.gri_full \?\? false/)
     expect(src.match(/griLocked=\{!griOpen\}/g)).toHaveLength(2)
+    expect(src).toContain('const freeStep = freeNextStep()')
+    expect(src.match(/freeStep=\{freeStep\}/g)).toHaveLength(2)
   })
 })
 
@@ -154,6 +183,18 @@ describe('M-5: «Назначить Pro» on a request for paid access', () => {
     expect(reg).not.toContain('Назначить Pro')
   })
 
+  it('verify L-3: a client outside the actor\'s scope → «Назначить Pro» inactive with the visible reason (no 403 after the form)', async () => {
+    const { RequestCard } = await import('@/components/giga-panel/RequestsModule')
+    const { ASSIGN_PRO_OUT_OF_SCOPE, assignProBlockedReason } = await import('@/components/giga-panel/assign-pro-model')
+    const noop = () => {}
+    const out = html(React.createElement(RequestCard, { request: { ...base, id: 'r1', category: 'access', source: 'paywall', assignable: false }, onApprove: noop, onReject: noop, onArchive: noop, onAssignPro: noop, canAssignPro: true }))
+    expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-action="assign-pro"|<button[^>]*data-action="assign-pro"[^>]*disabled=""/)
+    expect(out).toContain(ASSIGN_PRO_OUT_OF_SCOPE)
+    expect(out).toContain('data-assign-blocked')
+    expect(assignProBlockedReason(true, { assignable: true })).toBeNull()
+    expect(assignProBlockedReason(true, {})).toBeNull()
+  })
+
   it('without the plan editor\'s right (users.manage) the button is disabled with the reason', async () => {
     const { RequestCard } = await import('@/components/giga-panel/RequestsModule')
     const { ASSIGN_PRO_NO_RIGHT } = await import('@/components/giga-panel/assign-pro-model')
@@ -186,6 +227,13 @@ describe('M-5: «Назначить Pro» on a request for paid access', () => {
     expect(r).toEqual({ ok: true, text: 'Pro назначен, заявка закрыта как одобренная, клиент получил уведомление «Доступ открыт».' })
     const denied = (async () => new Response(JSON.stringify({ ok: false, error: 'Недостаточно прав' }), { status: 403 })) as unknown as typeof fetch
     expect(await m.sendAssignPro(denied, 'req-1', {})).toEqual({ ok: false, text: 'Недостаточно прав' })
+    // verify (Info): already open-ended — no false «Pro назначен»
+    const unchanged = (async () => new Response(JSON.stringify({ ok: true, unchanged: true, requestClosed: true, notified: true, plan: { tier: 'pro' } }), { status: 200 })) as unknown as typeof fetch
+    const u = await m.sendAssignPro(unchanged, 'req-1', { months: 1 })
+    expect(u.ok).toBe(true)
+    expect(u.text).toContain('Тариф уже Pro без срока')
+    expect(u.text).toContain('заявка закрыта')
+    expect(u.text).not.toContain('Pro назначен')
   })
 
   it('review L-3: an incomplete period LOCKS «Назначить Pro» and the form says why; a complete one unlocks it', async () => {

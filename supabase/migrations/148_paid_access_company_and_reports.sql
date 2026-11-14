@@ -37,7 +37,9 @@
 -- has_paid_section(section) = staff of this session OR paid_section_of(auth.uid()).
 -- paid_sections_for_owners(company ids, section) — the same rule for the OWNERS
 -- of many companies in one call (service role only: the expert / GIGA review
--- queues say «the client is on the free tariff», R2-C review F8).
+-- queues say «the client is on the free tariff», R2-C review F8);
+-- paid_sections_for_users(user ids, section) — the same for given clients
+-- (User 360: «Новый комментарий» / «Опубликовать разбор», R2-C verify).
 -- Same order as lib/access/decision.ts decideFeature + readEntitlements.
 --
 -- Migration 147 is NOT edited: this file replaces the function (CREATE OR
@@ -246,6 +248,25 @@ COMMENT ON FUNCTION public.paid_sections_for_owners(text[], text) IS
 
 REVOKE ALL ON FUNCTION public.paid_sections_for_owners(text[], text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.paid_sections_for_owners(text[], text) TO service_role;
+
+-- The same rule for given CLIENTS (one row per existing profile). Service role only.
+CREATE OR REPLACE FUNCTION public.paid_sections_for_users(p_user_ids uuid[], p_section text)
+RETURNS TABLE (user_id uuid, open boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT p.id, public.paid_section_of(p.id, p_section)
+    FROM public.profiles p
+   WHERE p.id = ANY (coalesce(p_user_ids, ARRAY[]::uuid[]))
+$$;
+
+COMMENT ON FUNCTION public.paid_sections_for_users(uuid[], text) IS
+  'R2-C: is the paid section open for each given client (the client rule, no staff); service role only';
+
+REVOKE ALL ON FUNCTION public.paid_sections_for_users(uuid[], text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.paid_sections_for_users(uuid[], text) TO service_role;
 
 -- ─── M-4: the report tables a client reads with his session → point_a ──────
 DO $$

@@ -29,3 +29,15 @@ export const BULK_ACTION_LABELS: Record<BulkAction, string> = {
   archive: 'Архивировать',
   remind_survey: 'Напомнить про анкету',
 }
+
+/**
+ * R2-C (verify Н-4): what the bulk «Сменить тариф» really does — the plan goes
+ * through the billing writer (lib/payments/billing.ts setPlan): Free cancels the
+ * clients' paid subscriptions, Kaspi ones included; Pro is open-ended, closes
+ * their access requests and notifies each «Доступ открыт».
+ */
+export function bulkTierNote(tier: 'free' | 'pro'): string {
+  return tier === 'free'
+    ? 'Платные подписки выбранных клиентов будут отменены, в том числе оплаченные через Kaspi; платные разделы закроются. Пробные периоды тоже завершатся.'
+    : 'Pro назначается бессрочно. Открытые заявки клиентов на платный доступ закроются как одобренные, каждый получит уведомление «Доступ открыт»; ИИ-разбор для них запустится в фоне.'
+}

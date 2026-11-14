@@ -10,7 +10,7 @@
  * owner has the access. Server-safe (no hooks).
  */
 export const LINK_UNAVAILABLE_TITLE = 'Ссылка недоступна'
-export const LINK_UNAVAILABLE_TEXT = 'Ссылка сейчас недоступна. Обратитесь к тому, кто ею поделился.'
+export const LINK_UNAVAILABLE_TEXT = 'Обратитесь к тому, кто ею поделился.'
 
 export function LinkUnavailable() {
   return (

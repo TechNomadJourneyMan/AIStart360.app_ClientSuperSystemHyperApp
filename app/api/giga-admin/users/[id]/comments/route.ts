@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
+import { usersWithClosedSection } from '@/lib/access/owner-access'
 import { notifyUser } from '@/lib/notifications'
 import { MAX_TARGET_ID_LENGTH } from '@/lib/comment-targets'
 import { profanityResponse } from '@/lib/moderation/http'
@@ -66,7 +67,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('created_at', { ascending: false })
     .limit(300)
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить комментарии' }, { status: 500 })
-  return NextResponse.json({ ok: true, data: await withAuthors(sb, (data ?? []) as Row[]) })
+  // R2-C (verify H-1): Точка А closed for the client → he gets only a notice
+  // without the text (lib/notifications.ts); the form says so. Unknown → no flag.
+  const [items, closed] = await Promise.all([withAuthors(sb, (data ?? []) as Row[]), usersWithClosedSection([params.id], 'point_a')])
+  return NextResponse.json({ ok: true, data: items, clientPaidLocked: closed.has(params.id) })
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

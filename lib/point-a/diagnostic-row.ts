@@ -97,7 +97,7 @@ export type FanOutPath = (typeof FAN_OUT_PATHS)[number]
  * `paths` (R2-A, ревью M-3): only the calls of the paid sections the OWNER has —
  * the AI analysis is Точка А, the strategic bridge is Точка Б. Default: both.
  */
-type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[] }
+export type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[] }
 
 /**
  * R2-A (ревью M-3): the paid AI calls the owner of a diagnostic is entitled to

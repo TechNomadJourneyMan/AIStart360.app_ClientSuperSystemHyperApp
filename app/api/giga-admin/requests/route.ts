@@ -119,6 +119,10 @@ export async function GET(req: NextRequest) {
         priority: str(r.priority) ?? 'medium',
         assignedAdmin: null,
         source: str(r.source) ?? null,
+        // R2-C (verify L-3): «Назначить Pro» checks the client scope of the actor
+        // (as User 360 → Биллинг); a pending request of a client outside it is
+        // still listed (intake queue), but the button is inactive with the reason.
+        assignable: !allowed || (!!uid && allowed.includes(uid)),
       })
     }
 

@@ -42,6 +42,7 @@ import { plural } from '@/lib/crm/digest'
 import { ShareButton } from '@/components/share/ShareButton'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
 import { getRequestAccess } from '@/lib/access/request-access'
+import { freeNextStep } from '@/lib/client-shell/free-step'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -363,6 +364,8 @@ export default async function DashboardPage() {
       const sections = await getRequestAccess(user.id).then((a) => a.sections, () => null)
       const pointAOpen = sections?.point_a ?? false
       const griOpen = sections?.gri_full ?? false
+      // R2-C (verify): the free step of a closed GRI — «Снимок бизнеса» only while the express survey mode is on.
+      const freeStep = freeNextStep()
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.
@@ -411,7 +414,7 @@ export default async function DashboardPage() {
 
             {/* «AI · Карта роста» (shows the synced goals) + the GRI next step.
                 The snapshot column is not repeated: the goals are above. */}
-            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot griLocked={!griOpen} />
+            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot griLocked={!griOpen} freeStep={freeStep} />
 
             {pointA || (surveyStepsDone === 0 && docsCount === 0) ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
@@ -427,6 +430,7 @@ export default async function DashboardPage() {
                 docsCount={docsCount}
                 hasDiagnostic={false}
                 griLocked={!griOpen}
+                freeStep={freeStep}
               />
             )}
           </section>

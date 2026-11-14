@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   audit: vi.fn(),
   listRows: [] as Array<Record<string, unknown>>,
   tariffRows: [] as Array<Record<string, unknown>>,
+  scope: null as string[] | null,
 }))
 
 vi.mock('@/lib/users/approval', () => ({ applyApprovalDecision: h.apply }))
@@ -152,7 +153,7 @@ describe('GIGA «Заявки» lists paid-access requests', () => {
     })
     vi.doMock('@/lib/admin/client-scope', async (importOriginal) => {
       const actual = await importOriginal<typeof import('@/lib/admin/client-scope')>()
-      return { ...actual, scopedClientIds: async () => null }
+      return { ...actual, scopedClientIds: async () => h.scope }
     })
     h.tariffRows = [{
       id: 'req-9', type: 'access', status: 'new', priority: 'medium', source: 'paywall', rejectionReason: null, createdAt: '2026-11-14T09:00:00',
@@ -164,5 +165,22 @@ describe('GIGA «Заявки» lists paid-access requests', () => {
     expect(paid).toMatchObject({ category: 'access', status: 'pending', source: 'paywall', subject: 'Платный доступ: Точка А, Рынок', company: 'ТОО Ромашка', userEmail: 'ivan@corp.kz' })
     // the client's own registration entry is not hidden by the paid request
     expect(body.requests.some((r: { id: string; category: string }) => r.id === CLIENT && r.category === 'registration')).toBe(true)
+    // verify L-3: scope «all» → «Назначить Pro» possible
+    expect(paid.assignable).toBe(true)
+  })
+
+  it('verify L-3: a staff member with scope «свои клиенты» sees the pending request (intake queue) but cannot assign Pro to a client outside it', async () => {
+    h.scope = ['00000000-0000-4000-8000-0000000000ff']
+    try {
+      const { GET } = await import('@/app/api/giga-admin/requests/route')
+      const body = await (await GET(new NextRequest('http://localhost/api/giga-admin/requests'))).json()
+      const paid = body.requests.find((r: { id: string }) => r.id === 'req-9')
+      expect(paid).toMatchObject({ category: 'access', status: 'pending', assignable: false })
+      h.scope = [CLIENT]
+      const mine = (await (await GET(new NextRequest('http://localhost/api/giga-admin/requests'))).json()).requests.find((r: { id: string }) => r.id === 'req-9')
+      expect(mine.assignable).toBe(true)
+    } finally {
+      h.scope = null
+    }
   })
 })

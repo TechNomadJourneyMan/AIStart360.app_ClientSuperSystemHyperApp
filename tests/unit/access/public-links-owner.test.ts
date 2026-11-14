@@ -105,9 +105,13 @@ describe('/r/v/<token> — a version of the expert\'s report', () => {
   it('review L-6: the text is neutral — nothing about the owner or his tariff', async () => {
     s.open = false
     const out = await html(await VersionLinkPage({ params: { token: 'tok' } }))
-    expect(out).toContain('Ссылка сейчас недоступна. Обратитесь к тому, кто ею поделился.')
+    expect(out).toContain('Ссылка недоступна')
+    expect(out).toContain('Обратитесь к тому, кто ею поделился.')
+    // verify Н-7: «недоступна» once, not twice (title + text)
+    expect(out.match(/недоступна/g)).toHaveLength(1)
     expect(out).not.toMatch(/владел|тариф|платн|закрыт/i)
     const pdf = await (await versionPdfGET(new NextRequest('http://t/r/v/tok/pdf'), { params: { token: 'tok' } })).json()
+    expect(pdf.message).toBe('Ссылка недоступна. Обратитесь к тому, кто ею поделился.')
     expect(JSON.stringify(pdf)).not.toMatch(/владел|тариф|платн/i)
   })
 

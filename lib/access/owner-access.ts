@@ -90,3 +90,26 @@ export async function companiesWithClosedSection(companyIds: readonly string[], 
   const open = await companiesOwnerSectionOpen(companyIds, section)
   return new Set(Array.from(open.entries()).filter(([, v]) => !v).map(([id]) => id))
 }
+
+/**
+ * R2-C (verify H-1): the same batch decision for given CLIENTS — SQL
+ * paid_sections_for_users (migration 148, service role only). For User 360:
+ * «Новый комментарий клиенту» / «Опубликовать разбор» tell the expert the truth
+ * about a client on the free tariff. Only the users KNOWN to be closed are
+ * returned; a failed read → empty (no misleading note).
+ */
+export async function usersWithClosedSection(userIds: readonly string[], section: PaidSection): Promise<Set<string>> {
+  const out = new Set<string>()
+  const ids = Array.from(new Set(userIds.filter((id) => typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id))))
+  if (ids.length === 0) return out
+  try {
+    const { data, error } = await createServiceClient().rpc('paid_sections_for_users', { p_user_ids: ids, p_section: section })
+    if (error || !Array.isArray(data)) return out
+    for (const row of data as Array<{ user_id?: unknown; open?: unknown }>) {
+      if (typeof row.user_id === 'string' && row.open === false) out.add(row.user_id)
+    }
+  } catch {
+    /* unknown for all */
+  }
+  return out
+}

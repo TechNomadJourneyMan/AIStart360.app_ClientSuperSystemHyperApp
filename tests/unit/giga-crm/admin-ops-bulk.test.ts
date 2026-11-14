@@ -20,18 +20,29 @@ const s = vi.hoisted(() => ({
   dbTouched: 0,
   plans: [] as Array<Record<string, unknown>>,
   grants: [] as Array<Record<string, unknown>>,
+  background: [] as Array<{ label: string; work: () => Promise<unknown> }>,
+  batches: [] as Array<{ ids: string[]; concurrency?: number }>,
+  billingThrows: new Set<string>(),
+}))
+// verify Н-3: the AI catch-up of the bulk run is ONE bounded batch in the background.
+vi.mock('@/lib/background', () => ({ runInBackground: (label: string, work: () => Promise<unknown>) => { s.background.push({ label, work }); return Promise.resolve() } }))
+vi.mock('@/lib/point-a/catch-up-batch', () => ({
+  CATCH_UP_CONCURRENCY: 2,
+  catchUpPaidAiBatch: (ids: string[], opts: { concurrency?: number }) => { s.batches.push({ ids: [...ids], concurrency: opts?.concurrency }); return new Promise(() => {}) },
 }))
 
 // R2-C (review M-2): the bulk «Сменить тариф» goes through the billing writer and
 // the same «paid access granted» step as User 360 → Биллинг.
-vi.mock('@/lib/payments/billing', () => ({
-  setPlan: async (input: Record<string, unknown>) => {
+vi.mock('@/lib/payments/billing', async () => {
+  class BillingError extends Error { constructor(public readonly code: string, message?: string) { super(message ?? code) } }
+  return { BillingError, setPlan: async (input: Record<string, unknown>) => {
     s.plans.push(input)
     const id = String(input.userId)
+    if (s.billingThrows.has(id)) throw new BillingError('not_found', 'profile not found')
     if (s.failUpdate.has(id)) return { applied: false, reason: 'not_found', orgId: id, userId: id, before: { accessTier: 'free' }, after: null }
     return { applied: true, orgId: id, userId: id, before: { accessTier: 'free' }, after: { accessTier: input.tier === 'free' ? 'free' : 'pro', periodEnd: null } }
-  },
-}))
+  } }
+})
 vi.mock('@/lib/access/paid-access-grant', () => ({
   completePaidAccessGrant: async (input: Record<string, unknown>) => { s.grants.push(input); return { closed: [], notified: true } },
 }))
@@ -115,6 +126,9 @@ beforeEach(() => {
   s.updates = []
   s.plans = []
   s.grants = []
+  s.background = []
+  s.batches = []
+  s.billingThrows = new Set()
   s.bans = []
   s.audits = []
   s.approvals = []
@@ -184,6 +198,24 @@ describe('POST /api/giga-admin/users/bulk — ранг и частичный у�
     expect(s.grants.map((g) => g.userId)).toEqual([C1, C2])
     expect(s.grants[0]).toMatchObject({ via: 'bulk', after: { accessTier: 'pro' } })
     expect(s.updates.filter((u) => u.table === 'profiles' && 'tier' in u.patch)).toEqual([])
+  })
+
+  it('проверка Н-3: Pro → без догоняющего ИИ на каждого; ОДНА фоновая пачка (≤ 2 одновременно) для тех, кто получил Pro; ответ её не ждёт', async () => {
+    const body = await (await post({ action: 'set_tier', tier: 'pro', ids: [C1, C2] })).json()
+    expect(body.done).toBe(2)
+    expect(s.plans.every((p) => p.catchUpAi === false)).toBe(true)
+    expect(s.background.map((b) => b.label)).toEqual(['paid-ai-catch-up-bulk'])
+    // the batch never resolves in this test — the answer above came anyway
+    void s.background[0].work()
+    expect(s.batches).toEqual([{ ids: [C1, C2], concurrency: 2 }])
+  })
+
+  it('проверка Н-3/Н-4: Free → пачки нет; ошибка тарифа в отчёте — по-русски', async () => {
+    await post({ action: 'set_tier', tier: 'free', ids: [C1] })
+    expect(s.background).toEqual([])
+    s.billingThrows = new Set([C2])
+    const body = await (await post({ action: 'set_tier', tier: 'pro', ids: [C2] })).json()
+    expect(body.results[0]).toMatchObject({ ok: false, error: 'Профиль не найден — тариф не изменён' })
   })
 
   it('одобрение идёт через applyApprovalDecision и только для ожидающих', async () => {

@@ -6,7 +6,7 @@ import { BellRing, X } from 'lucide-react'
 import { useStaff } from './StaffContext'
 import { Button, ConfirmDialog, Field, GigaApiError, cx, gigaFetch, inputClass } from './kit'
 import { PROFILE_STATUS } from '@/lib/admin/labels'
-import { BULK_ACTION_LABELS, BULK_MAX, BULK_PERMISSIONS, type BulkAction } from '@/lib/admin/bulk-users-shared'
+import { BULK_ACTION_LABELS, BULK_MAX, BULK_PERMISSIONS, bulkTierNote, type BulkAction } from '@/lib/admin/bulk-users-shared'
 
 /**
  * Панель массовых действий в списке пользователей: «Выбрано N» + меню
@@ -133,6 +133,7 @@ export function UsersBulkBar({ users, staff, onClear, onDone, onRemind, remindab
             {action === 'reject' && <p>Отклоняются только ожидающие решения; клиенты получат письмо с причиной, если она указана.</p>}
             {action === 'block' && <p>Вход будет закрыт сразу, активные сессии завершатся.</p>}
             {action === 'archive' && <p>Вход закрывается, данные сохраняются; восстановить можно из карточки.</p>}
+            {action === 'set_tier' && <p className={tier === 'free' ? 'text-amber-300' : undefined} data-tier-note={tier}>{bulkTierNote(tier)}</p>}
           </div>
         }
       >

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Send, Sparkles } from 'lucide-react'
 import { Button, ConfirmDialog, ErrorState, Field, GigaApiError, Panel, Skeleton, StatTile, gigaFetch, inputClass, useGigaQuery } from '../../kit'
+import { reviewPublishText } from '../free-client-copy'
 import { useStaff } from '../../StaffContext'
 import { REVIEW_BLOCKS, fromStoredBlockKey } from '@/lib/expert-review/blocks'
 import { pluralComments } from '@/lib/email/templates'
@@ -23,7 +24,8 @@ import type { DraftComment, ReviewPayload } from './types'
 export function ReviewTab({ userId }: { userId: string }) {
   const { can } = useStaff()
   const allowed = can('clients.review')
-  const { data, error, loading, reload } = useGigaQuery<{ data: ReviewPayload; unavailable?: boolean }>(
+  // R2-C (verify H-1): clientPaidLocked — Точка А closed for the client (the publication sends only a notice).
+  const { data, error, loading, reload } = useGigaQuery<{ data: ReviewPayload; unavailable?: boolean; clientPaidLocked?: boolean }>(
     allowed ? `/api/giga-admin/users/${userId}/review` : null,
   )
   const [title, setTitle] = useState('')
@@ -206,8 +208,7 @@ export function ReviewTab({ userId }: { userId: string }) {
         confirmLabel="Опубликовать"
         text={
           <>
-            Клиент увидит {pluralComments(comments.length)} в {byBlock.size} блок(ах) и получит <b>одно</b> письмо
-            «Эксперт подготовил разбор» и одно уведомление в кабинете.
+            {reviewPublishText(comments.length, byBlock.size, data?.clientPaidLocked === true)}
             {aiCount > 0 && <> Среди них {aiCount} от ИИ — убедитесь, что вы их прочитали.</>}
             {' '}Опубликованные комментарии больше нельзя править.
           </>

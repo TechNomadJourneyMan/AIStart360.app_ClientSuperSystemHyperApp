@@ -27,10 +27,10 @@ import { useStaff } from './StaffContext'
 import { Button, ConfirmDialog, Field, GigaApiError, cx, gigaFetch, inputClass } from './kit'
 import {
   ASSIGN_PRO_LABEL,
-  ASSIGN_PRO_NO_RIGHT,
   ASSIGN_PRO_PERIOD_ERROR,
   ASSIGN_PRO_PERMISSION,
   DEFAULT_ASSIGN_PRO_FORM,
+  assignProBlockedReason,
   assignProBody,
   assignProPeriodText,
   isTariffRequest,
@@ -94,6 +94,7 @@ export function RequestCard({
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
   const tariff = isTariffRequest(request)
+  const assignBlocked = assignProBlockedReason(canAssignPro && !!onAssignPro, request)
 
   const initials = request.userName
     .split(' ')
@@ -226,13 +227,16 @@ export function RequestCard({
       </AnimatePresence>
 
       {/* Actions (only for pending) */}
+      {isPending && tariff && assignBlocked && (
+        <p className="px-3 md:px-4 pb-1.5 text-[10px] text-slate-500" data-assign-blocked>{assignBlocked}</p>
+      )}
       {isPending && (
         <div className="px-3 md:px-4 pb-3 md:pb-4 flex flex-wrap items-center gap-1.5 md:gap-2">
           {tariff ? (
             <motion.button
               onClick={() => onAssignPro?.(request)}
-              disabled={!canAssignPro || !onAssignPro}
-              title={canAssignPro ? 'Назначить тариф Pro (срок и примечание) — заявка закроется, клиент получит уведомление' : ASSIGN_PRO_NO_RIGHT}
+              disabled={!!assignBlocked}
+              title={assignBlocked ?? 'Назначить тариф Pro (срок и примечание) — заявка закроется, клиент получит уведомление'}
               data-action="assign-pro"
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
