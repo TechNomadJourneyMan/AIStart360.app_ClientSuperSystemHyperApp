@@ -21,8 +21,15 @@ describe('RBAC matrix', () => {
     }
     expect(hasPermission('analyst', 'users.sensitive')).toBe(false)
     expect(hasPermission('analyst', 'impersonate.view')).toBe(false)
-    expect(hasPermission('support', 'impersonate.view')).toBe(true)
-    expect(hasPermission('support', 'impersonate.edit')).toBe(false)
+    // PO decision (V4): «вход от имени клиента» — only Super Admin, Admin and SuperExpert.
+    for (const r of STAFF_ROLES) {
+      const may = r === 'super_admin' || r === 'admin' || r === 'super_expert'
+      expect(hasPermission(r, 'impersonate.view'), `${r} impersonate.view`).toBe(may)
+      expect(hasPermission(r, 'impersonate.edit'), `${r} impersonate.edit`).toBe(may)
+    }
+    expect(hasPermission('support', 'impersonate.view')).toBe(false)
+    expect(hasPermission('crm_manager', 'impersonate.view')).toBe(false)
+    expect(hasPermission('crm_manager', 'impersonate.edit')).toBe(false)
     expect(hasPermission('content_manager', 'users.view')).toBe(false)
     expect(hasPermission('content_manager', 'content.publish')).toBe(true)
     expect(hasPermission(null, 'dashboard.view')).toBe(false)

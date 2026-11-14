@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { createClient as createSr } from '@supabase/supabase-js'
+import { createServiceClient } from '@/lib/supabase-service'
+import { mayActOnUser } from '@/lib/api-identity'
 
 /**
  * GET /api/v1/action-plan[?userId=<id>]
@@ -10,18 +11,16 @@ import { createClient as createSr } from '@supabase/supabase-js'
  * The executable Action Plan (Карта роста) — relational action_items with
  * status/owner/deadline. On first read for a user it lazily materializes tasks
  * from their current GRI 90-day plan (gri_assessments.action_plan_90d) + TOP-5
- * limits. Owner reads own; staff (expert/admin) may pass ?userId to read a client.
- * Writes via service role so RLS edge cases never break generation.
+ * limits. Owner reads own; ?userId of another client — only staff / an active
+ * expert per migration 140 (lib/access/actor.ts) who passed the step-up of this
+ * session and whose client scope covers that client (mayActOnUser): an expert —
+ * the assigned clients, staff — by their client scope. Never by the legacy
+ * profiles.role alone.
+ * Reads / writes via service role so RLS edge cases never break generation —
+ * hence the access decision above is the only gate.
  */
 
-const STAFF = new Set(['expert', 'admin', 'super_admin'])
 const PERIODS = ['1-30', '31-60', '61-90'] as const
-
-function sr() {
-  return createSr(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-}
 
 export async function GET(req: NextRequest) {
   const sb = createServerClient()
@@ -31,12 +30,11 @@ export async function GET(req: NextRequest) {
   let targetId = user.id
   const param = req.nextUrl.searchParams.get('userId')
   if (param && param !== user.id) {
-    const { data: prof } = await sb.from('profiles').select('role').eq('id', user.id).maybeSingle()
-    if (!STAFF.has((prof?.role as string) ?? '')) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+    if (!(await mayActOnUser(sb, user.id, param))) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
     targetId = param
   }
 
-  const admin = sr()
+  const admin = createServiceClient()
   const fetchItems = async () =>
     (await admin.from('action_items').select('*').eq('user_id', targetId).order('priority', { ascending: true }).order('created_at', { ascending: true })).data ?? []
 

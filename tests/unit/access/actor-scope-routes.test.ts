@@ -27,9 +27,10 @@ const STAFF_ADMIN = '00000000-0000-4000-8000-00000000a002'
 const COMPANY = 'co_client_1'
 const VERSION = '00000000-0000-4000-8000-0000000000f1'
 const DIAG = '00000000-0000-4000-8000-0000000000d1'
+const ITEM = '00000000-0000-4000-8000-0000000000b1'
 
 type Row = Record<string, unknown>
-const db = vi.hoisted(() => ({ current: '' as string, tables: {} as Record<string, Row[]>, writes: [] as string[], impersonating: false }))
+const db = vi.hoisted(() => ({ current: '' as string, tables: {} as Record<string, Row[]>, writes: [] as string[], impersonating: false, mfa: 'ok' as string }))
 
 function seed() {
   db.tables = {
@@ -52,9 +53,11 @@ function seed() {
     companies: [{ id: COMPANY, user_id: CLIENT, name: 'Client Co' }],
     report_versions: [{ id: VERSION, company_id: COMPANY }],
     diagnostics: [{ id: DIAG, user_id: CLIENT, ai_status: 'none', ai_analysis: null }],
+    action_items: [{ id: ITEM, user_id: CLIENT, title: 'Задача', status: 'open', priority: 1, source: null }],
   }
   db.writes = []
   db.impersonating = false
+  db.mfa = 'ok'
 }
 
 function match(row: Row, col: string, cond: string): boolean {
@@ -88,7 +91,11 @@ function chain(table: string) {
   const filters: Array<[string, unknown]> = []
   const rows = () => (db.tables[table] ?? []).filter((r) => filters.every(([c, v]) => String(r[c]) === String(v)))
   const c: Record<string, unknown> = {}
-  for (const m of ['select', 'order', 'like', 'limit', 'in', 'is', 'neq', 'gte', 'lte', 'upsert', 'insert', 'update']) c[m] = () => c
+  for (const m of ['select', 'order', 'like', 'limit', 'in', 'is', 'neq', 'gte', 'lte']) c[m] = () => c
+  // Writes through the SDK clients are recorded like the PostgREST ones.
+  for (const [m, verb] of [['upsert', 'POST'], ['insert', 'POST'], ['update', 'PATCH'], ['delete', 'DELETE']] as const) {
+    c[m] = () => { db.writes.push(`${verb} ${table}`); return c }
+  }
   c.eq = (col: string, v: unknown) => { filters.push([col, v]); return c }
   c.single = async () => ({ data: rows()[0] ?? null, error: rows()[0] ? null : { message: 'none' } })
   c.maybeSingle = async () => ({ data: rows()[0] ?? null, error: null })
@@ -113,7 +120,7 @@ vi.mock('@/lib/admin/giga-actor', async () => {
   const real = await vi.importActual<typeof import('@/lib/admin/giga-actor')>('@/lib/admin/giga-actor')
   return { ...real, staffMfaGate: async () => 'ok' }
 })
-vi.mock('@/lib/mfa/api-staff-gate', () => ({ staffApiSecondFactor: async () => 'ok' }))
+vi.mock('@/lib/mfa/api-staff-gate', () => ({ staffApiSecondFactor: async () => db.mfa }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false, isRateLimited: async () => false }))
 vi.mock('@/lib/notifications', () => ({ notifyUser: vi.fn(async () => undefined), notifyAdmins: vi.fn() }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn() }))
@@ -153,6 +160,9 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key'
 const json = (url: string, method: string, body?: unknown) =>
   new NextRequest(`http://portal.test${url}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }) })
 
+const actionPlanGet = async () => (await import('@/app/api/v1/action-plan/route')).GET(json(`/api/v1/action-plan?userId=${CLIENT}`, 'GET'))
+const actionPlanPatch = async () => (await import('@/app/api/v1/action-plan/[id]/route')).PATCH(json(`/api/v1/action-plan/${ITEM}`, 'PATCH', { status: 'done' }), { params: { id: ITEM } })
+
 const ROUTES: Array<{ name: string; call: () => Promise<Response> }> = [
   { name: 'GET /api/expert/clients/[id]/dashboard', call: async () => (await import('@/app/api/expert/clients/[id]/dashboard/route')).GET(new Request('http://x'), { params: { id: CLIENT } }) },
   { name: 'GET /api/expert/clients/[id]/gri', call: async () => (await import('@/app/api/expert/clients/[id]/gri/route')).GET(new Request('http://x'), { params: { id: CLIENT } }) },
@@ -170,6 +180,9 @@ const ROUTES: Array<{ name: string; call: () => Promise<Response> }> = [
   { name: 'GET /api/v1/diagnostics/ai-status', call: async () => (await import('@/app/api/v1/diagnostics/ai-status/route')).GET(json(`/x?diagnostic_id=${DIAG}`, 'GET')) },
   { name: 'POST /api/v1/diagnostics/retry-ai', call: async () => (await import('@/app/api/v1/diagnostics/retry-ai/route')).POST(json('/x', 'POST', { diagnostic_id: DIAG })) },
   { name: 'GET /api/v1/gri/expert-notes', call: async () => (await import('@/app/api/v1/gri/expert-notes/route')).GET(json(`/x?user_id=${CLIENT}`, 'GET')) },
+  // V4: Карта роста (action_items) of a client — read and edit through the service role.
+  { name: 'GET /api/v1/action-plan?userId', call: actionPlanGet },
+  { name: 'PATCH /api/v1/action-plan/[id]', call: actionPlanPatch },
 ]
 
 /** ai-status / retry-ai answer «not found» to a caller who may not see the diagnostic. */
@@ -205,6 +218,45 @@ describe('client scope of service-role routes (migration 140 rule)', () => {
     } else {
       expect(res.status).toBe(DENIED_AS_404.has(name) ? 404 : 403)
     }
+  })
+})
+
+describe('/api/v1/action-plan — the owner, then scope + step-up (V4)', () => {
+  it('a client reads and edits their own plan', async () => {
+    db.current = CLIENT
+    expect((await (await import('@/app/api/v1/action-plan/route')).GET(json('/api/v1/action-plan', 'GET'))).status).toBe(200)
+    expect((await actionPlanGet()).status).toBe(200)
+    expect((await actionPlanPatch()).status).toBe(200)
+    expect(db.writes).toContain('PATCH action_items')
+  })
+
+  it('another client gets 403 and nothing is written', async () => {
+    db.current = OTHER_CLIENT
+    expect((await actionPlanGet()).status).toBe(403)
+    expect((await actionPlanPatch()).status).toBe(403)
+    expect(db.writes).toEqual([])
+  })
+
+  it.each([EXPERT_ASSIGNED, STAFF_ADMIN])('staff in scope without the step-up of this session → 403 (%s)', async (id) => {
+    db.current = id
+    db.mfa = 'step_up'
+    expect((await actionPlanGet()).status).toBe(403)
+    expect((await actionPlanPatch()).status).toBe(403)
+    expect(db.writes).toEqual([])
+  })
+
+  it('denied callers write nothing (no lazy plan generation for someone else)', async () => {
+    db.tables.action_items = []
+    db.current = EXPERT_UNASSIGNED
+    expect((await actionPlanGet()).status).toBe(403)
+    expect(db.writes).toEqual([])
+  })
+
+  it('an unknown task → 404', async () => {
+    db.current = CLIENT
+    const { PATCH } = await import('@/app/api/v1/action-plan/[id]/route')
+    const res = await PATCH(json('/x', 'PATCH', { status: 'done' }), { params: { id: '00000000-0000-4000-8000-0000000000b9' } })
+    expect(res.status).toBe(404)
   })
 })
 

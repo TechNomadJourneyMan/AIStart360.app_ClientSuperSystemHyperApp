@@ -162,6 +162,8 @@ describe('SR-06: браузер сам global signOut не делает', () => 
     'app/client/waiting-room/page.tsx',
     'components/point-a/legacy/ClientPointALegacy.tsx',
     'stores/auth.store.ts',
+    // V4: «Выйти» на странице второго фактора.
+    'app/2fa/page.tsx',
   ]
   it.each(FILES)('SR-06: %s — нет signOut() без scope local', (file) => {
     const src = readFileSync(join(root, file), 'utf8')

@@ -34,6 +34,8 @@ vi.mock('@/lib/supabase/middleware', () => ({
 }))
 
 import { middleware } from '../../middleware'
+// The factor on record (lib/mfa/factor-edge.ts): these accounts have none.
+vi.mock('@/lib/mfa/factor-edge', () => ({ secondFactorOnRecordEdge: async () => false }))
 
 function createRequest(pathname: string, roleCookie?: string, staffRole?: string): NextRequest {
   const url = new URL(pathname, 'http://localhost:3000')

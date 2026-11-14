@@ -95,7 +95,9 @@ const CRM_MANAGER: Permission[] = [
   'dashboard.view', 'users.view', 'users.sensitive', 'users.manage', 'users.invite', 'users.approve',
   'company.edit', 'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
   'activity.view', 'cjm.view', 'analytics.view',
-  'impersonate.view', 'impersonate.edit',
+  // No impersonate.*: «вход от имени клиента» — only Super Admin, Admin and
+  // SuperExpert (PO decision, round 1: the session token of the client is in
+  // the browser, so the circle of people holding it is kept minimal).
   'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
   'agents.view',
 ]
@@ -138,7 +140,8 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   ]),
   support: new Set<Permission>([
     'dashboard.view', 'users.view', 'users.sensitive', 'survey.view', 'gri.view', 'activity.view', 'cjm.view',
-    'impersonate.view', 'inbox.view', 'leads.view',
+    // No impersonate.view (PO decision, round 1 — see CRM_MANAGER).
+    'inbox.view', 'leads.view',
   ]),
 }
 

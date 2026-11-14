@@ -246,11 +246,14 @@ export function UserDetailPanel({ userId, readOnly = false, hideSurvey = false }
       {/* Action buttons — hidden in read-only mode */}
       {!readOnly && (
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => setImpersonateOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
-            <ExternalLink size={12} />
-            Открыть кабинет от имени
-          </button>
+          {/* «Вход от имени» — только у ролей с impersonate.view (Super Admin, Admin, SuperExpert). */}
+          {can('impersonate.view') && (
+            <button onClick={() => setImpersonateOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
+              <ExternalLink size={12} />
+              Открыть кабинет от имени
+            </button>
+          )}
           <a href={`${base}/users/${userId}`}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all">
             <FileText size={12} />

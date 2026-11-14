@@ -5,6 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
+// The factor on record (lib/mfa/factor-edge.ts): these accounts have none.
+vi.mock('@/lib/mfa/factor-edge', () => ({ secondFactorOnRecordEdge: async () => false }))
 
 const s = vi.hoisted(() => ({
   settings: { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false },

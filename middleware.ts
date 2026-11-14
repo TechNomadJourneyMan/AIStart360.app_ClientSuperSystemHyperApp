@@ -3,6 +3,7 @@ import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession, type SessionProfile } from '@/lib/supabase/middleware'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
+import { secondFactorOnRecordEdge } from '@/lib/mfa/factor-edge'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
@@ -267,6 +268,53 @@ function oauthCodeLanded(request: NextRequest): NextResponse | null {
   url.searchParams.set('code', code)
   const next = searchParams.get('next')
   if (next) url.searchParams.set('next', next)
+  return NextResponse.redirect(url)
+}
+
+/**
+ * The second-factor rule for a STAFF session (panel, SuperExpert cabinet and
+ * the staff pages outside them) — the one of the server (staffMfaGate,
+ * staffApiSecondFactor) and of the database (staff_session_ok(), migration
+ * 143, which shows staff an empty RLS without the step-up record):
+ *  - a factor on record — JWT flags OR user_security.totp_enabled OR a passkey
+ *    (a factor added after the JWT was issued counts) — needs the step-up
+ *    proof of THIS session;
+ *  - no factor → admitted, unless the platform requires 2FA for staff;
+ *  - the factor state cannot be read → 'unavailable' (fail closed).
+ * The DB is asked only when the JWT shows no factor and there is no proof.
+ */
+type StaffMfaGate = 'ok' | 'step_up' | 'enroll' | 'unavailable'
+
+async function staffSecondFactorGate(
+  user: { id: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
+  stepUpPassed: boolean,
+  settings: () => ReturnType<typeof edgeSettings>,
+): Promise<StaffMfaGate> {
+  if (stepUpPassed) return 'ok'
+  let enrolled = mfaFlagsEnrolled(user)
+  if (!enrolled) {
+    const onRecord = await secondFactorOnRecordEdge(user.id)
+    if (onRecord === null) return 'unavailable'
+    enrolled = onRecord
+  }
+  if (enrolled) return 'step_up'
+  return (await settings()).staff_require_mfa ? 'enroll' : 'ok'
+}
+
+/** The page response for a staff gate decision; null = go on. */
+function staffMfaResponse(gate: StaffMfaGate, request: NextRequest, pathname: string): NextResponse | null {
+  if (gate === 'ok') return null
+  if (gate === 'unavailable') return profileUnavailableResponse()
+  if (gate === 'step_up') {
+    const url = new URL(MFA_CHALLENGE_PATH, request.url)
+    url.searchParams.set('from', pathname)
+    return NextResponse.redirect(url)
+  }
+  // 'enroll': the enrolment page itself must stay reachable (no loop).
+  if (matchesRoute(pathname, '/settings')) return null
+  const url = new URL('/settings', request.url)
+  url.searchParams.set('tab', 'security')
+  url.searchParams.set('mfa', 'required')
   return NextResponse.redirect(url)
 }
 
@@ -540,17 +588,9 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     // Тот же порядок с 2FA, что и в ГИГА-Панели: включил второй фактор —
     // проходи его и здесь, иначе самый чувствительный экран оказался бы
     // единственным без step-up.
-    const seEnrolled = mfaFlagsEnrolled(user)
-    if (!devMode && seEnrolled && !stepUpPassed) {
-      const url = new URL(MFA_CHALLENGE_PATH, request.url)
-      url.searchParams.set('from', pathname)
-      return NextResponse.redirect(url)
-    }
-    if (!devMode && !seEnrolled && (await settings()).staff_require_mfa) {
-      const url = new URL('/settings', request.url)
-      url.searchParams.set('tab', 'security')
-      url.searchParams.set('mfa', 'required')
-      return NextResponse.redirect(url)
+    if (!devMode) {
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
     }
     return response
   }
@@ -575,20 +615,10 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     // A personal super_admin session that enrolled in 2FA must pass the step-up
     // here too — this branch returns early, so the general MFA gate below was
     // never reached and the most privileged surface was the one skipping 2FA.
+    // Platform setting: staff without 2FA must enrol before using the panel.
     if (user && !impersonating && !devMode) {
-      const enrolled = mfaFlagsEnrolled(user)
-      if (enrolled && !stepUpPassed) {
-        const url = new URL(MFA_CHALLENGE_PATH, request.url)
-        url.searchParams.set('from', pathname)
-        return NextResponse.redirect(url)
-      }
-      // Platform setting: staff without 2FA must enrol before using the panel.
-      if (!enrolled && (await settings()).staff_require_mfa) {
-        const url = new URL('/settings', request.url)
-        url.searchParams.set('tab', 'security')
-        url.searchParams.set('mfa', 'required')
-        return NextResponse.redirect(url)
-      }
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
     }
     return response
   }
@@ -628,18 +658,23 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   // (server-verified) Supabase JWT — app_metadata, which the user cannot edit
   // (lib/mfa/flags.ts); the proof is the signed step-up cookie.
   // `/2fa` and public pages are exempt so there is no redirect loop.
-  const mfaEnrolled = mfaFlagsEnrolled(user)
+  // Staff and experts (profiles.role other than 'client': the dashboard's staff
+  // view, /clients/*, /expert/*, …) follow the panel's rule — after migration
+  // 143 RLS shows them nothing without the step-up of this session, so the
+  // page must send them to /2fa (or to enrol) instead of rendering empty data.
   if (
     user &&
     !isPublic &&
     pathname !== MFA_CHALLENGE_PATH &&
-    mfaEnrolled &&
     // The admin cannot (and must not) answer the user's second factor; the
     // session was minted server-side after the admin's own authorization.
     !impersonating &&
     !devMode
   ) {
-    if (!stepUpPassed) {
+    if (role !== 'client') {
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
+    } else if (mfaFlagsEnrolled(user) && !stepUpPassed) {
       const url = new URL(MFA_CHALLENGE_PATH, request.url)
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
