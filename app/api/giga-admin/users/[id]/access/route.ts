@@ -9,6 +9,7 @@ import { setPlan } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
 import { trackEvent } from '@/lib/events/track'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -93,6 +94,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         req,
         meta: { via: 'access' },
       })
+      // R2-C (product review M-2): a paid plan closes the open access requests and notifies once.
+      if (result?.applied) {
+        await completePaidAccessGrant({ userId: params.id, actor, before: result.before, after: result.after, via: 'access', ipAddress: req.headers.get('x-forwarded-for') ?? undefined })
+      }
       // Product event: subject = the user, actor = staff (source 'admin' → not the user's own activity).
       const fromTier = result?.before?.accessTier
       const toTier = result?.after?.accessTier

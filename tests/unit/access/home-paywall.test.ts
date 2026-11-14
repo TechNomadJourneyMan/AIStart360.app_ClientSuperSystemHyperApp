@@ -43,6 +43,25 @@ describe('client home and the paid sections', () => {
     expect(out).toContain('Анкета заполнена')
   })
 
+  it('R2-C (review L-1, F1): Free with a published report — ONE Point A paywall on the page, it is the anchor #expert the card and the expert notices lead to', async () => {
+    const { ReportReadyCard } = await import('@/components/reports/ReportReadyCard')
+    const report = { id: 'v-1', version: 1, title: 'Точка А', published_at: '2026-11-12T10:00:00Z', created_at: '2026-11-12T09:00:00Z' }
+    const page = renderToStaticMarkup(React.createElement(React.Fragment, null,
+      React.createElement(ReportReadyCard, { report, locked: true }),
+      React.createElement(UserHome, { data: { ...base, paidLocked: { point_a: true, gri_full: false } } })))
+    expect(page.match(/data-paywall="point_a"/g)).toHaveLength(1)
+    expect(page.match(/id="paywall-point_a-title"/g)).toHaveLength(1)
+    expect(page).toContain('href="#expert"')
+    expect(page.match(/id="expert"/g)).toHaveLength(1)
+    expect(page).not.toContain('expert-messages')
+  })
+
+  it('R2-C (review F1): the anchor #expert exists for Free even before the first diagnostic (a comment notice never lands nowhere)', () => {
+    const out = renderToStaticMarkup(React.createElement(UserHome, { data: { ...base, diagnostics: null, paidLocked: { point_a: true, gri_full: true } } }))
+    expect(out).toContain('id="expert"')
+    expect(out.match(/data-paywall="point_a"/g)).toHaveLength(1)
+  })
+
   it('paid (or gates off) → the sections as before, no paywall', () => {
     for (const locked of [undefined, { point_a: false, gri_full: false }]) {
       const out = render(locked)

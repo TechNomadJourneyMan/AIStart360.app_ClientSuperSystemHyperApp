@@ -28,6 +28,7 @@ import { Button, ConfirmDialog, Field, GigaApiError, cx, gigaFetch, inputClass }
 import {
   ASSIGN_PRO_LABEL,
   ASSIGN_PRO_NO_RIGHT,
+  ASSIGN_PRO_PERIOD_ERROR,
   ASSIGN_PRO_PERMISSION,
   DEFAULT_ASSIGN_PRO_FORM,
   assignProBody,
@@ -283,6 +284,68 @@ export function RequestCard({
         </div>
       )}
     </motion.div>
+  )
+}
+
+/**
+ * R2-C (M-5): the dialog «Назначить Pro» — period (N months / until a date / open-ended)
+ * and a note. While the period is incomplete the action is LOCKED and the form says why
+ * (review L-3), instead of a button that silently does nothing.
+ */
+export function AssignProDialog({ target, form, setForm, busy, onClose, onConfirm }: {
+  target: GigaRequest | null
+  form: AssignProForm
+  setForm: (f: (prev: AssignProForm) => AssignProForm) => void
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const complete = assignProBody(form) !== null
+  return (
+      <ConfirmDialog
+        open={!!target}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        loading={busy}
+        disabled={!complete}
+        tone="primary"
+        title={`${ASSIGN_PRO_LABEL}: ${target?.userName ?? ''}`}
+        confirmLabel={`${ASSIGN_PRO_LABEL} ${assignProPeriodText(form)}`}
+        text={
+          <div className="space-y-1">
+            <p>Тариф Pro назначается так же, как в User 360 → Биллинг: запись в журнал до изменения, оплата не списывается.</p>
+            <p>Заявка закроется как одобренная, клиент получит уведомление «Доступ открыт» в ленте кабинета.</p>
+            {target?.subject && <p className="text-slate-300">{target.subject}</p>}
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="Срок">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={form.mode}
+                onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as AssignProForm['mode'] }))}
+                className={cx(inputClass, 'w-auto')}
+                aria-label="Срок"
+              >
+                <option value="months">на N месяцев</option>
+                <option value="date">до даты</option>
+                <option value="none">бессрочно</option>
+              </select>
+              {form.mode === 'months' && (
+                <input type="number" min={1} max={36} value={form.months} onChange={(e) => setForm((f) => ({ ...f, months: e.target.value }))} className={cx(inputClass, 'w-24')} aria-label="Месяцев" />
+              )}
+              {form.mode === 'date' && (
+                <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className={cx(inputClass, 'w-auto')} aria-label="Дата окончания" />
+              )}
+            </div>
+          </Field>
+          <Field label="Примечание (видно только персоналу)">
+            <textarea value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} maxLength={500} rows={2} className={cx(inputClass, 'resize-none')} />
+          </Field>
+          {!complete && <p role="alert" className="text-[11px] text-red-300">{ASSIGN_PRO_PERIOD_ERROR}</p>}
+        </div>
+      </ConfirmDialog>
   )
 }
 
@@ -654,49 +717,7 @@ export function RequestsModule() {
       </ConfirmDialog>
 
       {/* R2-C (M-5): «Назначить Pro» from a request for paid access */}
-      <ConfirmDialog
-        open={!!proTarget}
-        onClose={() => setProTarget(null)}
-        onConfirm={() => void runAssignPro()}
-        loading={proBusy}
-        tone="primary"
-        title={`${ASSIGN_PRO_LABEL}: ${proTarget?.userName ?? ''}`}
-        confirmLabel={`${ASSIGN_PRO_LABEL} ${assignProPeriodText(proForm)}`}
-        text={
-          <div className="space-y-1">
-            <p>Тариф Pro назначается так же, как в User 360 → Биллинг: запись в журнал до изменения, оплата не списывается.</p>
-            <p>Заявка закроется как одобренная, клиент получит уведомление «Доступ открыт» в ленте кабинета.</p>
-            {proTarget?.subject && <p className="text-slate-300">{proTarget.subject}</p>}
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          <Field label="Срок">
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={proForm.mode}
-                onChange={(e) => setProForm((f) => ({ ...f, mode: e.target.value as AssignProForm['mode'] }))}
-                className={cx(inputClass, 'w-auto')}
-                aria-label="Срок"
-              >
-                <option value="months">на N месяцев</option>
-                <option value="date">до даты</option>
-                <option value="none">бессрочно</option>
-              </select>
-              {proForm.mode === 'months' && (
-                <input type="number" min={1} max={36} value={proForm.months} onChange={(e) => setProForm((f) => ({ ...f, months: e.target.value }))} className={cx(inputClass, 'w-24')} aria-label="Месяцев" />
-              )}
-              {proForm.mode === 'date' && (
-                <input type="date" value={proForm.date} onChange={(e) => setProForm((f) => ({ ...f, date: e.target.value }))} className={cx(inputClass, 'w-auto')} aria-label="Дата окончания" />
-              )}
-            </div>
-          </Field>
-          <Field label="Примечание (видно только персоналу)">
-            <textarea value={proForm.note} onChange={(e) => setProForm((f) => ({ ...f, note: e.target.value }))} maxLength={500} rows={2} className={cx(inputClass, 'resize-none')} />
-          </Field>
-          {!assignProBody(proForm) && <p className="text-[11px] text-amber-300">Укажите срок: 1–36 месяцев или дату окончания.</p>}
-        </div>
-      </ConfirmDialog>
+      <AssignProDialog target={proTarget} form={proForm} setForm={setProForm} busy={proBusy} onClose={() => setProTarget(null)} onConfirm={() => void runAssignPro()} />
 
       {/* Reject modal */}
       <RejectModal

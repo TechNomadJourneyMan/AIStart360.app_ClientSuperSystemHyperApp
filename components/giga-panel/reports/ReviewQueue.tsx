@@ -18,14 +18,42 @@ import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Panel, fmt
 import { shortActor } from '../agents/model'
 import type { ReviewRow, ReviewVersionHead } from '@/lib/reports/review-flow'
 import { versionStamp } from '@/lib/reports/version-stamp'
-import { REPORT_TYPE_LABELS, REVIEW_CHANNEL_LABELS, REVIEW_DECISION_LABELS, rerunLabel } from './model'
+import { FREE_CLIENT_REPORT_NOTE, REPORT_TYPE_LABELS, REVIEW_CHANNEL_LABELS, REVIEW_DECISION_LABELS, publishedToast, rerunLabel } from './model'
 
-interface QueueResponse { items: ReviewVersionHead[]; decisions: ReviewRow[] }
+/** R2-C (M-4): `clientPaidLocked` — Точка А is closed for the client (he sees only the notice). */
+export type QueueItem = ReviewVersionHead & { clientPaidLocked?: boolean }
+interface QueueResponse { items: QueueItem[]; decisions: ReviewRow[] }
 interface DecideResponse { decision: string; already: boolean; rerun: { state: string; attempt: number; max: number } | null }
+
+/** The versions waiting for review; a client with Точка А closed gets the note (R2-C, M-4). */
+export function ReviewQueueList({ items, onDecide }: { items: QueueItem[]; onDecide: (item: QueueItem, decision: 'approve' | 'changes_requested') => void }) {
+  return (
+    <ul className="divide-y divide-white/[0.05]">
+      {items.map((v) => (
+        <li key={v.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="truncate text-sm text-slate-200">{v.company_name || v.company_id}</p>
+            <p className="text-[11px] text-slate-500">
+              {REPORT_TYPE_LABELS[v.report_type] ?? v.report_type} · <span className="font-mono">{versionStamp(v.version, v.created_at)}</span> · <span title={fmtDateTime(v.created_at)}>{fmtAgo(v.created_at)}</span>
+            </p>
+            {v.clientPaidLocked && <p className="mt-1 text-[11px] text-amber-300/90" data-free-client>{FREE_CLIENT_REPORT_NOTE}</p>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={`/api/giga-admin/reports/${v.id}/pdf`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-blue-300 hover:bg-white/[0.04]">
+              <ExternalLink size={12} /> PDF
+            </a>
+            <Button size="sm" variant="primary" icon={<Check size={12} />} onClick={() => onDecide(v, 'approve')}>Подтвердить и опубликовать</Button>
+            <Button size="sm" variant="ghost" icon={<PencilLine size={12} />} onClick={() => onDecide(v, 'changes_requested')}>Нужны правки</Button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 export function ReviewQueue({ onDecided }: { onDecided?: () => void }) {
   const q = useGigaQuery<QueueResponse>('/api/giga-admin/reports/review')
-  const [target, setTarget] = useState<{ item: ReviewVersionHead; decision: 'approve' | 'changes_requested' } | null>(null)
+  const [target, setTarget] = useState<{ item: QueueItem; decision: 'approve' | 'changes_requested' } | null>(null)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +68,7 @@ export function ReviewQueue({ onDecided }: { onDecided?: () => void }) {
         json: target.decision === 'approve' ? { decision: 'approve' } : { decision: 'changes_requested', comment: comment.trim() },
       })
       toast.success(target.decision === 'approve'
-        ? (r.already ? 'Уже опубликовано ранее' : `Опубликовано клиенту: ${versionStamp(target.item.version, target.item.created_at)}`)
+        ? (r.already ? 'Уже опубликовано ранее' : publishedToast(versionStamp(target.item.version, target.item.created_at), target.item.clientPaidLocked))
         : `Правки отправлены${rerunLabel(r.rerun) ? `: ${rerunLabel(r.rerun)}` : ''}`)
       setTarget(null)
       setComment('')
@@ -66,27 +94,7 @@ export function ReviewQueue({ onDecided }: { onDecided?: () => void }) {
       {!q.error && q.data && items.length === 0 && (
         <EmptyState icon={<FileClock size={18} />} title="Нет отчётов на проверке" text="Новая версия появится здесь, в боте экспертов и в кабинете эксперта." />
       )}
-      {items.length > 0 && (
-        <ul className="divide-y divide-white/[0.05]">
-          {items.map((v) => (
-            <li key={v.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm text-slate-200">{v.company_name || v.company_id}</p>
-                <p className="text-[11px] text-slate-500">
-                  {REPORT_TYPE_LABELS[v.report_type] ?? v.report_type} · <span className="font-mono">{versionStamp(v.version, v.created_at)}</span> · <span title={fmtDateTime(v.created_at)}>{fmtAgo(v.created_at)}</span>
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <a href={`/api/giga-admin/reports/${v.id}/pdf`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-blue-300 hover:bg-white/[0.04]">
-                  <ExternalLink size={12} /> PDF
-                </a>
-                <Button size="sm" variant="primary" icon={<Check size={12} />} onClick={() => { setError(null); setTarget({ item: v, decision: 'approve' }) }}>Подтвердить и опубликовать</Button>
-                <Button size="sm" variant="ghost" icon={<PencilLine size={12} />} onClick={() => { setError(null); setComment(''); setTarget({ item: v, decision: 'changes_requested' }) }}>Нужны правки</Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {items.length > 0 && <ReviewQueueList items={items} onDecide={(item, decision) => { setError(null); if (decision === 'changes_requested') setComment(''); setTarget({ item, decision }) }} />}
       {(q.data?.decisions.length ?? 0) > 0 && (
         <details className="mt-3 text-[11px] text-slate-500">
           <summary className="cursor-pointer select-none">Последние решения</summary>
@@ -112,7 +120,9 @@ export function ReviewQueue({ onDecided }: { onDecided?: () => void }) {
           : 'Вернуть отчёт на доработку?'}
         confirmLabel={target?.decision === 'approve' ? 'Подтвердить и опубликовать' : 'Отправить правки'}
         text={target?.decision === 'approve'
-          ? 'Клиент сразу увидит эту версию и получит уведомление; ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.'
+          ? (target.item.clientPaidLocked
+            ? `${FREE_CLIENT_REPORT_NOTE} Ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.`
+            : 'Клиент сразу увидит эту версию и получит уведомление; ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.')
           : 'Комментарий сохранится, агент «Отчёт» пересоберёт отчёт (ограниченное число раз на одну диагностику). Клиент эту версию не увидит.'}
       >
         {target?.decision === 'changes_requested' && (

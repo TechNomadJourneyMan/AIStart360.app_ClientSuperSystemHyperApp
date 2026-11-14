@@ -174,9 +174,17 @@ export default function UserHome({ data }: { data: UserHomeData }) {
         {/* Point A v4 — score, key metrics, what needs attention, risks and the
             goals (synced with the questionnaire) — once Point A exists and the
             section is switched on for the account. */}
-        {data.diagnostics !== null && data.sections.some((x) => x.key === 'point_a') && (
-          data.paidLocked?.point_a ? <Paywall feature="point_a" variant="compact" /> : <PointADashboardSummary />
-        )}
+        {/* R2-C (review F1, L-1): with Точка А closed — ONE paywall of the page, also the
+            anchor #expert of the expert's notices («комментарий / разбор / отчёт готов»):
+            shown even before the first diagnostic, so the link never lands nowhere. */}
+        {data.paidLocked?.point_a
+          ? data.sections.some((x) => x.key === 'point_a') && (
+              <section id="expert" className="scroll-mt-20" aria-label="Точка А, отчёт и разбор эксперта" data-point-a-locked>
+                <Paywall feature="point_a" variant="compact" />
+                <p className="mt-2 text-xs text-on-surface-variant">Отчёт, разбор и комментарии эксперта входят в Точку А.</p>
+              </section>
+            )
+          : data.diagnostics !== null && data.sections.some((x) => x.key === 'point_a') && <PointADashboardSummary />}
 
         <ProfileSections summary={summary} />
 

@@ -13,13 +13,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { canManageTarget, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
-import { isTariffAccessRequest } from '@/lib/access/upgrade-requests'
+import { isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
 export type AccessDecisionResult =
   | { ok: true; status: 'approved' | 'rejected' | 'archived'; userId: string }
-  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required'; userId: string }
+  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided'; userId: string }
 
 /**
  * Valid transitions of profiles.status for a decision on a request (R-007),
@@ -116,7 +116,9 @@ export async function decideAccessRequest(
   }
   if (paidAccess && args.action === 'approve') return { ok: false, reason: 'assign_plan_required', userId }
   if (paidAccess) {
-    const { error: arErr } = await sb
+    // R2-C (review L-4): only an OPEN request changes. A request decided meanwhile
+    // (e.g. a colleague pressed «Назначить Pro») is not overwritten from a stale list.
+    const { data: changed, error: arErr } = await sb
       .from('admin_requests')
       .update({
         status: requestStatus,
@@ -124,7 +126,10 @@ export async function decideAccessRequest(
         updatedAt: new Date().toISOString(),
       })
       .eq('id', args.requestId)
+      .in('status', [...OPEN_REQUEST_STATUSES])
+      .select('id')
     if (arErr) throw new Error(`access-requests: paid-access request not updated (${arErr.message})`)
+    if (!Array.isArray(changed) || changed.length === 0) return { ok: false, reason: 'already_decided', userId }
     try {
       await logAudit({
         entityType: 'request',

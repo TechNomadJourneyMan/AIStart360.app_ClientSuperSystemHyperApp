@@ -12,7 +12,7 @@ import { pdfDisposition } from '@/lib/reports/client-access'
 import { versionPdf } from '@/lib/reports/pdf-store'
 import { resolveVersionLink } from '@/lib/reports/version-link'
 import { companyOwnerSectionOpen, REPORT_SECTION } from '@/lib/access/owner-access'
-import { LINK_UNAVAILABLE_TITLE } from '@/components/share/LinkUnavailable'
+import { LINK_UNAVAILABLE_TEXT, LINK_UNAVAILABLE_TITLE } from '@/components/share/LinkUnavailable'
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   try {
@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       })
     }
     if (!(await companyOwnerSectionOpen(link.version.company_id, REPORT_SECTION))) {
-      return new Response(JSON.stringify({ ok: false, error: 'link_unavailable', message: `${LINK_UNAVAILABLE_TITLE}: отчёт входит в платный доступ, который сейчас закрыт у владельца.` }), {
+      return new Response(JSON.stringify({ ok: false, error: 'link_unavailable', message: `${LINK_UNAVAILABLE_TITLE}. ${LINK_UNAVAILABLE_TEXT}` }), {
         status: 403,
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       })

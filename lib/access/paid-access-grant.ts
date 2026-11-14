@@ -2,10 +2,12 @@
  * lib/access/paid-access-grant.ts — what follows when staff give a client paid
  * access (R2-C, decision of the PO on M-5 / Q7).
  *
- * Two ways in, ONE way out:
+ * Every way staff assign a plan, ONE way out:
  *   • «Назначить Pro» right in the request (GIGA «Заявки» → «Доступы»,
  *     POST /api/giga-admin/requests/:id/assign-pro);
- *   • User 360 → Биллинг (PATCH /api/giga-admin/users/:id/billing).
+ *   • User 360 → Биллинг (PATCH /api/giga-admin/users/:id/billing);
+ *   • the bulk action «Сменить тариф» (lib/admin/bulk-users.ts) and the access
+ *     editor's `tier` (PATCH /api/giga-admin/users/:id/access) — R2-C review M-2.
  * Both assign the plan through lib/payments/billing.ts setPlan (audit, the same
  * RBAC) and then call completePaidAccessGrant() once:
  *   1. every OPEN request of the client for paid access (admin_requests type
@@ -25,6 +27,9 @@ import { notifyPaidAccessOpened } from '@/lib/notifications/product'
 import type { EffectivePlan } from '@/lib/payments/plan-state'
 import { ACCESS_REQUEST_SOURCES, OPEN_REQUEST_STATUSES } from './upgrade-requests'
 
+/** Where the plan was assigned: User 360 → Биллинг, «Назначить Pro», the bulk action, the access editor. */
+export type GrantVia = 'billing' | 'request' | 'bulk' | 'access'
+
 export interface GrantActor {
   id: string
   kind: string
@@ -35,7 +40,7 @@ export async function closeOpenAccessRequests(
   svc: SupabaseClient,
   userId: string,
   actor: GrantActor,
-  opts: { via: 'billing' | 'request'; requestId?: string | null; ipAddress?: string } = { via: 'billing' },
+  opts: { via: GrantVia; requestId?: string | null; ipAddress?: string } = { via: 'billing' },
 ): Promise<string[]> {
   const { data, error } = await svc
     .from('admin_requests')
@@ -78,7 +83,7 @@ export async function completePaidAccessGrant(args: {
   actor: GrantActor
   before: Pick<EffectivePlan, 'accessTier'> | null
   after: Pick<EffectivePlan, 'accessTier' | 'periodEnd'> | null
-  via: 'billing' | 'request'
+  via: GrantVia
   /** The request «Назначить Pro» was pressed in (dedupe key of the notice). */
   requestId?: string | null
   ipAddress?: string

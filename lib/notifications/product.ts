@@ -13,6 +13,7 @@ import {
   buildQuestionnaireCompletedEmail,
 } from '@/lib/email/templates'
 import { getSiteUrl } from '@/lib/site-url'
+import { ruLongDate } from '@/lib/format/ru-date'
 
 import { pointAClosedFor } from '@/lib/access/recipient'
 
@@ -103,10 +104,8 @@ export async function notifyPaidAccessOpened(
   userId: string,
   input: { periodEnd?: string | null; dedupeKey?: string | null } = {},
 ): Promise<NotifyClientResult> {
-  const end = input.periodEnd ? new Date(input.periodEnd) : null
-  const until = end && !Number.isNaN(end.getTime())
-    ? ` Доступ действует до ${end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}.`
-    : ''
+  const endDay = ruLongDate(input.periodEnd ?? null, { timeZone: 'UTC' })
+  const until = endDay ? ` Доступ действует до ${endDay}.` : ''
   return notifyClient({
     userId,
     category: 'security',

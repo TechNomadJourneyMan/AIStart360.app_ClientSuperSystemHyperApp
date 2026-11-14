@@ -11,12 +11,16 @@
  * GET /api/v1/reports/:id/pdf.
  *
  * R2-C (M-4): the report is part of Точка А. `locked` (Точка А closed for the
- * account) → «Отчёт эксперта готов» with the compact paywall (the access
- * request button) — no «Открыть», no PDF, no link, no report id in the markup.
+ * account) → «Отчёт эксперта готов» and a link to THE paywall of the page (the
+ * Point A block of UserHome, anchor #expert — one paywall per page, review L-1)
+ * — no «Открыть», no PDF, no link to the version, no report id in the markup.
  */
 import Link from 'next/link'
-import Paywall from '@/components/access/Paywall'
+import { ruLongDate } from '@/lib/format/ru-date'
 import { versionStamp } from '@/lib/reports/version-stamp'
+
+/** The one Point A paywall of the home page (components/user-dashboard/UserHome.tsx). */
+export const POINT_A_PAYWALL_ANCHOR = '#expert'
 
 export interface ReadyReport {
   id: string
@@ -62,8 +66,9 @@ const fmtDate = (iso: string | null) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-/** «Отчёт эксперта готов» for an account without Точка А: the notice and the paywall, nothing to open. */
+/** «Отчёт эксперта готов» for an account without Точка А: the notice and the way to the paywall, nothing to open. */
 function LockedReportCard({ report }: { report: ReadyReport }) {
+  const day = ruLongDate(report.published_at)
   return (
     <section
       aria-labelledby="report-ready-title"
@@ -78,11 +83,17 @@ function LockedReportCard({ report }: { report: ReadyReport }) {
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-primary/70">Отчёт специалиста</p>
           <h2 id="report-ready-title" className="mt-0.5 font-headline text-lg font-bold text-on-surface">Отчёт эксперта готов</h2>
           <p className="mt-0.5 text-sm text-on-surface-variant">
-            Эксперт проверил и опубликовал отчёт по вашей Точке А · {fmtDate(report.published_at)}. Отчёт входит в Точку А — она в платном доступе.
+            Эксперт проверил и опубликовал отчёт по вашей Точке А{day ? ` ${day}` : ''}. Отчёт входит в Точку А — она в платном доступе.
           </p>
+          <a
+            href={POINT_A_PAYWALL_ANCHOR}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-base" aria-hidden>lock_open</span>
+            Как открыть доступ
+          </a>
         </div>
       </div>
-      <Paywall feature="point_a" variant="compact" className="mt-4" />
     </section>
   )
 }

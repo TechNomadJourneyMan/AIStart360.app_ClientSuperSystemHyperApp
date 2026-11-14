@@ -31,13 +31,13 @@ import { shortActor } from '../agents/model'
 import { ChipFilter, KV, Mono, NoRightHint, StatusChip } from '../agents/ui'
 import type { ReportVersionFull, ReportVersionListItem } from '@/lib/reports/versions'
 import {
-  NARRATIVE_STATE_LABELS, REPORT_TYPE_LABELS, createdByLabel, fmtConfidence, reportStatusMeta, shortHash, versionActions,
+  NARRATIVE_STATE_LABELS, REPORT_TYPE_LABELS, FREE_CLIENT_REPORT_NOTE, createdByLabel, publishedToast, fmtConfidence, reportStatusMeta, shortHash, versionActions,
 } from './model'
 import { ReportSnapshotView } from './ReportSnapshotView'
 import { ReviewQueue } from './ReviewQueue'
 
 interface ListResponse { items: ReportVersionListItem[]; can: { publish: boolean; run: boolean } }
-interface ItemResponse { item: ReportVersionFull; can: { publish: boolean; run: boolean } }
+interface ItemResponse { item: ReportVersionFull; can: { publish: boolean; run: boolean }; clientPaidLocked?: boolean }
 type Action = 'publish' | 'reject' | 'withdraw'
 
 const STATUS_FILTERS = [
@@ -167,7 +167,7 @@ function VersionDrawer({ id, base, onClose, onChanged }: { id: string | null; ba
     setError(null)
     try {
       await gigaFetch(`/api/giga-admin/reports/${item.id}`, { method: 'POST', json: { action, ...(reason.trim() ? { reason: reason.trim() } : {}) } })
-      toast.success(action === 'publish' ? `Версия ${item.version} опубликована: клиент видит её` : action === 'reject' ? 'Версия отклонена' : 'Версия отозвана: клиент её больше не видит')
+      toast.success(action === 'publish' ? (q.data?.clientPaidLocked ? publishedToast(`версия ${item.version}`, true) : `Версия ${item.version} опубликована: клиент видит её`) : action === 'reject' ? 'Версия отклонена' : 'Версия отозвана: клиент её больше не видит')
       setAction(null)
       setReason('')
       await q.reload()
@@ -255,7 +255,9 @@ function VersionDrawer({ id, base, onClose, onChanged }: { id: string | null; ba
         title={action === 'publish' ? `Опубликовать версию ${item?.version} клиенту?` : action === 'reject' ? 'Отклонить версию?' : 'Отозвать опубликованную версию?'}
         confirmLabel={action === 'publish' ? 'Опубликовать' : action === 'reject' ? 'Отклонить' : 'Отозвать'}
         text={action === 'publish'
-          ? 'Клиент увидит эту версию в разделе «Точка А» и сможет скачать PDF. Ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.'
+          ? (q.data?.clientPaidLocked
+            ? `${FREE_CLIENT_REPORT_NOTE} Ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.`
+            : 'Клиент увидит эту версию в разделе «Точка А» и сможет скачать PDF. Ранее опубликованная версия будет заменена. Решение пишется в журнал аудита.')
           : action === 'reject'
             ? 'Версия не будет показана клиенту. Причину увидят коллеги в карточке версии и в журнале аудита.'
             : 'Клиент перестанет видеть эту версию сразу. Причину увидят коллеги в карточке версии и в журнале аудита.'}

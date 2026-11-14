@@ -19,7 +19,8 @@ const s = vi.hoisted(() => ({
 vi.mock('@/lib/settings/system-settings', () => ({ getAccessGatesEnabled: async () => s.gates }))
 vi.mock('@/lib/access/server', async () => {
   const ent = await import('@/lib/access/entitlements')
-  return { readEntitlements: async () => ent.entitlementsFor(s.tier, s.flags) }
+  // R2-C (ревью L-11): the decision reads the own rights first, the company only on the refusal path.
+  return { readEntitlements: async () => ent.entitlementsFor(s.tier, s.flags), readOwnEntitlements: async () => ({ ent: ent.entitlementsFor(s.tier, s.flags), overrides: ent.normalizeOverrides(s.flags) }), readCompanyRights: async () => null }
 })
 vi.mock('@/lib/api-identity', async () => {
   const real = await vi.importActual<typeof import('@/lib/api-identity')>('@/lib/api-identity')

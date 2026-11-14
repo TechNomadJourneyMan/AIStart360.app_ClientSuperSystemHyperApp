@@ -13,6 +13,7 @@ const s = vi.hoisted(() => ({
   sections: { point_a: true, point_b: true, market: true, gri_full: true } as Record<string, boolean>,
   // R2-C (M-4): which client read which table (session = RLS of the caller, service = service role).
   readsBy: { session: [] as string[], service: [] as string[] },
+  accessFails: false,
 }))
 const tagged = (who: 'session' | 'service') => new Proxy({} as Record<string, unknown>, {
   get(_t, prop: string) {
@@ -30,7 +31,10 @@ vi.mock('@/lib/request-user', () => ({ getRequestUser: async () => ({ id: USER, 
 vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: [] }) }))
 vi.mock('@/lib/cms/server', () => ({ visiblePagesFor: async () => [] }))
 vi.mock('@/components/user-dashboard/UserHome', () => ({ default: () => null }))
-vi.mock('@/lib/access/request-access', () => ({ getRequestAccess: async () => ({ gatesEnabled: true, staff: false, ent: {}, sections: s.sections }) }))
+vi.mock('@/lib/access/request-access', () => ({ getRequestAccess: async () => {
+  if (s.accessFails) throw new Error('decision unavailable')
+  return { gatesEnabled: true, staff: false, ent: {}, sections: s.sections }
+} }))
 
 const { default: ClientHomePage } = await import('@/app/client/home/page')
 
@@ -131,6 +135,19 @@ describe('/client/home — round trips (W4)', () => {
     expect(s.readsBy.session).not.toContain('report_versions')
     s.sections = { point_a: true, point_b: true, market: true, gri_full: true }
     expect((await render()).find((e) => e.props.report)!.props.locked).toBe(false)
+  })
+
+  it('R2-C (review F7): a failed access decision → the paid sections count as CLOSED (locked card, no GRI index)', async () => {
+    s.tables.report_versions = [{ id: 'rv-1', company_id: 'company-1', version: 1, title: 'Точка А: Ромашка', status: 'published', published_at: '2026-10-11T10:00:00Z', created_at: '2026-10-10T10:00:00Z' }]
+    s.tables.gri_assessments = [{ user_id: USER, is_current: true, gri_index: 6.4, created_at: '2026-10-01T00:00:00Z' }]
+    s.accessFails = true
+    try {
+      expect((await dataOf()).paidLocked).toEqual({ point_a: true, gri_full: true })
+      expect((await dataOf()).gri).toBeNull()
+      expect((await render()).find((e) => e.props.report)!.props.locked).toBe(true)
+    } finally {
+      s.accessFails = false
+    }
   })
 
   it('R-025: no published version (only a draft) → no card', async () => {

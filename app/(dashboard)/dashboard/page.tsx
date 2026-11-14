@@ -411,7 +411,7 @@ export default async function DashboardPage() {
 
             {/* «AI · Карта роста» (shows the synced goals) + the GRI next step.
                 The snapshot column is not repeated: the goals are above. */}
-            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot />
+            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot griLocked={!griOpen} />
 
             {pointA || (surveyStepsDone === 0 && docsCount === 0) ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the

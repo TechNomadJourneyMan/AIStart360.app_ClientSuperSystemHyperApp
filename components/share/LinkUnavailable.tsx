@@ -1,16 +1,16 @@
 /**
- * LinkUnavailable — the honest page of a public link whose section is closed
- * for the owner of the data right now (R2-C: /r/<token> shares of Точка А / Б /
- * GRI and /r/v/<token> versions of the expert's report; lib/access/owner-access.ts).
+ * LinkUnavailable — the page of a public link whose section is closed for the
+ * owner of the data right now (R2-C: /r/<token> shares of Точка А / Б / GRI and
+ * /r/v/<token> versions of the expert's report; lib/access/owner-access.ts).
  *
- * Renders NO data of the report: no company name, no numbers, no dates. The link
- * itself is not deleted — it opens again once the owner has the access.
- * Server-safe (no hooks).
+ * Renders NO data of the report: no company name, no numbers, no dates. The text
+ * is NEUTRAL (product review L-6): it does not tell a link holder anything about
+ * the owner's tariff, and it is the same when the right is closed and when the
+ * decision failed. The link itself is not deleted — it opens again once the
+ * owner has the access. Server-safe (no hooks).
  */
 export const LINK_UNAVAILABLE_TITLE = 'Ссылка недоступна'
-export const LINK_UNAVAILABLE_TEXT =
-  'Этот отчёт входит в платный доступ, и сейчас у владельца отчёта он закрыт. ' +
-  'Ссылка не удалена: она снова откроется, когда доступ будет открыт. Обратитесь к тому, кто поделился ссылкой.'
+export const LINK_UNAVAILABLE_TEXT = 'Ссылка сейчас недоступна. Обратитесь к тому, кто ею поделился.'
 
 export function LinkUnavailable() {
   return (

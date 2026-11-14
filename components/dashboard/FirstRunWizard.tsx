@@ -5,13 +5,17 @@ import Link from 'next/link'
  * yet: three clear steps to their GRI, with real per-step completion, instead
  * of a scattered "fill the survey" prompt. Server component — no client JS.
  *
- * R2-C (Q4): the full GRI is a paid section. With it closed for the account
- * (`griLocked`, the server decision) the third step leads to the free mini-GRI
- * (/gri-free) instead of the paywall of /gri; with it open — as before.
+ * R2-C (Q4 + product review M-1): the full GRI is a paid section. With it
+ * closed for the account (`griLocked`, the server decision) the third step
+ * leads to the free «Снимок бизнеса» — the express assessment of the cabinet,
+ * built from the account's own questionnaire — instead of the paywall of /gri.
+ * NOT the public mini-GRI /gri-free: that is a lead magnet for visitors
+ * («без регистрации», e-mail form, «Зарегистрируйтесь»), its result is not
+ * tied to the account. With the full GRI open — as before.
  */
 
-/** The free mini-GRI (app/(public)/gri-free) — the third step when the full GRI is closed. */
-export const MINI_GRI_HREF = '/gri-free'
+/** «Снимок бизнеса» — the free express assessment in the cabinet (app/client/onboarding/snapshot). */
+export const FREE_SNAPSHOT_HREF = '/client/onboarding/snapshot'
 
 export function FirstRunWizard({
   surveyStepsDone,
@@ -52,11 +56,11 @@ export function FirstRunWizard({
     griLocked
       ? {
           done: hasDiagnostic,
-          title: 'Пройдите мини-GRI',
-          desc: 'Бесплатная экспресс-оценка готовности к росту за 5 минут. Полный GRI — в платном доступе.',
-          href: MINI_GRI_HREF,
-          cta: 'Пройти мини-GRI',
-          icon: 'radar',
+          title: 'Получите экспресс-оценку',
+          desc: '«Снимок бизнеса» по вашей анкете — бесплатно. Полный GRI и Точка А — в платном доступе.',
+          href: FREE_SNAPSHOT_HREF,
+          cta: 'Открыть снимок бизнеса',
+          icon: 'insights',
         }
       : {
           done: hasDiagnostic,
@@ -88,10 +92,12 @@ export function FirstRunWizard({
             С чего начать
           </p>
           <h2 className="font-headline text-xl lg:text-2xl font-extrabold text-on-surface">
-            3 шага до вашего GRI
+            {griLocked ? '3 шага до первой оценки бизнеса' : '3 шага до вашего GRI'}
           </h2>
           <p className="text-sm text-on-surface-variant mt-1.5 max-w-lg leading-relaxed">
-            Пройдите диагностику готовности к росту — увидите точку А, разрывы и план пути к $2M.
+            {griLocked
+              ? 'Заполните анкету и загрузите документы — получите бесплатный «Снимок бизнеса».'
+              : 'Пройдите диагностику готовности к росту — увидите точку А, разрывы и план пути к $2M.'}
           </p>
         </div>
         <div className="text-right">

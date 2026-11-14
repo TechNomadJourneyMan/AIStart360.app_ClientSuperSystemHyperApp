@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga, forbidTarget } from '@/lib/admin/giga-actor'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { createServiceClient } from '@/lib/supabase-service'
-import { NOTE_MAX, setPlan } from '@/lib/payments/billing'
+import { NOTE_MAX, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
-import { planPeriodEnd } from '@/lib/payments/plan-period'
+import { planPeriodEnd, proAssignment } from '@/lib/payments/plan-period'
 import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
 import { featureLabel, isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
 
@@ -21,6 +21,9 @@ const invalid = (message: string) => NextResponse.json({ ok: false, error: 'inva
  *
  * Body: { periodEnd?: 'YYYY-MM-DD' | ISO, months?: 1..36, note? } — periodEnd
  * wins over months; neither = Pro without an end date (lib/payments/plan-period.ts).
+ * Never shortens a live paid plan (review L-5, proAssignment): months are added
+ * to the end of the current paid period, an open-ended plan stays open-ended,
+ * Enterprise stays Enterprise; an earlier explicit date → 422.
  *
  * The same path and the same rights as User 360 → Биллинг
  * (PATCH /api/giga-admin/users/:id/billing): users.manage, the client scope of
@@ -76,15 +79,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const features = Array.isArray(r.payload?.features) ? (r.payload.features as unknown[]).filter((f): f is string => typeof f === 'string') : []
   try {
+    const current = await getEffectivePlan({ userId }, svc)
+    const plan = proAssignment(current, { periodEnd: period.periodEnd, months: period.months, explicitDate: body.periodEnd !== undefined && body.periodEnd !== null && body.periodEnd !== '' })
+    if ('error' in plan) return invalid(plan.error)
     const result = await setPlan({
       userId,
-      tier: 'pro',
-      periodEnd: period.periodEnd,
+      tier: plan.tier,
+      periodEnd: plan.periodEnd,
       source: 'admin',
       actor,
       note: note || `По заявке на доступ${features.length ? `: ${features.map(featureLabel).join(', ')}` : ''}`,
       req,
-      meta: { action: 'set', via: 'access_request', request_id: r.id, ...(period.months ? { months: period.months } : {}) },
+      meta: { action: 'set', via: 'access_request', request_id: r.id, ...(period.months ? { months: period.months } : {}), ...(plan.extended ? { extended_from: current.periodEnd } : {}) },
     })
     if (!result.applied) {
       return NextResponse.json({ ok: false, error: 'not_applied', reason: result.reason ?? null, message: 'Тариф не изменён' }, { status: 409 })
@@ -104,6 +110,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       userId,
       plan: result.after,
       requestClosed: grant.closed.includes(r.id),
+      extended: plan.extended,
       closedRequests: grant.closed,
       notified: grant.notified,
     })

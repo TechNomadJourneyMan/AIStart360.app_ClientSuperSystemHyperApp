@@ -18,6 +18,22 @@ const s = vi.hoisted(() => ({
   audits: [] as Array<Record<string, unknown>>,
   approvals: [] as Array<Record<string, unknown>>,
   dbTouched: 0,
+  plans: [] as Array<Record<string, unknown>>,
+  grants: [] as Array<Record<string, unknown>>,
+}))
+
+// R2-C (review M-2): the bulk «Сменить тариф» goes through the billing writer and
+// the same «paid access granted» step as User 360 → Биллинг.
+vi.mock('@/lib/payments/billing', () => ({
+  setPlan: async (input: Record<string, unknown>) => {
+    s.plans.push(input)
+    const id = String(input.userId)
+    if (s.failUpdate.has(id)) return { applied: false, reason: 'not_found', orgId: id, userId: id, before: { accessTier: 'free' }, after: null }
+    return { applied: true, orgId: id, userId: id, before: { accessTier: 'free' }, after: { accessTier: input.tier === 'free' ? 'free' : 'pro', periodEnd: null } }
+  },
+}))
+vi.mock('@/lib/access/paid-access-grant', () => ({
+  completePaidAccessGrant: async (input: Record<string, unknown>) => { s.grants.push(input); return { closed: [], notified: true } },
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -97,6 +113,8 @@ beforeEach(() => {
   s.staff = [{ user_id: EXPERT, role: 'super_expert' }, { user_id: ADMIN2, role: 'admin' }]
   s.failUpdate = new Set()
   s.updates = []
+  s.plans = []
+  s.grants = []
   s.bans = []
   s.audits = []
   s.approvals = []
@@ -155,6 +173,17 @@ describe('POST /api/giga-admin/users/bulk — ранг и частичный у�
     const body = await (await post({ action: 'set_tier', tier: 'pro', ids: [C1, C2] })).json()
     expect(body.results.find((r: { id: string }) => r.id === C1)).toMatchObject({ ok: false, error: 'Тариф не изменён' })
     expect(body.results.find((r: { id: string }) => r.id === C2)).toMatchObject({ ok: true })
+  })
+
+  it('R2-C (ревью M-2): тариф — через setPlan (источник admin) и тот же шаг «доступ открыт», что в Биллинге; profiles напрямую не пишется', async () => {
+    const body = await (await post({ action: 'set_tier', tier: 'pro', ids: [C1, C2] })).json()
+    expect(body.done).toBe(2)
+    expect(s.plans.map((p) => p.userId)).toEqual([C1, C2])
+    expect(s.plans[0]).toMatchObject({ tier: 'pro', source: 'admin', periodEnd: null, meta: { via: 'bulk' } })
+    expect(s.plans[0].actor).toMatchObject({ id: s.actorId })
+    expect(s.grants.map((g) => g.userId)).toEqual([C1, C2])
+    expect(s.grants[0]).toMatchObject({ via: 'bulk', after: { accessTier: 'pro' } })
+    expect(s.updates.filter((u) => u.table === 'profiles' && 'tier' in u.patch)).toEqual([])
   })
 
   it('одобрение идёт через applyApprovalDecision и только для ожидающих', async () => {

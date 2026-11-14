@@ -34,7 +34,21 @@ function stub(adminRow: Record<string, unknown> | null, clientStatus: string) {
       if (table === 'admin_requests') {
         return {
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: adminRow, error: null }) }) }),
-          update: (p: Record<string, unknown>) => ({ eq: async () => { updates.push(p); return { data: null, error: null } } }),
+          // R2-C (review L-4): the paid branch updates only an OPEN request (… .in('status', open).select('id')).
+          update: (p: Record<string, unknown>) => {
+            const st = { open: true }
+            const q = {
+              eq: () => q,
+              in: (_c: string, statuses: string[]) => { st.open = statuses.includes(String(adminRow?.status ?? 'new')); return q },
+              select: async () => {
+                if (!st.open) return { data: [], error: null }
+                updates.push(p)
+                return { data: [{ id: 'req' }], error: null }
+              },
+              then: (ok: (v: unknown) => unknown) => { updates.push(p); return Promise.resolve({ data: null, error: null }).then(ok) },
+            }
+            return q
+          },
         }
       }
       if (table === 'profiles') {
@@ -89,6 +103,15 @@ describe('decision on a paid-access request', () => {
     const r = await decideAccessRequest(sb as never, { requestId: 'req-2', action: 'approve', actor: { id: ACTOR, kind: 'session' } })
     expect(r).toMatchObject({ ok: true, status: 'approved' })
     expect(h.apply).toHaveBeenCalledWith(expect.objectContaining({ userId: CLIENT, status: 'approved' }))
+  })
+
+  it('R2-C (review L-4): «Отклонить» / «Архив» from a stale list do not overwrite a request decided meanwhile → already_decided (409)', async () => {
+    for (const status of ['approved', 'rejected', 'archived']) {
+      const sb = stub({ ...paidRow, status }, 'approved')
+      const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action: 'reject', reason: 'не целевой', actor: { id: ACTOR, kind: 'session' } })
+      expect(r).toEqual({ ok: false, reason: 'already_decided', userId: CLIENT })
+      expect(sb.updates).toHaveLength(0)
+    }
   })
 
   it('who may decide is still checked (nobody on their own request)', async () => {

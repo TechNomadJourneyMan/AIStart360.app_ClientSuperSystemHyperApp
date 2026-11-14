@@ -289,6 +289,12 @@ export interface ExpertReviewEmailInput {
   title?: string | null
   publishedAt?: Date | string | null
   url: string
+  /**
+   * R2-C (review F1): Точка А is closed for the client — the letter says only
+   * that the review is ready (no title, no count of comments) and leads to the
+   * paywall block of the home page.
+   */
+  paidLocked?: boolean
 }
 
 /** «1 комментарий», «3 комментария», «5 комментариев». */
@@ -305,6 +311,24 @@ export function pluralComments(n: number): string {
 }
 
 export function buildExpertReviewPublishedEmail(input: ExpertReviewEmailInput): BuiltEmail {
+  if (input.paidLocked) {
+    return {
+      subject: 'Эксперт подготовил разбор',
+      content: {
+        preheader: 'Эксперт подготовил разбор вашей Точки А.',
+        eyebrow: 'Разбор эксперта',
+        title: 'Эксперт подготовил разбор',
+        greeting: greeting(input.name),
+        paragraphs: [
+          'Эксперт AIStart360 подготовил разбор вашей Точки А.',
+          'Разбор и комментарии эксперта входят в платный доступ (Точка А). На главной кабинета можно оставить заявку — менеджер свяжется с вами.',
+        ],
+        facts: momentFacts(input.publishedAt ?? new Date(), 'Опубликован'),
+        cta: { label: 'Подробнее', url: input.url },
+        footnote: 'Письмо отправлено автоматически по вашему аккаунту AIStart360.',
+      },
+    }
+  }
   const count = Math.max(0, Math.floor(input.commentsCount))
   const facts: EmailFact[] = [
     { label: 'Разбор', value: nameOrNull(input.title) },

@@ -15,14 +15,17 @@
  * действует как для клиента.
  *
  * Чистая часть (decideFeature) не ходит в базу; серверная (resolveFeature /
- * resolveAccess) читает тумблер, тариф и — только на пути отказа — персонал.
+ * resolveAccess) читает тумблер, собственный тариф и — только на пути отказа —
+ * тариф компании (R2-C, Q3) и персонал, параллельно (ревью L-11: у Pro и при
+ * выключенном тумблере компанию не спрашиваем вовсе, у Free — без лишнего
+ * последовательного запроса).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSessionStaff } from '@/lib/api-identity'
 import { getAccessGatesEnabled } from '@/lib/settings/system-settings'
-import { can, PAID_SECTIONS, type Entitlements, type Feature, type PaidSection } from './entitlements'
-import { readEntitlements } from './server'
+import { can, needsCompanyRights, PAID_SECTIONS, withCompanyRights, type Entitlements, type Feature, type PaidSection } from './entitlements'
+import { readCompanyRights, readOwnEntitlements, type OwnEntitlements } from './server'
 
 export type DecisionReason = 'gates_off' | 'entitled' | 'staff' | 'upgrade_required'
 
@@ -79,9 +82,23 @@ export interface AccessSnapshot {
   sections: Record<PaidSection, boolean>
 }
 
-async function loadInputs(sb: SupabaseClient, userId: string): Promise<{ gatesEnabled: boolean; ent: Entitlements }> {
-  const [gatesEnabled, ent] = await Promise.all([getAccessGatesEnabled(), readEntitlements(sb, userId)])
-  return { gatesEnabled, ent }
+async function loadInputs(sb: SupabaseClient, userId: string): Promise<{ gatesEnabled: boolean; own: OwnEntitlements }> {
+  const [gatesEnabled, own] = await Promise.all([getAccessGatesEnabled(), readOwnEntitlements(sb, userId)])
+  return { gatesEnabled, own }
+}
+
+/** Путь отказа: права компании (если они могут что-то открыть) и персонал — одним параллельным шагом. */
+async function refusalInputs(
+  sb: SupabaseClient,
+  userId: string,
+  own: OwnEntitlements,
+  withStaff: boolean,
+): Promise<{ ent: Entitlements; staff: boolean }> {
+  const [company, staff] = await Promise.all([
+    needsCompanyRights(own.ent, own.overrides) ? readCompanyRights(sb, userId) : Promise.resolve(null),
+    withStaff ? isStaffSession(sb, userId) : Promise.resolve(false),
+  ])
+  return { ent: withCompanyRights(own.ent, own.overrides, company), staff }
 }
 
 /** Серверное решение по одной фиче для пользователя сессии `userId`. */
@@ -91,21 +108,21 @@ export async function resolveFeature(
   feature: Feature,
   opts: { exemptStaff?: boolean } = {},
 ): Promise<FeatureDecision & { ent: Entitlements; gatesEnabled: boolean }> {
-  const { gatesEnabled, ent } = await loadInputs(sb, userId)
-  const first = decideFeature({ gatesEnabled, ent }, feature)
-  if (first.allowed || !opts.exemptStaff) return { ...first, ent, gatesEnabled }
-  // Персонал читаем только на пути отказа — обычный проход не платит лишний запрос.
-  const staff = await isStaffSession(sb, userId)
+  const { gatesEnabled, own } = await loadInputs(sb, userId)
+  const first = decideFeature({ gatesEnabled, ent: own.ent }, feature)
+  if (first.allowed) return { ...first, ent: own.ent, gatesEnabled }
+  // Компания и персонал — только на пути отказа: обычный проход не платит лишних запросов.
+  const { ent, staff } = await refusalInputs(sb, userId, own, !!opts.exemptStaff)
   return { ...decideFeature({ gatesEnabled, ent, staff }, feature), ent, gatesEnabled }
 }
 
 /** Полный снимок для UI: тумблер, права, персонал и решения по платным разделам. */
 export async function resolveAccess(sb: SupabaseClient, userId: string): Promise<AccessSnapshot> {
-  const { gatesEnabled, ent } = await loadInputs(sb, userId)
-  const withoutStaff = decideSections({ gatesEnabled, ent })
-  const anyClosed = Object.values(withoutStaff).some((v) => !v)
-  const staff = anyClosed ? await isStaffSession(sb, userId) : false
-  return { gatesEnabled, ent, staff, sections: staff ? decideSections({ gatesEnabled, ent, staff }) : withoutStaff }
+  const { gatesEnabled, own } = await loadInputs(sb, userId)
+  const first = decideSections({ gatesEnabled, ent: own.ent })
+  if (!Object.values(first).some((v) => !v)) return { gatesEnabled, ent: own.ent, staff: false, sections: first }
+  const { ent, staff } = await refusalInputs(sb, userId, own, true)
+  return { gatesEnabled, ent, staff, sections: decideSections({ gatesEnabled, ent, staff }) }
 }
 
 /**

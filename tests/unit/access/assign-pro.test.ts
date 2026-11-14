@@ -30,6 +30,8 @@ const s = vi.hoisted(() => ({
   notices: [] as Array<{ userId: string; input: Record<string, unknown> }>,
   journal: new Set<string>(),
   audits: [] as Array<Record<string, unknown>>,
+  /** The client's current plan (getEffectivePlan); null → derived from beforeTier. */
+  current: null as null | Record<string, unknown>,
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -80,7 +82,7 @@ vi.mock('@/lib/payments/billing', async () => {
         after: { tier, status: tier === 'free' ? 'free' : 'active', periodEnd, accessTier: tier === 'free' ? 'free' : 'pro' },
       }
     },
-    getEffectivePlan: async () => ({ tier: s.beforeTier, status: 'active', periodEnd: null, accessTier: s.beforeTier }),
+    getEffectivePlan: async () => s.current ?? ({ tier: s.beforeTier, status: s.beforeTier === 'pro' ? 'active' : 'free', periodEnd: null, accessTier: s.beforeTier }),
   }
 })
 
@@ -107,6 +109,7 @@ beforeEach(() => {
   s.notices = []
   s.journal = new Set()
   s.audits = []
+  s.current = null
   s.db = newRequestsDb()
   s.db.rows.push(
     row('req-1'),
@@ -191,6 +194,49 @@ describe('«Назначить Pro» from a request', () => {
     expect((await assign('req-1')).status).toBe(409)
     expect(statusOf('req-1')).toBe('new')
     expect(s.notices).toHaveLength(0)
+  })
+})
+
+describe('review L-5: «Назначить Pro» never shortens what the client has', () => {
+  const DAY = 86_400_000
+  it('a live paid period until a date → N months are added to ITS end, not to today', async () => {
+    const end = new Date(Date.now() + 40 * DAY)
+    s.current = { tier: 'pilot', status: 'trialing', periodEnd: end.toISOString(), accessTier: 'pro' }
+    const res = await assign('req-1', { months: 1 })
+    expect(res.status).toBe(200)
+    expect((await res.json()).extended).toBe(true)
+    const got = (s.setPlan[0].periodEnd as Date).getTime()
+    expect(got).toBeGreaterThan(end.getTime() + 27 * DAY)
+    expect(got).toBeLessThan(end.getTime() + 32 * DAY)
+    expect(s.setPlan[0]).toMatchObject({ tier: 'pro' })
+  })
+
+  it('an open-ended paid plan stays open-ended; Enterprise stays Enterprise', async () => {
+    s.current = { tier: 'enterprise', status: 'active', periodEnd: null, accessTier: 'pro' }
+    expect((await assign('req-1', { months: 2 })).status).toBe(200)
+    expect(s.setPlan[0]).toMatchObject({ tier: 'enterprise', periodEnd: null })
+  })
+
+  it('an explicit date earlier than the current paid end → 422, nothing changed; a later date is fine', async () => {
+    const end = new Date(Date.now() + 60 * DAY)
+    s.current = { tier: 'pro', status: 'active', periodEnd: end.toISOString(), accessTier: 'pro' }
+    const early = new Date(Date.now() + 10 * DAY).toISOString().slice(0, 10)
+    const res = await assign('req-1', { periodEnd: early })
+    expect(res.status).toBe(422)
+    expect(String((await res.json()).message)).toContain('укоротила бы')
+    expect(s.setPlan).toHaveLength(0)
+    const later = new Date(Date.now() + 90 * DAY).toISOString().slice(0, 10)
+    expect((await assign('req-1', { periodEnd: later })).status).toBe(200)
+  })
+
+  it('no live paid plan (Free / expired) → the period from today, as asked; 422 messages are in Russian', async () => {
+    s.current = { tier: 'pro', status: 'expired', periodEnd: new Date(Date.now() - 5 * DAY).toISOString(), accessTier: 'free' }
+    await assign('req-1', { months: 1 })
+    const got = (s.setPlan[0].periodEnd as Date).getTime()
+    expect(got).toBeGreaterThan(Date.now() + 27 * DAY)
+    expect(got).toBeLessThan(Date.now() + 32 * DAY)
+    const bad = await (await assign('req-pilot', { months: 40 })).json()
+    expect(bad.message).toBe('Срок — целое число месяцев от 1 до 36')
   })
 })
 

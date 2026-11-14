@@ -12,9 +12,22 @@ export const REPORT_STATUS: Record<ReportStatus, StatusMeta> = {
   draft: { label: 'Черновик', tone: 'neutral' },
   ready: { label: 'Готов к проверке', tone: 'amber', hint: 'клиент не видит, пока сотрудник не опубликует' },
   in_review: { label: 'На проверке эксперта', tone: 'amber', hint: 'клиент не видит; «Подтвердить» эксперта сразу публикует' },
-  published: { label: 'Опубликован', tone: 'green', hint: 'клиент видит эту версию' },
+  published: { label: 'Опубликован', tone: 'green', hint: 'клиент видит эту версию; клиент на бесплатном тарифе — только уведомление о готовности' },
   superseded: { label: 'Заменён', tone: 'neutral', hint: 'есть более новая версия, или версию отклонили / отозвали' },
   failed: { label: 'Ошибка', tone: 'red' },
+}
+
+/**
+ * R2-C (M-4): the expert's report is part of Точка А. For a client on the free
+ * tariff a published version is only the notice «Отчёт эксперта готов».
+ */
+export const FREE_CLIENT_REPORT_NOTE = 'Клиент на бесплатном тарифе: после публикации он увидит только уведомление о готовности отчёта — сам отчёт входит в платный доступ (Точка А).'
+
+/** The toast after publishing, true for both kinds of client. */
+export function publishedToast(stamp: string, clientPaidLocked?: boolean): string {
+  return clientPaidLocked
+    ? `Опубликовано: ${stamp}. Клиент на бесплатном тарифе получил уведомление о готовности; сам отчёт — в платном доступе.`
+    : `Опубликовано клиенту: ${stamp}`
 }
 
 export function reportStatusMeta(status: string | null | undefined): StatusMeta {

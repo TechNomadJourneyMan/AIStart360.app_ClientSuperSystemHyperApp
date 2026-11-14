@@ -382,8 +382,9 @@ async function afterPublish(v: ReviewVersionHead, reviewer: Reviewer): Promise<v
       /* the cabinet link still works */
     }
     // R2-C (M-4): the report is part of Точка А. A client without it gets only the
-    // notice that the report is ready, leading to the home card with the paywall
-    // (a version link would open «Ссылка недоступна»).
+    // notice that the report is ready, leading to the Point A paywall block of the
+    // home page (#expert — shown to every account with Точка А closed, members of
+    // a company included, review L-8); a version link would open «Ссылка недоступна».
     const { pointAClosedFor } = await import('@/lib/access/recipient')
     for (const userId of await companyClientUserIds(v.company_id)) {
       const closed = await pointAClosedFor(userId)
@@ -395,7 +396,7 @@ async function afterPublish(v: ReviewVersionHead, reviewer: Reviewer): Promise<v
           : `${stamp}. Специалист AIStart360 проверил отчёт — его можно открыть и скачать в PDF.`,
         category: 'report',
         priority: 'high',
-        link: closed ? '/client/home' : link,
+        link: closed ? '/client/home#expert' : link,
         metadata: { report_version_id: v.id, version: v.version, report_type: v.report_type, ...(closed ? { paid_locked: true } : {}) },
       })
     }

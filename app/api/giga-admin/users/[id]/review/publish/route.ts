@@ -9,6 +9,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
 import { sendExpertReviewPublishedEmail } from '@/lib/email/notify'
 import { pluralComments } from '@/lib/email/templates'
+import { pointAClosedFor } from '@/lib/access/recipient'
 import { reviewBlockLabel } from '@/lib/expert-review/blocks'
 import { hasBlockingFlag } from '@/lib/expert-review/ai-draft'
 import { REVIEW_COLUMNS, UUID_RE, displayNameOf, findDraftReview, listDraftComments } from '@/lib/expert-review/server'
@@ -90,9 +91,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const blocks = Array.from(new Set(drafts.map((c) => reviewBlockLabel(c.block_key))))
 
   // 3. Одно письмо + одно уведомление клиенту.
-  const [{ data: client }, expertName] = await Promise.all([
+  // R2-C (ревью F1): разбор — часть Точки А. Клиенту с закрытой Точкой А — только
+  // факт готовности (без названия, числа и блоков) и ссылка на пейволл главной;
+  // ошибка решения → закрыто.
+  const [{ data: client }, expertName, paidLocked] = await Promise.all([
     sb.from('profiles').select('email, full_name').eq('id', params.id).maybeSingle(),
     displayNameOf(sb, guard.actor.id),
+    pointAClosedFor(params.id),
   ])
   const profile = client as { email?: string | null; full_name?: string | null } | null
   let email: { ok: boolean; skipped?: boolean; error?: string } = { ok: false, error: 'no_email' }
@@ -105,17 +110,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       publishedAt: now,
       userId: params.id,
       reviewId: draft.id,
+      paidLocked,
     })
   }
 
   await createNotification({
     userId: params.id,
     title: 'Эксперт подготовил разбор',
-    body: `${pluralComments(count)} по блокам: ${blocks.slice(0, 4).join(', ')}${blocks.length > 4 ? ' и др.' : ''}`,
+    body: paidLocked
+      ? 'Эксперт подготовил разбор вашей Точки А — он доступен в платном доступе.'
+      : `${pluralComments(count)} по блокам: ${blocks.slice(0, 4).join(', ')}${blocks.length > 4 ? ' и др.' : ''}`,
     category: 'report',
     priority: 'high',
     link: '/client/home#expert',
-    metadata: { reviewId: draft.id, commentsCount: count },
+    metadata: paidLocked ? { reviewId: draft.id, paid_locked: true } : { reviewId: draft.id, commentsCount: count },
   })
 
   await recordAdminAction(guard.actor, {

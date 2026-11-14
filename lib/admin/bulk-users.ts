@@ -17,6 +17,8 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
 import { BULK_ACTIONS, BULK_MAX, type BulkAction } from './bulk-users-shared'
 import type { GigaActor } from '@/lib/admin/giga-actor'
+import { setPlan } from '@/lib/payments/billing'
+import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { remindSurveyBatch } from '@/lib/admin/survey-reminders'
 import { scopedClientIds, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
@@ -149,8 +151,13 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
         }
         case 'set_tier': {
           if (t.tier === input.tier) return { id, ok: true, error: null, skipped: true }
-          const { data, error } = await sb.from('profiles').update({ tier: input.tier }).eq('id', id).select('id')
-          if (error || !data?.length) return { id, ok: false, error: 'Тариф не изменён' }
+          // R2-C (product review M-2): the plan goes through the ONE writer — billing
+          // (subscriptions + profiles.tier together, journal first, the paid AI catch-up)
+          // — and a paid plan closes the client's open access requests and notifies
+          // him once, exactly like User 360 → Биллинг.
+          const plan = await setPlan({ userId: id, tier: input.tier as 'free' | 'pro', periodEnd: null, source: 'admin', actor, req, meta: { via: 'bulk' } })
+          if (!plan.applied) return { id, ok: false, error: 'Тариф не изменён' }
+          await completePaidAccessGrant({ userId: id, actor, before: plan.before, after: plan.after, via: 'bulk' })
           await audit(id, 'user.access_changed', { oldValue: { tier: t.tier }, newValue: { tier: input.tier } })
           return { id, ok: true, error: null }
         }

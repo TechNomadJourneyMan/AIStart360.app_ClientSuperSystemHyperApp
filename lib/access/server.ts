@@ -23,6 +23,7 @@ import {
   withCompanyRights,
   type CompanyRights,
   type Entitlements,
+  type Feature,
 } from './entitlements'
 import { getSetting } from '@/lib/settings/store'
 
@@ -46,23 +47,37 @@ export async function readCompanyRights(sb: SupabaseClient, userId: string): Pro
   }
 }
 
-export async function readEntitlements(
-  sb: SupabaseClient,
-  userId: string,
-): Promise<Entitlements> {
+/** Собственные права (тариф + override) и сами override — без компании. */
+export interface OwnEntitlements {
+  ent: Entitlements
+  overrides: Partial<Record<Feature, boolean>>
+}
+
+export async function readOwnEntitlements(sb: SupabaseClient, userId: string): Promise<OwnEntitlements> {
   try {
     const [{ data, error }, limit] = await Promise.all([
       sb.from('profiles').select('tier, feature_flags').eq('id', userId).maybeSingle(),
       freeGriLimit(),
     ])
-    if (error) return entitlementsFor('free', undefined, limit)
+    if (error) return { ent: entitlementsFor('free', undefined, limit), overrides: {} }
     const row = data as { tier?: unknown; feature_flags?: unknown } | null
     const overrides = normalizeOverrides(row?.feature_flags)
-    const own = entitlementsFor(normalizeTier(row?.tier), overrides, limit)
-    // Pro без явных запретов — компанию не спрашиваем (лишнего запроса нет).
-    if (!needsCompanyRights(own, overrides)) return own
-    return withCompanyRights(own, overrides, await readCompanyRights(sb, userId))
+    return { ent: entitlementsFor(normalizeTier(row?.tier), overrides, limit), overrides }
   } catch {
-    return entitlementsFor('free')
+    return { ent: entitlementsFor('free'), overrides: {} }
   }
+}
+
+/**
+ * Права целиком: собственные + унаследованные от компании. Компанию спрашиваем,
+ * только если собственный тариф что-то закрывает (не явный override). Решение
+ * (lib/access/decision.ts) читает компанию лениво — только на пути отказа.
+ */
+export async function readEntitlements(
+  sb: SupabaseClient,
+  userId: string,
+): Promise<Entitlements> {
+  const { ent, overrides } = await readOwnEntitlements(sb, userId)
+  if (!needsCompanyRights(ent, overrides)) return ent
+  return withCompanyRights(ent, overrides, await readCompanyRights(sb, userId))
 }

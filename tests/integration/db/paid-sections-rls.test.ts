@@ -243,6 +243,11 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
        VALUES ($1, 'risk', 'sales', 'paid finding', 'CALCULATED', 0.9, 'engine:test')`,
       [w.company],
     )
+    // review F2: the session's overview IS the Point A summary (score, key risks)
+    await db.query(
+      `INSERT INTO public.diagnostic_sessions (company_id, status, overview) VALUES ($1, 'ready', '{"overallScore":42,"keyRisks":[{"title":"paid risk"}]}'::jsonb)`,
+      [w.company],
+    )
   }
   const reportSeen = async (db: Db, uid: string, w: World) =>
     asUser(db, uid, async () => {
@@ -252,10 +257,11 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
         expert_reviews: await n(`SELECT count(*) AS n FROM public.expert_reviews WHERE user_id = $1`, [w.client]),
         expert_comments: await n(`SELECT count(*) AS n FROM public.expert_comments WHERE client_id = $1`, [w.client]),
         diagnostic_findings: await n(`SELECT count(*) AS n FROM public.diagnostic_findings WHERE company_id = $1`, [w.company]),
+        diagnostic_sessions: await n(`SELECT count(*) AS n FROM public.diagnostic_sessions WHERE company_id = $1 AND overview IS NOT NULL`, [w.company]),
       }
     })
-  const REPORT_ALL = { report_versions: 1, expert_reviews: 1, expert_comments: 1, diagnostic_findings: 1 }
-  const REPORT_NONE = { report_versions: 0, expert_reviews: 0, expert_comments: 0, diagnostic_findings: 0 }
+  const REPORT_ALL = { report_versions: 1, expert_reviews: 1, expert_comments: 1, diagnostic_findings: 1, diagnostic_sessions: 1 }
+  const REPORT_NONE = { report_versions: 0, expert_reviews: 0, expert_comments: 0, diagnostic_findings: 0, diagnostic_sessions: 0 }
 
   it('M-4: Free does not read his published report, the expert\'s review / comments or the findings; Pro does', async () => {
     await inRollback(async (db) => {
@@ -285,6 +291,7 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
       for (const staff of [admin, expert]) {
         expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.report_versions WHERE company_id = $1`, [w.company])).rows[0].n))).toBe(1)
         expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.diagnostic_findings WHERE company_id = $1`, [w.company])).rows[0].n))).toBe(1)
+        expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.diagnostic_sessions WHERE company_id = $1`, [w.company])).rows[0].n))).toBe(1)
       }
       // the expert's comments of a Free client: the platform admin and the assigned expert (expert_read_all)
       for (const staff of [admin, expert]) {
@@ -300,9 +307,65 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)
       const w = await world(db, true)
       await report(db, w)
       const m = await member(db, w)
-      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 0, diagnostic_findings: 0 })
+      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 0, diagnostic_findings: 0, diagnostic_sessions: 0 })
       await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
-      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 1, diagnostic_findings: 1 })
+      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 1, diagnostic_findings: 1, diagnostic_sessions: 1 })
+    })
+  })
+
+  it('review F8: paid_sections_for_owners answers for the OWNERS of many companies exactly like has_paid_section of each owner', async () => {
+    await inRollback(async (db) => {
+      await world(db, true)
+      const owners: Array<{ uid: string; company: string }> = []
+      const mk = async (tier: string, flags: Record<string, boolean>) => {
+        const uid = await seedUser(db, { status: 'approved' })
+        await db.query(`UPDATE public.profiles SET tier = $2, feature_flags = $3::jsonb WHERE id = $1`, [uid, tier, JSON.stringify(flags)])
+        const company = await seedCompany(db, uid)
+        owners.push({ uid, company })
+        return { uid, company }
+      }
+      const pro = await mk('pro', {})
+      await mk('free', {})
+      await mk('free', { point_a: true })
+      await mk('pro', { point_a: false })
+      // a Free owner who is a member of the Pro company inherits it
+      const member = await mk('free', {})
+      await db.query(`INSERT INTO public.company_members (company_id, user_id, role, status) VALUES ($1, $2, 'member', 'active')`, [pro.company, member.uid])
+      const orphan = (await db.query(`INSERT INTO public.companies (id, name, user_id, "updatedAt") VALUES (gen_random_uuid()::text, 'No owner', NULL, now()) RETURNING id`)).rows[0].id as string
+
+      const batch = async () => asService(db, async () => {
+        const { rows } = await db.query(`SELECT company_id, owner_id, open FROM public.paid_sections_for_owners($1::text[], 'point_a')`, [[...owners.map((o) => o.company), orphan, 'no-such-company']])
+        return new Map(rows.map((r) => [r.company_id as string, r.open as boolean]))
+      })
+      const got = await batch()
+      expect(got.size).toBe(owners.length + 1) // the unknown company is simply absent
+      for (const o of owners) {
+        const own = await asUser(db, o.uid, async () => (await db.query(`SELECT public.has_paid_section('point_a') AS ok`)).rows[0].ok as boolean)
+        expect(got.get(o.company), o.company).toBe(own)
+      }
+      expect([...owners.map((o) => got.get(o.company))]).toEqual([true, false, true, false, true])
+      expect(got.get(orphan)).toBe(false) // no owner, gates on
+      await db.query(`UPDATE public.system_settings SET value = 'false'::jsonb WHERE key = 'access_gates'`)
+      expect((await batch()).get(orphan)).toBe(true)
+    })
+  })
+
+  it('review F8: the batch and the internal rule are not callable by a client (other people\'s tariffs)', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      const code = async (sql: string, args: unknown[]) => asUser(db, w.client, async () => {
+        await db.query('SAVEPOINT x')
+        try {
+          await db.query(sql, args)
+          return null
+        } catch (e) {
+          await db.query('ROLLBACK TO SAVEPOINT x')
+          return (e as { code?: string }).code ?? 'error'
+        }
+      })
+      expect(await code(`SELECT * FROM public.paid_sections_for_owners($1::text[], 'point_a')`, [[w.company]])).toBe('42501')
+      expect(await code(`SELECT public.paid_section_of($1, 'point_a')`, [w.client])).toBe('42501')
+      expect(await code(`SELECT public.company_rights_of($1)`, [w.client])).toBe('42501')
     })
   })
 

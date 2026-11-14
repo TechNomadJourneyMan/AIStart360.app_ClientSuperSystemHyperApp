@@ -17,6 +17,9 @@ const audit = vi.hoisted(() => ({ fn: vi.fn() }))
 const billing = vi.hoisted(() => ({ setPlan: vi.fn(async () => ({ applied: true })) }))
 vi.mock('@/lib/payments/billing', () => ({ setPlan: billing.setPlan }))
 const events = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }))
+// R2-C (review M-2): a paid plan from the access editor closes the open access requests too.
+const grant = vi.hoisted(() => ({ fn: vi.fn(async () => ({ closed: [], notified: true })) }))
+vi.mock('@/lib/access/paid-access-grant', () => ({ completePaidAccessGrant: grant.fn }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: events.track }))
 
 // Panel access comes from a personal staff session (the shared-password
@@ -72,6 +75,7 @@ describe('giga-admin user access PATCH', () => {
     audit.fn.mockReset()
     billing.setPlan.mockClear()
     events.track.mockClear()
+    grant.fn.mockClear()
   })
 
   it('403 for non-super_admin', async () => {
@@ -100,6 +104,17 @@ describe('giga-admin user access PATCH', () => {
       source: 'admin',
       metadata: expect.objectContaining({ from: 'free', to: 'pro', by: 'staff' }),
     }))
+  })
+
+  it('R2-C (ревью M-2): applied plan → the same «paid access granted» step as Биллинг (requests closed, one notice); not applied → nothing', async () => {
+    billing.setPlan.mockResolvedValueOnce({ applied: true, before: { accessTier: 'free' }, after: { accessTier: 'pro', periodEnd: null } } as never)
+    await PATCH(req({ tier: 'pro' }), { params: { id: UID } })
+    expect(grant.fn).toHaveBeenCalledTimes(1)
+    expect(grant.fn).toHaveBeenCalledWith(expect.objectContaining({ userId: UID, via: 'access', after: { accessTier: 'pro', periodEnd: null } }))
+    grant.fn.mockClear()
+    billing.setPlan.mockResolvedValueOnce({ applied: false } as never)
+    await PATCH(req({ tier: 'pro' }), { params: { id: UID } })
+    expect(grant.fn).not.toHaveBeenCalled()
   })
 
   it('no TIER_CHANGED when the plan change was not applied', async () => {

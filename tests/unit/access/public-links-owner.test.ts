@@ -102,6 +102,15 @@ describe('/r/v/<token> — a version of the expert\'s report', () => {
     expect(s.companyCalls).toEqual([{ company: COMPANY, section: 'point_a' }])
   })
 
+  it('review L-6: the text is neutral — nothing about the owner or his tariff', async () => {
+    s.open = false
+    const out = await html(await VersionLinkPage({ params: { token: 'tok' } }))
+    expect(out).toContain('Ссылка сейчас недоступна. Обратитесь к тому, кто ею поделился.')
+    expect(out).not.toMatch(/владел|тариф|платн|закрыт/i)
+    const pdf = await (await versionPdfGET(new NextRequest('http://t/r/v/tok/pdf'), { params: { token: 'tok' } })).json()
+    expect(JSON.stringify(pdf)).not.toMatch(/владел|тариф|платн/i)
+  })
+
   it('open → the version as before', async () => {
     const out = await html(await VersionLinkPage({ params: { token: 'tok' } }))
     expect(out).toContain('Точка А: ТОО Секретная')

@@ -59,3 +59,34 @@ export async function companyOwnerSectionOpen(companyId: string, section: PaidSe
     return false
   }
 }
+
+/**
+ * R2-C (review F8 / L-7): the same decision for the OWNERS of many companies in
+ * ONE call — SQL paid_sections_for_owners (migration 148, the same rule as
+ * has_paid_section, service role only). For the expert / GIGA review queues
+ * and the expert bot («клиент на бесплатном тарифе»).
+ * Returns companyId → open; a company that is not in the map is UNKNOWN (a
+ * failed read, an absent company): the caller shows no note — never a
+ * misleading «free tariff» on a database error.
+ */
+export async function companiesOwnerSectionOpen(companyIds: readonly string[], section: PaidSection): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>()
+  const ids = Array.from(new Set(companyIds.filter((id) => typeof id === 'string' && id.length > 0)))
+  if (ids.length === 0) return out
+  try {
+    const { data, error } = await createServiceClient().rpc('paid_sections_for_owners', { p_company_ids: ids, p_section: section })
+    if (error || !Array.isArray(data)) return out
+    for (const row of data as Array<{ company_id?: unknown; open?: unknown }>) {
+      if (typeof row.company_id === 'string' && typeof row.open === 'boolean') out.set(row.company_id, row.open)
+    }
+  } catch {
+    /* unknown for all */
+  }
+  return out
+}
+
+/** Companies whose owner has the section CLOSED (unknown ones are not included). */
+export async function companiesWithClosedSection(companyIds: readonly string[], section: PaidSection): Promise<Set<string>> {
+  const open = await companiesOwnerSectionOpen(companyIds, section)
+  return new Set(Array.from(open.entries()).filter(([, v]) => !v).map(([id]) => id))
+}

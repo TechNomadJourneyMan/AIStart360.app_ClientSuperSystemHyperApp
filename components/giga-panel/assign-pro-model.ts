@@ -14,6 +14,10 @@ export const ASSIGN_PRO_LABEL = 'Назначить Pro'
 /** RBAC of the action — the same as the plan editor (lib/admin/rbac.ts). */
 export const ASSIGN_PRO_PERMISSION = 'users.manage'
 export const ASSIGN_PRO_NO_RIGHT = 'Назначить тариф может сотрудник с правом «Управление пользователями» (как в User 360 → Биллинг)'
+/** Shown in the form while the period is not complete; the button is locked (review L-3). */
+export const ASSIGN_PRO_PERIOD_ERROR = 'Укажите срок: целое число месяцев от 1 до 36 или дату окончания.'
+/** The plan is set but this request did not close (closed meanwhile / a DB error): «Принять» is no longer a way. */
+export const ASSIGN_PRO_NOT_CLOSED = 'заявка не закрылась — обновите список; если она осталась открытой, отправьте её в архив'
 
 export type AssignProMode = 'months' | 'date' | 'none'
 
@@ -66,10 +70,10 @@ export async function sendAssignPro(fetchFn: typeof fetch, requestId: string, bo
       credentials: 'include',
       body: JSON.stringify(body),
     })
-    const d = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string; requestClosed?: boolean; notified?: boolean } | null
+    const d = (await res.json().catch(() => null)) as { ok?: boolean; message?: string; error?: string; requestClosed?: boolean; notified?: boolean; extended?: boolean } | null
     if (!res.ok || !d?.ok) return { ok: false, text: d?.message || d?.error || `Не удалось назначить Pro (HTTP ${res.status})` }
-    const parts = ['Pro назначен']
-    parts.push(d.requestClosed ? 'заявка закрыта как одобренная' : 'заявку закройте вручную — она не закрылась')
+    const parts = [d.extended ? 'Оплаченный период продлён' : 'Pro назначен']
+    parts.push(d.requestClosed ? 'заявка закрыта как одобренная' : ASSIGN_PRO_NOT_CLOSED)
     if (d.notified) parts.push('клиент получил уведомление «Доступ открыт»')
     return { ok: true, text: `${parts.join(', ')}.` }
   } catch {

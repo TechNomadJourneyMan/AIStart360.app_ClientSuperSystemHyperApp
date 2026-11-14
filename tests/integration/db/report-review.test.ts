@@ -341,13 +341,21 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     await runAgent(s.companyId)
     const [v] = await versions(s.companyId)
     const expert = await expertOf(s.owner)
+    // review L-8: a Free member of the company gets the same notice; its link is the
+    // Point A paywall block (#expert) every account with Точка А closed has on its home page
+    const member = await user('client')
+    await prisma.$executeRaw`INSERT INTO public.company_members (company_id, user_id, role, status) VALUES (${s.companyId}, ${member}::uuid, 'member', 'active')`
     spy.pointAClosed.add(s.owner)
+    spy.pointAClosed.add(member)
     expect(await decide(v.id, expert, 'approve')).toMatchObject({ ok: true, decision: 'approve' })
     expect((await versions(s.companyId))[0].status).toBe('published')
-    expect(spy.client).toHaveLength(1)
-    expect(spy.client[0]).toMatchObject({ userId: s.owner, title: 'Отчёт эксперта готов', link: '/client/home', metadata: { report_version_id: v.id, paid_locked: true } })
-    expect(String(spy.client[0].body)).toContain('платный доступ')
-    expect(String(spy.client[0].link)).not.toMatch(/\/r\/v\//)
+    expect(spy.client).toHaveLength(2)
+    for (const uid of [s.owner, member]) {
+      const n = spy.client.find((c) => c.userId === uid)!
+      expect(n).toMatchObject({ title: 'Отчёт эксперта готов', link: '/client/home#expert', metadata: { report_version_id: v.id, paid_locked: true } })
+      expect(String(n.body)).toContain('платный доступ')
+      expect(String(n.link)).not.toMatch(/\/r\/v\//)
+    }
   })
 
   it('re-checks the person on every decision: approval, role, the 2FA rule on Telegram', async () => {

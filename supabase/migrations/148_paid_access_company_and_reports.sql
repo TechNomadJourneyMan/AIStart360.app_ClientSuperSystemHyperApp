@@ -18,21 +18,27 @@
 --     get the same RESTRICTIVE «paid section» SELECT policy as the tables of
 --     migration 147:
 --       report_versions, expert_reviews, expert_comments,
---       diagnostic_findings, diagnostic_recommendations      → point_a
+--       diagnostic_findings, diagnostic_recommendations,
+--       diagnostic_sessions (its `overview` is the Point A summary)  → point_a
 --     The expert / GIGA / review flow is not affected: staff of the session pass
 --     has_paid_section (current_staff_role() / is_active_expert(), session gate
 --     of 143), the review flow and the PDFs read with Prisma / the service role
 --     (no RLS). The client's home card «Отчёт эксперта готов» reads the version
 --     metadata with the service role (app/client/home/page.tsx).
 --
--- has_paid_section(section), after this migration (same order as
--- lib/access/decision.ts decideFeature + readEntitlements):
---   1. staff of this session                                   → yes;
---   2. system_settings.access_gates is not on                  → yes;
+-- The rule lives in ONE function, paid_section_of(user, section) (no staff
+-- step — it is the rule of a CLIENT):
+--   1. system_settings.access_gates is not on                  → yes;
+--   2. no user                                                 → no;
 --   3. own profiles.feature_flags->section is a boolean        → that value;
 --   4. own profiles.tier = 'pro'                               → yes;
 --   5. an active membership in a company whose owner has the right → yes;
 --   6. otherwise                                               → no.
+-- has_paid_section(section) = staff of this session OR paid_section_of(auth.uid()).
+-- paid_sections_for_owners(company ids, section) — the same rule for the OWNERS
+-- of many companies in one call (service role only: the expert / GIGA review
+-- queues say «the client is on the free tariff», R2-C review F8).
+-- Same order as lib/access/decision.ts decideFeature + readEntitlements.
 --
 -- Migration 147 is NOT edited: this file replaces the function (CREATE OR
 -- REPLACE keeps its grants) and adds policies. Idempotent: CREATE OR REPLACE,
@@ -62,44 +68,31 @@ REVOKE ALL ON FUNCTION public.paid_right_of(text, jsonb, text) FROM PUBLIC, anon
 GRANT EXECUTE ON FUNCTION public.paid_right_of(text, jsonb, text) TO authenticated, service_role;
 
 -- ─── Rights a person inherits from the companies he is a member of (Q3) ─────
--- Returns {point_a, point_b, market, gri_full, pdf_export, ai_chat, benchmarks:
--- bool, gri_full_unlimited: bool} — true when at least one company of an
--- ACTIVE membership has a primary owner (not the person himself) with that
--- right. gri_full_unlimited: such an owner is on the Pro tier (no run limit).
--- A signed-in user may ask only about himself; the service role about anybody;
--- anything else gets «no rights» (never an error, never someone else's data).
-CREATE OR REPLACE FUNCTION public.company_inherited_rights(p_user uuid)
+-- INTERNAL (no caller check — only the SECURITY DEFINER functions below call
+-- it). Returns {point_a, point_b, market, gri_full, pdf_export, ai_chat,
+-- benchmarks: bool, gri_full_unlimited: bool} — true when at least one company
+-- of an ACTIVE membership has a primary owner (not the person himself) with
+-- that right. gri_full_unlimited: such an owner is on the Pro tier.
+CREATE OR REPLACE FUNCTION public.company_rights_of(p_user uuid)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  WITH caller AS (
-    SELECT p_user AS uid
-     WHERE p_user IS NOT NULL
-       AND (
-         p_user = auth.uid()
-         OR coalesce(
-              nullif(current_setting('request.jwt.claim.role', true), ''),
-              nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
-              ''
-            ) = 'service_role'
-       )
-  ),
-  owners AS (
+  WITH owners AS (
     SELECT DISTINCT o.id, o.tier, o.feature_flags
-      FROM caller
-      JOIN public.company_members m
-        ON m.user_id = caller.uid
-       AND m.status = 'active'
-       AND m.role IN ('owner', 'admin', 'member', 'viewer')
+      FROM public.company_members m
       JOIN public.companies c
         ON c.id = m.company_id
        AND c.user_id IS NOT NULL
-       AND c.user_id <> caller.uid
+       AND c.user_id <> m.user_id
       JOIN public.profiles o
         ON o.id = c.user_id
+     WHERE p_user IS NOT NULL
+       AND m.user_id = p_user
+       AND m.status = 'active'
+       AND m.role IN ('owner', 'admin', 'member', 'viewer')
   )
   SELECT jsonb_build_object(
     'point_a',    coalesce(bool_or(public.paid_right_of(tier, feature_flags, 'point_a')), false),
@@ -114,14 +107,45 @@ AS $$
   FROM owners
 $$;
 
+COMMENT ON FUNCTION public.company_rights_of(uuid) IS
+  'R2-C (Q3): paid rights inherited from the owners of the companies of the active memberships of p_user. Internal: no caller check';
+
+REVOKE ALL ON FUNCTION public.company_rights_of(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- The same, for the portal (lib/access/server.ts readCompanyRights). A signed-in
+-- user may ask only about himself; the service role about anybody; anything
+-- else gets «no rights» (never an error, never someone else's data).
+CREATE OR REPLACE FUNCTION public.company_inherited_rights(p_user uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.company_rights_of(
+    CASE WHEN p_user IS NOT NULL
+          AND (
+            p_user = auth.uid()
+            OR coalesce(
+                 nullif(current_setting('request.jwt.claim.role', true), ''),
+                 nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
+                 ''
+               ) = 'service_role'
+          )
+         THEN p_user END
+  )
+$$;
+
 COMMENT ON FUNCTION public.company_inherited_rights(uuid) IS
   'R2-C (Q3): paid rights a person inherits from the owners of the companies of his active memberships; self or service role only';
 
 REVOKE ALL ON FUNCTION public.company_inherited_rights(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.company_inherited_rights(uuid) TO authenticated, service_role;
 
--- ─── has_paid_section: + company inheritance (step 5) ───────────────────────
-CREATE OR REPLACE FUNCTION public.has_paid_section(p_section text)
+-- ─── The rule of a client: is the paid section open for p_user? ─────────────
+-- INTERNAL (no staff step, no caller check): has_paid_section() asks it about
+-- auth.uid(), paid_sections_for_owners() about the owners of companies.
+CREATE OR REPLACE FUNCTION public.paid_section_of(p_user uuid, p_section text)
 RETURNS boolean
 LANGUAGE plpgsql
 STABLE
@@ -135,17 +159,10 @@ DECLARE
   v_flags    jsonb;
   v_override jsonb;
 BEGIN
-  IF auth.uid() IS NULL THEN
-    RETURN false;
-  END IF;
   IF p_section NOT IN ('point_a', 'point_b', 'market', 'gri_full') THEN
     RETURN false;
   END IF;
-  -- 1. Staff of this session (migration 140 rule + the session gate of 143).
-  IF public.current_staff_role() IS NOT NULL OR public.is_active_expert() THEN
-    RETURN true;
-  END IF;
-  -- 2. The switch (lib/settings/registry.ts access_gates: boolean or {enabled}).
+  -- 1. The switch (lib/settings/registry.ts access_gates: boolean or {enabled}).
   SELECT value INTO v_gates FROM public.system_settings WHERE key = 'access_gates';
   IF jsonb_typeof(v_gates) = 'boolean' THEN
     v_on := (v_gates #>> '{}')::boolean;
@@ -155,8 +172,12 @@ BEGIN
   IF NOT v_on THEN
     RETURN true;
   END IF;
+  -- 2. Nobody to ask about (a company without an owner).
+  IF p_user IS NULL THEN
+    RETURN false;
+  END IF;
   -- 3. Own per-user override (an explicit false closes the section, also for a member).
-  SELECT tier, feature_flags INTO v_tier, v_flags FROM public.profiles WHERE id = auth.uid();
+  SELECT tier, feature_flags INTO v_tier, v_flags FROM public.profiles WHERE id = p_user;
   v_override := v_flags -> p_section;
   IF jsonb_typeof(v_override) = 'boolean' THEN
     RETURN (v_override #>> '{}')::boolean;
@@ -166,7 +187,35 @@ BEGIN
     RETURN true;
   END IF;
   -- 5. The tariff of a company the user is an active member of (Q3).
-  RETURN coalesce((public.company_inherited_rights(auth.uid()) ->> p_section)::boolean, false);
+  RETURN coalesce((public.company_rights_of(p_user) ->> p_section)::boolean, false);
+END
+$$;
+
+COMMENT ON FUNCTION public.paid_section_of(uuid, text) IS
+  'R2-C: the paid-section rule of a client (switch, override, tariff, company inheritance). Internal: no staff step, no caller check';
+
+REVOKE ALL ON FUNCTION public.paid_section_of(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
+
+-- ─── has_paid_section: staff of the session, else the rule of a client ─────
+CREATE OR REPLACE FUNCTION public.has_paid_section(p_section text)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN false;
+  END IF;
+  IF p_section NOT IN ('point_a', 'point_b', 'market', 'gri_full') THEN
+    RETURN false;
+  END IF;
+  -- Staff of this session (migration 140 rule + the session gate of 143).
+  IF public.current_staff_role() IS NOT NULL OR public.is_active_expert() THEN
+    RETURN true;
+  END IF;
+  RETURN public.paid_section_of(auth.uid(), p_section);
 END
 $$;
 
@@ -176,6 +225,28 @@ COMMENT ON FUNCTION public.has_paid_section(text) IS
 REVOKE ALL ON FUNCTION public.has_paid_section(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.has_paid_section(text) TO authenticated, service_role;
 
+-- ─── The same rule for the OWNERS of many companies at once (review F8) ────
+-- One row per existing company of p_company_ids: its owner and whether the
+-- section is open for him (a company without an owner: open only while the
+-- switch is off). Service role only — it tells about other people's tariffs.
+CREATE OR REPLACE FUNCTION public.paid_sections_for_owners(p_company_ids text[], p_section text)
+RETURNS TABLE (company_id text, owner_id uuid, open boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT c.id, c.user_id, public.paid_section_of(c.user_id, p_section)
+    FROM public.companies c
+   WHERE c.id = ANY (coalesce(p_company_ids, ARRAY[]::text[]))
+$$;
+
+COMMENT ON FUNCTION public.paid_sections_for_owners(text[], text) IS
+  'R2-C: is the paid section open for the OWNER of each company (the client rule, no staff); service role only';
+
+REVOKE ALL ON FUNCTION public.paid_sections_for_owners(text[], text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.paid_sections_for_owners(text[], text) TO service_role;
+
 -- ─── M-4: the report tables a client reads with his session → point_a ──────
 DO $$
 DECLARE
@@ -183,7 +254,7 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'report_versions', 'expert_reviews', 'expert_comments',
-    'diagnostic_findings', 'diagnostic_recommendations'
+    'diagnostic_findings', 'diagnostic_recommendations', 'diagnostic_sessions'
   ] LOOP
     IF to_regclass(format('public.%I', t)) IS NULL THEN
       RAISE NOTICE '148: table % is absent — skipped', t;

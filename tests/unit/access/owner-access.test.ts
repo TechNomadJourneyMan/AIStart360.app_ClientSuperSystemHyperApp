@@ -12,6 +12,8 @@ const s = vi.hoisted(() => ({
   owner: 'owner-1' as string | null,
   ownerError: false,
   recipientThrows: false,
+  rpc: [] as Array<{ fn: string; args: { p_company_ids: string[]; p_section: string } }>,
+  rpcFails: false,
 }))
 
 vi.mock('@/lib/settings/system-settings', async (orig) => ({ ...(await orig<Record<string, unknown>>()), getAccessGatesEnabled: async () => s.gates }))
@@ -25,10 +27,15 @@ vi.mock('@/lib/access/recipient', () => ({
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => (s.ownerError ? { data: null, error: { message: 'x' } } : { data: s.owner === null ? { user_id: null } : { user_id: s.owner }, error: null }) }) }) }),
+    rpc: async (fn: string, args: { p_company_ids: string[]; p_section: string }) => {
+      s.rpc.push({ fn, args })
+      if (s.rpcFails) return { data: null, error: { message: 'down' } }
+      return { data: args.p_company_ids.filter((id) => id !== 'gone').map((id) => ({ company_id: id, owner_id: `o-${id}`, open: !id.startsWith('free') })), error: null }
+    },
   }),
 }))
 
-const { companyOwnerSectionOpen, ownerSectionOpen, REPORT_SECTION, shareSection } = await import('@/lib/access/owner-access')
+const { companiesOwnerSectionOpen, companiesWithClosedSection, companyOwnerSectionOpen, ownerSectionOpen, REPORT_SECTION, shareSection } = await import('@/lib/access/owner-access')
 
 beforeEach(() => {
   s.gates = true
@@ -37,6 +44,8 @@ beforeEach(() => {
   s.owner = 'owner-1'
   s.ownerError = false
   s.recipientThrows = false
+  s.rpc = []
+  s.rpcFails = false
 })
 
 describe('owner-access', () => {
@@ -74,5 +83,20 @@ describe('owner-access', () => {
     s.ownerError = false
     s.owner = null
     expect(await companyOwnerSectionOpen('c-1', 'point_a')).toBe(false)
+  })
+
+  it('review F8: the owners of MANY companies in ONE call (SQL paid_sections_for_owners), duplicates and empties dropped', async () => {
+    const open = await companiesOwnerSectionOpen(['c1', 'free-2', 'c1', '', 'gone'], 'point_a')
+    expect(s.rpc).toHaveLength(1)
+    expect(s.rpc[0]).toEqual({ fn: 'paid_sections_for_owners', args: { p_company_ids: ['c1', 'free-2', 'gone'], p_section: 'point_a' } })
+    expect(Object.fromEntries(open)).toEqual({ c1: true, 'free-2': false })
+    expect(await companiesWithClosedSection(['c1', 'free-2'], 'point_a')).toEqual(new Set(['free-2']))
+    expect((await companiesOwnerSectionOpen([], 'point_a')).size).toBe(0)
+  })
+
+  it('review L-7: a failed batch is UNKNOWN — no company is reported as «closed» (no misleading free-tariff note)', async () => {
+    s.rpcFails = true
+    expect((await companiesOwnerSectionOpen(['c1', 'free-2'], 'point_a')).size).toBe(0)
+    expect((await companiesWithClosedSection(['c1', 'free-2'], 'point_a')).size).toBe(0)
   })
 })

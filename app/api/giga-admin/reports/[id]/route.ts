@@ -6,6 +6,7 @@ import { apiError, dbError } from '@/lib/api-error'
 import { getReportVersion } from '@/lib/reports/versions'
 import { reviewOf } from '@/lib/reports/review-flow'
 import { REPORT_WRONG_STATUS, transitionReportVersion } from '@/lib/admin/staff-actions'
+import { companiesWithClosedSection, REPORT_SECTION } from '@/lib/access/owner-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,11 +31,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   try {
     const item = await getReportVersion(params.id)
     if (!item) return apiError('Версия отчёта не найдена', 404)
-    const review = await reviewOf(params.id)
+    const [review, closed] = await Promise.all([reviewOf(params.id), companiesWithClosedSection([item.company_id], REPORT_SECTION)])
     return NextResponse.json({
       ok: true,
       item,
       review,
+      // R2-C (M-4): Точка А closed for the client → he sees only the notice that the report is ready.
+      clientPaidLocked: closed.has(item.company_id),
       can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run'), review: g.actor.permissions.includes('reports.review') },
     })
   } catch (err) {

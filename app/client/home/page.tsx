@@ -53,8 +53,10 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     const res = await own.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
     return res.error ? null : pickPublishedReport(res.data as Array<Record<string, unknown>> | null)
   }).catch(() => null)
-  // Round 2 (R2-A): which paid sections are closed (one server decision; a failure → nothing locked here, the API still gates).
-  const accessP = getRequestAccess(user.id).then((a) => ({ point_a: !a.sections.point_a, gri_full: !a.sections.gri_full })).catch(() => ({ point_a: false, gri_full: false }))
+  // Round 2 (R2-A): which paid sections are closed (one server decision). R2-C (review F7):
+  // a failed decision → closed (fail closed, as lib/access/recipient.ts) — the page never
+  // offers «Открыть» / PDF of the report that the API would refuse anyway.
+  const accessP = getRequestAccess(user.id).then((a) => ({ point_a: !a.sections.point_a, gri_full: !a.sections.gri_full })).catch(() => ({ point_a: true, gri_full: true }))
   const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report, paidLocked] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', user.id),
