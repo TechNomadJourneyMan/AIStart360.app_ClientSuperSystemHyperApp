@@ -57,8 +57,14 @@ export interface CompanyRow {
   score: number | null
 }
 
-export async function searchCompanies(q: string | null, page = 0, size = 8): Promise<{ items: CompanyRow[]; hasMore: boolean }> {
+/**
+ * `companyIds` — the caller's client scope (lib/telegram/brain/scope.ts
+ * scopeCompanyIds): null = every company, an array = only those (SR-17).
+ */
+export async function searchCompanies(q: string | null, page = 0, size = 8, companyIds: readonly string[] | null = null): Promise<{ items: CompanyRow[]; hasMore: boolean }> {
   const term = q?.trim().slice(0, 80) || null
+  const ids = companyIds ? Array.from(companyIds) : null
+  if (ids && ids.length === 0) return { items: [], hasMore: false }
   // The OFFICIAL score (lib/point-a/official.ts, R-033): the current row and
   // the latest snapshot — no score before the full questionnaire or when v4
   // found too little data, never a v1 number from an incomplete survey.
@@ -77,6 +83,7 @@ export async function searchCompanies(q: string | null, page = 0, size = 8): Pro
            OR p.email ILIKE ${term ? like(term) : null}
            OR p.full_name ILIKE ${term ? like(term) : null}
            OR c.contact_email ILIKE ${term ? like(term) : null})
+      AND (${ids}::text[] IS NULL OR c.id = ANY (${ids}::text[]))
     ORDER BY c.updated_at DESC NULLS LAST, c.name
     LIMIT ${size + 1} OFFSET ${page * size}`
   const items: CompanyRow[] = rows.slice(0, size).map((r) => {
@@ -179,11 +186,15 @@ export async function companyCard(id: string, opts: { includeUnreviewedHypothese
 
 export interface SessionListRow { id: string; company_id: string; company_name: string | null; status: string; stage: string | null; completeness: number | null; started_at: Date; completed_at: Date | null }
 
-export async function recentSessions(page = 0, size = 8, companyId: string | null = null): Promise<{ items: SessionListRow[]; hasMore: boolean }> {
+/** `companyIds` — the caller's client scope, as in searchCompanies (null = every company). */
+export async function recentSessions(page = 0, size = 8, companyId: string | null = null, companyIds: readonly string[] | null = null): Promise<{ items: SessionListRow[]; hasMore: boolean }> {
+  const ids = companyIds ? Array.from(companyIds) : null
+  if (ids && ids.length === 0) return { items: [], hasMore: false }
   const rows = await prisma.$queryRaw<SessionListRow[]>`
     SELECT s.id::text, s.company_id, c.name AS company_name, s.status, s.stage, s.completeness::float AS completeness, s.started_at, s.completed_at
     FROM public.diagnostic_sessions s LEFT JOIN public.companies c ON c.id = s.company_id
     WHERE (${companyId}::text IS NULL OR s.company_id = ${companyId})
+      AND (${ids}::text[] IS NULL OR s.company_id = ANY (${ids}::text[]))
     ORDER BY s.started_at DESC LIMIT ${size + 1} OFFSET ${page * size}`
   return { items: rows.slice(0, size), hasMore: rows.length > size }
 }

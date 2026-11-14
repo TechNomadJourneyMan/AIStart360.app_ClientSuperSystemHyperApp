@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   upserts: [] as Array<Record<string, unknown>>,
   flagFails: false,
   upsertFails: false,
+  recordFails: false,
   cookie: vi.fn(),
 }))
 
@@ -20,6 +21,14 @@ vi.mock('@/lib/crypto/secrets', () => ({ decryptSecret: () => 'SECRET' }))
 vi.mock('@/lib/mfa/totp', () => ({ verifyTOTP: () => true }))
 vi.mock('@/lib/mfa/backup-codes', () => ({ generateBackupCodes: () => ['a', 'b'], hashBackupCodes: async () => ['ha', 'hb'] }))
 vi.mock('@/lib/mfa/step-up', () => ({ MFA_COOKIE_NAME: 'mfa', MFA_COOKIE_OPTIONS: {}, signStepUp: () => 'signed', currentStepUpSessionKey: () => 'session-1' }))
+// SR-01 (143): the record + cookie (lib/mfa/step-up-session.ts has its own tests).
+vi.mock('@/lib/mfa/step-up-session', () => ({
+  STEP_UP_RECORD_FAILED_MESSAGE: 'record failed',
+  issueStepUp: async (jar: { set: (n: string, v: string, o: unknown) => void }) => {
+    if (h.recordFails) throw new Error('step-up record: store_failed')
+    jar.set('mfa', 'signed', {})
+  },
+}))
 // First enrolment of an account without factors (R-003 rules: tests/unit/api/security-factor-stepup.test.ts).
 vi.mock('@/lib/mfa/factor-guard', () => ({ guardFactorChange: async () => ({ ok: true, firstFactor: true, state: { totp: false, passkeys: 0, backupCodes: 0 } }) }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: async () => undefined }))
@@ -43,6 +52,7 @@ beforeEach(() => {
   h.upserts = []
   h.flagFails = false
   h.upsertFails = false
+  h.recordFails = false
   h.cookie.mockClear()
 })
 
@@ -60,6 +70,15 @@ describe('POST /api/v1/security/2fa/verify', () => {
     const res = await verify()
     expect(res.status).toBe(500)
     expect(h.row).toMatchObject({ totp_enabled: false, totp_secret_enc: null, totp_pending_enc: 'enc-pending', backup_codes: [] })
+    expect(h.cookie).not.toHaveBeenCalled()
+  })
+
+  it('SR-01: the step-up record fails → 2FA is on, but no step-up cookie; the user is told to confirm once more', async () => {
+    h.recordFails = true
+    const res = await verify()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, backup_codes: ['a', 'b'], step_up: false, notice: expect.stringContaining('record failed') })
+    expect(h.row).toMatchObject({ totp_enabled: true })
     expect(h.cookie).not.toHaveBeenCalled()
   })
 

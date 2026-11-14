@@ -7,7 +7,7 @@ import { stepUpSessionKeyFromCookies } from './session-binding'
  * CURRENT Supabase session. Node runtime (API routes). Middleware uses the
  * Web-Crypto verifier in `step-up-edge.ts`. Same token format:
  *
- *   base64url(`v2.${userId}.${sessionKey}.${expiryMs}`) "." hex(HMAC-SHA256)
+ *   base64url(`v3.${userId}.${sessionKey}.${expiryMs}`) "." hex(HMAC-SHA256)
  *
  * `sessionKey` is the GoTrue `session_id` of the access token
  * (lib/mfa/session-binding.ts). R-132: the proof used to name the user only, so
@@ -15,11 +15,18 @@ import { stepUpSessionKeyFromCookies } from './session-binding'
  * skipped the second factor. Every sign-in is a new session, so now it does
  * not. Proofs in the old `${userId}.${expiryMs}` format are refused (users pass
  * the second factor once more after the release).
+ *
+ * v3 (SR-01, migration 143): every proof since then has a staff_mfa_sessions
+ * record in the database (lib/mfa/step-up-session.ts). v2 proofs have none —
+ * the app would accept them while RLS shows staff nothing — so they are
+ * refused and everybody passes the second factor once more after the release.
  */
 
 export const MFA_COOKIE_NAME = 'aistart360_mfa'
-const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000 // 12h
-const VERSION = 'v2'
+/** Lifetime of a step-up proof — the cookie and its server record (staff_mfa_sessions, 143). */
+export const STEP_UP_TTL_MS = 12 * 60 * 60 * 1000 // 12h
+const DEFAULT_TTL_MS = STEP_UP_TTL_MS
+const VERSION = 'v3'
 
 export const MFA_COOKIE_OPTIONS = {
   httpOnly: true,

@@ -8,6 +8,11 @@ import GriSection from './GriSection'
 import ExpertMessages from '@/components/client/ExpertMessages'
 import PointADashboardSummary from '@/components/dashboard/PointADashboardSummary'
 import { pointAStatHint } from '@/lib/user-dashboard/point-a-hint'
+import {
+  IMPERSONATION_ACCOUNT_LOCKED_DETAILS,
+  IMPERSONATION_ACCOUNT_LOCKED_MESSAGE,
+  IMPERSONATION_UNAVAILABLE_KEY,
+} from '@/lib/impersonation/account-pages'
 
 export interface UserHomeData {
   fullName: string
@@ -23,6 +28,26 @@ export interface UserHomeData {
   sections: Array<{ key: string; title: string; description: string | null; icon: string | null; href: string }>
   materials: Array<{ slug: string; title: string; summary: string | null; icon: string | null }>
   unavailableSection: string | null
+}
+
+/**
+ * Why the user landed here instead of the page they opened: a section switched
+ * off in GIGA-CRM, or (SR-07b) an account page closed during an impersonation.
+ */
+export function UnavailableNotice({ section }: { section: string }) {
+  if (section === IMPERSONATION_UNAVAILABLE_KEY) {
+    return (
+      <div role="status" className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] px-4 py-3 text-sm text-amber-200">
+        <p className="font-semibold">{IMPERSONATION_ACCOUNT_LOCKED_MESSAGE}</p>
+        <p className="mt-1 text-amber-200/80">{IMPERSONATION_ACCOUNT_LOCKED_DETAILS}</p>
+      </div>
+    )
+  }
+  return (
+    <p role="status" className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] px-4 py-3 text-sm text-amber-200">
+      Этот раздел сейчас недоступен для вашего аккаунта. Если он нужен — напишите нам, мы поможем.
+    </p>
+  )
 }
 
 const STATUS_VIEW: Record<string, { label: string; tone: string }> = {
@@ -75,11 +100,7 @@ export default function UserHome({ data }: { data: UserHomeData }) {
     // (components/client/ClientNav, mounted by app/client/layout.tsx).
     <div className="text-on-surface">
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        {data.unavailableSection && (
-          <p role="status" className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] px-4 py-3 text-sm text-amber-200">
-            Этот раздел сейчас недоступен для вашего аккаунта. Если он нужен — напишите нам, мы поможем.
-          </p>
-        )}
+        {data.unavailableSection && <UnavailableNotice section={data.unavailableSection} />}
 
         {/* Hero */}
         <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-7">

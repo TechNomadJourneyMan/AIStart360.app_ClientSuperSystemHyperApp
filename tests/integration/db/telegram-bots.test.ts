@@ -49,6 +49,12 @@ describe.skipIf(!dbTestsEnabled)('telegram bots (095)', async () => {
   const ENV = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'TELEGRAM_ADMIN_BOT_TOKEN', 'TELEGRAM_ADMIN_WEBHOOK_SECRET', 'TELEGRAM_EXPERT_BOT_TOKEN',
     'TELEGRAM_EXPERT_WEBHOOK_SECRET', 'TELEGRAM_EXPERT_BOT_USERNAME', 'NOTIFY_QUIET_HOURS', 'TELEGRAM_ADMIN_CHAT_IDS', 'TELEGRAM_CHAT_ID', 'ADMIN_NOTIFICATION_EMAIL', 'ADMIN_EMAIL', 'TELEGRAM_CALLBACK_SECRET']
 
+  /** SR-17: the expert sees / hears about a client only once the client is assigned to them. */
+  const assignClient = (assigneeId: string | null) => assigneeId
+    ? prisma.$executeRaw`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES (${client.id}::uuid, ${assigneeId}::uuid)
+        ON CONFLICT (user_id) DO UPDATE SET assignee_id = EXCLUDED.assignee_id`
+    : prisma.$executeRaw`DELETE FROM public.user_assignments WHERE user_id = ${client.id}::uuid`
+
   async function user(id: string, email: string, role: string, status = 'approved') {
     await prisma.$executeRaw`INSERT INTO auth.users (id, email) VALUES (${id}::uuid, ${email})`
     await prisma.$executeRaw`UPDATE public.profiles SET role = ${role}, status = ${status}, full_name = ${`Имя ${email}`} WHERE id = ${id}::uuid`
@@ -92,6 +98,7 @@ describe.skipIf(!dbTestsEnabled)('telegram bots (095)', async () => {
     await prisma.$executeRaw`DELETE FROM public.notification_events WHERE type LIKE 'test.tgbots%'`
     await prisma.$executeRaw`DELETE FROM public.telegram_bot_deliveries WHERE dedupe_key LIKE ${`${tag}%`}`
     await prisma.$executeRaw`DELETE FROM public.companies WHERE id = ${companyId}`
+    await prisma.$executeRaw`DELETE FROM public.user_assignments WHERE user_id = ${client.id}::uuid OR assignee_id = ${expert.id}::uuid`
     await prisma.$executeRaw`DELETE FROM auth.users WHERE id IN (${staff.id}::uuid, ${expert.id}::uuid, ${client.id}::uuid, ${pending.id}::uuid)`
     for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
     await closeTestPool()
@@ -163,6 +170,14 @@ describe.skipIf(!dbTestsEnabled)('telegram bots (095)', async () => {
   it('expert notifications: once per key, personal level and quiet hours respected', async () => {
     calls.length = 0
     const n = { kind: 'diagnostic.completed' as const, dedupeKey: `${tag}:diag`, companyId, lines: ['Клиент: Ромашка', 'Точка А: 64/100'] }
+    // SR-17: not assigned → the expert hears nothing about this client (nor about a notice without a client).
+    await assignClient(null)
+    const unassigned = await notifyExperts({ ...n, dedupeKey: `${tag}:unassigned` }, { fetchImpl: fakeFetch })
+    expect(unassigned.find((d) => d.chatId === String(expert.tg))).toBeUndefined()
+    await assignClient(expert.id)
+    const noClient = await notifyExperts({ ...n, companyId: null, dedupeKey: `${tag}:noclient` }, { fetchImpl: fakeFetch })
+    expect(noClient.find((d) => d.chatId === String(expert.tg))).toBeUndefined()
+    calls.length = 0
     const first = await notifyExperts(n, { fetchImpl: fakeFetch })
     expect(first.filter((d) => d.status === 'sent').map((d) => d.chatId)).toEqual([String(expert.tg)])
     expect(calls[0].url).toContain('/botexpert-token/sendMessage')
@@ -244,6 +259,14 @@ describe.skipIf(!dbTestsEnabled)('telegram bots (095)', async () => {
     const press = (data: string | null) => handleUpdate(expertRouter(), { update_id: uid++, callback_query: { id: `q${uid}`, from, data: data!, message: { message_id: 1, chat: { id: expert.tg } } } }, deps)
     const text = (t: string) => handleUpdate(expertRouter(), { update_id: uid++, message: { message_id: uid, chat: { id: expert.tg, type: 'private' }, from, text: t } }, deps)
     calls.length = 0
+    // SR-17: an unassigned client is not shown, not found by search.
+    await assignClient(null)
+    expect(await press(signCallback('expert', 'cl.c', companyId))).toBe('callback')
+    expect(lastText()).toContain('Клиент вам не назначен')
+    expect(await press(signCallback('expert', 'cl.s'))).toBe('callback')
+    expect(await text(`Ромашка ${tag}`)).toBe('step')
+    expect(lastText()).toContain('Ничего не найдено')
+    await assignClient(expert.id)
     expect(await press(signCallback('expert', 'cl.c', companyId))).toBe('callback')
     expect(lastText()).toContain(`Ромашка ${tag}`)
     expect(lastText()).toContain('гипотеза ИИ, не проверена')

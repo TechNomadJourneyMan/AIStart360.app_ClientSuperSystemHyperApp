@@ -12,7 +12,8 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getWebAuthnConfig } from '@/lib/webauthn/config'
 import { getCredentialForUser, updateCredentialCounter } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { issueStepUp, stepUpFailure } from '@/lib/mfa/step-up-session'
 import { logActivity } from '@/lib/activity/log'
 import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
@@ -82,7 +83,14 @@ export async function POST(request: Request) {
   if (!sessionKey) {
     return NextResponse.json({ ok: false, error: 'Сессия не найдена. Войдите заново.' }, { status: 401 })
   }
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id, sessionKey), MFA_COOKIE_OPTIONS)
+  // SR-01 (143): recorded for the database first; no record → no cookie.
+  try {
+    await issueStepUp(jar, user.id, sessionKey, 'passkey')
+  } catch (err) {
+    console.error('[webauthn/authenticate] step-up record failed', err instanceof Error ? err.message : err)
+    const { status, error } = stepUpFailure(err)
+    return NextResponse.json({ ok: false, error }, { status })
+  }
 
   await logActivity({
     userId: user.id, action: 'security.2fa_passed', category: 'security',

@@ -11,7 +11,8 @@ import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity, setMfaMetadataFlag } from '@/lib/mfa/store'
-import { MFA_COOKIE_CLEAR_OPTIONS, MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
+import { MFA_COOKIE_CLEAR_OPTIONS, MFA_COOKIE_NAME, currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { forgetStepUpSession } from '@/lib/mfa/step-up-session'
 import { guardFactorChange, lastFactorRefusal } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
@@ -64,6 +65,8 @@ export async function POST(request: Request) {
 
   const jar = await cookies()
   jar.set(MFA_COOKIE_NAME, '', MFA_COOKIE_CLEAR_OPTIONS)
+  // SR-01 (143): the database record of this step-up goes with the cookie.
+  await forgetStepUpSession(currentStepUpSessionKey())
 
   await logActivity({
     userId: user.id,

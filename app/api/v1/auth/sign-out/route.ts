@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { impersonationOfThisSession } from '@/lib/impersonation/guard'
 import { endImpersonationInThisBrowser } from '@/lib/impersonation/exit'
+import { forgetStepUpSessionsOfUser } from '@/lib/mfa/step-up-session'
 
 /**
  * POST /api/v1/auth/sign-out — «Выйти» в кабинете (SR-06).
@@ -35,6 +36,9 @@ export async function POST(req: NextRequest) {
       console.warn('[auth/sign-out]', error.message)
       return NextResponse.json({ ok: false, error: 'Не удалось выйти. Повторите.' }, { status: 500 })
     }
+    // SR-01 (143): step-up records of the ended sessions (global sign-out).
+    // Best-effort: GoTrue already deleted the sessions, which alone voids them.
+    await forgetStepUpSessionsOfUser(user.id)
   }
   return NextResponse.json({ ok: true, impersonation: false, redirect: '/login' })
 }

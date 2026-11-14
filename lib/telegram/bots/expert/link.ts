@@ -6,13 +6,19 @@
  * table row and prefix: the expert asks their cabinet (/expert/profile →
  * «Привязать Telegram») for a link; only the SHA-256 of a random code is
  * stored with a 15-minute TTL; t.me/<expert bot>?start=expert_<code> binds
- * the sender. Access is re-checked on every update: an approved profile whose
- * role is one of EXPERT_ROLES (expert / admin / super_admin), or the person is
- * a SuperExpert (staff_roles) — lib/expert-auth.ts isExpertBotMember.
+ * the sender. Access is re-checked on every update by the rule of migration
+ * 140 (lib/access/actor.ts isExpertBotActor, SR-17): an active expert
+ * (profiles.role 'expert', approved), or approved staff Admin / Super Admin /
+ * SuperExpert from staff_roles. A legacy profiles.role admin / super_admin
+ * without a staff_roles row is NOT admitted. The principal carries the
+ * person's client scope: 'all' or 'assigned' (only clients whose
+ * user_assignments.assignee_id is them).
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/db'
-import { expertBotRole, isExpertBotMember } from '@/lib/expert-auth'
+import { actorFromRows, expertBotRoleOf, isExpertBotActor } from '@/lib/access/actor'
+import type { StaffRole } from '@/lib/admin/rbac'
+import { botClientScopeOf } from '@/lib/telegram/brain/scope'
 import { deepLink } from '../registry'
 
 const TTL_MINUTES = 15
@@ -58,22 +64,58 @@ export async function consumeExpertLinkCode(args: {
 
 export interface ExpertPrincipal {
   userId: string
+  /** 'expert', or the staff role 'admin' / 'super_admin' / 'super_expert' (staff_roles only). */
   role: string
   email: string | null
   name: string | null
+  /** staff_roles.role of an approved staff member; null for an expert. */
+  staffRole?: StaffRole | null
+  /**
+   * Which clients the bot shows (lib/telegram/brain/scope.ts): 'all', or
+   * 'assigned' — only clients assigned to this person. Absent = 'assigned'
+   * (fail closed).
+   */
+  clientScope?: 'all' | 'assigned'
 }
 
-/** The expert behind a Telegram account: linked, approved, expert-bot member (expert portal role or SuperExpert). */
+export interface ExpertLinkRow {
+  user_id: string
+  role: string | null
+  status: string | null
+  staff_role: string | null
+  client_scope: string | null
+  email: string | null
+  full_name: string | null
+}
+
+/** The rule of the bot over one row (pure; tested directly): principal or null. */
+export function expertPrincipalOf(r: ExpertLinkRow | null | undefined): ExpertPrincipal | null {
+  if (!r) return null
+  const actor = actorFromRows(r.user_id, {
+    profile: { role: r.role, status: r.status },
+    staff: r.staff_role ? { role: r.staff_role, client_scope: r.client_scope } : null,
+  })
+  if (!isExpertBotActor(actor)) return null
+  const scope = botClientScopeOf(r.user_id, r)
+  return {
+    userId: r.user_id,
+    role: expertBotRoleOf(actor),
+    email: r.email,
+    name: r.full_name,
+    staffRole: actor.staffRole,
+    clientScope: scope === 'all' ? 'all' : 'assigned',
+  }
+}
+
+/** The expert behind a Telegram account: linked, approved, admitted by isExpertBotActor (migration 140). */
 export async function expertByTelegramUser(telegramUserId: number): Promise<ExpertPrincipal | null> {
-  const rows = await prisma.$queryRaw<Array<{ user_id: string; role: string; staff_role: string | null; email: string | null; full_name: string | null }>>`
-    SELECT l.user_id::text, p.role, s.role AS staff_role, p.email, p.full_name
+  const rows = await prisma.$queryRaw<ExpertLinkRow[]>`
+    SELECT l.user_id::text, p.role, p.status, s.role AS staff_role, s.client_scope, p.email, p.full_name
     FROM public.telegram_bot_links l
     JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
     LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
     WHERE l.bot = 'expert' AND l.telegram_user_id = ${BigInt(telegramUserId)} AND l.linked_at IS NOT NULL`
-  const r = rows[0]
-  if (!r || !isExpertBotMember(r.role, r.staff_role)) return null
-  return { userId: r.user_id, role: expertBotRole(r.role, r.staff_role), email: r.email, name: r.full_name }
+  return expertPrincipalOf(rows[0])
 }
 
 export async function expertLinkStatus(userId: string): Promise<{ linked: boolean; username: string | null; minLevel: string }> {

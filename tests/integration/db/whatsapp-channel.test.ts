@@ -488,22 +488,43 @@ describe.skipIf(!dbTestsEnabled)('whatsapp channel (104)', async () => {
 
   describe('expert fan-out, escalation, report review, client digest', () => {
     it('experts get the expert_notification template by their own level; duplicates are not resent', async () => {
+      // SR-17: e1 — the expert assigned to the client; e2 — staff SuperExpert (scope 'all');
+      // e3 — an expert of other clients; e4 — a legacy profiles.role admin without staff_roles.
       const e1 = await mkUser('expert')
-      const e2 = await mkUser('expert')
+      const e2 = await mkUser('client', 'super_expert')
+      const e3 = await mkUser('expert')
+      const e4 = await mkUser('admin')
       const p1 = phone()
       const p2 = phone()
+      const p3 = phone()
+      const p4 = phone()
       await link(e1, 'expert', p1, { minLevel: 'INFO' })
       await link(e2, 'expert', p2, { minLevel: 'CRITICAL' })
-      const notice = { kind: 'diagnostic.completed' as const, dedupeKey: `${tag}:exp:1`, lines: ['Клиент: Ромашка'], level: 'SUCCESS' as const }
+      await link(e3, 'expert', p3, { minLevel: 'INFO' })
+      await link(e4, 'expert', p4, { minLevel: 'INFO' })
+      const owner = await mkUser()
+      const companyId = randomUUID()
+      await prisma.$executeRaw`INSERT INTO public.companies (id, name, user_id, "updatedAt") VALUES (${companyId}, ${`Ромашка ${tag} exp`}, ${owner}::uuid, now())`
+      await prisma.$executeRaw`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES (${owner}::uuid, ${e1}::uuid)`
+      const notice = { kind: 'diagnostic.completed' as const, dedupeKey: `${tag}:exp:1`, companyId, lines: ['Клиент: Ромашка'], level: 'SUCCESS' as const }
       const out = await notifyExpertsWhatsApp(notice)
       expect(out).toContainEqual(expect.objectContaining({ userId: e1, status: 'queued' }))
       expect(out).toContainEqual({ userId: e2, status: 'skipped', reason: 'below_personal_level' })
+      expect(out.find((d) => d.userId === e3)).toBeUndefined()
+      expect(out.find((d) => d.userId === e4)).toBeUndefined()
+      expect(sendsTo(p3)).toHaveLength(0)
+      expect(sendsTo(p4)).toHaveLength(0)
       expect(sendsTo(p1)).toHaveLength(1)
       expect(sendsTo(p1)[0].body.template.name).toBe('expert_notification')
       expect(sendsTo(p2)).toHaveLength(0)
       const again = await notifyExpertsWhatsApp(notice)
       expect(again).toContainEqual({ userId: e1, status: 'skipped', reason: 'duplicate' })
       expect(sendsTo(p1)).toHaveLength(1)
+      // A notice without a client reaches scope 'all' only.
+      const general = await notifyExpertsWhatsApp({ ...notice, companyId: null, dedupeKey: `${tag}:exp:2` })
+      expect(general.find((d) => d.userId === e1)).toBeUndefined()
+      expect(general).toContainEqual({ userId: e2, status: 'skipped', reason: 'below_personal_level' })
+      await prisma.$executeRaw`DELETE FROM public.companies WHERE id = ${companyId}`
     })
 
     it('the escalation adapter sends an approved template, not free-form text', async () => {
@@ -531,12 +552,19 @@ describe.skipIf(!dbTestsEnabled)('whatsapp channel (104)', async () => {
       const owner = await mkUser()
       const companyId = randomUUID()
       await prisma.$executeRaw`INSERT INTO public.companies (id, name, user_id, "updatedAt") VALUES (${companyId}, ${`Ромашка ${tag}`}, ${owner}::uuid, now())`
+      // SR-17: only the expert assigned to the client; another expert named explicitly gets nothing.
+      await prisma.$executeRaw`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES (${owner}::uuid, ${ex}::uuid)`
+      const other = await mkUser('expert')
+      const po = phone()
+      await link(other, 'expert', po)
       const [v] = await prisma.$queryRaw<Array<{ id: string }>>`
         INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by)
         VALUES (${companyId}, 'point_a', 3, 'draft', 'Диагностика бизнеса', '{}'::jsonb, '{}'::jsonb, ${`hash-${tag}`}, 'test')
         RETURNING id::text`
-      const res = await enqueueReportReviewWhatsApp(v.id, [ex])
+      const res = await enqueueReportReviewWhatsApp(v.id, [ex, other])
       expect(res).toEqual([expect.objectContaining({ userId: ex, created: true })])
+      expect(sendsTo(po)).toHaveLength(0)
+      expect(await enqueueReportReviewWhatsApp(v.id, [])).toEqual([]) // an empty list is nobody, not everyone
       const c = sendsTo(p)
       expect(c).toHaveLength(1)
       expect(c[0].body.template.name).toBe('report_review')

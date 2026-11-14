@@ -26,6 +26,11 @@
  *     and either the profile role 'expert' or a staff_roles role holding
  *     reports.review — the legacy profile roles admin / super_admin without a
  *     staff_roles row no longer count (SR-03);
+ *   • the client scope (SR-17): an expert decides only for a client assigned
+ *     to them (user_assignments.assignee_id = reviewer); staff by their
+ *     client scope ('all', or assigned clients only) — the same rule as
+ *     guardExpertReport / requireGigaReport on the web, now also for the
+ *     Telegram / WhatsApp path. Refused with code 'not_assigned';
  *   • the second factor: web callers pass `mfaVerified` after their gate
  *     (resolveExpert / requireGiga run staffMfaGate); Telegram has no step-up
  *     cookie, so there the platform rule is applied — when staff 2FA is
@@ -40,6 +45,7 @@
 import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { hasPermission, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
+import { actorFromRows, type ActorClientScope } from '@/lib/access/actor'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { coerceSetting } from '@/lib/settings/registry'
@@ -69,6 +75,8 @@ export interface Reviewer {
   staffRole: StaffRole | null
   email: string | null
   name: string | null
+  /** Clients the reviewer may decide for (lib/access/actor.ts): 'all' or 'assigned' ('none' → cannot review). */
+  clientScope?: ActorClientScope
 }
 
 /** reports.review: profile role 'expert' (an active expert), or a staff role that holds the permission. */
@@ -80,8 +88,8 @@ export function canReviewReports(p: { profileRole: string | null; staffRole: Sta
 /** The reviewer as stored now: approved profile only (pending / blocked / archived → null). */
 export async function loadReviewer(userId: string): Promise<Reviewer | null> {
   if (!UUID.test(userId)) return null
-  const rows = await prisma.$queryRaw<Array<{ id: string; role: string | null; status: string | null; email: string | null; full_name: string | null; staff_role: string | null }>>`
-    SELECT p.id::text, p.role, p.status, p.email, p.full_name, s.role AS staff_role
+  const rows = await prisma.$queryRaw<Array<{ id: string; role: string | null; status: string | null; email: string | null; full_name: string | null; staff_role: string | null; client_scope: string | null }>>`
+    SELECT p.id::text, p.role, p.status, p.email, p.full_name, s.role AS staff_role, s.client_scope
     FROM public.profiles p LEFT JOIN public.staff_roles s ON s.user_id = p.id
     WHERE p.id = ${userId}::uuid`
   const r = rows[0]
@@ -89,7 +97,29 @@ export async function loadReviewer(userId: string): Promise<Reviewer | null> {
   // Staff only from staff_roles (migration 140): the legacy profiles.role
   // super_admin alone is not staff.
   const staffRole = isStaffRole(r.staff_role) ? r.staff_role : null
-  return { userId: r.id, profileRole: r.role, staffRole, email: r.email, name: r.full_name }
+  const actor = actorFromRows(r.id, { profile: { role: r.role, status: r.status }, staff: r.staff_role ? { role: r.staff_role, client_scope: r.client_scope } : null })
+  return { userId: r.id, profileRole: r.role, staffRole, email: r.email, name: r.full_name, clientScope: actor.clientScope }
+}
+
+/**
+ * May the reviewer decide for the client owning `companyId`? Scope 'all' —
+ * yes; 'assigned' — only when the company's owner is assigned to the reviewer
+ * (user_assignments); otherwise no. Fails closed (false) on a read error.
+ */
+export async function reviewerCoversCompany(reviewer: Reviewer, companyId: string): Promise<boolean> {
+  const scope = reviewer.clientScope ?? 'assigned'
+  if (scope === 'all') return true
+  if (scope === 'none') return false
+  try {
+    const rows = await prisma.$queryRaw<Array<{ ok: number }>>`
+      SELECT 1 AS ok FROM public.companies c
+      JOIN public.user_assignments a ON a.user_id = c.user_id
+      WHERE c.id = ${companyId} AND a.assignee_id = ${reviewer.userId}::uuid
+      LIMIT 1`
+    return rows.length > 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -215,11 +245,12 @@ export type DecideOutcome =
       superseded: string[]
       rerun: RerunOutcome | null
     }
-  | { ok: false; code: 'forbidden' | 'mfa_required' | 'not_found' | 'comment_required' | 'audit_unavailable' }
+  | { ok: false; code: 'forbidden' | 'not_assigned' | 'mfa_required' | 'not_found' | 'comment_required' | 'audit_unavailable' }
   | { ok: false; code: 'wrong_status'; status: string | null; decided: ReviewDecision | null }
 
 export const DECIDE_ERRORS: Record<Exclude<DecideOutcome, { ok: true }>['code'], string> = {
   forbidden: 'Нет права подтверждать отчёты',
+  not_assigned: 'Клиент вам не назначен',
   mfa_required: 'Для решения по отчёту включите двухфакторную аутентификацию в кабинете',
   not_found: 'Версия отчёта не найдена',
   comment_required: `Опишите, что поправить (от ${REVIEW_COMMENT_MIN} символов)`,
@@ -277,6 +308,8 @@ export async function decideReportReview(input: DecideInput): Promise<DecideOutc
 
   const head = await reviewVersionHead(input.versionId)
   if (!head) return { ok: false, code: 'not_found' }
+  // SR-17: only for a client of the reviewer (before anything about the version is told).
+  if (!(await reviewerCoversCompany(reviewer, head.company_id))) return { ok: false, code: 'not_assigned' }
 
   // Idempotency before the audit entry: a repeated press changes nothing and writes nothing.
   const prior = await reviewOf(head.id)

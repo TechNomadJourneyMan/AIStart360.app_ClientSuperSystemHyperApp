@@ -7,6 +7,15 @@
  *   report.published       a report version published in GIGA or the admin bot
  *   client.approved        a registration approved (lib/users/access-requests.ts)
  *
+ * Audience (SR-17, lib/notifications/expert-audience.ts): people the expert
+ * bot admits (migration 140 rule — never a legacy profiles.role admin /
+ * super_admin alone) who may read the client of the notice: scope 'all'
+ * (staff Admin / Super Admin, SuperExpert with client_scope 'all') — every
+ * client; an expert (or a SuperExpert limited to assigned clients) — only the
+ * client assigned to them. A notice without a company reaches scope 'all'
+ * only (e.g. «новый клиент одобрен» before anyone is assigned). An unreadable
+ * audience fails closed: nobody is notified, the error is logged.
+ *
  * Rules (lib/notifications/levels.ts): the expert's own level (default INFO)
  * and mute, platform quiet hours (night: only CRITICAL). The platform Telegram
  * threshold for STAFF (WARNING) does not apply — these are the expert's work
@@ -15,7 +24,8 @@
  * configured nothing is read or sent.
  */
 import { prisma } from '@/lib/db'
-import { expertBotRole, isExpertBotMember } from '@/lib/expert-auth'
+import { actorFromRows, expertBotRoleOf } from '@/lib/access/actor'
+import { clientOfCompany, hearsAboutClient } from '@/lib/notifications/expert-audience'
 import { inQuietHours, LEVEL_ICONS, reaches, routingConfig, type OrderedLevel } from '@/lib/notifications/levels'
 import type { PlatformEventRow } from '@/lib/events/platform'
 import { getSiteUrl } from '@/lib/site-url'
@@ -45,16 +55,30 @@ export interface ExpertDelivery { chatId: string; status: 'sent' | 'failed' | 's
 
 interface Recipient { userId: string; chatId: string; minLevel: OrderedLevel; mutedUntil: Date | null; role: string }
 
-async function linkedExperts(): Promise<Recipient[]> {
-  const rows = await prisma.$queryRaw<Array<{ user_id: string; chat_id: string; min_level: OrderedLevel; muted_until: Date | null; role: string; staff_role: string | null }>>`
-    SELECT l.user_id::text, l.chat_id, l.min_level, l.muted_until, p.role, s.role AS staff_role
-    FROM public.telegram_bot_links l
-    JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
-    LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
-    WHERE l.bot = 'expert' AND l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL`
-  return rows
-    .filter((r) => isExpertBotMember(r.role, r.staff_role))
-    .map((r) => ({ userId: r.user_id, chatId: r.chat_id, minLevel: r.min_level, mutedUntil: r.muted_until, role: expertBotRole(r.role, r.staff_role) }))
+/** Linked people who may hear about the client of `companyId` (see the header); [] when unreadable. */
+async function linkedExperts(companyId: string | null | undefined): Promise<Recipient[]> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{
+      user_id: string; chat_id: string; min_level: OrderedLevel; muted_until: Date | null; role: string | null; status: string | null; staff_role: string | null; client_scope: string | null
+    }>>`
+      SELECT l.user_id::text, l.chat_id, l.min_level, l.muted_until, p.role, p.status, s.role AS staff_role, s.client_scope
+      FROM public.telegram_bot_links l
+      JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
+      LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
+      WHERE l.bot = 'expert' AND l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL`
+    if (!rows.length) return []
+    const client = companyId ? await clientOfCompany(companyId) : null
+    const out: Recipient[] = []
+    for (const r of rows) {
+      const actor = actorFromRows(r.user_id, { profile: { role: r.role, status: r.status }, staff: r.staff_role ? { role: r.staff_role, client_scope: r.client_scope } : null })
+      if (!hearsAboutClient(actor, client)) continue
+      out.push({ userId: r.user_id, chatId: r.chat_id, minLevel: r.min_level, mutedUntil: r.muted_until, role: expertBotRoleOf(actor) })
+    }
+    return out
+  } catch (err) {
+    console.error('[telegram/expert] audience unreadable, nobody notified:', err instanceof Error ? err.message.split('\n')[0] : err)
+    return []
+  }
 }
 
 async function claim(key: string, chatId: string, status: 'sent' | 'skipped', reason: string | null): Promise<boolean> {
@@ -84,7 +108,7 @@ export async function notifyExperts(n: ExpertNotice, opts: { fetchImpl?: typeof 
   if (n.reportId) row.push({ text: '📄 PDF', url: getSiteUrl(`/api/v1/reports/${n.reportId}/pdf`) })
 
   const out: ExpertDelivery[] = []
-  for (const r of await linkedExperts()) {
+  for (const r of await linkedExperts(n.companyId)) {
     const skipReason = !reaches(level, r.minLevel) ? 'below_personal_level'
       : r.mutedUntil && r.mutedUntil > now && level !== 'CRITICAL' ? 'muted'
         : quiet ? 'quiet_hours' : null

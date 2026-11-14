@@ -16,6 +16,8 @@ import {
   type NotifyCategory,
 } from '@/lib/notifications/preferences'
 import { actionLabel } from '@/lib/ui/pending'
+import type { AccountLock } from '@/lib/impersonation/account-pages'
+import AccountLockedNotice from '@/components/impersonation/AccountLockedNotice'
 
 export interface SettingsInitial {
   firstName: string
@@ -48,7 +50,12 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
-export function SettingsClient({ initial, preferences }: { initial: SettingsInitial; preferences: Prefs }) {
+export function SettingsClient({ initial, preferences, accountLock = null }: {
+  initial: SettingsInitial
+  preferences: Prefs
+  /** SR-07b: the session is an impersonation (or that could not be told) — no account changes. */
+  accountLock?: AccountLock
+}) {
   const [tab, setTab] = useState<TabId>('profile')
   const [mfaRequired, setMfaRequired] = useState(false)
 
@@ -82,13 +89,13 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
       </div>
 
       <div className="lg:col-span-3 space-y-6" role="tabpanel">
-        {mfaRequired && tab === 'security' && (
+        {mfaRequired && tab === 'security' && !accountLock && (
           <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             Для входа в панель управления нужна двухфакторная защита. Включите 2FA ниже и снова откройте панель.
           </div>
         )}
         {tab === 'profile' && <ProfilePanel initial={initial} />}
-        {tab === 'security' && <SecurityPanel email={initial.email} />}
+        {tab === 'security' && <SecurityTabContent email={initial.email} lock={accountLock} />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}
         {tab === 'appearance' && <AppearancePanel />}
         {tab === 'assistant' && <AssistantSettingsPanel />}
@@ -167,6 +174,18 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
 }
 
 // ── Безопасность — полностью проработанный раздел ────────────────────────────
+/**
+ * SR-07b: the security tab changes the account itself (password, 2FA factors,
+ * passkeys, sessions). During an impersonation — or when that could not be
+ * told — it shows why instead of the controls: no button there can fire a
+ * request. The API refuses these calls too (lib/impersonation/guard.ts) and
+ * middleware does not open /settings?tab=security in this mode.
+ */
+export function SecurityTabContent({ email, lock }: { email: string; lock: AccountLock }) {
+  if (lock) return <AccountLockedNotice lock={lock} />
+  return <SecurityPanel email={email} />
+}
+
 function SecurityPanel({ email }: { email: string }) {
   return (
     <>

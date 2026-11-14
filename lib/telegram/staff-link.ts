@@ -10,7 +10,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/db'
-import { isStaffRole, type StaffRole } from '@/lib/admin/rbac'
+import { effectiveClientScope, type StaffRole } from '@/lib/admin/rbac'
+import { actorFromRows } from '@/lib/access/actor'
 import { deepLink, staffBot } from './bots/registry'
 
 const TTL_MINUTES = 15
@@ -64,20 +65,43 @@ export interface LinkedStaff {
   userId: string
   role: StaffRole
   email: string | null
+  /** GIGA client scope of the role (lib/admin/rbac.ts effectiveClientScope). */
+  clientScope: 'all' | 'assigned'
 }
 
-/** Staff user behind a Telegram account, if linked, approved and still staff. */
+export interface StaffLinkRow {
+  user_id: string
+  profile_role: string | null
+  status: string | null
+  staff_role: string | null
+  client_scope: string | null
+  email: string | null
+}
+
+/**
+ * The rule over one row (pure; tested directly). Staff ONLY from staff_roles
+ * of an approved profile (migration 140, SR-08): a legacy profiles.role
+ * super_admin without a staff_roles row is not staff in the admin bot.
+ */
+export function linkedStaffOf(r: StaffLinkRow | null | undefined): LinkedStaff | null {
+  if (!r) return null
+  const actor = actorFromRows(r.user_id, {
+    profile: { role: r.profile_role, status: r.status },
+    staff: r.staff_role ? { role: r.staff_role, client_scope: r.client_scope } : null,
+  })
+  if (!actor.staffRole) return null
+  return { userId: r.user_id, role: actor.staffRole, email: r.email, clientScope: effectiveClientScope(actor.staffRole, r.client_scope) }
+}
+
+/** Staff user behind a Telegram account, if linked, approved and still staff (staff_roles). */
 export async function staffByTelegramUser(telegramUserId: number): Promise<LinkedStaff | null> {
-  const rows = await prisma.$queryRaw<Array<{ user_id: string; profile_role: string | null; staff_role: string | null; email: string | null }>>`
-    SELECT l.user_id, p.role AS profile_role, s.role AS staff_role, p.email
+  const rows = await prisma.$queryRaw<StaffLinkRow[]>`
+    SELECT l.user_id::text, p.role AS profile_role, p.status, s.role AS staff_role, s.client_scope, p.email
     FROM public.staff_telegram_links l
     JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
     LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
     WHERE l.telegram_user_id = ${BigInt(telegramUserId)} AND l.linked_at IS NOT NULL`
-  const r = rows[0]
-  if (!r) return null
-  const role: StaffRole | null = r.profile_role === 'super_admin' ? 'super_admin' : isStaffRole(r.staff_role) ? r.staff_role : null
-  return role ? { userId: r.user_id, role, email: r.email } : null
+  return linkedStaffOf(rows[0])
 }
 
 export async function unlinkStaffTelegram(userId: string): Promise<void> {

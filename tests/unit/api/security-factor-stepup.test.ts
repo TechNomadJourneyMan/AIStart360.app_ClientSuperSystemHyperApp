@@ -26,6 +26,9 @@ const h = vi.hoisted(() => ({
   settings: { staff_require_mfa: false } as Record<string, boolean>,
   profileRole: 'client',
   staffRow: null as null | { user_id: string },
+  // SR-01 (143): staff_mfa_sessions writes of lib/mfa/step-up-session.ts.
+  stepUpRows: [] as Array<Record<string, unknown>>,
+  stepUpFails: false,
 }))
 
 vi.mock('next/headers', () => ({
@@ -58,6 +61,16 @@ vi.mock('@/lib/impersonation/guard', () => ({ refuseDuringImpersonation: async (
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
+      upsert: async (row: Record<string, unknown>) => {
+        if (table !== 'staff_mfa_sessions') throw new Error(`unexpected upsert into ${table}`)
+        if (h.stepUpFails) return { error: { code: '503' } }
+        h.stepUpRows.push(row)
+        return { error: null }
+      },
+      delete: () => {
+        const chain: Record<string, unknown> = { eq: () => chain, lt: () => chain, then: (r: (v: unknown) => unknown) => r({ error: null }) }
+        return chain
+      },
       select: () => ({
         eq: () => ({
           maybeSingle: async () => ({
@@ -143,6 +156,8 @@ beforeEach(() => {
   h.settings = { staff_require_mfa: false }
   h.profileRole = 'client'
   h.staffRow = null
+  h.stepUpRows = []
+  h.stepUpFails = false
   signIn()
 })
 
@@ -187,6 +202,20 @@ describe('R-003: adding a passkey', () => {
     expect((await res.json()).backup_codes).toEqual(['AAAAA-BBBBB'])
     expect(verifyStepUp(h.jar.get(MFA_COOKIE_NAME), 'u-1', SESSION)).toBe(true)
     expect(verifyStepUp(h.jar.get(MFA_COOKIE_NAME), 'u-1', OTHER_SESSION)).toBe(false)
+    // SR-01 (143): the database knows this session passed the second factor.
+    expect(h.stepUpRows).toEqual([expect.objectContaining({ session_id: SESSION, user_id: 'u-1', method: 'first_factor_passkey' })])
+  })
+
+  it('SR-01: when the step-up record cannot be written, the key is saved but no proof is handed out', async () => {
+    h.stepUpFails = true
+    expect((await regOptions.POST(post())).status).toBe(200)
+    const res = await regVerify.POST(post({ response: { id: 'x', response: {} } }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, step_up: false })
+    expect(body.notice).toMatch(/подтвердите вход/)
+    expect(h.creds).toHaveLength(1)
+    expect(stepUpIssued()).toBe(false)
   })
 })
 
@@ -224,6 +253,9 @@ describe('R-003: TOTP', () => {
     const res = await verify.POST(post({ code: '123456' }))
     expect(res.status).toBe(200)
     expect(verifyStepUp(h.jar.get(MFA_COOKIE_NAME), 'u-1', SESSION)).toBe(true)
+    expect(h.stepUpRows).toEqual([expect.objectContaining({ session_id: SESSION, user_id: 'u-1', method: 'first_factor_totp' })])
+    const ttl = Date.parse(String(h.stepUpRows[0].expires_at)) - Date.parse(String(h.stepUpRows[0].verified_at))
+    expect(ttl).toBe(12 * 60 * 60 * 1000)
   })
 
   it('R-003: switching 2FA off needs step-up even with a valid code', async () => {

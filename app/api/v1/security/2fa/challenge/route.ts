@@ -12,6 +12,7 @@ import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity } from '@/lib/mfa/store'
 import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
+import { forgetStepUpSession, recordStepUpSession, stepUpFailure } from '@/lib/mfa/step-up-session'
 import { countCredentials } from '@/lib/webauthn/store'
 import { logActivity } from '@/lib/activity/log'
 import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
@@ -72,13 +73,12 @@ export async function POST(request: Request) {
   }
 
   let usedBackup = false
+  let backupIdx = -1
   if (!ok) {
-    const idx = await findBackupCodeIndex(parsed.data.code, row.backup_codes)
-    if (idx >= 0) {
+    backupIdx = await findBackupCodeIndex(parsed.data.code, row.backup_codes)
+    if (backupIdx >= 0) {
       ok = true
       usedBackup = true
-      const remaining = row.backup_codes.filter((_, i) => i !== idx)
-      await upsertUserSecurity(user.id, { backup_codes: remaining })
     }
   }
 
@@ -93,6 +93,25 @@ export async function POST(request: Request) {
       req: request,
     })
     return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
+  }
+
+  // SR-01 (143): the database learns of the step-up first — staff RLS rights
+  // need this record. No record → no cookie, and a backup code is not spent.
+  try {
+    await recordStepUpSession(user.id, sessionKey, usedBackup ? 'backup_code' : 'totp')
+  } catch (err) {
+    console.error('[2fa/challenge] step-up record failed', err instanceof Error ? err.message : err)
+    const { status, error } = stepUpFailure(err)
+    return NextResponse.json({ ok: false, error }, { status })
+  }
+  if (usedBackup) {
+    try {
+      await upsertUserSecurity(user.id, { backup_codes: row.backup_codes.filter((_, i) => i !== backupIdx) })
+    } catch (err) {
+      // The code must not stay usable after it let somebody in: undo the record.
+      await forgetStepUpSession(sessionKey)
+      throw err
+    }
   }
 
   const jar = await cookies()

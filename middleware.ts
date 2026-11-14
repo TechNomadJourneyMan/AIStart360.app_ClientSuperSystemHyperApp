@@ -7,6 +7,7 @@ import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
 import { boundImpersonationEdge, impersonationRowEdge } from '@/lib/impersonation/state-edge'
+import { IMPERSONATION_ACCOUNT_PAGE_BLOCKED_ACTION, IMPERSONATION_LOCKED_REDIRECT, isAccountSecurityPage } from '@/lib/impersonation/account-pages'
 import { NO_SESSION_ID, authSessionFromCookies } from '@/lib/mfa/session-binding'
 import { CLIENT_NAV_DEFS } from '@/lib/client-shell/nav'
 import { verifyToken } from '@/lib/security/signed-token'
@@ -388,9 +389,15 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     : null
   const role = resolved?.role ?? null
 
+  // SR-07b: a page that changes the account's credentials / protection
+  // (lib/impersonation/account-pages.ts) — closed during an impersonation.
+  const accountSecurityPage = isAccountSecurityPage(pathname, request.nextUrl.searchParams)
+
   // R-140: the profile could not be read — never guess «approved client».
+  // SR-07b: /auth/reset-password is «public» here only when nothing is unknown
+  // — it is served before the impersonation check below.
   if (user && resolved?.unknown) {
-    const publicLike = PUBLIC_PATHS.some((p) => pathname.startsWith(p)) || pathname === GIGA_LOGIN_PATH || pathname === SUPER_EXPERT_LOGIN_PATH
+    const publicLike = (PUBLIC_PATHS.some((p) => pathname.startsWith(p)) && !accountSecurityPage) || pathname === GIGA_LOGIN_PATH || pathname === SUPER_EXPERT_LOGIN_PATH
     return publicLike ? response : profileUnavailableResponse()
   }
 
@@ -408,6 +415,8 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   // stale ends the session — only THAT session (scope 'local'), never every
   // session of the client — and returns to the panel.
   let impersonating = false
+  /** SR-07b: the R-008 binding of this session could not be read now. */
+  let bindingUnknown = false
   const impToken = request.cookies.get(IMP_COOKIE_NAME)?.value
   const endImpersonatedSession = async (ended: 'expired' | 'closed') => {
     await supabase.auth.signOut({ scope: 'local' })
@@ -425,6 +434,26 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     impersonating = true
     const row = await impersonationRowEdge(claims.sid)
     response.headers.set('x-impersonation', claims.mode === 'view' || row?.mode === 'view' ? 'view' : 'edit')
+    // SR-07b: the session is the client's real GoTrue session — on these pages
+    // the browser would change the client's password / 2FA directly in GoTrue
+    // (no current password asked). Staff never open them «as the client», in
+    // view or edit mode; the impersonation itself goes on.
+    if (accountSecurityPage) {
+      later(auditImpersonatedRequestEdge({
+        sid: claims.sid,
+        adminId: claims.aid,
+        adminLabel: claims.alabel,
+        adminRole: typeof claims.arole === 'string' ? claims.arole : null,
+        targetUserId: claims.uid,
+        method: request.method.toUpperCase(),
+        path: pathname,
+        ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ua: request.headers.get('user-agent')?.slice(0, 300) || null,
+        action: IMPERSONATION_ACCOUNT_PAGE_BLOCKED_ACTION,
+        entityType: 'page',
+      }))
+      return redirectKeepingCookies(response, new URL(IMPERSONATION_LOCKED_REDIRECT, request.url))
+    }
   } else if (imp && claims && ownsSession) {
     // Authentic but expired / closed from the panel: drop the user session.
     const failReason = imp.ok ? 'closed' : imp.reason
@@ -442,8 +471,14 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
         later(endImpersonationEdge(bound, impToken ? 'cookie_mismatch' : 'cookie_missing'))
         return endImpersonatedSession('closed')
       }
+      bindingUnknown = bound === 'unknown'
     }
   }
+
+  // SR-07b: whether this session is an impersonation could not be told now —
+  // a page that changes the account is not served on a guess (fail closed, as
+  // lib/impersonation/guard.ts does for the account API). It reloads itself.
+  if (bindingUnknown && accountSecurityPage) return profileUnavailableResponse()
 
   // R4: a persistently blocked/archived user gets no further than the login
   // page, regardless of role or which route they hit. The GoTrue ban (set by

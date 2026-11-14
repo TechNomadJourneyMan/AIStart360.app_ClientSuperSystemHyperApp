@@ -200,3 +200,37 @@ export async function visibleClientIds(actor: AccessActor): Promise<{ all: true 
     if (rows.length < 1000) return { ids: out }
   }
 }
+
+// ─── Telegram / notification audiences (SR-17) ──────────────────────────────
+
+/**
+ * Who the expert Telegram bot admits (the same people as the bot-link API,
+ * lib/expert-auth.ts resolveExpertBotUser): an expert-portal actor, or a
+ * staff SuperExpert. Never the legacy profile role admin / super_admin alone.
+ */
+export function isExpertBotActor(a: AccessActor): boolean {
+  return isExpertPortalActor(a) || a.staffRole === 'super_expert'
+}
+
+/** Role label of an expert-bot actor: the staff role admin / super_admin / super_expert, else 'expert'. */
+export function expertBotRoleOf(a: AccessActor): 'expert' | 'admin' | 'super_admin' | 'super_expert' {
+  return a.staffRole === 'super_expert' ? 'super_expert' : expertPortalRole(a)
+}
+
+/**
+ * Pure check over rows already read: may `a` see the client `clientUserId`
+ * whose assignee (user_assignments.assignee_id) is `assigneeId`? Scope 'all'
+ * — any client; 'assigned' — only when the actor is the assignee; 'none' —
+ * nobody else's client. An unknown client (null) is visible with 'all' only.
+ */
+export function actorReachesClient(
+  a: AccessActor,
+  clientUserId: string | null | undefined,
+  assigneeId: string | null | undefined,
+): boolean {
+  if (a.clientScope === 'all') return true
+  if (!clientUserId) return false
+  if (clientUserId.toLowerCase() === a.id.toLowerCase()) return true
+  if (a.clientScope === 'none') return false
+  return !!assigneeId && assigneeId.toLowerCase() === a.id.toLowerCase()
+}

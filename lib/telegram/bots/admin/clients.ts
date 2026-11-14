@@ -13,7 +13,10 @@ import { ORCHESTRATOR_KEY } from '@/lib/diagnostics/pipeline'
 import { renderCompanyCard, sessionLine } from '../cards'
 import { companyCard, recentSessions, searchCompanies } from '../data'
 import { cut, esc, pageOf, pagerRow, PAGE_SIZE } from '../ui'
-import { auditFor, can, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { adminScope, auditFor, can, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { companyAllowed, NOT_ASSIGNED, scopeCompanyIds } from '@/lib/telegram/brain/scope'
+
+const NOT_ASSIGNED_TEXT = `⛔ ${NOT_ASSIGNED}.`
 
 export async function showClientsMenu(ctx: AdminCtx): Promise<void> {
   await ctx.show('🏢 <b>Клиенты</b>', [
@@ -24,13 +27,14 @@ export async function showClientsMenu(ctx: AdminCtx): Promise<void> {
 }
 
 async function listCompanies(ctx: AdminCtx, page: number): Promise<void> {
-  const { items, hasMore } = await searchCompanies(null, page, PAGE_SIZE)
+  const { items, hasMore } = await searchCompanies(null, page, PAGE_SIZE, scopeCompanyIds(await adminScope(ctx)))
   const rows = items.map((c) => [ctx.button(`${cut(c.name, 34)}${c.score != null ? ` · ${Math.round(c.score)}` : ''}`, 'cl.c', c.id)])
   rows.push(pagerRow(ctx, 'cl.l', page, hasMore))
   await ctx.show(items.length ? '🕘 <b>Недавние компании</b> (балл Точки А)' : 'Компаний пока нет.', rows)
 }
 
 export async function showCompany(ctx: AdminCtx, id: string): Promise<void> {
+  if (!companyAllowed(await adminScope(ctx), id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
   const card = await companyCard(id, { includeUnreviewedHypotheses: can(ctx, 'insights.moderate') })
   if (!card) return void (await ctx.show('Компания не найдена.'))
   await ctx.show(renderCompanyCard(card, { showContacts: can(ctx, 'users.sensitive') }), [
@@ -41,7 +45,9 @@ export async function showCompany(ctx: AdminCtx, id: string): Promise<void> {
 }
 
 async function listSessions(ctx: AdminCtx, companyId: string, page: number): Promise<void> {
-  const { items, hasMore } = await recentSessions(page, PAGE_SIZE, companyId === '-' ? null : companyId)
+  const scope = await adminScope(ctx)
+  if (companyId !== '-' && !companyAllowed(scope, companyId)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
+  const { items, hasMore } = await recentSessions(page, PAGE_SIZE, companyId === '-' ? null : companyId, scopeCompanyIds(scope))
   const lines = ['🩺 <b>Диагностики</b>', '', ...items.map(sessionLine)]
   if (!items.length) lines.push('Сессий нет.')
   const rows = companyId === '-' ? items.map((s) => [ctx.button(cut(s.company_name ?? s.company_id, 40), 'cl.c', s.company_id)]) : []
@@ -57,7 +63,7 @@ export const clientSteps: Record<string, AdminStep> = {
       const q = ctx.text.slice(0, 80)
       if (q.length < 2) return void (await ctx.reply('Нужно хотя бы 2 символа. Попробуйте ещё раз или /cancel.'))
       await ctx.clearState()
-      const { items, hasMore } = await searchCompanies(q, 0, PAGE_SIZE)
+      const { items, hasMore } = await searchCompanies(q, 0, PAGE_SIZE, scopeCompanyIds(await adminScope(ctx)))
       if (!items.length) return void (await ctx.reply('Ничего не найдено.'))
       await ctx.reply(`Найдено: ${items.length}${hasMore ? '+' : ''}`, {
         inline_keyboard: items
@@ -83,6 +89,7 @@ export const clientEntries: Record<string, AdminEntry> = {
   'cl.dg': {
     perm: ['users.view', 'agents.run'],
     async run(ctx, [id]) {
+      if (!companyAllowed(await adminScope(ctx), id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
       const card = await companyCard(id, { includeUnreviewedHypotheses: false })
       if (!card) return void (await ctx.show('Компания не найдена.'))
       await ctx.confirm(`🩺 Запустить диагностику компании <b>${esc(card.name)}</b>? Пройдут все этапы конвейера; этапы с ИИ расходуют бюджет.`, 'cl.dg', [id])
@@ -94,6 +101,7 @@ export const clientConfirmed: Record<string, AdminEntry> = {
   'cl.dg': {
     perm: ['users.view', 'agents.run'],
     async run(ctx, [id]) {
+      if (!companyAllowed(await adminScope(ctx), id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
       const res = await runAgentManually({ key: ORCHESTRATOR_KEY, companyId: id, input: {}, actorId: ctx.principal.userId, audit: auditFor(ctx) })
       if (!res.ok) return void (await ctx.show(`⚠️ ${esc(res.error)}`, [[ctx.button('‹ К компании', 'cl.c', id)]]))
       await ctx.show(`🩺 Диагностика запущена. Задача <code>${esc(res.taskId.slice(0, 8))}</code>.`, [

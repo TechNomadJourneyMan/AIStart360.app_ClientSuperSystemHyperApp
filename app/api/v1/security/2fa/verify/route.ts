@@ -11,7 +11,8 @@ import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { generateBackupCodes, hashBackupCodes } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity, setMfaMetadataFlag } from '@/lib/mfa/store'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { STEP_UP_RECORD_FAILED_MESSAGE, issueStepUp } from '@/lib/mfa/step-up-session'
 import { guardFactorChange } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
@@ -90,11 +91,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Не удалось включить 2FA. Попробуйте ещё раз.' }, { status: 500 })
   }
 
+  // SR-01 (143): the step-up is recorded for the database before the cookie.
+  // 2FA itself is already on; without the record the user simply confirms the
+  // new factor once more on /2fa (middleware sends them there).
+  let stepUpNotice: string | undefined
   if (guard.firstFactor) {
     const sessionKey = currentStepUpSessionKey()
     if (sessionKey) {
-      const jar = await cookies()
-      jar.set(MFA_COOKIE_NAME, signStepUp(user.id, sessionKey), MFA_COOKIE_OPTIONS)
+      try {
+        await issueStepUp(await cookies(), user.id, sessionKey, 'first_factor_totp')
+      } catch (err) {
+        console.error('[2fa/verify] step-up record failed', err instanceof Error ? err.message : err)
+        stepUpNotice = `${STEP_UP_RECORD_FAILED_MESSAGE} 2FA включена — при следующем переходе подтвердите вход кодом.`
+      }
     }
   }
 
@@ -117,5 +126,5 @@ export async function POST(request: Request) {
   }).catch(() => {})
 
   // Backup codes are returned ONCE here — the client must show and let the user save them.
-  return NextResponse.json({ ok: true, backup_codes: codes })
+  return NextResponse.json({ ok: true, backup_codes: codes, ...(stepUpNotice ? { step_up: false, notice: stepUpNotice } : {}) })
 }

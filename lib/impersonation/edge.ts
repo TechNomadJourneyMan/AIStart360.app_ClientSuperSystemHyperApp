@@ -51,6 +51,10 @@ export async function auditImpersonatedRequestEdge(entry: {
   path: string
   ip: string | null
   ua: string | null
+  /** Default 'impersonation.request' (a request made inside the session). */
+  action?: string
+  /** Default 'api'. */
+  entityType?: string
 }): Promise<void> {
   const r = rest()
   if (!r) return
@@ -65,8 +69,8 @@ export async function auditImpersonatedRequestEdge(entry: {
         actor_role: entry.adminRole ?? null,
         target_user_id: entry.targetUserId,
         impersonation_session_id: entry.sid,
-        action: 'impersonation.request',
-        entity_type: 'api',
+        action: entry.action ?? 'impersonation.request',
+        entity_type: entry.entityType ?? 'api',
         entity_id: `${entry.method} ${entry.path}`.slice(0, 300),
         metadata: { method: entry.method, path: entry.path },
         ip_address: entry.ip,

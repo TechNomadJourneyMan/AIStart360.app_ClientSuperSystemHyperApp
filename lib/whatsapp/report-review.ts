@@ -6,8 +6,11 @@
  *
  *   await enqueueReportReviewWhatsApp(versionId, recipients)
  *
- * with the expert user ids that should review it (or omit `recipients` for
- * every opted-in expert). The function reads the version (title, version
+ * with the expert user ids that should review it (lib/reports/review-delivery.ts
+ * reportReviewRecipients). Whoever is named, only people who may read the
+ * client of the version receive it (lib/notifications/expert-audience.ts,
+ * SR-17); omitting `recipients` means «everyone opted in who may read that
+ * client», never every expert. The function reads the version (title, version
  * number, date, client) itself, enqueues one template message per expert
  * with a verified, opted-in number (kind 'expert'), sends them right away and
  * leaves retries to the outbox drain. Idempotent per (version, expert):
@@ -18,7 +21,7 @@
  * or `reviewPath` when given — e.g. a signed /r/v/<token> link).
  */
 import { prisma } from '@/lib/db'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
+import { filterExpertAudience } from '@/lib/notifications/expert-audience'
 import { cloudApiConfigured, type WhatsAppEnv } from './config'
 import { optedInRecipients } from './links'
 import { enqueueWhatsApp, outboxKey, sendWhatsAppNow, type DrainOptions } from './outbox'
@@ -33,15 +36,15 @@ export async function enqueueReportReviewWhatsApp(
 ): Promise<ReportReviewWhatsAppResult[]> {
   const env = opts.env ?? process.env
   if (!cloudApiConfigured(opts.drain?.meta?.env ?? env)) return []
-  const rows = await prisma.$queryRaw<Array<{ title: string | null; version: number | null; created_at: Date; company_name: string | null }>>`
-    SELECT v.title, v.version, v.created_at, c.name AS company_name
+  const rows = await prisma.$queryRaw<Array<{ title: string | null; version: number | null; created_at: Date; company_id: string; company_name: string | null }>>`
+    SELECT v.title, v.version, v.created_at, v.company_id, c.name AS company_name
     FROM public.report_versions v LEFT JOIN public.companies c ON c.id = v.company_id
     WHERE v.id = ${versionId}::uuid`
   const v = rows[0]
   if (!v) return []
 
-  const people = (await optedInRecipients('expert', { userIds: recipients ?? undefined }))
-    .filter((r) => r.role !== null && EXPERT_ROLES.has(r.role))
+  if (recipients && recipients.length === 0) return []
+  const people = await filterExpertAudience(await optedInRecipients('expert', { userIds: recipients ?? undefined }), v.company_id)
   if (people.length === 0) return []
 
   const date = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Almaty' }).format(v.created_at)

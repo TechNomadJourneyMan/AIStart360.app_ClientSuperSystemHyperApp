@@ -14,7 +14,8 @@ import { insertCredential } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
 import { getUserSecurity, upsertUserSecurity, setMfaWebauthnFlag } from '@/lib/mfa/store'
 import { generateBackupCodes, hashBackupCodes } from '@/lib/mfa/backup-codes'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { STEP_UP_RECORD_FAILED_MESSAGE, issueStepUp } from '@/lib/mfa/step-up-session'
 import { guardFactorChange } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 
@@ -94,9 +95,19 @@ export async function POST(request: Request) {
   // it, so this session counts as stepped up. A further key changes nothing —
   // the session already holds its proof (guardFactorChange checked it); minting
   // one here was the R-003 bypass (password session → own passkey → proof).
+  // SR-01 (143): recorded for the database before the cookie; without the
+  // record the user confirms the new key once more on /2fa.
+  let stepUpNotice: string | undefined
   if (guard.firstFactor) {
     const sessionKey = currentStepUpSessionKey()
-    if (sessionKey) jar.set(MFA_COOKIE_NAME, signStepUp(user.id, sessionKey), MFA_COOKIE_OPTIONS)
+    if (sessionKey) {
+      try {
+        await issueStepUp(jar, user.id, sessionKey, 'first_factor_passkey')
+      } catch (err) {
+        console.error('[webauthn/register] step-up record failed', err instanceof Error ? err.message : err)
+        stepUpNotice = `${STEP_UP_RECORD_FAILED_MESSAGE} Ключ сохранён — при следующем переходе подтвердите вход им.`
+      }
+    }
   }
 
   await logActivity({
@@ -109,5 +120,5 @@ export async function POST(request: Request) {
     req: request,
   })
 
-  return NextResponse.json({ ok: true, credential: { id: credId, label }, backup_codes })
+  return NextResponse.json({ ok: true, credential: { id: credId, label }, backup_codes, ...(stepUpNotice ? { step_up: false, notice: stepUpNotice } : {}) })
 }

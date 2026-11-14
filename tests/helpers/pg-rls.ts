@@ -35,10 +35,41 @@ export async function inRollback<T>(fn: (db: Db) => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * A live GoTrue session of `userId` (auth.sessions row), as every real sign-in
+ * has. Reuses the user's test session within the transaction.
+ */
+export async function seedSession(db: Db, userId: string, opts: { notAfter?: Date | null; fresh?: boolean } = {}): Promise<string> {
+  if (!opts.fresh && opts.notAfter === undefined) {
+    const { rows } = await db.query(`SELECT id FROM auth.sessions WHERE user_id = $1 AND tag = 'test-default' LIMIT 1`, [userId])
+    if (rows[0]) return rows[0].id as string
+  }
+  const id = randomUUID()
+  await db.query(
+    `INSERT INTO auth.sessions (id, user_id, created_at, updated_at, aal, not_after, tag)
+     VALUES ($1, $2, now(), now(), 'aal1', $3, $4)`,
+    [id, userId, opts.notAfter ?? null, opts.fresh || opts.notAfter !== undefined ? 'test' : 'test-default'],
+  )
+  return id
+}
+
+export interface AsUserOptions {
+  /**
+   * The JWT `session_id` claim. Default: a live session of the user
+   * (seedSession), like a real GoTrue token. `null` → a token without the
+   * claim (very old GoTrue / forged).
+   */
+  sessionId?: string | null
+}
+
 /** Execute `fn` as a PostgREST request from `userId` (or anon when null). */
-export async function asUser<T>(db: Db, userId: string | null, fn: () => Promise<T>): Promise<T> {
+export async function asUser<T>(db: Db, userId: string | null, fn: () => Promise<T>, opts: AsUserOptions = {}): Promise<T> {
   const role = userId ? 'authenticated' : 'anon'
-  const claims = userId ? { sub: userId, role } : { role }
+  let claims: Record<string, unknown> = { role }
+  if (userId) {
+    const sid = opts.sessionId === undefined ? await seedSession(db, userId) : opts.sessionId
+    claims = sid ? { sub: userId, role, session_id: sid } : { sub: userId, role }
+  }
   await db.query('SAVEPOINT as_user')
   await db.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify(claims)])
   await db.query(`SET LOCAL ROLE ${role}`)

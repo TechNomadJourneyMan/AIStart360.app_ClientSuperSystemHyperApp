@@ -5,7 +5,7 @@
 // break the Edge build). The Node signer/verifier lives in `step-up.ts`.
 //
 // Token format (shared):
-//   base64url(`v2.${userId}.${sessionKey}.${expMs}`) "." hex(HMAC-SHA256)
+//   base64url(`v3.${userId}.${sessionKey}.${expMs}`) "." hex(HMAC-SHA256)
 // The proof is bound to the user AND the Supabase session (R-132, see
 // session-binding.ts); the old `${userId}.${expMs}` format is refused.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export async function verifyStepUpEdge(
     if (!constantTimeEqual(expected, providedSig)) return false
 
     const parts = payload.split('.')
-    if (parts.length !== 4 || parts[0] !== 'v2') return false
+    if (parts.length !== 4 || parts[0] !== 'v3' /* v3: SR-01 (143), see step-up.ts */) return false
     const [, uid, sk, expStr] = parts
     return uid === userId && sk === sessionKey && Number(expStr) > Date.now()
   } catch {

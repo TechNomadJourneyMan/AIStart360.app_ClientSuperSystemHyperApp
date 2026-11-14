@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity/log'
 import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
+import { forgetStepUpSessionsOfUser } from '@/lib/mfa/step-up-session'
 
 // Sign the user out of ALL sessions/devices (Supabase global scope). This also
 // ends the current session, so the client should redirect to /login afterwards.
@@ -20,6 +21,9 @@ export async function POST(request: Request) {
     console.error('[settings/sessions/revoke-all]', error.message)
     return NextResponse.json({ ok: false, error: 'failed' }, { status: 500 })
   }
+  // SR-01 (143): step-up records of the ended sessions (best-effort; GoTrue
+  // already deleted the sessions, which alone voids them in RLS).
+  await forgetStepUpSessionsOfUser(user.id)
 
   await logActivity({
     userId: user.id,

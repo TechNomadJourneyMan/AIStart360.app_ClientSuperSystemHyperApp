@@ -79,6 +79,14 @@ export async function applyApprovalDecision(input: ApplyApprovalInput): Promise<
     await notifyAccessGranted(profile.id).catch(() => undefined)
   }
 
+  // SR-19: a person who loses access (rejected / needs clarification / back to
+  // pending) keeps no working public report links — an expert's links must not
+  // outlive the expert. Failures are logged and reported to staff, never thrown.
+  if (profile && input.status !== 'approved') {
+    const { revokeSharesOfCreator } = await import('@/lib/share/tokens')
+    await revokeSharesOfCreator(profile.id, `status:${input.status}`)
+  }
+
   return { affected: updated?.length ?? 0, profile, emailSent }
 }
 

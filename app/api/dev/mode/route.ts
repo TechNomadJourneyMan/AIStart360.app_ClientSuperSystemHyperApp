@@ -4,6 +4,9 @@ export const runtime = 'nodejs'
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { DEV_MODE_COOKIE, DEV_MODE_COOKIE_OPTIONS, devAccessEnabledForRequest, devNotFound } from '@/lib/dev/dev-access'
+import { forgetDevStepUp, recordDevStepUpForSession } from '@/lib/dev/dev-step-up'
+import { authSessionFromCookies } from '@/lib/mfa/session-binding'
+import { createClient } from '@/lib/supabase/server'
 
 /**
  * POST /api/dev/mode { on } — the developer's own switch: sets or clears the
@@ -19,6 +22,18 @@ export async function POST(request: NextRequest) {
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'INVALID_PAYLOAD' }, { status: 400 })
+
+  // SR-01 (143): the signed-in session counts as stepped up in RLS while dev
+  // mode is on. The session is the one GoTrue verifies (getUser), not just
+  // what the cookie claims.
+  const session = authSessionFromCookies(request.cookies.getAll())
+  const verified = session?.sub
+    ? await (await createClient()).auth.getUser().then((r) => r.data.user?.id ?? null, () => null)
+    : null
+  if (session?.sub && verified === session.sub) {
+    if (parsed.data.on) await recordDevStepUpForSession(session.sub, session.sessionKey)
+    else await forgetDevStepUp(session.sessionKey)
+  }
 
   const res = NextResponse.json({ ok: true, devMode: parsed.data.on })
   if (parsed.data.on) res.cookies.set(DEV_MODE_COOKIE, '1', DEV_MODE_COOKIE_OPTIONS)

@@ -33,7 +33,8 @@ Staging — отдельное окружение `staging` в Railway-прое�
 | `anonymize.sql` | Обезличивание, идемпотентное. Требует суперпользователя и метку staging. |
 | `verify-pii.sql` | Проверка «ПДн не осталось»: печатает только счётчики. При нарушении бросает EXCEPTION. |
 | `03-post.sql` | Строки 6 бакетов storage (без файлов), 7 политик `storage.objects`, триггер `on_auth_user_created`. |
-| `04-privileges.sql` + `acl-public-market.sql` | Права как в проде. Сначала права на объекты public и market сбрасываются: дамп снят с `--no-privileges`, а default privileges образа дали бы anon «всё на всё». Затем применяются 1 024 GRANT/REVOKE из ACL резервной копии Railway-прода от 05.11. |
+| `04-privileges.sql` + `acl-public-market.sql` | Права как в проде. Сначала права на объекты public и market сбрасываются: дамп снят с `--no-privileges`, а default privileges образа дали бы anon «всё на всё». Затем применяются 1 023 GRANT/REVOKE из ACL резервной копии Railway-прода от 05.11. |
+| `apply-migration.sh <файл>` | Применяет миграцию к staging (хост зашит, нужна метка staging) и записывает её в `public.schema_migrations` в той же транзакции. |
 | `verify.sql` | Сверка: таблицы, строки ключевых таблиц, RLS, политики, функции, триггеры, realtime, права ролей. |
 | `reset.sql` | Очистка staging перед повторной заливкой (только с меткой staging и `-v confirm=staging`). |
 
@@ -49,12 +50,8 @@ PGPASSWORD="$(cat "$PW")" psql "$STG" -X -v ON_ERROR_STOP=1 -v confirm=staging -
 # 2. залить и обезличить (одна транзакция), затем сверка
 STAGING_PG_PASSWORD_FILE="$PW" scripts/staging/load.sh ~/AI-Portal-backups/<свежий-дамп>.dump
 
-# 3. миграции, которых нет в дампе (смотри public.schema_migrations), — по одной:
-f=supabase/migrations/140_staff_rls_from_staff_roles.sql
-PGPASSWORD="$(cat "$PW")" psql "$STG" -X -v ON_ERROR_STOP=1 -1 -f "$f"
-PGPASSWORD="$(cat "$PW")" psql "$STG" -X -v ON_ERROR_STOP=1 -c \
-  "INSERT INTO public.schema_migrations (file, checksum, applied_by) VALUES ('$(basename "$f")', '$(shasum -a 256 "$f" | cut -d' ' -f1)', 'staging-psql')
-   ON CONFLICT (file) DO UPDATE SET checksum = EXCLUDED.checksum, applied_at = now(), applied_by = EXCLUDED.applied_by"
+# 3. миграции, которых нет в дампе (сравните supabase/migrations с public.schema_migrations), — по одной:
+STAGING_PG_PASSWORD_FILE="$PW" scripts/staging/apply-migration.sh supabase/migrations/140_staff_rls_from_staff_roles.sql
 ```
 
 Миграции в staging применяются через psql с явной строкой подключения staging. Не используйте
@@ -87,9 +84,14 @@ GoTrue не переносятся. Объекты storage тоже не пер�
 - `profiles`: e-mail как в auth; `full_name` → «Пользователь N»; `organization` → «Организация N»;
   `phone`, `avatar_url`, `telegram_*` → NULL. `position` и `expert_title` остаются.
 - `companies`: `name` → «Компания N»; `contact_*`, `notes`, `domain` → NULL. Цифры бизнеса остаются.
-- `survey_answers` (ключи из `lib/survey/questions.ts`): `s1_company_name` → «Компания N», `s1_contact_name` → «Пользователь N»,
-  `s1_contact_email` → staging-e-mail; `s1_contact_phone`, `s1_website`, `s1_social_media` → `{"value": null}`.
-  В `survey_answer_history` по этим ключам старое и новое значения → «[обезличено]». Остальные ответы, включая все числа, остаются.
+- `survey_answers`. Ключи взяты из `lib/survey/questions.ts`, медицинской и e-commerce-анкет; таблица `_ck` в `anonymize.sql`.
+  - `s1_company_name` и `medical_clinic_name` → «Компания N».
+  - `s1_contact_name`, `medical_full_name` и `s9n_responsible_person` → «Пользователь N».
+  - `s1_contact_email` и `medical_email` → staging-e-mail.
+  - `s1_contact_phone`, `medical_phone`, `s1_website`, `s1_social_media`, `medical_clinic_website` и `ec_website` → `{"value": null}`.
+  - `survey_answer_history`: по этим ключам старое и новое значения → «[обезличено]».
+  - `point_a_values` с `field_key = survey.<тот же ключ>` и `company.name`: `raw_value` → NULL, `normalized_value` — та же замена.
+  - Остальные ответы, включая все числа, остаются.
 - `users` (legacy NextAuth): e-mail → `legacy-user-N@…`, имя → «Пользователь», `passwordHash` → случайный bcrypt, аватар → NULL.
 - `clients`, `organizations`, `crm_clients`, `report_documents.client_name`, `sales.manager_name_snapshot` → обезличенные подписи или NULL.
 - `mini_gri_leads.email` → `lead-N@…`; `market.users.email` → `market-user-N@…`.
@@ -123,6 +125,26 @@ GoTrue не переносятся. Объекты storage тоже не пер�
 - auth: `sessions`, `refresh_tokens`, `mfa_*`, `one_time_tokens`, `flow_state`, `audit_log_entries`.
 
 Ссылки из сохраняемых таблиц на очищенные (например, `expert_cases.comm_thread_id`) → NULL.
+
+**Что сознательно оставлено**
+- Слаги брендов в технических идентификаторах: `company_id` вида `<бренд>-<hex>`, `source`, `sku`, внешние id,
+  URL товаров, пути и имена файлов документов. Это идентификаторы компаний, а не персональные данные. Их замена
+  потребовала бы переписать ключи в ~30 таблицах. В описательных полях названия компаний заменены.
+- Названия компаний из госреестра в `market.companies` (публичные данные юрлиц).
+- Цифры бизнеса: выручка, метрики, ответы анкеты, финмодель, продажи, остатки.
+
+**Повторный запуск `anonymize.sql`** даёт те же подписи и адреса (N стабилен). Но при каждом запуске
+заново выбирается случайный пароль, а хэши `patient_hash`, `customer_hash` и `access_token_hash`
+перехешируются с новой солью. Формат sha256-hex сохраняется, связи внутри таблиц тоже.
+
+**Проверка** (`verify-pii.sql`, 17 групп проверок):
+- e-mail вне `@staging/@dev.aistart360.test` во всех текстовых, jsonb и массивных колонках public и market, а также в `auth.users` и `auth.identities`;
+- телефоны во всех тех же колонках;
+- токены и метаданные auth;
+- контакты профилей и компаний, контакты в анкете;
+- `parsed_data`, IP и user-agent в журналах, секреты интеграций;
+- пустота очищенных таблиц;
+- в той же сессии, что `anonymize.sql`: отсутствие исходных ФИО и названий компаний (с поправкой на технические идентификаторы).
 
 ## Как войти
 

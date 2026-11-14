@@ -35,7 +35,9 @@ export function adminRole(p: StaffPrincipal): BrainRole {
 }
 
 export function expertRole(p: ExpertPrincipal): BrainRole {
-  return { bot: 'expert', userId: p.userId, email: p.email, profileRole: p.role, staffRole: p.role === 'super_expert' ? 'super_expert' : null }
+  // Staff only from staff_roles (./bots/expert/link.ts, migration 140); an expert has none.
+  const staffRole = p.staffRole ?? (p.role === 'super_expert' ? 'super_expert' : null)
+  return { bot: 'expert', userId: p.userId, email: p.email, profileRole: p.role, staffRole }
 }
 
 async function runBrain(ctx: BotContext<unknown>, role: BrainRole, input: BrainInput, deps: BrainDeps = brainDeps()): Promise<void> {

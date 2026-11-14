@@ -1,13 +1,15 @@
 /**
- * Expert bot (lib/telegram/bots/expert): only linked experts (EXPERT_ROLES,
- * approved), scope like /api/expert/** (all clients, published reports only,
- * unreviewed AI hypotheses labelled), no system changes, own buttons only.
+ * Expert bot (lib/telegram/bots/expert): only linked experts (migration 140
+ * rule, approved), scope like /api/expert/** — ONLY assigned clients (SR-17),
+ * published reports only, unreviewed AI hypotheses labelled — no system
+ * changes, own buttons only.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { msg, press, recordingFetch, testDeps } from './_bot-harness'
 
-const s = vi.hoisted(() => ({ expert: true }))
+const s = vi.hoisted(() => ({ expert: true, assigned: [] as Array<{ user_id: string; company_id: string | null }> }))
 const CO = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b'
+const OTHER_CO = '9a9a9a9a-1111-4222-8333-444444444444'
 
 const link = vi.hoisted(() => ({
   consumeExpertLinkCode: vi.fn(async () => ({ ok: true, userId: 'e1' })),
@@ -15,7 +17,7 @@ const link = vi.hoisted(() => ({
 vi.mock('@/lib/telegram/bots/expert/link', () => ({
   EXPERT_START_PREFIX: 'expert_',
   consumeExpertLinkCode: link.consumeExpertLinkCode,
-  expertByTelegramUser: async () => (s.expert ? { userId: 'e0e0e0e0-0000-4000-8000-000000000001', role: 'expert', email: 'exp@aistart360.test', name: 'Эксперт' } : null),
+  expertByTelegramUser: async () => (s.expert ? { userId: 'e0e0e0e0-0000-4000-8000-000000000001', role: 'expert', email: 'exp@aistart360.test', name: 'Эксперт', staffRole: null, clientScope: 'assigned' } : null),
 }))
 const data = vi.hoisted(() => ({
   companyCard: vi.fn(async () => ({
@@ -41,7 +43,13 @@ const versions = vi.hoisted(() => ({
   ]),
 }))
 vi.mock('@/lib/reports/versions', () => versions)
-vi.mock('@/lib/db', () => ({ prisma: { $queryRaw: vi.fn(async () => []), $executeRaw: vi.fn(async () => 1) } }))
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    // user_assignments of the expert (lib/telegram/brain/scope.ts assignedScope).
+    $queryRaw: vi.fn(async (strings: TemplateStringsArray) => (strings.join('?').includes('user_assignments') ? s.assigned : [])),
+    $executeRaw: vi.fn(async () => 1),
+  },
+}))
 
 const { expertRouter } = await import('@/lib/telegram/bots/expert')
 const { handleUpdate } = await import('@/lib/telegram/bots/dispatcher')
@@ -69,6 +77,8 @@ describe('expert bot', () => {
   })
   beforeEach(() => {
     s.expert = true
+    s.assigned = [{ user_id: 'o', company_id: CO }]
+    data.searchCompanies.mockClear()
     tg = recordingFetch()
     h = testDeps(tg.fetchImpl)
     data.companyCard.mockClear()
@@ -106,6 +116,34 @@ describe('expert bot', () => {
     expect(text).not.toContain('v4') // a 'ready' row never reaches an expert even if returned
     const urls = tg.lastButtons().map((b) => b.url).filter(Boolean)
     expect(urls).toEqual(['https://app.aistart360.test/api/v1/reports/11111111-2222-4333-8444-555555555555/pdf'])
+  })
+
+  it('SR-17: a client not assigned to the expert — no card, no sessions, no reports, not in lists', async () => {
+    expect(await run(press(signCallback('expert', 'cl.c', OTHER_CO)))).toBe('callback')
+    expect(data.companyCard).not.toHaveBeenCalled()
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+
+    await run(press(signCallback('expert', 'ds.l', OTHER_CO, 0)))
+    expect(data.recentSessions).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), OTHER_CO, expect.anything())
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+
+    await run(press(signCallback('expert', 'rp.l', OTHER_CO, 0)))
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+
+    // Lists are filtered in SQL by the assigned companies only.
+    await run(press(signCallback('expert', 'cl.l', 0)))
+    expect(data.searchCompanies).toHaveBeenLastCalledWith(null, 0, expect.any(Number), [CO])
+  })
+
+  it('SR-17: an expert without any assignment sees no client at all', async () => {
+    s.assigned = []
+    await run(press(signCallback('expert', 'cl.c', CO)))
+    expect(data.companyCard).not.toHaveBeenCalled()
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+    await run(msg('📄 Отчёты'))
+    expect(tg.lastText()).toContain('Опубликованных отчётов нет')
+    await run(press(signCallback('expert', 'cl.l', 0)))
+    expect(data.searchCompanies).toHaveBeenLastCalledWith(null, 0, expect.any(Number), [])
   })
 
   it('does not accept admin-bot buttons and has no system actions', async () => {

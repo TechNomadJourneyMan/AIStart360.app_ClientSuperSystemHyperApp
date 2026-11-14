@@ -58,7 +58,7 @@ const ENV = ['TELEGRAM_ADMIN_BOT_TOKEN', 'TELEGRAM_ADMIN_WEBHOOK_SECRET', 'NOTIF
 const saved: Record<string, string | undefined> = {}
 const link = (n: number, role: string): LinkRow => ({
   user_id: `u${n}`, chat_id: String(100 + n), min_level: 'INFO', muted_until: null,
-  profile_role: role === 'super_admin' ? 'super_admin' : 'admin', staff_role: role === 'super_admin' ? null : role,
+  profile_role: role === 'super_admin' ? 'super_admin' : 'admin', staff_role: role, // SR-08: staff only from staff_roles (a legacy profiles.role super_admin alone is not staff)
 })
 const sentTo = (r: { deliveries: Array<{ target: string; status: string }> }) => r.deliveries.filter((d) => d.status === 'sent').map((d) => d.target).sort()
 
@@ -83,6 +83,13 @@ describe('notifyStaff — audienceUserIds / skipCooldown', () => {
     db.cooldownHits = 0
     process.env.NOTIFY_QUIET_HOURS = ''
     db.staff = [link(1, 'super_admin'), link(2, 'crm_manager'), link(3, 'support'), link(4, 'super_expert')]
+  })
+
+  it('SR-08: a legacy profiles.role super_admin without a staff_roles row is not staff — no delivery', async () => {
+    db.staff = [{ ...link(1, 'super_admin'), staff_role: null }, link(2, 'crm_manager')]
+    const tg = recordingFetch()
+    const r = await notifyStaff(inbound({ audiencePermission: 'inbox.manage' }), { fetchImpl: tg.fetchImpl })
+    expect(sentTo(r)).toEqual(['102'])
   })
 
   it('without an assignee: everyone whose role has inbox.manage', async () => {

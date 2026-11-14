@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod'
-import { revokeSharesOfAssignee } from '@/lib/share/tokens'
+import { revokeSharesOfAssignee, revokeSharesOfCreator } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
@@ -178,6 +178,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
           if (error || !data?.length) return { id, ok: false, error: 'Статус не обновлён' }
           const ban = await sb.auth.admin.updateUserById(id, { ban_duration: '87600h' })
           if (ban?.error) console.error('[users/bulk] ban failed:', ban.error.message)
+          // SR-19: the person's public report links stop working with the account.
+          await revokeSharesOfCreator(id, `status:${next}`)
           if (input.action === 'archive') {
             await sb.from('impersonation_sessions')
               .update({ ended_at: new Date().toISOString(), end_reason: 'user_archived' })

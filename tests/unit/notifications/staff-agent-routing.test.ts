@@ -61,7 +61,7 @@ const TASK = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b'
 
 const link = (n: number, role: string, minLevel = 'INFO', mutedUntil: Date | null = null): LinkRow => ({
   user_id: `u${n}`, chat_id: String(100 + n), min_level: minLevel, muted_until: mutedUntil,
-  profile_role: role === 'super_admin' ? 'super_admin' : 'admin', staff_role: role === 'super_admin' ? null : role,
+  profile_role: role === 'super_admin' ? 'super_admin' : 'admin', staff_role: role, // SR-08: staff only from staff_roles (a legacy profiles.role super_admin alone is not staff)
 })
 const sentTo = (r: { deliveries: Array<{ channel: string; target: string; status: string; reason?: string }> }) =>
   r.deliveries.filter((d) => d.status === 'sent').map((d) => d.target).sort()
