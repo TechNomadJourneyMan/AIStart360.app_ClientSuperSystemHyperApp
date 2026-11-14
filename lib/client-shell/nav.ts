@@ -14,7 +14,7 @@
  *  - an expert account (profiles.role 'expert', opening the cabinet to check it)
  *    does not get links that middleware would bounce back to /expert.
  */
-export type ClientNavKey = 'home' | 'dashboard' | 'point_a' | 'point_b' | 'survey' | 'gri' | 'messages' | 'documents'
+export type ClientNavKey = 'home' | 'dashboard' | 'point_a' | 'point_b' | 'survey' | 'gri' | 'market' | 'messages' | 'documents'
 
 export interface ClientNavItem {
   key: ClientNavKey
@@ -44,6 +44,8 @@ export const CLIENT_NAV_DEFS: readonly ItemDef[] = [
   { key: 'point_b', label: 'Точка Б', href: '/client/point-b', icon: 'flag_circle', openBeforeApproval: false },
   { key: 'survey', label: 'Анкета', href: '/client/onboarding', icon: 'edit_note', openBeforeApproval: true },
   { key: 'gri', label: 'GRI', href: '/gri', icon: 'radar', openBeforeApproval: true },
+  // R2-C (Q5): Рынок — a paid section; closed → a lock, the page shows the paywall.
+  { key: 'market', label: 'Рынок', href: '/market', icon: 'public', openBeforeApproval: false },
   { key: 'messages', label: 'Сообщения', href: '/client/messages', icon: 'forum', openBeforeApproval: true },
   { key: 'documents', label: 'Документы', href: '/client/onboarding/documents', icon: 'cloud_upload', openBeforeApproval: true },
 ]
@@ -52,7 +54,7 @@ export const CLIENT_NAV_DEFS: readonly ItemDef[] = [
  * Pages an expert account cannot open (middleware ADMIN_PATHS send an expert
  * to /expert/dashboard). Kept in sync by tests/unit/client-shell.
  */
-export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri']
+export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market']
 
 export interface BuildClientNavInput {
   /** profiles.status === 'approved'. */
@@ -67,8 +69,13 @@ export interface BuildClientNavInput {
   lockedKeys?: readonly ClientNavKey[]
 }
 
-/** Menu item of each paid section (lib/access/entitlements.ts PAID_SECTIONS); Рынок is not in this menu. */
-export const PAID_NAV_KEYS: Readonly<Record<'point_a' | 'point_b' | 'gri_full', ClientNavKey>> = { point_a: 'point_a', point_b: 'point_b', gri_full: 'gri' }
+/** Menu item of each paid section (lib/access/entitlements.ts PAID_SECTIONS). */
+export const PAID_NAV_KEYS: Readonly<Record<'point_a' | 'point_b' | 'market' | 'gri_full', ClientNavKey>> = { point_a: 'point_a', point_b: 'point_b', market: 'market', gri_full: 'gri' }
+
+/** Menu items to lock from the server decision (lib/access/decision.ts sections: not true = closed). */
+export function lockedNavKeysFor(sections: Readonly<Partial<Record<keyof typeof PAID_NAV_KEYS, boolean>>>): ClientNavKey[] {
+  return (Object.keys(PAID_NAV_KEYS) as Array<keyof typeof PAID_NAV_KEYS>).filter((f) => !sections[f]).map((f) => PAID_NAV_KEYS[f])
+}
 
 function under(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`)

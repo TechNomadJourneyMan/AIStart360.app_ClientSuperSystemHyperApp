@@ -28,6 +28,13 @@ const EXTRA: Array<{ file: string; feature: string }> = [
   // public links and PDFs of the paid sections
   { file: 'app/api/share/route.ts', feature: 'point_a' },
   { file: 'app/api/export/report/route.ts', feature: 'point_a' },
+  // R2-C (M-4): the expert's report and the expert's review / comments are part of Точка А
+  { file: 'app/api/v1/reports/route.ts', feature: 'point_a' },
+  { file: 'app/api/v1/reports/[id]/route.ts', feature: 'point_a' },
+  { file: 'app/api/v1/reports/[id]/pdf/route.ts', feature: 'point_a' },
+  { file: 'app/api/v1/reports/[id]/link/route.ts', feature: 'point_a' },
+  { file: 'app/api/v1/expert-comments/route.ts', feature: 'point_a' },
+  { file: 'app/api/v1/expert-review/route.ts', feature: 'point_a' },
 ]
 
 /** Not gated on purpose — each with its reason. */
@@ -96,9 +103,16 @@ const PAID_READ = new RegExp(
     String.raw`loadMetricsPageData\(`,
     String.raw`loadPointBInputs\(`,
     String.raw`loadOfficialSnapshot\(`,
+    // R2-C (M-4): the expert's report, his review / comments and the findings (migration 148)
+    String.raw`from\(\s*['"](?:report_versions|expert_reviews|expert_comments|diagnostic_findings|diagnostic_recommendations)['"]`,
+    String.raw`publishedReportForCaller\(`,
+    String.raw`resolveVersionLink\(`,
+    // public share links of the paid sections (/r/<token>)
+    String.raw`load(?:PointA|PointB|Gri)View\(`,
   ].join('|'),
 )
-const DECISION = /gatePaidSection\(|gateFeature\(|resolveFeature\(|resolveAccess\(|getRequestAccess\(|<FeatureGate|\bauthorize\(\{|isPaidSectionOpen\(/
+/** R2-C: public links decide by the OWNER's current right (lib/access/owner-access.ts). */
+const DECISION = /gatePaidSection\(|gateFeature\(|resolveFeature\(|resolveAccess\(|getRequestAccess\(|<FeatureGate|\bauthorize\(\{|isPaidSectionOpen\(|ownerSectionOpen\(|companyOwnerSectionOpen\(/
 
 /** Staff / internal surfaces: paid sections are a CLIENT-side limit (staff are exempt by the decision itself). */
 const STAFF_PREFIXES: Record<string, string> = {

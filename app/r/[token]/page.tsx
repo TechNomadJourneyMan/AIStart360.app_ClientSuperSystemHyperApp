@@ -23,6 +23,8 @@ import {
   getStepFromKey,
   formatSurveyValue,
 } from '@/lib/survey-labels'
+import { ownerSectionOpen, shareSection } from '@/lib/access/owner-access'
+import { LinkUnavailable } from '@/components/share/LinkUnavailable'
 
 // Read-only public viewer — keep it out of search indexes.
 const BASE_METADATA: Metadata = {
@@ -59,6 +61,8 @@ export async function generateMetadata({
 
     const subject = await loadSubject(share.companyId)
     if (!subject) return BASE_METADATA
+    // R2-C: no numbers of a closed section, not even in the share card.
+    if (!(await ownerSectionOpen(subject.userId || null, 'gri_full'))) return BASE_METADATA
 
     const gri = await loadGriView(subject)
     if (!gri) return BASE_METADATA
@@ -961,9 +965,6 @@ export default async function SharedReportPage({
   }
   if (!share) return <InvalidLink />
 
-  // Record the view (best-effort, never blocks the render).
-  await incrementShareViews(params.token).catch(() => {})
-
   // Subject load must not throw the page into the global 500 — degrade to
   // InvalidLink on any failure.
   let subject: ReportSubject | null = null
@@ -973,6 +974,15 @@ export default async function SharedReportPage({
     subject = null
   }
   if (!subject) return <InvalidLink />
+
+  // R2-C: a share of Точка А / Точка Б / GRI shows the data only while the section
+  // is open for the OWNER of the company right now (the link is not deleted; the
+  // questionnaire share is free). Closed → «Ссылка недоступна», no data at all.
+  const section = shareSection(share.type)
+  if (section && !(await ownerSectionOpen(subject.userId || null, section))) return <LinkUnavailable />
+
+  // Record the view (best-effort, never blocks the render).
+  await incrementShareViews(params.token).catch(() => {})
 
   return (
     <main className="min-h-screen bg-[#0A0B0F]">

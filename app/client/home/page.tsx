@@ -42,11 +42,15 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     return snapshotRes.error ? null : (snapshotRes.data as { engine?: unknown; config_version?: unknown; overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
   })
   // R-025: the latest report version an expert published («Ваш отчёт готов»), read
-  // next to the snapshot (same wave). RLS shows a tenant only published versions;
-  // the query asks for them explicitly too. A failed read only hides the card.
+  // next to the snapshot (same wave). Only published versions are asked for. A
+  // failed read only hides the card. R2-C (M-4): the report is part of Точка А and
+  // migration 148 hides report_versions from a Free session — the card's metadata
+  // (id, version, title, dates; no content) is read with the service role for the
+  // caller's OWN company; a closed Точка А turns the card into «Отчёт эксперта
+  // готов» with the paywall (no «Открыть», PDF or link).
   const reportP = companyIdP.then(async (companyId) => {
     if (companyId == null) return null
-    const res = await sb.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
+    const res = await own.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
     return res.error ? null : pickPublishedReport(res.data as Array<Record<string, unknown>> | null)
   }).catch(() => null)
   // Round 2 (R2-A): which paid sections are closed (one server decision; a failure → nothing locked here, the API still gates).
@@ -122,7 +126,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   return (
     <>
       <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6 sm:pt-8">
-        <ReportReadyCard report={report} />
+        <ReportReadyCard report={report} locked={paidLocked.point_a} />
       </div>
       <UserHome data={data} />
     </>

@@ -92,6 +92,35 @@ export async function notifyAccessGranted(userId: string): Promise<NotifyClientR
   })
 }
 
+/**
+ * R2-C (M-5): «Доступ открыт» — менеджер назначил платный тариф (из заявки на
+ * доступ или в User 360 → Биллинг). Запись в ленте уведомлений клиента
+ * (категория «security», её нельзя выключить); другие каналы не используются.
+ * dedupeKey — заявка, из которой пришло назначение: второй вызов по той же
+ * заявке ничего не пришлёт.
+ */
+export async function notifyPaidAccessOpened(
+  userId: string,
+  input: { periodEnd?: string | null; dedupeKey?: string | null } = {},
+): Promise<NotifyClientResult> {
+  const end = input.periodEnd ? new Date(input.periodEnd) : null
+  const until = end && !Number.isNaN(end.getTime())
+    ? ` Доступ действует до ${end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}.`
+    : ''
+  return notifyClient({
+    userId,
+    category: 'security',
+    event: 'paid_access_opened',
+    title: 'Доступ открыт',
+    body: `Менеджер открыл вам платный доступ: Точка А, Точка Б, Рынок и полный GRI.${until}`,
+    ctaUrl: '/client/home',
+    ctaLabel: 'Открыть кабинет',
+    priority: 'high',
+    dedupeKey: input.dedupeKey ?? null,
+    channels: { email: false, telegram: false },
+  })
+}
+
 /** «Точка А пересчитана» (категория «reports»). */
 export async function notifyPointARecalculated(
   userId: string,

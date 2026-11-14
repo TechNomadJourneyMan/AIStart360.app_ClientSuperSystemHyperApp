@@ -1,9 +1,12 @@
 /**
  * R2-A: a request for PAID access (paywall / the old «Pro» window) is shown to
- * staff in GIGA («Заявки» → «Доступы») and deciding on it only closes the
- * request — it never changes profiles.status (approving it must not admit a
- * client who is still waiting for approval) and sends no «client approved»
- * notices. Registrations keep their old path.
+ * staff in GIGA («Заявки» → «Доступы»); a decision on it never changes
+ * profiles.status (it must not admit a client who is still waiting for
+ * approval) and sends no «client approved» notices. Registrations keep their
+ * old path.
+ * R2-C (M-5): it is approved only by assigning the plan («Назначить Pro» /
+ * Биллинг — tests/unit/access/assign-pro.test.ts); a bare «approve» is refused,
+ * reject / archive stay.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -54,13 +57,22 @@ beforeEach(() => {
 })
 
 describe('decision on a paid-access request', () => {
-  it('approve closes the request and does NOT touch profiles.status — even for a client still pending approval', async () => {
+  it('R2-C: a bare approve is refused (nothing opened, nothing closed) and does NOT touch profiles.status', async () => {
+    for (const source of ['paywall', 'upgrade_modal']) {
+      const sb = stub({ ...paidRow, source }, 'pending_approval')
+      const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action: 'approve', actor: { id: ACTOR, kind: 'session' } })
+      expect(r).toEqual({ ok: false, reason: 'assign_plan_required', userId: CLIENT })
+      expect(h.apply).not.toHaveBeenCalled()
+      expect(sb.updates).toHaveLength(0)
+    }
+  })
+
+  it('archive still closes the request (no profiles.status change), audited as paid access', async () => {
     const sb = stub(paidRow, 'pending_approval')
-    const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action: 'approve', actor: { id: ACTOR, kind: 'session' } })
-    expect(r).toEqual({ ok: true, status: 'approved', userId: CLIENT })
+    const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action: 'archive', actor: { id: ACTOR, kind: 'session' } })
+    expect(r).toEqual({ ok: true, status: 'archived', userId: CLIENT })
     expect(h.apply).not.toHaveBeenCalled()
-    expect(sb.updates).toHaveLength(1)
-    expect(sb.updates[0]).toMatchObject({ status: 'approved' })
+    expect(sb.updates[0]).toMatchObject({ status: 'archived' })
     expect(h.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'request.status_changed', diff: expect.objectContaining({ kind: 'paid_access' }) }))
   })
 

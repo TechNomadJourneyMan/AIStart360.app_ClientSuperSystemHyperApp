@@ -19,7 +19,7 @@ export type AccessAction = 'approve' | 'reject' | 'archive'
 
 export type AccessDecisionResult =
   | { ok: true; status: 'approved' | 'rejected' | 'archived'; userId: string }
-  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition'; userId: string }
+  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required'; userId: string }
 
 /**
  * Valid transitions of profiles.status for a decision on a request (R-007),
@@ -79,10 +79,15 @@ export async function decideAccessRequest(
     .maybeSingle()
 
   // R2-A: a request for PAID access (paywall / the old «Pro» window) is not a
-  // registration. Deciding on it only closes the request; it never changes
-  // profiles.status (approving it must not admit a client still waiting for
-  // approval) and sends no «client approved» notices. The tariff is set in
-  // User 360 → Биллинг (lib/payments/billing.ts).
+  // registration. Deciding on it never changes profiles.status (approving it
+  // must not admit a client still waiting for approval) and sends no «client
+  // approved» notices.
+  // R2-C (M-5, PO): such a request is approved only by assigning the plan —
+  // «Назначить Pro» (POST /api/giga-admin/requests/:id/assign-pro) or User 360 →
+  // Биллинг; both close it as approved and notify the client
+  // (lib/access/paid-access-grant.ts). A bare «approve» here (single, bulk, bot)
+  // would close it with nothing opened — it is refused. Reject (with a reason)
+  // and archive stay.
   let paidAccess = false
   if (arRow) {
     const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null; type?: string | null; source?: string | null }
@@ -109,6 +114,7 @@ export async function decideAccessRequest(
   if ((targetIsStaff && role !== 'super_admin') || !canManageTarget(role, { staffRole: target.staffRole, profileRole: target.role })) {
     return { ok: false, reason: 'forbidden', userId }
   }
+  if (paidAccess && args.action === 'approve') return { ok: false, reason: 'assign_plan_required', userId }
   if (paidAccess) {
     const { error: arErr } = await sb
       .from('admin_requests')

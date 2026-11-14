@@ -10,6 +10,8 @@
  *     писать и вызывать функции могут только сервер (service role).
  * Каждый случай — в транзакции с откатом (tests/helpers/pg-rls.ts).
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedCompany, seedStaff, seedUser, type Db } from '../../helpers/pg-rls'
@@ -114,16 +116,16 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       const planId = await seedPlanInReview(db, company, client)
 
       const changes = (await sync(db, now)).filter((c) => c.r_client === client)
-      expect(changes.map((c) => c.r_change).sort()).toEqual(['new', 'new', 'new', 'new'])
+      expect(changes.map((c) => c.r_change).sort()).toEqual(['new', 'new', 'new'])
 
       const tasks = await tasksOf(db, client)
       const bySource = Object.fromEntries(tasks.map((t) => [t.source, t]))
-      expect(Object.keys(bySource).sort()).toEqual(['case', 'plan_review', 'rec_review', 'report_review'])
+      // 149 (решение PO): рекомендации Точки Б на проверке — не работа эксперта под SLA.
+      expect(Object.keys(bySource).sort()).toEqual(['case', 'plan_review', 'report_review'])
       expect(bySource.case.source_id).toBe(caseId)
       expect(bySource.report_review.source_id).toBe(reportId)
-      expect(bySource.rec_review.source_id).toBe(company) // grouped: one task per company
       expect(bySource.plan_review.source_id).toBe(planId)
-      for (const s of ['case', 'report_review', 'rec_review']) {
+      for (const s of ['case', 'report_review']) {
         expect(bySource[s].assignee_id, s).toBe(expert)
         expect(bySource[s].assigned_via, s).toBe('client')
       }
@@ -135,7 +137,7 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
 
       // A second pass opens nothing new (one open task per source item).
       expect((await sync(db, now)).filter((c) => c.r_client === client)).toEqual([])
-      expect(await tasksOf(db, client)).toHaveLength(4)
+      expect(await tasksOf(db, client)).toHaveLength(3)
     }))
 
   it('a non-worker responsible (CRM manager) or a pending expert → the common queue; the case\'s own assignee only if he may hold it', () =>
@@ -228,32 +230,68 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       expect((await claim(db, 'breached', plus(t0, 60))).filter((r) => r.id === task.id)).toEqual([])
     }))
 
-  it('report decision, reviewed recommendations and a plan decision close their tasks', () =>
+  it('report decision and a plan decision close their tasks', () =>
     inRollback(async (db) => {
       await clockStart(db)
       const t0 = await txNow(db)
       const client = await seedUser(db, { status: 'approved' })
       const company = await seedCompany(db, client)
       const reportId = await seedReportInReview(db, company)
-      const recs = await seedPendingRecs(db, company, 2)
       const planId = await seedPlanInReview(db, company, client)
       await sync(db, t0)
-      expect(await tasksOf(db, client)).toHaveLength(3)
+      expect(await tasksOf(db, client)).toHaveLength(2)
 
-      // One recommendation reviewed: a reaction, still open (another one waits).
-      await db.query(`UPDATE public.pb_recommendations SET status = 'expert_verified', reviewed_at = $2 WHERE id = $1`, [recs[0], plus(t0, 1)])
-      const r1 = (await sync(db, plus(t0, 2))).filter((c) => c.r_client === client)
-      expect(r1.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['rec_review:reacted'])
-
-      await db.query(`UPDATE public.pb_recommendations SET status = 'expert_rejected', reviewed_at = $2 WHERE id = $1`, [recs[1], plus(t0, 3)])
       await db.query(`UPDATE public.report_versions SET status = 'published', published_at = $2 WHERE id = $1`, [reportId, plus(t0, 4)])
       await db.query(`UPDATE public.pb_plan_versions SET status = 'draft', rejected_at = $2, rejected_reason = 'нет' WHERE id = $1`, [planId, plus(t0, 5)])
       const r2 = (await sync(db, plus(t0, 6))).filter((c) => c.r_client === client)
-      expect(r2.map((c) => `${c.r_source}:${c.r_change}`).sort()).toEqual(['plan_review:closed', 'rec_review:closed', 'report_review:closed'])
+      expect(r2.map((c) => `${c.r_source}:${c.r_change}`).sort()).toEqual(['plan_review:closed', 'report_review:closed'])
       const bySource = Object.fromEntries((await tasksOf(db, client)).map((t) => [t.source, t]))
       expect(bySource.report_review.closed_at!.getTime()).toBe(plus(t0, 4).getTime())
-      expect(bySource.rec_review.closed_at!.getTime()).toBe(plus(t0, 3).getTime())
       expect(bySource.plan_review.close_reason).toBe('rejected')
+    }))
+
+  it('149: Point B recommendations on review never open an SLA task, whatever their age', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await assign(db, client, expert)
+      await seedPendingRecs(db, company, 5)
+      for (const h of [0, 25, 49, 200]) {
+        expect((await sync(db, plus(t0, h))).filter((c) => c.r_client === client)).toEqual([])
+      }
+      expect(await tasksOf(db, client)).toEqual([])
+      expect((await claim(db, 'escalated', plus(t0, 201))).filter((t) => t.client_id === client)).toEqual([])
+    }))
+
+  it('149: applying the migration closes open recommendation tasks as «excluded» (no delete) and is idempotent', () =>
+    inRollback(async (db) => {
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const t0 = await txNow(db)
+      // An open recommendation task as 145/146 created it, plus an already closed one (history).
+      await db.query(
+        `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, company_id, title, received_at, reaction_due_at, answer_due_at)
+         VALUES ('rec_review', $2, $1, $2, 'Рекомендации Точки Б на проверке', $3, $3::timestamptz + interval '24 hours', $3::timestamptz + interval '48 hours')`,
+        [client, company, plus(t0, -30)])
+      await db.query(
+        `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, company_id, title, received_at, reaction_due_at, answer_due_at, closed_at, close_reason, answered)
+         VALUES ('rec_review', $2 || ':old', $1, $2, 'Рекомендации Точки Б на проверке', $3, $3::timestamptz + interval '24 hours', $3::timestamptz + interval '48 hours', $3, 'reviewed', true)`,
+        [client, company, plus(t0, -100)])
+      const sql = readFileSync(join(process.cwd(), 'supabase/migrations/149_expert_sla_no_rec_review.sql'), 'utf8')
+      await db.query(sql)
+      await db.query(sql) // a second run changes nothing
+      const tasks = await tasksOf(db, client)
+      expect(tasks).toHaveLength(2)
+      const open = tasks.find((t) => t.source_id === company)!
+      expect(open).toMatchObject({ close_reason: 'excluded', answered: false, escalated_at: null, breached_at: null })
+      expect(open.closed_at).not.toBeNull()
+      const old = tasks.find((t) => t.source_id === `${company}:old`)!
+      expect(old).toMatchObject({ close_reason: 'reviewed', answered: true })
+      // Closed tasks are never claimed for escalation or breach.
+      expect((await claim(db, 'breached', plus(t0, 100))).filter((t) => t.client_id === client)).toEqual([])
     }))
 
   it('work older than the clock start counts from the clock start; a reopened case starts a new task', () =>
@@ -537,22 +575,12 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
       expect((await claim(db, 'breached', plus(t0, 48.5))).filter((t) => t.client_id === client).map((t) => t.id)).toEqual([fresh.id])
     }))
 
-  it('п. 8: stale recommendations are not «reviewed»; the regenerated ones inherit the clock; an expert decision is an answer', () =>
+  it('п. 8: an expert decision on a report is an answer — the next version starts its own clock', () =>
     inRollback(async (db) => {
       await clockStart(db)
       const t0 = await txNow(db)
       const client = await seedUser(db, { status: 'approved' })
       const company = await seedCompany(db, client)
-      const recs = await seedPendingRecs(db, company, 2)
-      await sync(db, t0)
-      await db.query(`UPDATE public.pb_recommendations SET status = 'stale' WHERE id = ANY($1)`, [recs])
-      await sync(db, plus(t0, 10))
-      const [regen] = await seedPendingRecs(db, company, 1)
-      await db.query(`UPDATE public.pb_recommendations SET created_at = $2 WHERE id = $1`, [regen, plus(t0, 10.5)])
-      await sync(db, plus(t0, 11))
-      const [old, fresh] = await tasksOf(db, client)
-      expect(old).toMatchObject({ close_reason: 'stale', answered: false, first_response_at: null })
-      expect(fresh.received_at.getTime()).toBe(old.received_at.getTime())
 
       // A report published by the expert is an answer: the next version starts its own clock.
       const v1 = await seedReportInReview(db, company)
@@ -574,13 +602,15 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
       const t0 = await txNow(db)
       const client = await seedUser(db, { status: 'approved' })
       const company = await seedCompany(db, client)
-      const recs = await seedPendingRecs(db, company, 1)
+      const v1 = await seedReportInReview(db, company)
       await sync(db, t0)
-      await db.query(`UPDATE public.pb_recommendations SET status = 'stale' WHERE id = ANY($1)`, [recs])
+      // Replaced without an expert decision (not an answer), long before the next version.
+      await db.query(`UPDATE public.report_versions SET status = 'superseded' WHERE id = $1`, [v1])
       await sync(db, plus(t0, 1))
-      const [regen] = await seedPendingRecs(db, company, 1)
       const later = plus(t0, 100)
-      await db.query(`UPDATE public.pb_recommendations SET created_at = $2 WHERE id = $1`, [regen, plus(later, -1)])
+      await db.query(
+        `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, created_at)
+         VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h2', 'agent:report', $2)`, [company, plus(later, -1)])
       await sync(db, later)
       const [, fresh] = await tasksOf(db, client)
       expect(fresh.received_at.getTime()).toBe(plus(later, -1).getTime())

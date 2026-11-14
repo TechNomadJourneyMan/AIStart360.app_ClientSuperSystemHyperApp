@@ -23,7 +23,14 @@ export interface ExpertReviewItem {
   stamp: string
   findings: number
   recommendations: number
+  /**
+   * R2-C (M-4): Точка А is closed for the client (Free) — after publishing he
+   * sees only the notice that the report is ready; the report is paid access.
+   */
+  clientPaidLocked?: boolean
 }
+
+export const FREE_CLIENT_NOTE = 'Клиент на бесплатном тарифе: после публикации он увидит только уведомление о готовности отчёта — сам отчёт входит в платный доступ (Точка А).'
 
 type CardState =
   | { kind: 'idle' }
@@ -56,7 +63,11 @@ function ReviewCard({ item, focused }: { item: ExpertReviewItem; focused: boolea
         return setState({
           kind: 'done',
           text: decision === 'approve'
-            ? (body.already ? 'Уже опубликовано ранее.' : 'Опубликовано: клиент видит отчёт и получил уведомление.')
+            ? (body.already
+              ? 'Уже опубликовано ранее.'
+              : item.clientPaidLocked
+                ? 'Опубликовано. Клиент на бесплатном тарифе получил уведомление о готовности; сам отчёт откроется ему в платном доступе.'
+                : 'Опубликовано: клиент видит отчёт и получил уведомление.')
             : rerun?.state === 'queued'
               ? `Правки отправлены. Агент пересоберёт отчёт (попытка ${rerun.attempt} из ${rerun.max}) — новая версия появится здесь.`
               : rerun?.state === 'cap_reached'
@@ -86,6 +97,12 @@ function ReviewCard({ item, focused }: { item: ExpertReviewItem; focused: boolea
           <p className="text-[11px] font-mono text-on-surface-variant mt-1">
             {item.stamp} · выводов {item.findings} · рекомендаций {item.recommendations}
           </p>
+          {item.clientPaidLocked && (
+            <p className="mt-2 inline-flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-1.5 text-[11px] text-on-surface-variant" data-free-client>
+              <span className="material-symbols-outlined text-[14px] text-amber-400" aria-hidden="true">lock</span>
+              {FREE_CLIENT_NOTE}
+            </p>
+          )}
         </div>
         <a href={`/api/expert/reports/${item.id}/pdf`} target="_blank" rel="noreferrer" className={BTN_GHOST} aria-label={`Открыть PDF: ${item.company_name ?? ''}, ${item.stamp}`}>
           <Icon name="picture_as_pdf" /> PDF

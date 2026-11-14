@@ -12,7 +12,8 @@ import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 // Mounting either would request paid data (Point A state / GRI assessment) — a test failure here.
 vi.mock('@/components/dashboard/PointADashboardSummary', () => ({ default: () => React.createElement('div', { id: 'point-a-summary' }) }))
 vi.mock('@/components/user-dashboard/GriSection', () => ({ default: () => React.createElement('div', { id: 'gri-section' }) }))
-vi.mock('@/components/client/ExpertMessages', () => ({ default: () => null }))
+// R2-C (M-4): the expert's review is part of Точка А — mounting it would request /api/v1/expert-review.
+vi.mock('@/components/client/ExpertMessages', () => ({ default: () => React.createElement('div', { id: 'expert-messages' }) }))
 
 const { default: UserHome } = await import('@/components/user-dashboard/UserHome')
 
@@ -35,6 +36,7 @@ describe('client home and the paid sections', () => {
     expect(out).toContain('data-paywall="gri_full"')
     expect(out).not.toContain('point-a-summary')
     expect(out).not.toContain('gri-section')
+    expect(out).not.toContain('expert-messages') // R2-C (M-4)
     expect(out).toContain('подробный разбор — в платном доступе')
     expect(out).toContain('полный GRI — в платном доступе')
     // the free parts stay: the questionnaire and the documents
@@ -46,6 +48,7 @@ describe('client home and the paid sections', () => {
       const out = render(locked)
       expect(out).toContain('point-a-summary')
       expect(out).toContain('gri-section')
+      expect(out).toContain('expert-messages')
       expect(out).not.toContain('data-paywall')
     }
   })

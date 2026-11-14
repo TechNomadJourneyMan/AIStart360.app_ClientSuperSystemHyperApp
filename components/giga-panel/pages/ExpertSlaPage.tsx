@@ -41,7 +41,7 @@ interface Worker { id: string; name: string; kind: 'expert' | 'super_expert' | '
 const STAGE_TONE: Record<SlaStage, Tone> = { breached: 'red', escalated: 'red', due_soon: 'amber', ok: 'neutral', closed: 'green' }
 const KIND_LABEL: Record<Worker['kind'], string> = { expert: 'эксперт', super_expert: 'SuperExpert', admin: 'Admin', super_admin: 'Super Admin' }
 const CLOSE_LABEL: Record<string, string> = {
-  superseded: 'заменена новой версией', stale: 'рекомендации устарели', withdrawn: 'отозвана', failed: 'сбой сборки', gone: 'удалена',
+  superseded: 'заменена новой версией', stale: 'рекомендации устарели', excluded: 'рекомендации сняты с SLA', withdrawn: 'отозвана', failed: 'сбой сборки', gone: 'удалена',
 }
 const VIA_LABEL: Record<string, string> = { source: 'из обращения', client: 'ответственный клиента', auto: 'авто: наименее загружен', manual: 'вручную' }
 

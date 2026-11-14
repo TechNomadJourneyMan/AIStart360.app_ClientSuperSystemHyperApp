@@ -76,4 +76,12 @@ describe('expert SLA policy', () => {
     expect(isExpertWorkSource('plan_review')).toBe(false)
     expect(isExpertWorkSource('other')).toBe(false)
   })
+
+  it('PO 2026-11-14: no escalation priority waits longer than the 24 h reaction of the expert SLA', () => {
+    const d = SETTINGS.escalation_sla_hours.default
+    expect(d).toEqual({ critical: 2, high: 4, medium: 24, low: 24 })
+    for (const [priority, hours] of Object.entries(d)) {
+      expect(hours, priority).toBeLessThanOrEqual(DEFAULT_EXPERT_SLA.reaction_hours)
+    }
+  })
 })

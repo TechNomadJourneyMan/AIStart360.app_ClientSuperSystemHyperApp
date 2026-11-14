@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { reviewBlockLabel, reviewBlockOrder } from '@/lib/expert-review/blocks'
 import { authorNames } from '@/lib/expert-review/server'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/expert-review — разбор эксперта для ТЕКУЩЕГО клиента.
@@ -13,6 +14,10 @@ import { authorNames } from '@/lib/expert-review/server'
  * исключительно ОПУБЛИКОВАННЫЕ разборы и комментарии: черновики эксперта
  * клиенту не видны — фильтр здесь и RLS-политика в миграции 087.
  * Имя автора — ФИО или «Эксперт AIStart360», никогда не email.
+ *
+ * R2-C (M-4): разбор и комментарии эксперта — часть Точки А (право point_a),
+ * те же строки, что /api/v1/expert-comments. Раздел закрыт → 402
+ * upgrade_required до любого чтения; персонал проходит.
  */
 
 interface PublicComment {
@@ -35,8 +40,11 @@ interface PublicReview {
 }
 
 export async function GET() {
-  const { data: { user } } = await createServerClient().auth.getUser()
+  const session = createServerClient()
+  const { data: { user } } = await session.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  const upgrade = await gatePaidSection(session, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const sb = createServiceClient()
   const [reviewsRes, commentsRes] = await Promise.all([

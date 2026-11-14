@@ -192,6 +192,7 @@ export const ROUTE_AUTH_MANIFEST: Record<string, Partial<Record<HttpMethod, Rout
   '/api/giga-admin/reports/review': { GET: 'staff:reports.review' },
   '/api/giga-admin/requests': { GET: 'staff:users.view', POST: 'staff:users.manage' },
   '/api/giga-admin/requests/[id]': { PATCH: 'staff:users.approve' },
+  '/api/giga-admin/requests/[id]/assign-pro': { POST: 'staff:users.manage' },
   '/api/giga-admin/requests/[id]/diagnostics': { GET: ['staff:users.view,users.sensitive', 'expert'] },
   '/api/giga-admin/requests/[id]/documents': { GET: ['staff:users.view,users.sensitive', 'expert'] },
   '/api/giga-admin/requests/[id]/survey': { GET: ['staff:survey.view,users.sensitive', 'expert'], PATCH: 'staff:survey.edit' },

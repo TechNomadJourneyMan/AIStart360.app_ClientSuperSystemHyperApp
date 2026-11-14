@@ -9,15 +9,15 @@ import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
 import { getRequestUser } from '@/lib/request-user'
 import { visibleSectionsFor } from '@/lib/platform/sections'
 import { clientShellData, loadClientShellAccount } from '@/lib/client-shell/server'
-import { PAID_NAV_KEYS, type ClientNavKey } from '@/lib/client-shell/nav'
+import { lockedNavKeysFor, type ClientNavKey } from '@/lib/client-shell/nav'
 import { getRequestAccess } from '@/lib/access/request-access'
 
 /** Round 2 (R2-A): menu items of the paid sections closed for the user (one server decision per render). */
 async function lockedNavKeys(userId: string | null): Promise<ClientNavKey[]> {
   if (!userId) return []
   try {
-    const { sections } = await getRequestAccess(userId)
-    return (Object.keys(PAID_NAV_KEYS) as Array<keyof typeof PAID_NAV_KEYS>).filter((f) => !sections[f]).map((f) => PAID_NAV_KEYS[f])
+    // R2-C (Q5): Рынок is in the menu too — locked while the section is closed.
+    return lockedNavKeysFor((await getRequestAccess(userId)).sections)
   } catch {
     return [] // the pages and the API still gate on their own
   }

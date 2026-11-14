@@ -47,6 +47,18 @@ function fmtMoney(p: Payment): string {
   return p.amountKzt ? `${base} (${p.amountKzt.toLocaleString('ru-RU')} ₸)` : base
 }
 
+/**
+ * R2-C (M-5): a plan with paid access also closes the client's open requests for
+ * access and notifies him once — the answer of PATCH …/billing says what happened.
+ */
+export function billingSavedText(d: { closedRequests?: unknown; notified?: unknown }): string {
+  const closed = Array.isArray(d.closedRequests) ? d.closedRequests.length : 0
+  const parts = ['Сохранено. Изменение записано в журнал.']
+  if (closed > 0) parts.push(`Открытые заявки клиента на доступ закрыты как одобренные: ${closed}.`)
+  if (d.notified === true) parts.push('Клиент получил уведомление «Доступ открыт».')
+  return parts.join(' ')
+}
+
 const inputCls = 'rounded-md bg-white/[0.04] border border-white/[0.08] px-2 py-1 text-[11px] text-slate-200 focus:outline-none focus:border-emerald-500/40'
 
 export function BillingControls({ userId }: { userId: string }) {
@@ -99,7 +111,7 @@ export function BillingControls({ userId }: { userId: string }) {
       if (!res.ok || !d.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`)
       setPlan(d.plan as EffectivePlan)
       setNote('')
-      setMessage({ tone: 'ok', text: 'Сохранено. Изменение записано в журнал.' })
+      setMessage({ tone: 'ok', text: billingSavedText(d) })
     } catch (e) {
       setMessage({ tone: 'error', text: `Не сохранено: ${e instanceof Error ? e.message : 'ошибка'}` })
     } finally {

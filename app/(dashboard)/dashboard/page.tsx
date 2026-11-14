@@ -359,7 +359,10 @@ export default async function DashboardPage() {
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
       // R2-A (ревью L-6): «Поделиться» / «PDF» of Point A only with the paid section
       // (the API answers 402 — no error toasts for a Free client).
-      const pointAOpen = await getRequestAccess(user.id).then((a) => a.sections.point_a, () => false)
+      // R2-C (Q4): the same decision says whether the wizard leads to the full GRI or the free mini-GRI.
+      const sections = await getRequestAccess(user.id).then((a) => a.sections, () => null)
+      const pointAOpen = sections?.point_a ?? false
+      const griOpen = sections?.gri_full ?? false
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.
@@ -423,6 +426,7 @@ export default async function DashboardPage() {
                 surveyStepsDone={surveyStepsDone}
                 docsCount={docsCount}
                 hasDiagnostic={false}
+                griLocked={!griOpen}
               />
             )}
           </section>

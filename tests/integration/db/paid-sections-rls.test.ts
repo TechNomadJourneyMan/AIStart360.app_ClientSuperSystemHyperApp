@@ -8,6 +8,10 @@
  *
  * Real schema and policies of the disposable test DB; every case runs in a
  * transaction that is rolled back.
+ *
+ * R2-C, migration 148: (Q3) a member of a company inherits the paid rights of
+ * the company's owner — the same rule as the portal (paid-access-one-rule.test.ts);
+ * (M-4) the expert's report, review, comments and the findings are Точка А.
  */
 
 import { afterAll, describe, expect, it } from 'vitest'
@@ -71,7 +75,7 @@ const PAID_NONE = { diagnostics: 0, point_a_snapshots: 0, gri_assessments: 0, ac
 const PAID_ALL = { diagnostics: 1, point_a_snapshots: 1, gri_assessments: 1, action_items_gri: 1, action_items_point_b: 1, market: 1 }
 const FREE_DATA = { survey_answers: 1, documents: 1, companies: 1 }
 
-describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147)', () => {
+describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147, 148)', () => {
   afterAll(closeTestPool)
 
   it('Free with the gates on: no paid row of his own through PostgREST; the free data stays', async () => {
@@ -130,6 +134,175 @@ describe.skipIf(!dbTestsEnabled)('paid sections at the database level (147)', ()
       expect(await fn(expert, 'gri_full')).toBe(true)
       expect(await fn(free, 'point_a')).toBe(false)
       expect(await fn(free, 'nonsense')).toBe(false)
+    })
+  })
+
+  // ─── R2-C, migration 148 ──────────────────────────────────────────────────
+
+  /** A Free member of the client's company (company_members, migration 084). */
+  async function member(db: Db, w: World, opts: { role?: string; status?: string; flags?: Record<string, boolean> } = {}): Promise<string> {
+    const uid = await seedUser(db, { status: 'approved' })
+    await db.query(`INSERT INTO public.company_members (company_id, user_id, role, status) VALUES ($1, $2, $3, $4)`, [w.company, uid, opts.role ?? 'member', opts.status ?? 'active'])
+    if (opts.flags) await db.query(`UPDATE public.profiles SET feature_flags = $2::jsonb WHERE id = $1`, [uid, JSON.stringify(opts.flags)])
+    return uid
+  }
+  const sectionsOf = async (db: Db, uid: string) =>
+    asUser(db, uid, async () => {
+      const out: Record<string, boolean> = {}
+      for (const s of ['point_a', 'point_b', 'market', 'gri_full']) out[s] = (await db.query(`SELECT public.has_paid_section($1) AS ok`, [s])).rows[0].ok as boolean
+      return out
+    })
+  const ALL_OPEN = { point_a: true, point_b: true, market: true, gri_full: true }
+  const ALL_CLOSED = { point_a: false, point_b: false, market: false, gri_full: false }
+
+  it('Q3: a Free member of a Pro company inherits every paid section and reads the company\'s paid rows', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      for (const role of ['admin', 'member', 'viewer', 'owner']) {
+        const m = await member(db, w, { role })
+        expect(await sectionsOf(db, m), role).toEqual(ALL_OPEN)
+      }
+      const m = await member(db, w)
+      // the tenant policies of 084 let a member read the company rows; the paid policy no longer hides them
+      expect(await seen(db, m, w)).toMatchObject({ diagnostics: 1, point_a_snapshots: 1, gri_assessments: 1 })
+    })
+  })
+
+  it('Q3: a member of a Free company gets nothing; an invited / removed membership gives nothing', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      const m = await member(db, w)
+      expect(await sectionsOf(db, m)).toEqual(ALL_CLOSED)
+      expect(await seen(db, m, w)).toMatchObject({ diagnostics: 0, point_a_snapshots: 0, gri_assessments: 0 })
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      for (const status of ['invited', 'removed']) {
+        const x = await member(db, w, { status })
+        expect(await sectionsOf(db, x), status).toEqual(ALL_CLOSED)
+      }
+    })
+  })
+
+  it('Q3: the member\'s own explicit false still closes a section; the owner\'s override is inherited per section', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      const m = await member(db, w, { flags: { market: false } })
+      expect(await sectionsOf(db, m)).toEqual({ ...ALL_OPEN, market: false })
+      // a Free owner with Точка А opened individually: the member inherits exactly that section
+      await db.query(`UPDATE public.profiles SET tier = 'free', feature_flags = '{"point_a": true}'::jsonb WHERE id = $1`, [w.client])
+      expect(await sectionsOf(db, m)).toEqual({ ...ALL_CLOSED, point_a: true })
+      // the owner's own explicit false is not inherited as «open» either
+      await db.query(`UPDATE public.profiles SET tier = 'pro', feature_flags = '{"gri_full": false}'::jsonb WHERE id = $1`, [w.client])
+      expect(await sectionsOf(db, m)).toEqual({ ...ALL_OPEN, market: false, gri_full: false })
+    })
+  })
+
+  it('Q3: company_inherited_rights answers only about the caller himself (service role: anybody)', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      const m = await member(db, w)
+      const stranger = await seedUser(db, { status: 'approved' })
+      const rights = async (asUid: string | 'service', about: string) => {
+        const q = async () => (await db.query(`SELECT public.company_inherited_rights($1) AS r`, [about])).rows[0].r as Record<string, boolean>
+        return asUid === 'service' ? asService(db, q) : asUser(db, asUid, q)
+      }
+      expect(await rights(m, m)).toMatchObject({ point_a: true, market: true, gri_full: true, gri_full_unlimited: true })
+      expect(await rights(stranger, m)).toMatchObject({ point_a: false, point_b: false, market: false, gri_full: false })
+      expect(await rights('service', m)).toMatchObject({ point_a: true, gri_full_unlimited: true })
+      // the owner inherits nothing from his own company
+      expect(await rights(w.client, w.client)).toMatchObject({ point_a: false })
+      // anon may not call it at all
+      const anon = await asUser(db, null, async () => {
+        await db.query('SAVEPOINT anon_call')
+        try {
+          await db.query(`SELECT public.company_inherited_rights($1)`, [m])
+          return null
+        } catch (e) {
+          await db.query('ROLLBACK TO SAVEPOINT anon_call')
+          return (e as { code?: string }).code ?? 'error'
+        }
+      })
+      expect(anon).toBe('42501')
+    })
+  })
+
+  /** A published report with a review, an expert comment and a finding visible to the client. */
+  async function report(db: Db, w: World): Promise<void> {
+    const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+    await db.query(
+      `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, published_at)
+       VALUES ($1, 'point_a', 1, 'published', 'Точка А', '{"findings":[]}'::jsonb, '{}'::jsonb, 'h', 'test', now())`,
+      [w.company],
+    )
+    await db.query(`INSERT INTO public.expert_reviews (user_id, author_id, status, title, published_at) VALUES ($1, $2, 'published', 'Разбор', now())`, [w.client, expert])
+    await db.query(`INSERT INTO public.expert_comments (client_id, author_id, text, status, published_at) VALUES ($1, $2, 'paid note', 'published', now())`, [w.client, expert])
+    await db.query(
+      `INSERT INTO public.diagnostic_findings (company_id, kind, area, title, provenance_type, confidence, produced_by)
+       VALUES ($1, 'risk', 'sales', 'paid finding', 'CALCULATED', 0.9, 'engine:test')`,
+      [w.company],
+    )
+  }
+  const reportSeen = async (db: Db, uid: string, w: World) =>
+    asUser(db, uid, async () => {
+      const n = async (sql: string, args: unknown[]) => Number((await db.query(sql, args)).rows[0].n)
+      return {
+        report_versions: await n(`SELECT count(*) AS n FROM public.report_versions WHERE company_id = $1`, [w.company]),
+        expert_reviews: await n(`SELECT count(*) AS n FROM public.expert_reviews WHERE user_id = $1`, [w.client]),
+        expert_comments: await n(`SELECT count(*) AS n FROM public.expert_comments WHERE client_id = $1`, [w.client]),
+        diagnostic_findings: await n(`SELECT count(*) AS n FROM public.diagnostic_findings WHERE company_id = $1`, [w.company]),
+      }
+    })
+  const REPORT_ALL = { report_versions: 1, expert_reviews: 1, expert_comments: 1, diagnostic_findings: 1 }
+  const REPORT_NONE = { report_versions: 0, expert_reviews: 0, expert_comments: 0, diagnostic_findings: 0 }
+
+  it('M-4: Free does not read his published report, the expert\'s review / comments or the findings; Pro does', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await report(db, w)
+      expect(await reportSeen(db, w.client, w)).toEqual(REPORT_NONE)
+      await db.query(`UPDATE public.profiles SET feature_flags = '{"point_a": true}'::jsonb WHERE id = $1`, [w.client])
+      expect(await reportSeen(db, w.client, w)).toEqual(REPORT_ALL)
+      await db.query(`UPDATE public.profiles SET tier = 'pro', feature_flags = '{}'::jsonb WHERE id = $1`, [w.client])
+      expect(await reportSeen(db, w.client, w)).toEqual(REPORT_ALL)
+    })
+    await inRollback(async (db) => {
+      const w = await world(db, false) // gates off → as before
+      await report(db, w)
+      expect(await reportSeen(db, w.client, w)).toEqual(REPORT_ALL)
+    })
+  })
+
+  it('M-4: staff and the service role (review flow, PDFs, the home card) still read the report of a Free client', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await report(db, w)
+      const admin = await seedStaff(db, 'admin')
+      // an expert reads the clients assigned to him (scope of 140) — the paid policy does not hide them
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [w.client, expert])
+      for (const staff of [admin, expert]) {
+        expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.report_versions WHERE company_id = $1`, [w.company])).rows[0].n))).toBe(1)
+        expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.diagnostic_findings WHERE company_id = $1`, [w.company])).rows[0].n))).toBe(1)
+      }
+      // the expert's comments of a Free client: the platform admin and the assigned expert (expert_read_all)
+      for (const staff of [admin, expert]) {
+        expect(await asUser(db, staff, async () => Number((await db.query(`SELECT count(*) AS n FROM public.expert_comments WHERE client_id = $1`, [w.client])).rows[0].n))).toBe(1)
+      }
+      const n = await asService(db, async () => Number((await db.query(`SELECT count(*) AS n FROM public.report_versions WHERE company_id = $1`, [w.company])).rows[0].n))
+      expect(n).toBe(1)
+    })
+  })
+
+  it('M-4 + Q3: a member of a Pro company reads the company report', async () => {
+    await inRollback(async (db) => {
+      const w = await world(db, true)
+      await report(db, w)
+      const m = await member(db, w)
+      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 0, diagnostic_findings: 0 })
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [w.client])
+      expect(await reportSeen(db, m, w)).toMatchObject({ report_versions: 1, diagnostic_findings: 1 })
     })
   })
 

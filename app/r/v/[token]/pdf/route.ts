@@ -1,6 +1,8 @@
 // GET /r/v/<token>/pdf — the PDF of exactly the version the signed link names
 // (lib/reports/version-link.ts). Opens only a version that was published to
 // the client and not withdrawn; a version waiting for the expert never opens.
+// R2-C (M-4): only while Точка А is open for the owner of the report's company
+// (lib/access/owner-access.ts); closed → 403 without the file.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,6 +11,8 @@ import { type NextRequest } from 'next/server'
 import { pdfDisposition } from '@/lib/reports/client-access'
 import { versionPdf } from '@/lib/reports/pdf-store'
 import { resolveVersionLink } from '@/lib/reports/version-link'
+import { companyOwnerSectionOpen, REPORT_SECTION } from '@/lib/access/owner-access'
+import { LINK_UNAVAILABLE_TITLE } from '@/components/share/LinkUnavailable'
 
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   try {
@@ -16,6 +20,12 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     if (!link.ok) {
       return new Response(JSON.stringify({ ok: false, error: 'Ссылка недействительна или истекла' }), {
         status: 404,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      })
+    }
+    if (!(await companyOwnerSectionOpen(link.version.company_id, REPORT_SECTION))) {
+      return new Response(JSON.stringify({ ok: false, error: 'link_unavailable', message: `${LINK_UNAVAILABLE_TITLE}: отчёт входит в платный доступ, который сейчас закрыт у владельца.` }), {
+        status: 403,
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       })
     }

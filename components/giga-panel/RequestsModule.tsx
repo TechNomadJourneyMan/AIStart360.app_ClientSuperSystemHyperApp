@@ -16,6 +16,7 @@ import {
   ChevronDown,
   RefreshCw,
   Loader2,
+  Crown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
@@ -24,6 +25,17 @@ import { UserDetailPanel } from './UserDetailPanel'
 import { RegistrationModeControl } from './RegistrationModeControl'
 import { useStaff } from './StaffContext'
 import { Button, ConfirmDialog, Field, GigaApiError, cx, gigaFetch, inputClass } from './kit'
+import {
+  ASSIGN_PRO_LABEL,
+  ASSIGN_PRO_NO_RIGHT,
+  ASSIGN_PRO_PERMISSION,
+  DEFAULT_ASSIGN_PRO_FORM,
+  assignProBody,
+  assignProPeriodText,
+  isTariffRequest,
+  sendAssignPro,
+  type AssignProForm,
+} from './assign-pro-model'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -58,11 +70,13 @@ function StatusBadge({ status }: { status: GigaRequest['status'] }) {
 
 // ─── Single request card ──────────────────────────────────────────────────────
 
-function RequestCard({
+export function RequestCard({
   request,
   onApprove,
   onReject,
   onArchive,
+  onAssignPro,
+  canAssignPro = false,
   selected,
   onToggleSelect,
 }: {
@@ -70,11 +84,15 @@ function RequestCard({
   onApprove: (id: string) => void
   onReject: (req: GigaRequest) => void
   onArchive: (id: string) => void
+  /** R2-C (M-5): a request for paid access is approved by assigning Pro. */
+  onAssignPro?: (req: GigaRequest) => void
+  canAssignPro?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
+  const tariff = isTariffRequest(request)
 
   const initials = request.userName
     .split(' ')
@@ -133,7 +151,7 @@ function RequestCard({
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {(request.source === 'upgrade_modal' || request.source === 'paywall') && (
                   <span
-                    title="Заявка на платный доступ: тариф назначается в User 360 → Биллинг"
+                    title="Заявка на платный доступ: «Назначить Pro» назначает тариф и закрывает заявку"
                     className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[9px] font-mono tracking-wide"
                   >
                     Pro
@@ -209,17 +227,35 @@ function RequestCard({
       {/* Actions (only for pending) */}
       {isPending && (
         <div className="px-3 md:px-4 pb-3 md:pb-4 flex flex-wrap items-center gap-1.5 md:gap-2">
-          <motion.button
-            onClick={() => onApprove(request.id)}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
-              bg-emerald-500/15 border border-emerald-500/25 text-emerald-300
-              hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all"
-          >
-            <CheckCircle size={13} />
-            Принять
-          </motion.button>
+          {tariff ? (
+            <motion.button
+              onClick={() => onAssignPro?.(request)}
+              disabled={!canAssignPro || !onAssignPro}
+              title={canAssignPro ? 'Назначить тариф Pro (срок и примечание) — заявка закроется, клиент получит уведомление' : ASSIGN_PRO_NO_RIGHT}
+              data-action="assign-pro"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
+                bg-emerald-500/15 border border-emerald-500/25 text-emerald-300
+                hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all
+                disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Crown size={13} />
+              {ASSIGN_PRO_LABEL}
+            </motion.button>
+          ) : (
+            <motion.button
+              onClick={() => onApprove(request.id)}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
+                bg-emerald-500/15 border border-emerald-500/25 text-emerald-300
+                hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all"
+            >
+              <CheckCircle size={13} />
+              Принять
+            </motion.button>
+          )}
 
           <motion.button
             onClick={() => onReject(request)}
@@ -270,6 +306,11 @@ export function RequestsModule() {
   const [rejectTarget, setRejectTarget] = useState<GigaRequest | null>(null)
   const { can } = useStaff()
   const canDecide = can('users.approve')
+  // R2-C (M-5): «Назначить Pro» — the rights of the plan editor (User 360 → Биллинг).
+  const canAssignPro = can(ASSIGN_PRO_PERMISSION)
+  const [proTarget, setProTarget] = useState<GigaRequest | null>(null)
+  const [proForm, setProForm] = useState<AssignProForm>(DEFAULT_ASSIGN_PRO_FORM)
+  const [proBusy, setProBusy] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [bulk, setBulk] = useState<null | 'approve' | 'reject'>(null)
   const [bulkReason, setBulkReason] = useState('')
@@ -342,9 +383,35 @@ export function RequestsModule() {
     await runAction(id, { action: 'archive' }, 'Заявка отправлена в архив', 'Не удалось архивировать заявку')
   }
 
+  const openAssignPro = (r: GigaRequest) => {
+    setProForm(DEFAULT_ASSIGN_PRO_FORM)
+    setProTarget(r)
+  }
+
+  const runAssignPro = async () => {
+    if (!proTarget) return
+    const body = assignProBody(proForm)
+    if (!body) return
+    setProBusy(true)
+    try {
+      const r = await sendAssignPro(fetch, proTarget.id, body)
+      if (r.ok) {
+        toast.success(r.text)
+        setProTarget(null)
+      } else {
+        toast.error(r.text)
+      }
+    } finally {
+      setProBusy(false)
+      await fetchRequests() // reconcile with the DB — source of truth
+    }
+  }
+
   const filtered = requests.filter((r) => r.category === activeRequestTab)
   const pendingFiltered = filtered.filter((r) => r.status === 'pending')
   const pickedHere = pendingFiltered.filter((r) => picked.has(r.id))
+  // R2-C (M-5): a request for paid access is approved only by «Назначить Pro» — no bulk «Принять» for it.
+  const pickedTariff = pickedHere.some((r) => isTariffRequest(r))
   const allPicked = pendingFiltered.length > 0 && pendingFiltered.every((r) => picked.has(r.id))
 
   // Массовое решение: каждая заявка решается тем же кодом, что и одиночная,
@@ -503,7 +570,9 @@ export function RequestsModule() {
                     <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-500/25 bg-slate-950/95 px-3 py-2 backdrop-blur" role="region" aria-label="Массовые действия с заявками">
                       <span className="text-xs font-semibold text-slate-100">Выбрано {pickedHere.length}</span>
                       <div className="ml-auto flex flex-wrap gap-1.5">
-                        <Button size="sm" variant="primary" icon={<CheckCircle size={12} />} onClick={() => setBulk('approve')}>Принять все</Button>
+                        {pickedTariff
+                          ? <span className="self-center text-[11px] text-slate-500">Заявки на платный доступ одобряются кнопкой «{ASSIGN_PRO_LABEL}»</span>
+                          : <Button size="sm" variant="primary" icon={<CheckCircle size={12} />} onClick={() => setBulk('approve')}>Принять все</Button>}
                         <Button size="sm" variant="danger" icon={<XCircle size={12} />} onClick={() => setBulk('reject')}>Отклонить все</Button>
                         <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Снять</Button>
                       </div>
@@ -518,6 +587,8 @@ export function RequestsModule() {
                           onApprove={handleApprove}
                           onReject={setRejectTarget}
                           onArchive={handleArchive}
+                          onAssignPro={openAssignPro}
+                          canAssignPro={canAssignPro}
                           selected={picked.has(req.id)}
                           onToggleSelect={canDecide ? togglePick : undefined}
                         />
@@ -580,6 +651,51 @@ export function RequestsModule() {
             <textarea value={bulkReason} onChange={(e) => setBulkReason(e.target.value)} maxLength={500} rows={2} className={cx(inputClass, 'resize-none')} />
           </Field>
         )}
+      </ConfirmDialog>
+
+      {/* R2-C (M-5): «Назначить Pro» from a request for paid access */}
+      <ConfirmDialog
+        open={!!proTarget}
+        onClose={() => setProTarget(null)}
+        onConfirm={() => void runAssignPro()}
+        loading={proBusy}
+        tone="primary"
+        title={`${ASSIGN_PRO_LABEL}: ${proTarget?.userName ?? ''}`}
+        confirmLabel={`${ASSIGN_PRO_LABEL} ${assignProPeriodText(proForm)}`}
+        text={
+          <div className="space-y-1">
+            <p>Тариф Pro назначается так же, как в User 360 → Биллинг: запись в журнал до изменения, оплата не списывается.</p>
+            <p>Заявка закроется как одобренная, клиент получит уведомление «Доступ открыт» в ленте кабинета.</p>
+            {proTarget?.subject && <p className="text-slate-300">{proTarget.subject}</p>}
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="Срок">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={proForm.mode}
+                onChange={(e) => setProForm((f) => ({ ...f, mode: e.target.value as AssignProForm['mode'] }))}
+                className={cx(inputClass, 'w-auto')}
+                aria-label="Срок"
+              >
+                <option value="months">на N месяцев</option>
+                <option value="date">до даты</option>
+                <option value="none">бессрочно</option>
+              </select>
+              {proForm.mode === 'months' && (
+                <input type="number" min={1} max={36} value={proForm.months} onChange={(e) => setProForm((f) => ({ ...f, months: e.target.value }))} className={cx(inputClass, 'w-24')} aria-label="Месяцев" />
+              )}
+              {proForm.mode === 'date' && (
+                <input type="date" value={proForm.date} onChange={(e) => setProForm((f) => ({ ...f, date: e.target.value }))} className={cx(inputClass, 'w-auto')} aria-label="Дата окончания" />
+              )}
+            </div>
+          </Field>
+          <Field label="Примечание (видно только персоналу)">
+            <textarea value={proForm.note} onChange={(e) => setProForm((f) => ({ ...f, note: e.target.value }))} maxLength={500} rows={2} className={cx(inputClass, 'resize-none')} />
+          </Field>
+          {!assignProBody(proForm) && <p className="text-[11px] text-amber-300">Укажите срок: 1–36 месяцев или дату окончания.</p>}
+        </div>
       </ConfirmDialog>
 
       {/* Reject modal */}

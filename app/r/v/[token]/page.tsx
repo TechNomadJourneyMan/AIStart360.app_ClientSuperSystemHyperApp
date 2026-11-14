@@ -5,6 +5,8 @@ import { Logo } from '@/components/ui/Logo'
 import { ReportDetails } from '@/components/reports/PublishedReports'
 import { resolveVersionLink } from '@/lib/reports/version-link'
 import { versionDateLabel, versionStamp } from '@/lib/reports/version-stamp'
+import { companyOwnerSectionOpen, REPORT_SECTION } from '@/lib/access/owner-access'
+import { LinkUnavailable } from '@/components/share/LinkUnavailable'
 
 /**
  * /r/v/<token> — one published report version by a signed, expiring link
@@ -12,6 +14,10 @@ import { versionDateLabel, versionStamp } from '@/lib/reports/version-stamp'
  * provenance badges, and the PDF of exactly this version. A version waiting
  * for the expert, a rejected or a withdrawn one never opens; every failure
  * shows the same page.
+ *
+ * R2-C (M-4): the report is part of Точка А. The link shows the version only
+ * while Точка А is open for the OWNER of the report's company right now
+ * (lib/access/owner-access.ts); closed → «Ссылка недоступна», no data at all.
  */
 export const metadata: Metadata = { title: 'Отчёт · AIStart360', robots: { index: false, follow: false } }
 
@@ -34,6 +40,7 @@ function InvalidLink() {
 export default async function VersionLinkPage({ params }: { params: { token: string } }) {
   const link = await resolveVersionLink(params.token)
   if (!link.ok) return <InvalidLink />
+  if (!(await companyOwnerSectionOpen(link.version.company_id, REPORT_SECTION))) return <LinkUnavailable />
   const v = link.version
   const replaced = v.status !== 'published'
   return (

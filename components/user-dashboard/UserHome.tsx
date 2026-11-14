@@ -186,7 +186,9 @@ export default function UserHome({ data }: { data: UserHomeData }) {
           <GriSection />
         )}
 
-        <ExpertMessages />
+        {/* R2-C (M-4): the expert's review and comments are part of Точка А — with it
+            closed the API answers 402; the Point A paywall card above covers it. */}
+        {!data.paidLocked?.point_a && <ExpertMessages />}
 
         {data.materials.length > 0 && (
           <section aria-labelledby="materials-title">

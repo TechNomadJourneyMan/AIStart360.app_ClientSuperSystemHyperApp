@@ -11,12 +11,21 @@ const s = vi.hoisted(() => ({
   tables: {} as Record<string, Array<Record<string, unknown>>>,
   // R2-A: the paid-section decision of the session user (lib/access/request-access.ts).
   sections: { point_a: true, point_b: true, market: true, gri_full: true } as Record<string, boolean>,
+  // R2-C (M-4): which client read which table (session = RLS of the caller, service = service role).
+  readsBy: { session: [] as string[], service: [] as string[] },
 }))
+const tagged = (who: 'session' | 'service') => new Proxy({} as Record<string, unknown>, {
+  get(_t, prop: string) {
+    const sb = s.net!.sb as unknown as Record<string, unknown>
+    if (prop === 'from') return (table: string) => { s.readsBy[who].push(table); return (sb.from as (t: string) => unknown)(table) }
+    return sb[prop]
+  },
+})
 
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`redirect ${to}`) } }))
-vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => s.net!.sb }))
+vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => tagged('session') }))
 // R2-A (147): the Point A rows of the home tile are read with the service role (own ids only).
-vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => s.net!.sb }))
+vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => tagged('service') }))
 vi.mock('@/lib/request-user', () => ({ getRequestUser: async () => ({ id: USER, email: 'c@example.com' }) }))
 vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: [] }) }))
 vi.mock('@/lib/cms/server', () => ({ visiblePagesFor: async () => [] }))
@@ -38,9 +47,10 @@ function seed(withCompany = true) {
       blocks: [{ key: 'finance', score: 61, weight: 0.7 }, { key: 'sales', score: 61, weight: 0.3 }] }],
   }
   s.net = roundTrips(memoryDb(s.tables))
+  s.readsBy = { session: [], service: [] }
 }
 
-type El = { type?: unknown; props: { data?: Record<string, unknown>; report?: Record<string, unknown>; children?: unknown } }
+type El = { type?: unknown; props: { data?: Record<string, unknown>; report?: Record<string, unknown>; locked?: boolean; children?: unknown } }
 /** The page's root is <UserHome/>, or a fragment of the «Ваш отчёт готов» card (R-025) + <UserHome/>. */
 const elementsOf = (root: El): El[] => {
   const kids = root.props?.children
@@ -109,6 +119,18 @@ describe('/client/home — round trips (W4)', () => {
     const report = await reportOf()
     expect(s.net!.waves()).toBe(2)
     expect(report).toMatchObject({ id: 'rv-2', version: 2 })
+  })
+
+  it('R2-C (M-4): Точка А closed → the card is «locked» (paywall, nothing to open); the version metadata is read with the service role (148 hides it from a Free session)', async () => {
+    s.tables.report_versions = [{ id: 'rv-1', company_id: 'company-1', version: 1, title: 'Точка А: Ромашка', status: 'published', published_at: '2026-10-11T10:00:00Z', created_at: '2026-10-10T10:00:00Z' }]
+    s.sections = { point_a: false, point_b: false, market: false, gri_full: false }
+    const card = (await render()).find((e) => e.props.report)!
+    expect(card.props.locked).toBe(true)
+    expect(card.props.report).toMatchObject({ id: 'rv-1' })
+    expect(s.readsBy.service).toContain('report_versions')
+    expect(s.readsBy.session).not.toContain('report_versions')
+    s.sections = { point_a: true, point_b: true, market: true, gri_full: true }
+    expect((await render()).find((e) => e.props.report)!.props.locked).toBe(false)
   })
 
   it('R-025: no published version (only a draft) → no card', async () => {

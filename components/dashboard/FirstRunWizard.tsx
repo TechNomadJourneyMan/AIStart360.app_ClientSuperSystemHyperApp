@@ -4,15 +4,26 @@ import Link from 'next/link'
  * First-run wizard (ON-1). Shown to a client who hasn't produced a diagnostic
  * yet: three clear steps to their GRI, with real per-step completion, instead
  * of a scattered "fill the survey" prompt. Server component — no client JS.
+ *
+ * R2-C (Q4): the full GRI is a paid section. With it closed for the account
+ * (`griLocked`, the server decision) the third step leads to the free mini-GRI
+ * (/gri-free) instead of the paywall of /gri; with it open — as before.
  */
+
+/** The free mini-GRI (app/(public)/gri-free) — the third step when the full GRI is closed. */
+export const MINI_GRI_HREF = '/gri-free'
+
 export function FirstRunWizard({
   surveyStepsDone,
   docsCount,
   hasDiagnostic,
+  griLocked = false,
 }: {
   surveyStepsDone: number
   docsCount: number
   hasDiagnostic: boolean
+  /** Полный GRI закрыт для аккаунта (решение сервера, lib/access/decision.ts). */
+  griLocked?: boolean
 }) {
   const surveyDone = surveyStepsDone > 0
   const docsDone = docsCount > 0
@@ -38,16 +49,25 @@ export function FirstRunWizard({
       cta: docsDone ? 'Добавить ещё' : 'Загрузить файлы',
       icon: 'upload_file',
     },
-    {
-      done: hasDiagnostic,
-      title: 'Получите Точку А и GRI',
-      desc: hasDiagnostic
-        ? 'Диагностика готова — смотрите разбор и план роста.'
-        : 'Индекс готовности к росту по 7 блокам и план на 90 дней.',
-      href: '/gri',
-      cta: hasDiagnostic ? 'Открыть GRI' : 'Пройти GRI',
-      icon: 'radar',
-    },
+    griLocked
+      ? {
+          done: hasDiagnostic,
+          title: 'Пройдите мини-GRI',
+          desc: 'Бесплатная экспресс-оценка готовности к росту за 5 минут. Полный GRI — в платном доступе.',
+          href: MINI_GRI_HREF,
+          cta: 'Пройти мини-GRI',
+          icon: 'radar',
+        }
+      : {
+          done: hasDiagnostic,
+          title: 'Получите Точку А и GRI',
+          desc: hasDiagnostic
+            ? 'Диагностика готова — смотрите разбор и план роста.'
+            : 'Индекс готовности к росту по 7 блокам и план на 90 дней.',
+          href: '/gri',
+          cta: hasDiagnostic ? 'Открыть GRI' : 'Пройти GRI',
+          icon: 'radar',
+        },
   ]
 
   const completed = steps.filter((s) => s.done).length

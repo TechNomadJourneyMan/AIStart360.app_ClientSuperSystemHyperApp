@@ -9,8 +9,13 @@
  * The full report (findings, share link to this version) lives on Point A
  * (#reports, components/reports/PublishedReports); the PDF is
  * GET /api/v1/reports/:id/pdf.
+ *
+ * R2-C (M-4): the report is part of Точка А. `locked` (Точка А closed for the
+ * account) → «Отчёт эксперта готов» with the compact paywall (the access
+ * request button) — no «Открыть», no PDF, no link, no report id in the markup.
  */
 import Link from 'next/link'
+import Paywall from '@/components/access/Paywall'
 import { versionStamp } from '@/lib/reports/version-stamp'
 
 export interface ReadyReport {
@@ -57,7 +62,33 @@ const fmtDate = (iso: string | null) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-export function ReportReadyCard({ report }: { report: ReadyReport }) {
+/** «Отчёт эксперта готов» for an account without Точка А: the notice and the paywall, nothing to open. */
+function LockedReportCard({ report }: { report: ReadyReport }) {
+  return (
+    <section
+      aria-labelledby="report-ready-title"
+      data-report-locked
+      className="relative overflow-hidden rounded-3xl border border-primary/20 bg-primary/[0.04] p-5 sm:p-6"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/25 bg-primary/10">
+          <span className="material-symbols-outlined text-2xl text-primary" aria-hidden>task_alt</span>
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-primary/70">Отчёт специалиста</p>
+          <h2 id="report-ready-title" className="mt-0.5 font-headline text-lg font-bold text-on-surface">Отчёт эксперта готов</h2>
+          <p className="mt-0.5 text-sm text-on-surface-variant">
+            Эксперт проверил и опубликовал отчёт по вашей Точке А · {fmtDate(report.published_at)}. Отчёт входит в Точку А — она в платном доступе.
+          </p>
+        </div>
+      </div>
+      <Paywall feature="point_a" variant="compact" className="mt-4" />
+    </section>
+  )
+}
+
+export function ReportReadyCard({ report, locked = false }: { report: ReadyReport; locked?: boolean }) {
+  if (locked) return <LockedReportCard report={report} />
   const stamp = versionStamp(report.version, report.created_at ?? report.published_at ?? new Date(0))
   return (
     <section

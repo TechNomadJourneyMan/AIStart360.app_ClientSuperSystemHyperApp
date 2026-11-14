@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import type { ExpertComment } from '@/lib/expert-blocks'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/expert-comments — комментарии экспертов ТЕКУЩЕМУ клиенту
@@ -15,11 +16,16 @@ import type { ExpertComment } from '@/lib/expert-blocks'
  *
  * Чтение — через service role: RLS-политики expert_comments исторически
  * ссылаются на profiles и ловили рекурсию (миграции 006/007).
+ *
+ * R2-C (M-4): комментарии эксперта — часть Точки А (право point_a). Раздел
+ * закрыт → 402 upgrade_required до любого чтения; персонал проходит.
  */
 export async function GET() {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+  const upgrade = await gatePaidSection(sb, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const admin = createServiceClient()
   const { data, error } = await admin

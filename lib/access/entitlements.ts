@@ -53,6 +53,11 @@ export interface Entitlements {
   point_a: boolean
   /** Рынок (Mark-analytics: карта, анализ ниши, чек-лист 50). */
   market: boolean
+  /**
+   * R2-C (Q3): фичи, открытые не собственным тарифом, а тарифом компании, где
+   * пользователь — активный участник. Нет поля — ничего не унаследовано.
+   */
+  viaCompany?: Feature[]
 }
 
 const TIER_BASE: Record<Tier, Omit<Entitlements, 'tier'>> = {
@@ -115,6 +120,63 @@ export function entitlementsFor(
     point_a: o.point_a ?? base.point_a,
     market: o.market ?? base.market,
   }
+}
+
+// ─── R2-C (Q3): участники компании наследуют тариф компании ──────────────────
+
+/**
+ * Права, унаследованные от компаний, где пользователь — активный участник
+ * (company_members: owner / admin / member / viewer, status 'active'), по праву
+ * основного владельца компании (companies.user_id): его override, иначе tier pro.
+ * Источник — SQL-функция company_inherited_rights() (миграция 148); та же
+ * функция стоит в has_paid_section(), поэтому приложение и RLS решают одинаково.
+ */
+export interface CompanyRights {
+  features: Partial<Record<Feature, boolean>>
+  /** Право на полный GRI пришло от владельца на тарифе Pro — без лимита проходов. */
+  griUnlimited: boolean
+}
+
+/** Ответ company_inherited_rights() → CompanyRights; всё непонятное — «нет права». */
+export function parseCompanyRights(raw: unknown): CompanyRights | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const src = raw as Record<string, unknown>
+  const features: Partial<Record<Feature, boolean>> = {}
+  for (const f of ALL_FEATURES) if (src[f] === true) features[f] = true
+  return { features, griUnlimited: src.gri_full_unlimited === true }
+}
+
+/**
+ * Нужно ли вообще спрашивать компанию: есть фича, закрытая тарифом, а не
+ * собственным явным override (явный false участника наследованием не открывается).
+ */
+export function needsCompanyRights(own: Entitlements, overrides: Partial<Record<Feature, boolean>>): boolean {
+  return ALL_FEATURES.some((f) => own[f] !== true && typeof overrides[f] !== 'boolean')
+}
+
+/**
+ * Собственные права + унаследованные от компании. Порядок как в
+ * has_paid_section(): собственный override → собственный тариф → компания.
+ */
+export function withCompanyRights(
+  own: Entitlements,
+  overrides: Partial<Record<Feature, boolean>>,
+  company: CompanyRights | null,
+): Entitlements {
+  if (!company) return own
+  const out: Entitlements = { ...own }
+  const inherited: Feature[] = []
+  for (const f of ALL_FEATURES) {
+    if (typeof overrides[f] === 'boolean' || own[f] === true) continue
+    if (company.features[f] === true) {
+      out[f] = true
+      inherited.push(f)
+    }
+  }
+  if (inherited.length === 0) return own
+  if (inherited.includes('gri_full') && company.griUnlimited) out.gri_full_limit = Number.POSITIVE_INFINITY
+  out.viaCompany = inherited
+  return out
 }
 
 /** Может ли пользователь пройти ЕЩЁ один полный GRI (лимит тира vs уже пройдено). */

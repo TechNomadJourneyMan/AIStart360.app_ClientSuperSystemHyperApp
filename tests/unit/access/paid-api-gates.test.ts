@@ -2,6 +2,8 @@
  * R2-A: every API of a paid section answers 402 upgrade_required to a Free
  * account while the gates are on — BEFORE any data is read — and lets Pro,
  * staff and «gates off» through. Point A, Point B, Market, full GRI.
+ * R2-C (M-4): the expert's report (list, version, PDF, link) and the expert's
+ * review / comments are part of Точка А — the same 402.
  * (Point B's own routes: tests/unit/access/point-b-gate.test.ts and the
  * point-b route tests; the express view of Point A: point-a-express.test.ts.)
  */
@@ -118,6 +120,13 @@ const CASES: Case[] = [
   { name: 'GET diagnostics/current', feature: 'point_a', load: h(import('@/app/api/v1/diagnostics/current/route'), 'GET'), req: () => get('http://t/api/v1/diagnostics/current') },
   { name: 'GET diagnostics/ai-status', feature: 'point_a', load: h(import('@/app/api/v1/diagnostics/ai-status/route'), 'GET'), req: () => get(`http://t/api/v1/diagnostics/ai-status?diagnostic_id=${UUID}`) },
   { name: 'POST diagnostics/retry-ai', feature: 'point_a', load: h(import('@/app/api/v1/diagnostics/retry-ai/route'), 'POST'), req: () => json('http://t/api/v1/diagnostics/retry-ai', 'POST', { diagnostic_id: UUID }) },
+  // R2-C (M-4): the expert's report and comments — part of Точка А
+  { name: 'GET reports', feature: 'point_a', load: h(import('@/app/api/v1/reports/route'), 'GET'), req: () => get('http://t/api/v1/reports') },
+  { name: 'GET reports/[id]', feature: 'point_a', load: h(import('@/app/api/v1/reports/[id]/route'), 'GET'), req: () => get(`http://t/api/v1/reports/${UUID}`), params: { id: UUID } },
+  { name: 'GET reports/[id]/pdf', feature: 'point_a', load: h(import('@/app/api/v1/reports/[id]/pdf/route'), 'GET'), req: () => get(`http://t/api/v1/reports/${UUID}/pdf`), params: { id: UUID } },
+  { name: 'POST reports/[id]/link', feature: 'point_a', load: h(import('@/app/api/v1/reports/[id]/link/route'), 'POST'), req: () => json(`http://t/api/v1/reports/${UUID}/link`, 'POST', {}), params: { id: UUID } },
+  { name: 'GET expert-comments', feature: 'point_a', load: h(import('@/app/api/v1/expert-comments/route'), 'GET'), req: () => get('http://t/api/v1/expert-comments') },
+  { name: 'GET expert-review', feature: 'point_a', load: h(import('@/app/api/v1/expert-review/route'), 'GET'), req: () => get('http://t/api/v1/expert-review') },
   // Точка Б (the rest of its routes are covered by the point-b tests)
   { name: 'GET diagnostics/point-b/ai-status', feature: 'point_b', load: h(import('@/app/api/v1/diagnostics/point-b/ai-status/route'), 'GET'), req: () => get('http://t/api/v1/diagnostics/point-b/ai-status') },
   // Рынок

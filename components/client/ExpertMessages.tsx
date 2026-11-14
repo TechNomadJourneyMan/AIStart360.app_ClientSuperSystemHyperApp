@@ -7,9 +7,15 @@
  * Черновики эксперта сюда не попадают — это гарантирует API
  * (/api/v1/expert-review) и RLS. Якорь #expert — на него ведёт письмо
  * «Эксперт подготовил разбор» и уведомление.
+ *
+ * R2-C (M-4): разбор и комментарии эксперта — часть Точки А. Раздел закрыт →
+ * API отвечает 402 upgrade_required → здесь компактный пейволл, а не «Не удалось
+ * загрузить».
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Paywall from '@/components/access/Paywall'
+import { isUpgradeRequired } from '@/components/access/paywall-model'
 
 interface ExpertCommentView {
   id: string
@@ -31,12 +37,16 @@ const fmtDate = (iso: string | null) =>
 
 export default function ExpertMessages({ className }: { className?: string }) {
   const [data, setData] = useState<ExpertReviewData | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'locked'>('loading')
 
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/expert-review', { credentials: 'include', cache: 'no-store' })
-      if (!res.ok) throw new Error(String(res.status))
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as { error?: unknown } | null
+        if (isUpgradeRequired(res.status, err)) return setState('locked')
+        throw new Error(String(res.status))
+      }
       const body = await res.json()
       setData((body?.data as ExpertReviewData) ?? null)
       setState('ready')
@@ -63,6 +73,8 @@ export default function ExpertMessages({ className }: { className?: string }) {
       </div>
 
       {state === 'loading' && <div className="h-24 animate-pulse rounded-2xl border border-white/[0.06] bg-white/[0.02]" />}
+
+      {state === 'locked' && <Paywall feature="point_a" variant="compact" />}
 
       {state === 'error' && (
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-on-surface-variant">
