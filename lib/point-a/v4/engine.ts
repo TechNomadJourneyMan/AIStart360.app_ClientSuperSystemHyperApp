@@ -21,7 +21,7 @@ import {
   type PointAResolvedInputs,
 } from '@/lib/point-a-engine'
 import type { BlockScore, DiagnosticStage, PointA } from '@/types/onboarding'
-import { BLOCK_LIBRARY, MIN_OVERALL_WEIGHT_COVERAGE, OVERALL_REQUIRED_ANY_OF, type BlockKey, type EffectiveBlock } from './config'
+import { BLOCK_LIBRARY, overallAllowed, type BlockKey, type EffectiveBlock } from './config'
 import { answeredSteps, isAnswered } from './check-inputs'
 import { CHECK_LABELS } from './check-labels'
 import { productChecks, teamChecks } from './extra-blocks'
@@ -173,18 +173,7 @@ function healthIndex(overall: number, blocks: readonly V4Block[]): number {
   return round(Math.min(100, overall * 0.6 + (40 * earned) / possible))
 }
 
-/**
- * R-032 (PO 2026-11-14, temporary thresholds in config.ts): the scored blocks
- * cover ≥ MIN_OVERALL_WEIGHT_COVERAGE of the weight, and one of
- * OVERALL_REQUIRED_ANY_OF has a score (when the configuration weighs any of
- * them at all — a template without finance and sales cannot require them).
- */
-export function overallRuleMet(weighted: readonly V4Block[], scored: readonly V4Block[], wScored: number, wAll: number): boolean {
-  if (wAll <= 0 || wScored / wAll < MIN_OVERALL_WEIGHT_COVERAGE - 1e-9) return false
-  const required = weighted.filter((b) => (OVERALL_REQUIRED_ANY_OF as readonly string[]).includes(b.key))
-  return required.length === 0 || scored.some((b) => (OVERALL_REQUIRED_ANY_OF as readonly string[]).includes(b.key))
-}
-
+// R-032 (PO 2026-11-14): when an overall exists — overallAllowed in ./config.ts (temporary thresholds).
 function round(n: number, digits = 0): number {
   const f = 10 ** digits
   return Math.round(n * f) / f
@@ -250,7 +239,7 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   // No overall from hypotheses alone: at least one block must rest on facts;
   // none before the full questionnaire.
   const factual = scored.some((b) => b.basis !== 'inferred')
-  const overall = surveyComplete && wScored > 0 && factual && overallRuleMet(weighted, scored, wScored, wAll)
+  const overall = surveyComplete && wScored > 0 && factual && overallAllowed(weighted)
     ? round(scored.reduce((s, b) => s + b.weight * (b.score as number), 0) / wScored)
     : null
   const confidence = wAll > 0 ? round(weighted.reduce((s, b) => s + b.weight * b.confidence, 0) / wAll, 3) : 0

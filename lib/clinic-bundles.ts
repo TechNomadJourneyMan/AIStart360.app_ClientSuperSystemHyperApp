@@ -163,7 +163,12 @@ export interface BundleCalculation {
   label: string
   target_patient_count: number
   estimated_conversion: number   // 0..100
-  estimated_revenue_kzt: number  // per month
+  /**
+   * Per month. null = «нет данных»: the base has no average check (no amounts),
+   * so there is nothing to multiply by — never an invented 10 000 ₸ check (I2,
+   * as lib/revenue-audit.ts R-041).
+   */
+  estimated_revenue_kzt: number | null
   priority: number
   complexity: BundleComplexity
   effect_timeline: string
@@ -178,7 +183,8 @@ export interface BundleCalculation {
  */
 export function computeBundles(seg: SegmentationResult): BundleCalculation[] {
   const calcs: BundleCalculation[] = []
-  const avgCheck = seg.totals.avg_check_kzt || 10_000   // sensible fallback
+  // The base's own average check, or none: no default check (I2 / R-041).
+  const avgCheck = seg.totals.avg_check_kzt > 0 ? seg.totals.avg_check_kzt : null
 
   for (const key of BUNDLE_ORDER) {
     const t = BUNDLE_TEMPLATES[key]
@@ -186,9 +192,9 @@ export function computeBundles(seg: SegmentationResult): BundleCalculation[] {
       const bucket = seg.summary.find((x) => x.segment === s)
       return sum + (bucket?.count ?? 0)
     }, 0)
-    const estRevenue = Math.round(
-      targetCount * (t.conversion_pct / 100) * avgCheck * t.check_multiplier,
-    )
+    const estRevenue = avgCheck === null
+      ? null
+      : Math.round(targetCount * (t.conversion_pct / 100) * avgCheck * t.check_multiplier)
     calcs.push({
       key,
       label: t.label,
@@ -204,8 +210,8 @@ export function computeBundles(seg: SegmentationResult): BundleCalculation[] {
     })
   }
 
-  // Sort by revenue desc, assign priority 1..9
-  calcs.sort((a, b) => b.estimated_revenue_kzt - a.estimated_revenue_kzt)
+  // Sort by revenue desc (without a check: by the patients reached), assign priority 1..9
+  calcs.sort((a, b) => (b.estimated_revenue_kzt ?? 0) - (a.estimated_revenue_kzt ?? 0) || b.target_patient_count - a.target_patient_count)
   calcs.forEach((c, i) => { c.priority = i + 1 })
   return calcs
 }

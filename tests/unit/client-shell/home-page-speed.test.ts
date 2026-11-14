@@ -21,11 +21,13 @@ function seed(withCompany = true) {
   s.tables = {
     profiles: [{ id: USER, full_name: 'Клиент', email: 'c@example.com', status: 'approved', created_at: '2026-09-01T00:00:00Z' }],
     survey_answers: [{ user_id: USER, question_key: 's1_company_name', answer: { value: 'Ромашка' }, answered_at: '2026-09-03T00:00:00Z' }],
-    diagnostics: [{ user_id: USER, is_current: true, overall_score: 40, health_index: 41, stage: 'start', calculated_at: '2026-09-04T00:00:00Z' }],
+    diagnostics: [{ user_id: USER, is_current: true, overall_score: 40, health_index: 41, stage: 'early', calculated_at: '2026-09-04T00:00:00Z' }],
     gri_assessments: [],
     documents: [{ id: 'doc-1', user_id: USER }],
     companies: withCompany ? [{ id: 'company-1', user_id: USER }] : [],
-    point_a_snapshots: [{ company_id: 'company-1', overall: 61, stage: 'growth', created_at: '2026-10-10T00:00:00Z' }],
+    // A v4 snapshot (point_a_v4 on) whose blocks carry ≥ 60 % of the weight with finance (R-032).
+    point_a_snapshots: [{ company_id: 'company-1', engine: 'v4', config_version: 'default@1/r2|v4', overall: 61, stage: 'growth', created_at: '2026-10-10T00:00:00Z', v4: { assessment: 'full' },
+      blocks: [{ key: 'finance', score: 61, weight: 0.7 }, { key: 'sales', score: 61, weight: 0.3 }] }],
   }
   s.net = roundTrips(memoryDb(s.tables))
 }
@@ -53,6 +55,13 @@ describe('/client/home — round trips (W4)', () => {
     expect(data.fullName).toBe('Клиент')
   })
 
+  it('I2 (R-032/R-033): a full v4 snapshot WITHOUT an official score → no number, the hint says when it appears', async () => {
+    s.tables.point_a_snapshots = [{ company_id: 'company-1', engine: 'v4', config_version: 'default@1/r1|v4', overall: 100, stage: 'scale', created_at: '2026-11-02T00:00:00Z', v4: { assessment: 'full' },
+      blocks: [{ key: 'finance', score: null, weight: 0.25 }, { key: 'sales', score: null, weight: 0.2 }, { key: 'operations', score: 100, weight: 0.15 }, { key: 'marketing', score: null, weight: 0.12 }] }]
+    const data = await dataOf()
+    expect(data.diagnostics).toMatchObject({ overallScore: null, stage: null, preliminary: false, primary: false })
+  })
+
   it('a preliminary snapshot (before the full questionnaire) has no score', async () => {
     s.tables.point_a_snapshots = [{ company_id: 'company-1', overall: null, stage: null, created_at: '2026-11-02T00:00:00Z', v4: { assessment: 'preliminary' } }]
     const data = await dataOf()
@@ -62,7 +71,7 @@ describe('/client/home — round trips (W4)', () => {
   it('no company: the v1 diagnostics row is the fallback, no snapshot read', async () => {
     seed(false)
     const data = await dataOf()
-    expect(data.diagnostics).toEqual({ overallScore: 40, stage: 'start', calculatedAt: '2026-09-04T00:00:00Z' })
+    expect(data.diagnostics).toEqual({ overallScore: 40, stage: 'early', calculatedAt: '2026-09-04T00:00:00Z' })
     expect(s.net!.reads.point_a_snapshots ?? 0).toBe(0)
   })
 

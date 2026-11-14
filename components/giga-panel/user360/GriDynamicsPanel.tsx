@@ -5,6 +5,7 @@ import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { Badge, BarList, Panel, Skeleton, cx, fmtDate, useGigaQuery } from '../kit'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import type { SectionId } from '@/lib/gri-assessment/sections'
+import { formatGri, formatGriDelta } from '@/lib/format/gri'
 
 /**
  * Динамика GRI и сравнение с отраслью.
@@ -80,11 +81,11 @@ export function GriDynamicsPanel({ userId, industry }: { userId: string; industr
       <Panel title="Динамика" description={`Прохождений: ${history.length}. Первое — ${fmtDate(first.created_at)}.`}>
         <div className="flex items-end gap-4">
           <div>
-            <p className="font-mono text-3xl font-bold text-slate-100">{current.gri_index.toFixed(1)}</p>
+            <p className="font-mono text-3xl font-bold text-slate-100">{formatGri(current.gri_index, { empty: '—' })}</p>
             <p className="mt-1 flex items-center gap-1 text-xs">
               <Trend size={13} className={trendCls} />
               <span className={trendCls}>
-                {delta === null ? 'первое прохождение' : delta === 0 ? 'без изменений' : `${delta > 0 ? '+' : ''}${delta} к прошлому`}
+                {delta === null ? 'первое прохождение' : delta === 0 ? 'без изменений' : `${formatGriDelta(delta)} к прошлому`}
               </span>
             </p>
           </div>
@@ -94,7 +95,7 @@ export function GriDynamicsPanel({ userId, industry }: { userId: string; industr
           {history.length > 1
             ? total === 0
               ? `За ${history.length} прохождений индекс не сдвинулся — данные обновляются, а работа по итогам не идёт.`
-              : `С первого прохождения: ${total > 0 ? '+' : ''}${total}.`
+              : `С первого прохождения: ${formatGriDelta(total)}.`
             : 'Для динамики нужно хотя бы два прохождения.'}
         </p>
       </Panel>
@@ -108,9 +109,9 @@ export function GriDynamicsPanel({ userId, industry }: { userId: string; industr
         {bench.loading && !bench.data ? <Skeleton className="h-24" /> : reference && (
           <>
             <div className="flex items-baseline gap-3">
-              <span className="font-mono text-2xl font-bold text-slate-100">{reference.avg.toFixed(2)}</span>
+              <span className="font-mono text-2xl font-bold text-slate-100">{formatGri(reference.avg, { empty: '—' })}</span>
               <Badge tone={gap === null ? 'neutral' : gap >= 0 ? 'green' : 'amber'}>
-                {gap === null ? '—' : gap >= 0 ? `клиент выше на ${gap.toFixed(2)}` : `клиент ниже на ${Math.abs(gap).toFixed(2)}`}
+                {gap === null ? '—' : gap >= 0 ? `клиент выше на ${formatGri(gap, { empty: '0.0' })}` : `клиент ниже на ${formatGri(Math.abs(gap), { empty: '0.0' })}`}
               </Badge>
             </div>
             {!peer && (
@@ -123,7 +124,7 @@ export function GriDynamicsPanel({ userId, industry }: { userId: string; industr
                 <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">Разрыв по блокам, худшие сверху</p>
                 <BarList
                   items={blockGaps.slice(0, 5).map((g) => ({ key: g.id, label: g.label, value: g.gap }))}
-                  format={(n) => (n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2))}
+                  format={(n) => formatGriDelta(n)}
                 />
               </div>
             )}

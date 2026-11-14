@@ -19,6 +19,9 @@ BEGIN
   END IF;
 END $$;
 
+-- 1б. Метка staging: её проверяют anonymize.sql и reset.sql (ставится только на пустую базу).
+COMMENT ON DATABASE postgres IS 'aistart360-staging';
+
 -- 2. Роли, на которые ссылаются политики и гранты прода. В staging — без входа.
 DO $$
 BEGIN

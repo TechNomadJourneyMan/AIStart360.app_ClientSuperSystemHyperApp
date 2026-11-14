@@ -28,6 +28,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BlockScore, DataGap, DiagnosticStage, Insight, PointA, QuickWin, Risk } from '@/types/onboarding'
 import { isPreliminary, type SnapshotQualityRow } from './blocks-without-data'
+import { overallAllowed } from './v4/config'
 
 export type OfficialState =
   /** No Point A at all (no diagnostic, no snapshot). */
@@ -143,6 +144,7 @@ interface SnapshotBlock {
   key?: unknown
   title?: unknown
   score?: unknown
+  weight?: unknown
   top_issues?: unknown
   recommendations?: unknown
   informational?: unknown
@@ -226,7 +228,8 @@ export function officialPointA(
   if (snapshot && v4On(snapshot) && Array.isArray(snapshot.blocks)) {
     const overall = num(snapshot.overall)
     const blocks = blocksFromSnapshot(snapshot.blocks)
-    if (overall === null) return done({ state: 'no_score', source: 'snapshot_v4', overall: null, health_index: null, stage: null, blocks })
+    // R-032 at read time: a snapshot written under older rules loses its overall too.
+    if (overall === null || !overallAllowed(snapshot.blocks as SnapshotBlock[])) return done({ state: 'no_score', source: 'snapshot_v4', overall: null, health_index: null, stage: null, blocks })
     return done({ state: 'scored', source: 'snapshot_v4', overall, health_index: v4HealthIndex(snapshot), stage: stageOf(snapshot.stage), blocks })
   }
 
@@ -239,7 +242,9 @@ export function officialPointA(
   const blocks = CORE_BLOCKS.map((c) => (v4NoData.has(c.key) ? noDataBlock(c.key, c.title) : blockFromColumn(c.key, c.title, diagnostic[c.column])))
   const overall = num(diagnostic.overall_score)
   const source = snapshot ? 'diagnostic_v1' : 'diagnostic'
-  if (overall === null) return done({ state: 'no_score', source, overall: null, health_index: null, stage: null, blocks })
+  // R-032 by the data v4 found (its blocks carry the weights), also with v4 off.
+  const ruleMet = !(snapshot && Array.isArray(snapshot.blocks)) || overallAllowed(snapshot.blocks as SnapshotBlock[])
+  if (overall === null || !ruleMet) return done({ state: 'no_score', source, overall: null, health_index: null, stage: null, blocks })
   return done({ state: 'scored', source, overall, health_index: num(diagnostic.health_index), stage: stageOf(diagnostic.stage), blocks })
 }
 
@@ -346,6 +351,51 @@ export function officialScore(o: OfficialPointA): number | null {
 export function snapshotFromJoined(row: Record<string, unknown> | null | undefined): OfficialSnapshotRow | null {
   if (!row || (row.snap_config_version == null && row.snap_engine == null && row.snap_blocks == null)) return null
   return { engine: row.snap_engine, config_version: row.snap_config_version, blocks: row.snap_blocks, v4: row.snap_v4, overall: row.snap_overall, stage: row.snap_stage }
+}
+
+/**
+ * Snapshot rows (with `diagnostic_id`, newest first or with `created_at`) →
+ * the snapshot that wrote each diagnostic. For list readers: the official
+ * score of many rows at once without one query per row.
+ */
+export function snapshotsByDiagnostic(rows: ReadonlyArray<OfficialSnapshotRow & { created_at?: unknown }>): Map<string, OfficialSnapshotRow> {
+  const out = new Map<string, OfficialSnapshotRow & { created_at?: unknown }>()
+  for (const r of rows) {
+    const id = typeof r.diagnostic_id === 'string' ? r.diagnostic_id : null
+    if (!id) continue
+    const prev = out.get(id)
+    if (!prev || String(r.created_at ?? '') > String(prev.created_at ?? '')) out.set(id, r)
+  }
+  return out
+}
+
+/**
+ * The snapshots that wrote these diagnostics (point_a_snapshots.diagnostic_id),
+ * in chunks. A failed read degrades to «no snapshot» (the rows alone).
+ */
+export async function loadSnapshotsByDiagnostic(client: Pick<SupabaseClient, 'from'>, diagnosticIds: readonly string[]): Promise<Map<string, OfficialSnapshotRow>> {
+  const ids = [...new Set(diagnosticIds.filter(Boolean))]
+  const rows: Array<OfficialSnapshotRow & { created_at?: unknown }> = []
+  try {
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data, error } = await client
+        .from('point_a_snapshots')
+        .select(`${OFFICIAL_SNAPSHOT_COLUMNS}, created_at`)
+        .in('diagnostic_id', ids.slice(i, i + 150))
+      if (error) return new Map()
+      rows.push(...((data ?? []) as unknown as Array<OfficialSnapshotRow & { created_at?: unknown }>))
+    }
+  } catch {
+    return new Map()
+  }
+  return snapshotsByDiagnostic(rows)
+}
+
+/** The official overall of one diagnostics row with the snapshot that wrote it. */
+export function officialScoreOfRow(row: Record<string, unknown> | null | undefined, snaps: ReadonlyMap<string, OfficialSnapshotRow>): number | null {
+  if (!row) return null
+  const snap = row.id != null ? snaps.get(String(row.id)) ?? null : null
+  return officialScore(officialPointA(row, snap))
 }
 
 /**

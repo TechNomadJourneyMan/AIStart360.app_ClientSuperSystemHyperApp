@@ -1,6 +1,7 @@
 'use client'
 
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
+import { formatGri } from '@/lib/format/gri'
 
 import { Suspense, useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -174,7 +175,7 @@ function UsersInner() {
     {
       key: 'gri', header: 'GRI', sortKey: 'gri',
       render: (u) => u.gri_index != null
-        ? <span className="font-mono font-semibold text-slate-100">{u.gri_index.toFixed(1)}<span className="ml-1 text-[10px] font-normal text-slate-500">×{u.gri_runs}</span></span>
+        ? <span className="font-mono font-semibold text-slate-100">{formatGri(u.gri_index, { empty: '—' })}<span className="ml-1 text-[10px] font-normal text-slate-500">×{u.gri_runs}</span></span>
         : u.gri_draft ? <Badge tone="amber">в процессе</Badge> : <span className="text-slate-600">—</span>,
     },
     {

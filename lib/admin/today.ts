@@ -1,3 +1,4 @@
+import { formatGri } from '@/lib/format/gri'
 /**
  * «Мой день» — чистые функции без обращений к БД (их удобно тестировать).
  *
@@ -79,7 +80,6 @@ export interface ClientChangeSummary {
   counts: { survey: number; gri: number; pointA: number; documents: number }
 }
 
-const fmt1 = (n: number) => (Math.round(n * 10) / 10).toFixed(1)
 const signed = (n: number, digits = 1) => {
   const r = Math.round(n * 10 ** digits) / 10 ** digits
   return `${r > 0 ? '+' : r < 0 ? '−' : '±'}${Math.abs(r).toFixed(digits)}`
@@ -122,7 +122,7 @@ export function summarizeChanges(input: {
     const head = griNew.length === 1
       ? 'новый замер'
       : `${griNew.length} ${plural(griNew.length, ['новый замер', 'новых замера', 'новых замеров'])}, последний`
-    lines.push(`GRI: ${head} ${fmt1(Number(last.gri_index))}${delta}`)
+    lines.push(`GRI: ${head} ${formatGri(last.gri_index, { empty: '—' })}${delta}`)
     touch(last.created_at)
   }
 

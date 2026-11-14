@@ -64,14 +64,17 @@ describe('loadPointBInputs', () => {
     expect(none.blocksWithoutData).toEqual([])
     const v1 = await loadPointBInputs(seed({ point_a_snapshots: [snapshot({ engine: 'v1' })] }).sb, 'u1', { now: NOW })
     expect(v1.snapshot?.engine).toBe('v1')
-    expect(v1.blocksWithoutData).toEqual([])
+    // The official Point A (I2, R-033): with v4 off the v1 row stands, but a block
+    // v4 found WITHOUT data is still «нет данных», not its v1 score.
+    expect(v1.blocksWithoutData).toEqual(['sales'])
   })
 
   it('a v1 FALLBACK of a v4 company (express only: no v4 overall) reads blocks without data from the v4 blocks (survey Ф2)', async () => {
     // The diagnostics row is v1 (unanswered = 0) — those zeros must not become «weak» blocks.
     const fallback = snapshot({ engine: 'v1', config_version: 'default@1|v4', blocks: [{ key: 'finance', score: null }, { key: 'sales', score: null }, { key: 'operations', score: 80 }] })
     const r = await loadPointBInputs(seed({ point_a_snapshots: [fallback] }).sb, 'u1', { now: NOW })
-    expect(r.blocksWithoutData).toEqual(['finance', 'sales'])
+    // marketing / strategy: not among the v4 blocks of the snapshot → no v4 data either (official reader).
+    expect(r.blocksWithoutData).toEqual(['finance', 'sales', 'marketing', 'strategy'])
   })
 
   it('no diagnostic gives pointA null and does not throw', async () => {

@@ -21,6 +21,7 @@ import { z } from 'zod'
 import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
 import type { Locale } from '@/lib/i18n/locale'
 import type { AssistantContext, LlmAnalysis, ValidationIssue } from './types'
+import { formatGri } from '@/lib/format/gri'
 
 // ─── Zod schema — matches LlmAnalysis in types.ts field-for-field ────────────
 
@@ -197,7 +198,7 @@ ${blockLines}
 Топ-ограничения (Точка Б): ${list(b.top5_limits.map((t) => `${t.rank}. ${t.title} [${t.block}/${t.severity}]`), 5)}
 
 --- GRI ---
-Есть оценка GRI: ${g.has_assessment ? 'да' : 'нет'} | Индекс GRI (0–10): ${n(g.gri_index)}
+Есть оценка GRI: ${g.has_assessment ? 'да' : 'нет'} | Индекс GRI (0–10): ${formatGri(g.gri_index, { empty: '—' })}
 Топ-5 ограничений GRI: ${list(g.top_5_limits.map((t) => `${t.rank}. ${t.title} [${t.block}] ${t.score == null ? '' : '— ' + t.score}`), 5)}
 
 --- МЕТРИКИ ---

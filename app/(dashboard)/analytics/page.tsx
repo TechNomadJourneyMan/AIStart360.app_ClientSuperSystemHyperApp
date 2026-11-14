@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
+import { formatGri, griTone } from '@/lib/format/gri'
 import { getAnalyticsData } from '@/lib/analytics-data'
 
 export const metadata: Metadata = { title: 'Аналитика' }
@@ -44,7 +45,7 @@ export default async function AnalyticsPage() {
       {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Avg GRI Score', value: String(data.kpis.avgGriScore), change: '', positive: true },
+          { label: 'Средний GRI (из 10)', value: formatGri(data.kpis.avgGriScore, { empty: '—' }), change: '', positive: true },
           { label: 'Portfolio GMV', value: formatMoney(data.kpis.portfolioGmv), change: '', positive: true },
           { label: 'Active Clients', value: String(data.kpis.activeClients), change: '', positive: true },
           { label: 'Churn Rate', value: `${data.kpis.churnRate}%`, change: '', positive: data.kpis.churnRate <= 10 },
@@ -130,7 +131,7 @@ export default async function AnalyticsPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-surface-container-high">
-                {['Client', 'Industry', 'GRI Score', 'GMV', 'Growth', 'Status'].map((h) => (
+                {['Client', 'Industry', 'GRI (из 10)', 'GMV', 'Growth', 'Status'].map((h) => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap">
                     {h}
                   </th>
@@ -150,8 +151,8 @@ export default async function AnalyticsPage() {
                   <td className="px-5 py-3.5 text-sm text-on-surface-variant">{row.industry}</td>
                   <td className="px-5 py-3.5">
                     <span className={`font-mono text-sm font-bold ${
-                      row.gri >= 800 ? 'text-primary' : row.gri >= 700 ? 'text-primary-fixed-dim' : row.gri >= 600 ? 'text-tertiary-container' : 'text-error'
-                    }`}>{row.gri}</span>
+                      griTone(row.gri) === 'green' ? 'text-primary' : griTone(row.gri) === 'amber' ? 'text-tertiary-container' : griTone(row.gri) === 'red' ? 'text-error' : 'text-on-surface-variant'
+                    }`}>{formatGri(row.gri, { empty: '—' })}</span>
                   </td>
                   <td className="px-5 py-3.5 font-mono text-sm text-on-surface">{formatMoney(row.gmv)}</td>
                   <td className={`px-5 py-3.5 font-mono text-sm ${row.growth >= 0 ? 'text-primary' : 'text-error'}`}>

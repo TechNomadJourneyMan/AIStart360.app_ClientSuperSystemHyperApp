@@ -16,6 +16,7 @@ import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { runAnswerValidation } from '@/lib/ai/validation'
 import type { DeterministicIssue } from '@/lib/ai/validation/deterministic'
 import { GRI_SECTION_IDS, REVIEW_BLOCKS, isReviewBlockKey, type ReviewBlockKey } from './blocks'
+import { formatGri, toGri } from '@/lib/format/gri'
 
 export interface ReviewContextInput {
   surveyRows: ReadonlyArray<SurveyStepRow>
@@ -119,11 +120,11 @@ export function buildReviewContext(input: ReviewContextInput): ReviewContext {
   const g = input.gri
   const griIndex = num(g?.gri_index)
   if (g && griIndex !== null) {
-    const rows: string[] = [`- Индекс GRI: ${griIndex} из 10`]
+    const rows: string[] = [`- Индекс GRI: ${formatGri(griIndex)} из 10`]
     const avgs = (g.section_avgs && typeof g.section_avgs === 'object' ? g.section_avgs : {}) as Record<string, unknown>
     for (const id of GRI_SECTION_IDS) {
       const v = num(avgs[id])
-      rows.push(`- Блок «${GRI_BLOCK_RU[id]}» (gri:${id}): ${v === null ? 'нет оценки' : `${v} из 10`}`)
+      rows.push(`- Блок «${GRI_BLOCK_RU[id]}» (gri:${id}): ${toGri(v) === null ? 'нет оценки' : `${formatGri(v)} из 10`}`)
     }
     const limits = Array.isArray(g.top_5_limits) ? g.top_5_limits : []
     const lim = limits

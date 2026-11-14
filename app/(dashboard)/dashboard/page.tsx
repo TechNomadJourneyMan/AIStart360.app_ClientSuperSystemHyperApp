@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
+import { GRI_ZONES } from '@/lib/format/gri'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { cookies } from 'next/headers'
@@ -191,11 +192,17 @@ function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData
 function buildGriDistRows(dist: GriIndexDistribution) {
   const { excellent, strong, developing, critical, total } = dist
   const p = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
+  // Labels and bounds from GRI_ZONES (lib/format/gri.ts) — the one GRI threshold set (R-036).
+  const z = (key: string) => GRI_ZONES.find((x) => x.key === key)!
+  const bounds = (key: string) => {
+    const i = GRI_ZONES.findIndex((x) => x.key === key)
+    return `${GRI_ZONES[i].min}–${GRI_ZONES[i + 1]?.min ?? 10}`
+  }
   return [
-    { label: 'Отлично (8–10)',       pct: p(excellent),  color: 'bg-primary' },
-    { label: 'Сильный уровень (6–8)', pct: p(strong),     color: 'bg-primary-fixed-dim' },
-    { label: 'Развивается (4–6)',    pct: p(developing), color: 'bg-tertiary-container' },
-    { label: 'Критично (0–4)',       pct: p(critical),   color: 'bg-error' },
+    { label: `${z('excellent').label} (${bounds('excellent')})`,   pct: p(excellent),  color: 'bg-primary' },
+    { label: `${z('strong').label} (${bounds('strong')})`,         pct: p(strong),     color: 'bg-primary-fixed-dim' },
+    { label: `${z('developing').label} (${bounds('developing')})`, pct: p(developing), color: 'bg-tertiary-container' },
+    { label: `${z('critical').label} (${bounds('critical')})`,     pct: p(critical),   color: 'bg-error' },
   ]
 }
 

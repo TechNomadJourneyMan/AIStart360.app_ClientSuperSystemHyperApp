@@ -9,6 +9,7 @@ import {
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { computeGriIndex, computeSectionAvgs } from '@/lib/gri-assessment/score'
+import { formatGri, griTone } from '@/lib/format/gri'
 
 interface Assessment {
   id: string; gri_index: number; section_avgs: Record<string, number>; scores: Record<string, Record<string, number>>
@@ -18,7 +19,8 @@ interface Assessment {
 }
 interface Payload { data: { assessments: Assessment[]; draft: { state: { scores?: Record<string, Record<string, number>> }; updated_at: string } | null } }
 
-const tone = (v: number) => (v >= 7 ? 'text-emerald-300' : v >= 4 ? 'text-amber-300' : v > 0 ? 'text-red-300' : 'text-slate-600')
+// One set of GRI zones (lib/format/gri.ts, R-036).
+const tone = (v: number) => { const t = griTone(v); return t === 'green' ? 'text-emerald-300' : t === 'amber' ? 'text-amber-300' : t === 'red' ? 'text-red-300' : 'text-slate-600' }
 const bar = (v: number) => (v >= 7 ? 'bg-emerald-400/80' : v >= 4 ? 'bg-amber-400/80' : 'bg-red-400/80')
 
 export function GriTab({ userId, canEdit, canDelete }: { userId: string; canEdit: boolean; canDelete: boolean }) {
@@ -84,7 +86,7 @@ export function GriTab({ userId, canEdit, canDelete }: { userId: string; canEdit
                       <span className="block text-xs text-slate-200">{fmtDateTime(a.created_at)}</span>
                       {a.is_current && <Badge tone="green" className="mt-1">текущий</Badge>}
                     </span>
-                    <span className={cx('font-mono text-lg font-bold', tone(a.gri_index))}>{a.gri_index.toFixed(1)}</span>
+                    <span className={cx('font-mono text-lg font-bold', tone(a.gri_index))}>{formatGri(a.gri_index, { empty: '—' })}</span>
                   </button>
                 </li>
               ))}
@@ -134,7 +136,7 @@ export function GriTab({ userId, canEdit, canDelete }: { userId: string; canEdit
                     <div className="hidden h-1.5 w-32 overflow-hidden rounded-full bg-white/[0.06] sm:block">
                       <div className={cx('h-full', bar(avg))} style={{ width: `${avg * 10}%` }} />
                     </div>
-                    <span className={cx('w-10 text-right font-mono text-xs font-bold', tone(avg))}>{avg ? avg.toFixed(1) : '—'}</span>
+                    <span className={cx('w-10 text-right font-mono text-xs font-bold', tone(avg))}>{formatGri(avg, { empty: '—' })}</span>
                   </summary>
                   <ul className="divide-y divide-white/[0.04] border-t border-white/[0.05] px-3">
                     {sec.criteria.map((c) => {

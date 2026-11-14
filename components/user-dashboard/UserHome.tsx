@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { formatGri } from '@/lib/format/gri'
 import type { UserProfileSummary } from '@/lib/user-dashboard/summary'
 import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
@@ -137,7 +138,7 @@ export default function UserHome({ data }: { data: UserHomeData }) {
           <Stat
             icon="radar"
             label="GRI"
-            value={data.gri ? `${data.gri.index.toFixed(1)} / 10` : '—'}
+            value={data.gri ? formatGri(data.gri.index, { scale: true, empty: '—' }) : '—'}
             hint={data.gri ? `оценка ${fmtDate(data.gri.assessedAt)}` : 'диагностика не пройдена'}
           />
         </section>

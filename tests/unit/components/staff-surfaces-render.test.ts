@@ -51,7 +51,9 @@ describe('PortfolioGriPanel', () => {
 
   it('shows the real averages, the number of assessments and no invented benchmark', () => {
     const html = render(createElement(PortfolioGriPanel, { data: full }))
-    expect(html).toContain('6.25')
+    // R-036: one GRI format — one decimal (was «6.25» / «7.40 / 10»).
+    expect(html).toContain('>6.3<')
+    expect(html).not.toContain('6.25')
     expect(html).toContain('3 оценки')
     expect(html).toContain('Команда')
     expect(html).toContain('fill="rgba(110,255,192,0.10)"') // complete set → data polygon drawn

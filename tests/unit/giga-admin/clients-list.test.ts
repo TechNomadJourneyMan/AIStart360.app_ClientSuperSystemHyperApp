@@ -51,6 +51,7 @@ function makeSbStub({
   companies = [] as any[],
   diagnostics = [] as any[],
   gri = [] as any[],
+  snapshots = [] as any[],
   profilesError = null as any,
 }) {
   return {
@@ -72,9 +73,19 @@ function makeSbStub({
         }
       }
       if (table === 'diagnostics') {
+        // Current rows only (is_current), newest first (calculated_at).
         return {
           select: () => ({
-            order: () => Promise.resolve({ data: diagnostics, error: null }),
+            eq: () => ({
+              order: () => Promise.resolve({ data: diagnostics, error: null }),
+            }),
+          }),
+        }
+      }
+      if (table === 'point_a_snapshots') {
+        return {
+          select: () => ({
+            in: () => Promise.resolve({ data: snapshots, error: null }),
           }),
         }
       }
@@ -131,19 +142,31 @@ describe('GET /api/giga-admin/clients — RLS bypass regression', () => {
       companies: [{ user_id: 'u1', name: 'Beta LLC', industry: 'SaaS', employee_count: 12 }],
       diagnostics: [
         // Two rows for same user — only the FIRST (already sorted) must win.
-        { user_id: 'u1', overall_score: 7.2, health_index: 65, stage: 'Growth', created_at: '2026-02-02' },
-        { user_id: 'u1', overall_score: 4.0, health_index: 30, stage: 'Seed', created_at: '2025-12-01' },
+        { id: 'd2', user_id: 'u1', overall_score: 72, health_index: 65, stage: 'growth', calculated_at: '2026-02-02' },
+        { id: 'd1', user_id: 'u1', overall_score: 40, health_index: 30, stage: 'seed', calculated_at: '2025-12-01' },
       ],
     })
     const res = await GET(makeReq())
     const { clients } = await res.json()
     expect(clients[0].name).toBe('Beta LLC')
     expect(clients[0].industry).toBe('SaaS')
-    expect(clients[0].stage).toBe('Growth')
-    // health_index 65 → low-risk band → churnLevel 'low', churnProb 35, riskScore 20
-    expect(clients[0].pulseMetrics.churnLevel).toBe('low')
-    expect(clients[0].pulseMetrics.churnProb).toBe(35)
-    expect(clients[0].pulseMetrics.riskScore).toBe(20)
+    expect(clients[0].stage).toBe('growth')
+    // I2: no «churn probability» derived from the Point A health index (not data).
+    expect(clients[0].pulseMetrics).toBeNull()
+  })
+
+  it('I2 (R-033/R-032): the OFFICIAL Point A — a snapshot without an official score hides the stage', async () => {
+    state.stub = makeSbStub({
+      profiles: [{ id: 'u1', email: 'a@x.io', full_name: 'Anna', organization: null, status: 'approved', created_at: '2026-01-01' }],
+      diagnostics: [{ id: 'd1', user_id: 'u1', overall_score: 100, health_index: 100, stage: 'scale', calculated_at: '2026-11-01' }],
+      // Written under the old rules: operations only (15 % of the weight) gave 100/100 «scale».
+      snapshots: [{ diagnostic_id: 'd1', created_at: '2026-11-01', engine: 'v4', config_version: 'default@1/r1|v4', overall: 100, stage: 'scale', v4: { assessment: 'full' }, blocks: [
+        { key: 'finance', score: null, weight: 0.25 }, { key: 'sales', score: null, weight: 0.2 }, { key: 'operations', score: 100, weight: 0.15 },
+        { key: 'marketing', score: null, weight: 0.12 }, { key: 'strategy', score: null, weight: 0.1 },
+      ] }],
+    })
+    const { clients } = await (await GET(makeReq())).json()
+    expect(clients[0].stage).toBeNull()
   })
 
   it('attaches the current GRI assessment (0..10) mapped onto the 7 blocks', async () => {

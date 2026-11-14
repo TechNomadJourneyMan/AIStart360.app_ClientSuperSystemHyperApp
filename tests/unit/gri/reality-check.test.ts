@@ -238,7 +238,8 @@ describe('computeRealityCheck — общий индекс', () => {
     const item = items[0]
     expect(item.blockId).toBe('overall')
     expect(item.severity).toBe('note')
-    expect(item.finding).toContain('9/10')
+    // R-036: GRI via formatGri — «9.0 / 10»; Point A stays on its own 0–100 scale.
+    expect(item.finding).toContain('9.0 / 10')
     expect(item.finding).toContain('30/100')
   })
 

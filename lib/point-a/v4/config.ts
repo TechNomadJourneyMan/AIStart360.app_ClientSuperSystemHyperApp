@@ -211,6 +211,26 @@ export const MIN_OVERALL_WEIGHT_COVERAGE = 0.6
 /** ВРЕМЕННО (R-032): хотя бы один из этих блоков должен иметь балл. */
 export const OVERALL_REQUIRED_ANY_OF: readonly BlockKey[] = ['finance', 'sales']
 
+/**
+ * R-032: may these blocks carry an overall score? Pure (the engine and the
+ * official reader lib/point-a/official.ts both use it — a snapshot written
+ * under older rules loses its overall at read time, not only at the next
+ * recalculation). A block «has a score» when `score` is a number; weighted =
+ * not informational and weight > 0. Blocks without weights (legacy rows) →
+ * true: nothing to judge by. A configuration that weighs neither finance nor
+ * sales cannot require them.
+ */
+export function overallAllowed(blocks: ReadonlyArray<{ key?: unknown; weight?: unknown; informational?: unknown; score?: unknown }>): boolean {
+  const weighted = blocks.filter((b) => b.informational !== true && typeof b.weight === 'number' && b.weight > 0)
+  if (!weighted.length) return !blocks.some((b) => typeof b.weight === 'number')
+  const hasScore = (b: { score?: unknown }) => typeof b.score === 'number' && Number.isFinite(b.score)
+  const wAll = weighted.reduce((s, b) => s + (b.weight as number), 0)
+  const wScored = weighted.filter(hasScore).reduce((s, b) => s + (b.weight as number), 0)
+  if (wAll <= 0 || wScored / wAll < MIN_OVERALL_WEIGHT_COVERAGE - 1e-9) return false
+  const required = (k: unknown) => (OVERALL_REQUIRED_ANY_OF as readonly unknown[]).includes(k)
+  return !weighted.some((b) => required(b.key)) || weighted.some((b) => required(b.key) && hasScore(b))
+}
+
 /** Stable version of the effective configuration (for snapshots). */
 /**
  * What the score depends on: the template, the expert's overrides and the

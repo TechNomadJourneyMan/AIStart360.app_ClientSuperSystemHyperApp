@@ -19,7 +19,7 @@ import { periodLabel } from '@/lib/data-layer/period-key'
 import { loadGoalsWithEvaluation, type GoalWithEvaluation } from '@/lib/goals/current'
 import type { ChangeReason, SnapshotInputs } from '@/lib/point-a/snapshot-diff'
 import type { UploadItem, V4Block } from './engine'
-import { BLOCK_LIBRARY, BLOCK_KEYS, type BlockKey } from './config'
+import { BLOCK_LIBRARY, BLOCK_KEYS, overallAllowed, type BlockKey } from './config'
 import { loadBlockConfig } from './store'
 import { DEFAULT_KEY_METRICS, MAX_KEY_METRICS, keyMetricCatalog, loadMetricViews, type MetricView } from './metric-views'
 
@@ -130,17 +130,20 @@ function metricsOf(inputs: SnapshotInputs | null | undefined): PointASnapshotVie
 
 export function snapshotView(row: Record<string, unknown>): PointASnapshotView {
   const v4 = (row.v4 ?? {}) as { assessment?: string; strengths?: PointASnapshotView['strengths']; upload_checklist?: UploadItem[]; health_index?: number | null }
+  // R-032 at read time (lib/point-a/v4/config.ts overallAllowed): a snapshot written
+  // under older rules shows no overall / stage / health when its data is too thin.
+  const allowed = !Array.isArray(row.blocks) || overallAllowed(row.blocks as V4Block[])
   return {
     id: String(row.id),
     createdAt: String(row.created_at),
     engine: row.engine === 'v4' ? 'v4' : 'v1',
     assessment: v4.assessment === 'preliminary' ? 'preliminary' : 'full',
     trigger: String(row.trigger ?? 'event'),
-    overall: num(row.overall),
+    overall: allowed ? num(row.overall) : null,
     confidence: num(row.confidence),
     coverage: num(row.coverage),
-    stage: (row.stage as string | null) ?? null,
-    healthIndex: num(v4.health_index),
+    stage: allowed ? (row.stage as string | null) ?? null : null,
+    healthIndex: allowed ? num(v4.health_index) : null,
     blocks: Array.isArray(row.blocks) ? (row.blocks as V4Block[]) : [],
     strengths: v4.strengths ?? [],
     uploadChecklist: v4.upload_checklist ?? [],
@@ -177,7 +180,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     companyP,
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
-    client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
+    client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons, blocks').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
     client.from('data_discrepancies').select('id, metric_key, period_key, kind, detail, chosen_value, candidates').eq('company_id', companyId).eq('status', 'open').order('created_at', { ascending: false }).limit(50),
     companyP.then(({ ownerId }) => {
       // GRI taken before the company existed carries only the owner's user_id.
@@ -262,7 +265,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     history: rows.map((r) => ({
       id: String(r.id),
       createdAt: String(r.created_at),
-      overall: preliminary ? null : num(r.overall),
+      overall: preliminary || (Array.isArray(r.blocks) && !overallAllowed(r.blocks as V4Block[])) ? null : num(r.overall),
       confidence: num(r.confidence),
       changes: (Array.isArray(r.change_reasons) ? (r.change_reasons as ChangeReason[]) : [])
         .filter((c) => !preliminary || c.type !== 'block')

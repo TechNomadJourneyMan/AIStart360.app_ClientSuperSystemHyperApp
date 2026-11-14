@@ -1,24 +1,38 @@
+import { formatGri, formatGriDelta, griZone, griPercentOfScale, GRI_TONE_HEX, GRI_ZONES, type GriTone } from '@/lib/format/gri'
+
 interface GriScoreDialProps {
   score: number
   previousScore?: number
   label?: string
 }
 
+const TONE_STYLE: Record<GriTone, { color: string; bgColor: string; dot: string }> = {
+  green: { color: 'text-primary', bgColor: 'bg-primary/10', dot: 'bg-primary' },
+  amber: { color: 'text-tertiary-container', bgColor: 'bg-tertiary-container/10', dot: 'bg-tertiary-container' },
+  red: { color: 'text-error', bgColor: 'bg-error/10', dot: 'bg-error' },
+}
+
+/** Level from the one set of GRI zones (lib/format/gri.ts, R-036). */
 function getScoreLevel(score: number): {
   label: string
   color: string
   ringColor: string
   bgColor: string
 } {
-  if (score >= 9)   return { label: 'Excellent',   color: 'text-primary',            ringColor: '#6effc0', bgColor: 'bg-primary/10' }
-  if (score >= 7)   return { label: 'Strong',      color: 'text-primary-fixed-dim',  ringColor: '#00e29e', bgColor: 'bg-primary-fixed-dim/10' }
-  if (score >= 5)   return { label: 'Developing',  color: 'text-tertiary-container', ringColor: '#ffbd60', bgColor: 'bg-tertiary-container/10' }
-  return              { label: 'Critical',    color: 'text-error',              ringColor: '#ffb4ab', bgColor: 'bg-error/10' }
+  const zone = griZone(score)
+  if (!zone) return { label: 'нет данных', color: 'text-on-surface-variant', ringColor: 'rgba(255,255,255,0.2)', bgColor: 'bg-white/[0.04]' }
+  return { label: zone.label, ...TONE_STYLE[zone.tone], ringColor: GRI_TONE_HEX[zone.tone] }
 }
+
+/** Legend rows straight from GRI_ZONES. */
+const LEGEND = [...GRI_ZONES].reverse().map((z, i, arr) => {
+  const upper = i === 0 ? 10 : arr[i - 1].min
+  return { range: i === 0 ? `${z.min}–${upper}` : `${z.min}–<${upper}`, label: z.label, color: TONE_STYLE[z.tone].dot }
+})
 
 export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriScoreDialProps) {
   const level = getScoreLevel(score)
-  const pct = score * 10
+  const pct = griPercentOfScale(score)
   // SVG arc for circular progress
   const r = 54
   const circ = 2 * Math.PI * r
@@ -48,7 +62,7 @@ export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriS
         </svg>
         {/* Center Score */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`font-mono text-4xl font-bold leading-none ${level.color}`}>{score}</span>
+          <span className={`font-mono text-4xl font-bold leading-none ${level.color}`}>{formatGri(score, { empty: '—' })}</span>
           <span className="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest mt-1">/ 10</span>
         </div>
       </div>
@@ -64,18 +78,13 @@ export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriS
           <span className="material-symbols-outlined text-sm">
             {delta >= 0 ? 'trending_up' : 'trending_down'}
           </span>
-          {delta >= 0 ? '+' : ''}{delta} с прошлого периода
+          {formatGriDelta(delta)} с прошлого периода
         </div>
       )}
 
       {/* Score Range Legend */}
       <div className="mt-5 w-full space-y-1.5">
-        {[
-          { range: '9–10',   label: 'Excellent',  color: 'bg-primary' },
-          { range: '7–8.9',  label: 'Strong',     color: 'bg-primary-fixed-dim' },
-          { range: '5–6.9',  label: 'Developing', color: 'bg-tertiary-container' },
-          { range: '< 5',    label: 'Critical',   color: 'bg-error' },
-        ].map((item) => (
+        {LEGEND.map((item) => (
           <div key={item.range} className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${item.color}`} />
             <span className="text-[10px] font-mono text-on-surface-variant">{item.range}</span>

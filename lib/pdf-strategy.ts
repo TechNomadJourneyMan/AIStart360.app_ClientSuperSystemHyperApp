@@ -144,7 +144,7 @@ export async function generateStrategyPdf(input: PdfStrategyInput): Promise<Buff
     doc.text(`Целевые сегменты: ${b.target_segments.map((s) => SEGMENT_LABELS[s]).join(', ')}`, { indent: 15 })
     doc.text(`Целевые пациенты: ${b.target_patient_count.toLocaleString('ru-RU')}`, { indent: 15 })
     doc.text(`Конверсия: ${b.estimated_conversion}%   Эффект: ${b.effect_timeline}   Сложность: ${b.complexity}`, { indent: 15 })
-    doc.fill('#10B981').text(`Прогноз выручки: ${fmtKzt(b.estimated_revenue_kzt)} / мес`, { indent: 15 })
+    doc.fill('#10B981').text(`Прогноз выручки: ${b.estimated_revenue_kzt === null ? 'нет данных о среднем чеке' : `${fmtKzt(b.estimated_revenue_kzt)} / мес`}`, { indent: 15 })
     doc.fill(MUTED).fontSize(8.5)
        .text(b.trigger_description, { indent: 15 })
        .text(`Скрипт: ${b.script_preview}`, { indent: 15 })
@@ -152,7 +152,8 @@ export async function generateStrategyPdf(input: PdfStrategyInput): Promise<Buff
   }
 
   // Bundle total
-  const bundleTotal = input.bundles.reduce((s, b) => s + b.estimated_revenue_kzt, 0)
+  // A bundle without a revenue estimate (no average check) adds nothing — never an invented check.
+  const bundleTotal = input.bundles.reduce((s, b) => s + (b.estimated_revenue_kzt ?? 0), 0)
   if (doc.y > 720) doc.addPage()
   doc.fill(primaryColor).fontSize(14)
   doc.text(`ИТОГО потенциал: ${fmtMillion(bundleTotal)} / мес дополнительной выручки`)
@@ -170,7 +171,7 @@ export async function generateStrategyPdf(input: PdfStrategyInput): Promise<Buff
   for (const p of phases) {
     doc.fill(primaryColor).fontSize(12).text(p.label)
     for (const b of p.focus) {
-      doc.fill(TEXT).fontSize(9).text(`• ${b.label} — ${fmtKzt(b.estimated_revenue_kzt)}/мес`, { indent: 15 })
+      doc.fill(TEXT).fontSize(9).text(`• ${b.label} — ${b.estimated_revenue_kzt === null ? 'нет данных о чеке' : `${fmtKzt(b.estimated_revenue_kzt)}/мес`}`, { indent: 15 })
     }
     doc.fill(MUTED).fontSize(8.5).text(p.note, { indent: 15 })
     doc.moveDown(0.5)

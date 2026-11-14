@@ -5,6 +5,7 @@ import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { officialGriFromRows, type GriRowLike } from '@/lib/gri/official'
+import { loadSnapshotsByDiagnostic, officialPointA } from '@/lib/point-a/official'
 
 /**
  * Service-role REST fetch — bypasses RLS on profiles (which only exposes
@@ -86,6 +87,7 @@ export async function GET() {
   const ids = clients.map((c) => c.id)
 
   interface DiagRow {
+    id: string
     user_id: string
     overall_score: number | null
     health_index: number | null
@@ -107,7 +109,7 @@ export async function GET() {
   // NOT diagnostics.overall_score, which is Point A (0–100).
   const [diagnostics, companies, comments, surveyStatuses, griRows] = await Promise.all([
     sbFetchByIds<DiagRow>(ids, (idList) =>
-      `diagnostics?user_id=in.(${idList})&select=user_id,overall_score,health_index,stage,calculated_at&order=calculated_at.desc,id.asc`),
+      `diagnostics?user_id=in.(${idList})&select=id,user_id,overall_score,health_index,stage,calculated_at&order=calculated_at.desc,id.asc`),
     sbFetchByIds<CompanyRow>(ids, (idList) =>
       `companies?user_id=in.(${idList})&select=user_id,name,industry,stage&order=user_id.asc`),
     sbFetchByIds<CommentRow>(ids, (idList) =>
@@ -125,6 +127,11 @@ export async function GET() {
     if (!latest.has(d.user_id)) latest.set(d.user_id, d)
   }
 
+  // The OFFICIAL Point A of each latest diagnostic (lib/point-a/official.ts,
+  // R-033/R-032): no score → null, never a v1 number from an incomplete survey.
+  const snaps = await loadSnapshotsByDiagnostic(createServiceClient(), [...latest.values()].map((d) => d.id))
+  const officialByUser = new Map([...latest.entries()].map(([uid, d]) => [uid, officialPointA(d as unknown as Record<string, unknown>, snaps.get(d.id) ?? null)] as const))
+
   const companyByUser = new Map<string, CompanyRow>()
   for (const c of companies) {
     if (!companyByUser.has(c.user_id)) companyByUser.set(c.user_id, c)
@@ -139,6 +146,7 @@ export async function GET() {
 
   const result = clients.map((c) => {
     const diag = latest.get(c.id)
+    const official = officialByUser.get(c.id) ?? null
     const comp = companyByUser.get(c.id)
     return {
       id: c.id,
@@ -149,9 +157,9 @@ export async function GET() {
       createdAt: c.created_at,
       companyName: comp?.name ?? null,
       industry: comp?.industry ?? null,
-      stage: diag?.stage ?? comp?.stage ?? null,
-      overallScore: diag?.overall_score ?? null,
-      healthIndex: diag?.health_index ?? null,
+      stage: (official?.state === 'scored' ? official.stage : null) ?? comp?.stage ?? null,
+      overallScore: official?.state === 'scored' ? official.overall : null,
+      healthIndex: official?.state === 'scored' ? official.health_index : null,
       /** Official GRI, 0–10; null = «нет данных» (never Point A). */
       griIndex: griByUser.get(c.id)?.index ?? null,
       calculatedAt: diag?.calculated_at ?? null,

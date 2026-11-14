@@ -11,6 +11,7 @@ import { visiblePagesFor } from '@/lib/cms/server'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
 import { ReportReadyCard, pickPublishedReport } from '@/components/reports/ReportReadyCard'
+import { officialPointA, officialScore, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
@@ -31,8 +32,8 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   const snapshotP = companyIdP.then(async (companyId) => {
     if (companyId == null) return null
     // `blocks`: a block without data → «Первичная · по быстрым данным» (survey Ф5).
-    const snapshotRes = await sb.from('point_a_snapshots').select('overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
-    return snapshotRes.error ? null : (snapshotRes.data as { overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
+    const snapshotRes = await sb.from('point_a_snapshots').select('engine, config_version, overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    return snapshotRes.error ? null : (snapshotRes.data as { engine?: unknown; config_version?: unknown; overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
   })
   // R-025: the latest report version an expert published («Ваш отчёт готов»), read
   // next to the snapshot (same wave). RLS shows a tenant only published versions;
@@ -65,6 +66,12 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     if (at && (!lastAnswerAt || at > lastAnswerAt)) lastAnswerAt = at
   }
 
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): the score and
+  // stage only when there is an official score — «Балл появится, когда данных хватит».
+  const official = snapshot || diagnosticsRes.data
+    ? officialPointA((diagnosticsRes.data as Record<string, unknown> | null) ?? null, snapshot as OfficialSnapshotRow | null)
+    : null
+  const officialStage = official?.state === 'scored' ? official.stage : null
   const profile = profileRes.data
   const data: UserHomeData = {
     fullName: profile?.full_name ?? '',
@@ -75,16 +82,16 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     summary: buildUserProfileSummary(answers),
     diagnostics: snapshot
       ? {
-          overallScore: snapshot.overall == null ? null : Number(snapshot.overall),
-          stage: snapshot.stage ?? null,
+          overallScore: official ? officialScore(official) : null,
+          stage: officialStage,
           calculatedAt: snapshot.created_at ?? null,
-          primary: snapshotIsPrimary(snapshot),
+          primary: official?.state === 'scored' && snapshotIsPrimary(snapshot),
           preliminary: snapshotIsPreliminary(snapshot),
         }
       : diagnosticsRes.data
       ? {
-          overallScore: diagnosticsRes.data.overall_score == null ? null : Number(diagnosticsRes.data.overall_score),
-          stage: diagnosticsRes.data.stage ?? null,
+          overallScore: official ? officialScore(official) : null,
+          stage: officialStage,
           calculatedAt: diagnosticsRes.data.calculated_at ?? null,
         }
       : null,

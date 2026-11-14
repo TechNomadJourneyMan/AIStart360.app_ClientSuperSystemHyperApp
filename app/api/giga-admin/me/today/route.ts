@@ -5,6 +5,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { assignedClientIds, isUuid, scopedClientIds } from '@/lib/admin/client-scope'
 import { createServiceClient } from '@/lib/supabase-service'
 import { DAY_MS, bucketTasks, groupCases, summarizeChanges, type DiagPoint, type DocPoint, type GriPoint, type SurveyChange } from '@/lib/admin/today'
+import { loadSnapshotsByDiagnostic, officialScoreOfRow } from '@/lib/point-a/official'
 
 /**
  * GET /api/giga-admin/me/today?tz=<Date#getTimezoneOffset> — «Мой день».
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
     const [surveyRes, griRes, diagRes, docsRes] = await Promise.all([
       sb.from('survey_answer_history').select('user_id, question_key, created_at, changed_by').in('user_id', candidateIds).gt('created_at', minSince).limit(5000),
       sb.from('gri_assessments').select('user_id, gri_index, created_at').in('user_id', candidateIds).order('created_at', { ascending: false }).limit(3000),
-      sb.from('diagnostics').select('user_id, overall_score, calculated_at').in('user_id', candidateIds).order('calculated_at', { ascending: false }).limit(3000),
+      sb.from('diagnostics').select('id, user_id, overall_score, health_index, stage, calculated_at, is_current').in('user_id', candidateIds).order('calculated_at', { ascending: false }).limit(3000),
       sb.from('documents').select('user_id, file_name, uploaded_at').in('user_id', candidateIds).gt('uploaded_at', minSince).limit(2000),
     ])
     const group = <T extends { user_id: string }>(rows: T[] | null) => {
@@ -101,7 +102,11 @@ export async function GET(req: NextRequest) {
     }
     const survey = group((surveyRes.data ?? []) as Array<SurveyChange & { user_id: string }>)
     const gri = group((griRes.data ?? []) as Array<GriPoint & { user_id: string }>)
-    const diag = group((diagRes.data ?? []) as Array<DiagPoint & { user_id: string }>)
+    // The current diagnostics carry the OFFICIAL score (lib/point-a/official.ts,
+    // R-033/R-032): «Точка А пересчитана» without a number when there is none.
+    const diagRows = (diagRes.data ?? []) as Array<Record<string, unknown> & { id: string; is_current?: boolean }>
+    const snaps = await loadSnapshotsByDiagnostic(sb, diagRows.filter((d) => d.is_current).map((d) => String(d.id)))
+    const diag = group(diagRows.map((d) => ({ ...d, overall_score: d.is_current ? officialScoreOfRow(d, snaps) : d.overall_score })) as unknown as Array<DiagPoint & { user_id: string }>)
     const docs = group((docsRes.data ?? []) as Array<DocPoint & { user_id: string }>)
 
     changes = candidateIds

@@ -294,16 +294,22 @@ export function UserDetailPanel({ userId, readOnly = false, hideSurvey = false }
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="text-center">
               <p className="text-[9px] text-slate-600 uppercase">Балл</p>
-              <p className={`text-lg font-mono font-bold ${scoreColor((diag.overall_score as number) ?? 0)}`}>{(diag.overall_score as number) ?? 0}</p>
+              {/* Official row (R-032/R-033): null = no score yet, never 0. */}
+              {typeof diag.overall_score === 'number'
+                ? <p className={`text-lg font-mono font-bold ${scoreColor(diag.overall_score)}`}>{diag.overall_score}</p>
+                : <p className="text-[10px] text-slate-500" title="Балл появится, когда данных хватит">нет балла</p>}
             </div>
             <div className="text-center">
               <p className="text-[9px] text-slate-600 uppercase">Health</p>
-              <p className={`text-lg font-mono font-bold ${scoreColor((diag.health_index as number) ?? 0)}`}>{(diag.health_index as number) ?? 0}</p>
+              {typeof diag.health_index === 'number'
+                ? <p className={`text-lg font-mono font-bold ${scoreColor(diag.health_index)}`}>{diag.health_index}</p>
+                : <p className="text-lg font-mono font-bold text-slate-600">—</p>}
             </div>
           </div>
           {['finance', 'sales', 'operations', 'marketing', 'strategy'].map(key => {
             const block = diag[`${key}_score`] as { score?: number } | null
-            const s = block?.score ?? 0
+            const known = typeof block?.score === 'number'
+            const s = known ? (block!.score as number) : 0
             const labels: Record<string, string> = { finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия' }
             return (
               <div key={key} className="flex items-center gap-2">
@@ -311,7 +317,7 @@ export function UserDetailPanel({ userId, readOnly = false, hideSurvey = false }
                 <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${s}%`, background: s >= 70 ? '#6effc0' : s >= 40 ? '#fbbf24' : '#ef4444' }} />
                 </div>
-                <span className={`text-[10px] font-mono font-bold w-8 text-right ${scoreColor(s)}`}>{s}</span>
+                <span className={`text-[10px] font-mono font-bold w-8 text-right ${known ? scoreColor(s) : 'text-slate-600'}`} title={known ? undefined : 'нет данных'}>{known ? s : '—'}</span>
               </div>
             )
           })}

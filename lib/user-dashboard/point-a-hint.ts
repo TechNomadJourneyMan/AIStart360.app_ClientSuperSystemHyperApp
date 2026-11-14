@@ -19,11 +19,13 @@ export function snapshotIsPreliminary(snapshot: { v4?: unknown } | null | undefi
 }
 
 export function pointAStatHint(
-  d: { calculatedAt: string | null; primary?: boolean; preliminary?: boolean } | null | undefined,
+  d: { calculatedAt: string | null; primary?: boolean; preliminary?: boolean; overallScore?: number | null } | null | undefined,
   fmtDate: (iso: string) => string,
 ): string {
   if (!d?.calculatedAt) return 'появится после анкеты'
   const at = `расчёт ${fmtDate(d.calculatedAt)}`
   if (d.preliminary) return `${PRELIMINARY_POINT_A_LABEL} · оценка после полной анкеты`
+  // The full questionnaire is sent, but no official score yet (R-032/R-033).
+  if (d.overallScore === null) return 'Балл появится, когда данных хватит'
   return d.primary ? `${PRIMARY_POINT_A_LABEL} · ${at}` : at
 }

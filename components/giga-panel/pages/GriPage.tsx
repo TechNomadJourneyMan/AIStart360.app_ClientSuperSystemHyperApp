@@ -11,6 +11,7 @@ import {
 } from '@/components/giga-panel/kit'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import type { SectionId } from '@/lib/gri-assessment/sections'
+import { formatGri } from '@/lib/format/gri'
 
 interface Row { id: string; user_id: string; gri_index: number; is_current: boolean; created_at: string; user: { email: string | null; full_name: string | null; organization: string | null } | null }
 interface Payload {
@@ -32,7 +33,7 @@ export function GriPage() {
 
   const columns: Column<Row>[] = [
     { key: 'user', header: 'Клиент', render: (r) => <div><p className="text-slate-100">{r.user?.organization || r.user?.full_name || r.user?.email || r.user_id}</p><p className="text-[10px] text-slate-500">{r.user?.email}</p></div> },
-    { key: 'index', header: 'Индекс', render: (r) => <span className="font-mono text-base font-bold text-slate-100">{r.gri_index.toFixed(1)}</span> },
+    { key: 'index', header: 'Индекс', render: (r) => <span className="font-mono text-base font-bold text-slate-100">{formatGri(r.gri_index, { empty: '—' })}</span> },
     { key: 'state', header: '', render: (r) => r.is_current ? <Badge tone="green">текущий</Badge> : <Badge>архивный</Badge> },
     { key: 'at', header: 'Дата', render: (r) => fmtDateTime(r.created_at) },
   ]
@@ -55,7 +56,7 @@ export function GriPage() {
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel title="Средний балл по блокам" description="Самые слабые блоки — ниже">
-              <BarList items={[...d.stats.blocks].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)).map((b) => ({ key: b.id, label: GRI_BLOCK_RU[b.id], value: b.avg ?? 0 }))} format={(n) => n.toFixed(2)} />
+              <BarList items={[...d.stats.blocks].sort((a, b) => (b.avg ?? 0) - (a.avg ?? 0)).map((b) => ({ key: b.id, label: GRI_BLOCK_RU[b.id], value: b.avg ?? 0 }))} format={(n) => formatGri(n, { empty: '—' })} />
             </Panel>
             <Panel title="Распределение индекса">
               <BarList items={d.stats.buckets.map((b) => ({ key: b.label, label: `Индекс ${b.label}`, value: b.count }))} />

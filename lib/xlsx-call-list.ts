@@ -125,9 +125,9 @@ function sheetOverview(input: CallListInput): XLSX.WorkSheet {
   rows.push(['9 связок роста — потенциал'])
   rows.push(['Приоритет', 'Связка', 'Целевые пациенты', 'Конверсия %', 'Выручка/мес, ₸', 'Срок эффекта', 'Сложность'])
   for (const b of input.bundles) {
-    rows.push([b.priority, b.label, b.target_patient_count, b.estimated_conversion, b.estimated_revenue_kzt, b.effect_timeline, b.complexity])
+    rows.push([b.priority, b.label, b.target_patient_count, b.estimated_conversion, b.estimated_revenue_kzt ?? 'нет данных', b.effect_timeline, b.complexity])
   }
-  rows.push(['ИТОГО', '', '', '', input.bundles.reduce((s, b) => s + b.estimated_revenue_kzt, 0), '', ''])
+  rows.push(['ИТОГО', '', '', '', input.bundles.reduce((s, b) => s + (b.estimated_revenue_kzt ?? 0), 0), '', ''])
 
   const ws = XLSX.utils.aoa_to_sheet(rows)
   ws['!cols'] = [{ wch: 24 }, { wch: 44 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }]

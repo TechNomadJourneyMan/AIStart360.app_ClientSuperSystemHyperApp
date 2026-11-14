@@ -18,6 +18,7 @@
  */
 
 import PDFDocument from 'pdfkit'
+import { formatGri, griFromPercent, griTone, griZone } from '@/lib/format/gri'
 import { registerReportFonts, REPORT_FONTS } from './fonts'
 import {
   SURVEY_LABELS,
@@ -79,7 +80,8 @@ export interface GriPdfInput {
 export interface PointABlockInput {
   key: string
   label: string
-  score: number
+  /** Point A block score 0–100; null = no data (not a weakness, never drawn as 0). */
+  score: number | null
   diagnosis?: string
   benchmark_comparison?: string
   key_risk?: string
@@ -88,8 +90,9 @@ export interface PointABlockInput {
 
 export interface PointAPdfInput {
   meta: ReportMeta
-  overallScore: number
-  healthIndex: number
+  /** null = no official score yet (R-032/R-033). */
+  overallScore: number | null
+  healthIndex: number | null
   stage?: string | null
   executiveSummary?: string | null
   industryContext?: string | null
@@ -409,9 +412,15 @@ function bullet(doc: PDFDoc, text: string, opts: { color?: string; indent?: numb
  * Horizontal score bar with the numeric value. Renders a label, a 0–100 track
  * with a colored fill, and the mono value.
  */
-function scoreBar(doc: PDFDoc, label: string, score: number): void {
+function scoreBar(
+  doc: PDFDoc,
+  label: string,
+  score: number,
+  opts: { valueText?: string; color?: string } = {},
+): void {
   ensureSpace(doc, 30)
   const clamped = Math.max(0, Math.min(100, score))
+  const color = opts.color ?? scoreColor(clamped)
   const y = doc.y
   const barW = CONTENT_W
   const barH = 8
@@ -420,14 +429,14 @@ function scoreBar(doc: PDFDoc, label: string, score: number): void {
   doc
     .font(REPORT_FONTS.mono)
     .fontSize(10)
-    .fillColor(scoreColor(clamped))
-    .text(`${Math.round(clamped)}/100`, MARGIN, y, { width: barW, align: 'right', lineBreak: false })
+    .fillColor(color)
+    .text(opts.valueText ?? `${Math.round(clamped)}/100`, MARGIN, y, { width: barW, align: 'right', lineBreak: false })
   const trackY = doc.y + 3
   // Track
   doc.save().roundedRect(MARGIN, trackY, barW, barH, 4).fill('#EEF1F4').restore()
   // Fill
   const fillW = Math.max(2, (barW * clamped) / 100)
-  doc.save().roundedRect(MARGIN, trackY, fillW, barH, 4).fill(scoreColor(clamped)).restore()
+  doc.save().roundedRect(MARGIN, trackY, fillW, barH, 4).fill(color).restore()
   doc.y = trackY + barH + 10
 }
 
@@ -516,6 +525,17 @@ function finalize(doc: PDFDoc, opts: FinalizeOptions = {}): Promise<Buffer> {
 
 // ─── GRI ───────────────────────────────────────────────────────────────────────
 
+/** GRI (input 0–100) as text on the GRI scale: «6.2 / 10» (lib/format/gri.ts). */
+function griText(score100: number): string {
+  return formatGri(griFromPercent(score100), { scale: true, empty: 'нет данных' })
+}
+
+/** PDF colour of a GRI value (input 0–100) from the one set of GRI zones. */
+function griPdfColor(score100: number): string {
+  const tone = griTone(griFromPercent(score100))
+  return tone === 'green' ? POSITIVE : tone === 'amber' ? WARN : tone === 'red' ? CRIT : MUTED
+}
+
 export async function renderGriPdf(input: GriPdfInput): Promise<Buffer> {
   const doc = newDoc(`GRI · ${input.meta.companyName}`)
 
@@ -523,7 +543,8 @@ export async function renderGriPdf(input: GriPdfInput): Promise<Buffer> {
     tag: 'Growth Readiness Index',
     title: 'Индекс готовности к росту',
     meta: input.meta,
-    headline: { label: 'Общий индекс GRI', value: `${Math.round(input.overall)}/100` },
+    // GRI is shown on its own scale 0–10 (R-036); the input stays 0–100.
+    headline: { label: 'Общий индекс GRI', value: griText(input.overall) },
   })
 
   // ── Блоки готовности ─────────────────────────────────────────────────────
@@ -531,12 +552,12 @@ export async function renderGriPdf(input: GriPdfInput): Promise<Buffer> {
   paragraph(
     doc,
     'Оценка готовности бизнеса к кратному росту по семи фундаментальным блокам. ' +
-      'Каждый блок нормирован к шкале 0–100: чем выше, тем устойчивее блок при масштабировании.',
+      'Каждый блок оценивается по шкале 0–10: чем выше, тем устойчивее блок при масштабировании.',
     { color: MUTED, size: 10 },
   )
   doc.moveDown(0.3)
   for (const b of input.blocks) {
-    scoreBar(doc, b.label, b.score)
+    scoreBar(doc, b.label, b.score, { valueText: griText(b.score), color: griPdfColor(b.score) })
   }
 
   // ── Сводная таблица ──────────────────────────────────────────────────────
@@ -548,8 +569,8 @@ export async function renderGriPdf(input: GriPdfInput): Promise<Buffer> {
       { label: 'Оценка', width: 90, align: 'right' },
       { label: 'Статус', width: 85, align: 'right' },
     ],
-    input.blocks.map((b) => [b.label, `${Math.round(b.score)}/100`, statusLabel(b.score)]),
-    input.blocks.map((b) => scoreColor(b.score)),
+    input.blocks.map((b) => [b.label, griText(b.score), griZone(griFromPercent(b.score))?.label ?? 'нет данных']),
+    input.blocks.map((b) => griPdfColor(b.score)),
   )
 
   // ── TOP-5 ограничений ────────────────────────────────────────────────────
@@ -572,14 +593,6 @@ export async function renderGriPdf(input: GriPdfInput): Promise<Buffer> {
   return finalize(doc)
 }
 
-function statusLabel(score: number): string {
-  if (score >= 85) return 'Отлично'
-  if (score >= 70) return 'Сильно'
-  if (score >= 50) return 'Средне'
-  if (score >= 30) return 'Слабо'
-  return 'Критично'
-}
-
 // ─── Точка А ─────────────────────────────────────────────────────────────────
 
 export async function renderPointAPdf(input: PointAPdfInput): Promise<Buffer> {
@@ -589,13 +602,14 @@ export async function renderPointAPdf(input: PointAPdfInput): Promise<Buffer> {
     tag: 'Точка А · Диагностика',
     title: 'Точка А — диагностика бизнеса',
     meta: input.meta,
-    headline: { label: 'Общая оценка', value: `${Math.round(input.overallScore)}/100` },
+    headline: { label: 'Общая оценка', value: input.overallScore === null ? 'Балл появится, когда данных хватит' : `${Math.round(input.overallScore)}/100` },
   })
 
   // ── Сводные показатели ───────────────────────────────────────────────────
   sectionHeader(doc, 'Сводные показатели')
-  kvRow(doc, 'Общая оценка', `${Math.round(input.overallScore)}/100`, scoreColor(input.overallScore))
-  kvRow(doc, 'Индекс здоровья бизнеса', `${Math.round(input.healthIndex)}/100`, scoreColor(input.healthIndex))
+  if (input.overallScore === null) kvRow(doc, 'Общая оценка', 'Балл появится, когда данных хватит')
+  else kvRow(doc, 'Общая оценка', `${Math.round(input.overallScore)}/100`, scoreColor(input.overallScore))
+  if (input.healthIndex !== null) kvRow(doc, 'Индекс здоровья бизнеса', `${Math.round(input.healthIndex)}/100`, scoreColor(input.healthIndex))
 
   // ── Резюме ───────────────────────────────────────────────────────────────
   if (input.executiveSummary) {
@@ -605,8 +619,10 @@ export async function renderPointAPdf(input: PointAPdfInput): Promise<Buffer> {
 
   // ── Оценки по блокам ─────────────────────────────────────────────────────
   sectionHeader(doc, 'Оценки по блокам')
+  // Point A blocks are 0–100 (not the GRI scale); a block without data is named, not drawn as 0.
   for (const b of input.blocks) {
-    scoreBar(doc, b.label, b.score)
+    if (b.score === null) kvRow(doc, b.label, 'нет данных — не оценивался')
+    else scoreBar(doc, b.label, b.score)
   }
 
   // ── Разбор блоков ────────────────────────────────────────────────────────
@@ -617,7 +633,7 @@ export async function renderPointAPdf(input: PointAPdfInput): Promise<Buffer> {
     sectionHeader(doc, 'Разбор по блокам')
     for (const b of input.blocks) {
       if (!(b.diagnosis || b.benchmark_comparison || b.key_risk || b.top_recommendation)) continue
-      subHeader(doc, `${b.label} · ${Math.round(b.score)}/100`, scoreColor(b.score))
+      subHeader(doc, b.score === null ? `${b.label} · нет данных` : `${b.label} · ${Math.round(b.score)}/100`, b.score === null ? MUTED : scoreColor(b.score))
       if (b.diagnosis) paragraph(doc, `Диагноз: ${b.diagnosis}`, { size: 10 })
       if (b.benchmark_comparison) paragraph(doc, `Сравнение с рынком: ${b.benchmark_comparison}`, { size: 10, color: MUTED })
       if (b.key_risk) paragraph(doc, `Ключевой риск: ${b.key_risk}`, { size: 10, color: CRIT })

@@ -21,6 +21,7 @@
  * trigger, so two writers never interleave for one company and report type.
  */
 import { prisma } from '@/lib/db'
+import { officialDiagnosticRow, officialPointA, snapshotFromJoined } from '@/lib/point-a/official'
 import type { Prisma } from '@prisma/client'
 import type { PointAOverview } from '@/types/point-a-overview'
 import type { SnapshotDiagnosticRow, SnapshotFindingRow, SnapshotInputs, SnapshotRecommendationRow } from './snapshot'
@@ -87,8 +88,18 @@ export async function loadSnapshotInputs(companyId: string, sessionId: string | 
       FROM public.diagnostic_recommendations
       WHERE company_id = ${companyId} AND status IN ('proposed', 'accepted', 'done')`,
   ])
-  const d = diagRows[0]
-  if (!d) return { ok: false, reason: 'no_diagnostic', message: 'расчёт Точки А сессии не найден' }
+  const raw = diagRows[0]
+  if (!raw) return { ok: false, reason: 'no_diagnostic', message: 'расчёт Точки А сессии не найден' }
+  // The OFFICIAL Point A of this diagnostic (lib/point-a/official.ts, R-033):
+  // the snapshot that wrote it, else the company's latest. No official score →
+  // overall / health / stage null; a block without data is left out of the report.
+  const snapRows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT engine AS snap_engine, config_version AS snap_config_version, blocks AS snap_blocks, v4 AS snap_v4,
+           overall::float AS snap_overall, stage AS snap_stage
+    FROM public.point_a_snapshots WHERE company_id = ${companyId}
+    ORDER BY (diagnostic_id = ${s.diagnostic_id}::uuid) DESC NULLS LAST, created_at DESC LIMIT 1`
+  const rawRow = raw as unknown as Record<string, unknown>
+  const d = officialDiagnosticRow(rawRow, officialPointA(rawRow, snapshotFromJoined(snapRows[0]))) as unknown as typeof raw
 
   return {
     ok: true,

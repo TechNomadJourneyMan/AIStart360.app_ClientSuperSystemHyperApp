@@ -53,6 +53,7 @@ import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { loadAttribution, type AttributionSourceRow, type ProfilesReader } from '@/lib/survey/attribution-read'
 import { surveyPrintModel } from '@/lib/survey/answers-view'
+import { hasOfficialBlockScores, loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 type ReportType = 'gri' | 'point-a' | 'point-b' | 'survey'
 const VALID_TYPES = new Set<ReportType>(['gri', 'point-a', 'point-b', 'survey'])
@@ -267,17 +268,23 @@ async function loadPointA(
   sb: ReturnType<typeof createServerClient>,
   subject: Subject,
 ): Promise<PointAPdfInput | null> {
-  const { data: diag } = await sb
+  const { data: rawDiag } = await sb
     .from('diagnostics')
     .select('*')
     .eq('user_id', subject.userId)
     .eq('is_current', true)
     .maybeSingle()
 
-  if (!diag) return null
+  if (!rawDiag) return null
 
-  const pointA = diagToPointA(diag as Record<string, unknown>)
-  const ai = (diag as Record<string, unknown>).ai_analysis as AIAnalysis | null
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): the PDF shows
+  // the same numbers as the Point A page — no score / «нет данных» = null.
+  const official = officialPointA(rawDiag as Record<string, unknown>, await loadOfficialSnapshot(sb, subject.userId))
+  const diag = officialDiagnosticRow(rawDiag as Record<string, unknown>, official)
+  const pointA = diagToPointA(diag)
+  const noData = new Set(hasOfficialBlockScores(official) ? official.blocksWithoutData : ['finance', 'sales', 'operations', 'marketing', 'strategy'])
+  const scored = official.state === 'scored'
+  const ai = diag.ai_analysis as AIAnalysis | null
 
   const blockOrder: Array<keyof PointA['blocks']> = ['finance', 'sales', 'operations', 'marketing', 'strategy']
   const blocks: PointAPdfInput['blocks'] = blockOrder.map((key) => {
@@ -285,7 +292,7 @@ async function loadPointA(
     return {
       key,
       label: POINT_A_BLOCK_LABELS[key] ?? key,
-      score: pointA.blocks[key]?.score ?? 0,
+      score: noData.has(key) ? null : pointA.blocks[key]?.score ?? null,
       diagnosis: aiBlock?.diagnosis,
       benchmark_comparison: aiBlock?.benchmark_comparison,
       key_risk: aiBlock?.key_risk,
@@ -296,15 +303,15 @@ async function loadPointA(
   const meta: ReportMeta = {
     companyName: subject.companyName,
     industry: subject.industry,
-    stage: subject.stage ?? pointA.stage,
-    generatedAt: (diag as Record<string, unknown>).calculated_at as string | undefined,
+    stage: subject.stage ?? (scored ? official.stage : null),
+    generatedAt: diag.calculated_at as string | undefined,
   }
 
   return {
     meta,
-    overallScore: pointA.overall_score,
-    healthIndex: pointA.health_index,
-    stage: subject.stage ?? pointA.stage,
+    overallScore: scored ? official.overall : null,
+    healthIndex: scored ? official.health_index : null,
+    stage: subject.stage ?? (scored ? official.stage : null),
     executiveSummary: ai?.executive_summary ?? null,
     industryContext: ai?.industry_context ?? null,
     blocks,

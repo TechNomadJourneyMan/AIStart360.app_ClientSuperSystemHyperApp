@@ -92,6 +92,10 @@ import {
   MICRO_INSIGHTS,
   type GRIHistoryEntry,
 } from "@/lib/gri-calculator/gri-data"
+import { griTone } from '@/lib/format/gri'
+
+/** Critical GRI zone (< 4) — the same threshold as every GRI screen (R-036). */
+const isRedZone = (score: number) => griTone(score) === 'red'
 
 // ─────────────────────────────────────────────────────
 // Custom Radar Tooltip
@@ -390,7 +394,8 @@ export default function GRICalculator({
   // When the sliders have diverged from the exact server index, the big number
   // is only the slider mean — flag it as approximate (the exact index is in the hero).
   const showApproxCaption = !planningMode && assessmentGri != null && !slidersMatchBase
-  const redZones = useMemo(() => CATEGORIES.filter((c) => activeScores[c] < 5), [activeScores])
+  // «Красная зона» = critical GRI zone (lib/format/gri.ts GRI_ZONES, R-036).
+  const redZones = useMemo(() => CATEGORIES.filter((c) => isRedZone(activeScores[c])), [activeScores])
   const hasRedZones = redZones.length > 0
 
   const crossImpactWarnings = useMemo(() => {
@@ -401,7 +406,7 @@ export default function GRICalculator({
       if (delta >= 3) {
         const impacted = CROSS_IMPACTS[cat] || []
         impacted.forEach((imp) => {
-          if (baseScores[imp] < 5) warnings.add(imp)
+          if (isRedZone(baseScores[imp])) warnings.add(imp)
         })
       }
     }
@@ -743,7 +748,7 @@ export default function GRICalculator({
                   {sessions.map((entry, i) => {
                     const entryGRI = Number(entry.gri_index)
                     const barWidth = (entryGRI / 10) * 100
-                    const barColor = entryGRI < 5 ? "#ef4444" : entryGRI <= 7 ? "#f59e0b" : "#10b981"
+                    const barColor = getScoreColor(entryGRI)
                     const dateStr = new Date(entry.created_at).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", {
                       month: "short",
                       day: "numeric",
@@ -948,16 +953,16 @@ export default function GRICalculator({
                     const color = getScoreColor(score)
                     const zoneClass = getScoreZoneClass(score)
                     const catLabel = categoryTranslations[category][lang]
-                    const isRed = score < 5
+                    const isRed = isRedZone(score)
                     const scoreExplanation = SCORE_EXPLANATIONS[score]
                     const catTips = CATEGORY_TIPS[category]
-                    const tipLevel = score < 5 ? "low" : score <= 7 ? "mid" : "high"
+                    const tipLevel = isRed ? "low" : griTone(score) === "amber" ? "mid" : "high"
                     const tip = catTips?.[tipLevel]
                     const isExpanded = expandedCategory === category
                     const isImpacted = crossImpactWarnings.has(category)
                     const effort = EFFORT_DATA[category]
                     const delta = planningMode ? plannedScores[category] - baseScores[category] : 0
-                    const microInsight = score < 8 ? MICRO_INSIGHTS[category]?.[score < 5 ? "low" : "mid"] : null
+                    const microInsight = tipLevel !== "high" ? MICRO_INSIGHTS[category]?.[tipLevel] : null
                     const factors = SUB_FACTORS[category] || []
                     const accChecked = accordionChecked[category] || {}
                     const checkedCount = factors.filter((f) => accChecked[f.id]).length

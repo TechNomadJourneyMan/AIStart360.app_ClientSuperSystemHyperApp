@@ -361,7 +361,12 @@ export const CLIENT_INSIGHT_TOOLS: BrainTool[] = [
           WHERE company_id = ${a.company_id} ORDER BY created_at DESC LIMIT 5`.catch(() => []),
       ])
       if (!card) throw new BrainToolError('Клиент не найден')
-      const scores = diagnostics.map((d) => ({ overall_score: num(d.overall_score), health_index: num(d.health_index), calculated_at: iso(d.calculated_at), current: d.is_current }))
+      // The current diagnostic: the OFFICIAL score of the card (lib/mcp/data.ts →
+      // lib/point-a/official.ts) — null without one, never a v1 number.
+      const official = (card.current_diagnostic ?? null) as { overall_score?: number | null; health_index?: number | null } | null
+      const scores = diagnostics.map((d) => d.is_current
+        ? { overall_score: official?.overall_score ?? null, health_index: official?.health_index ?? null, calculated_at: iso(d.calculated_at), current: true }
+        : { overall_score: num(d.overall_score), health_index: num(d.health_index), calculated_at: iso(d.calculated_at), current: d.is_current })
       const first = scores[scores.length - 1]?.overall_score
       const last = scores[0]?.overall_score
       const latestGri = gri[0]

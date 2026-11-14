@@ -167,7 +167,9 @@ export async function renderReportVersionPdf(content: ReportContent, opts: Versi
 
   // ── Сводка ──────────────────────────────────────────────────────────────
   L.sectionHeader(doc, 'Сводные показатели')
+  // No official score (R-032/R-033): say so — never a 0.
   if (d.overall_score !== null) L.kvRow(doc, 'Индекс Точки А', `${Math.round(d.overall_score)}/100`, L.scoreColor(d.overall_score))
+  else L.kvRow(doc, 'Индекс Точки А', 'Балл появится, когда данных хватит')
   if (d.health_index !== null) L.kvRow(doc, 'Индекс здоровья бизнеса', `${Math.round(d.health_index)}/100`, L.scoreColor(d.health_index))
   if (d.maturity) L.kvRow(doc, 'Стадия зрелости', d.maturity.label)
   if (d.gri_index !== null) L.kvRow(doc, 'Индекс GRI', `${d.gri_index}/10`)
@@ -198,6 +200,9 @@ export async function renderReportVersionPdf(content: ReportContent, opts: Versi
       if (b.top_issues[0]) L.paragraph(doc, `Главная проблема: ${b.top_issues[0]}`, { size: 9, color: L.colors.MUTED, gap: 0.3 })
     }
   }
+  // Blocks without official data are left out of `blocks` — named, never drawn as 0.
+  const noDataBlocks = ['Финансы', 'Продажи', 'Операции', 'Маркетинг', 'Стратегия'].filter((label) => !d.blocks.some((b) => b.label === label))
+  if (noDataBlocks.length) L.paragraph(doc, `Нет данных (не оценивались — это не слабость): ${noDataBlocks.join(', ')}`, { size: 9, color: L.colors.MUTED })
 
   // ── Выводы ──────────────────────────────────────────────────────────────
   L.sectionHeader(doc, 'Выводы диагностики')

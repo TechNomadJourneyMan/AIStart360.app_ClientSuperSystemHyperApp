@@ -39,8 +39,10 @@ function BlockCard({ title, icon, score, aiBlock }: {
   aiBlock?: { diagnosis: string; benchmark_comparison: string; key_risk: string; top_recommendation: string }
 }) {
   const [open, setOpen] = useState(false)
-  const pct = score?.score ?? 0
-  const lbl = blockLabel(score?.status)
+  // The API sends the OFFICIAL row: a block without data is null — «нет данных», never 0.
+  const noData = typeof score?.score !== 'number'
+  const pct = noData ? 0 : (score!.score as number)
+  const lbl = noData ? { text: 'нет данных — не слабость', color: 'text-on-surface-variant' } : blockLabel(score?.status)
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5 transition-all hover:border-primary/20">
@@ -52,7 +54,7 @@ function BlockCard({ title, icon, score, aiBlock }: {
           <span className="text-sm font-medium text-on-surface">{title}</span>
         </div>
         <span className={`text-xs font-mono font-bold ${lbl.color}`}>
-          {(pct / 10).toFixed(1)}/10
+          {noData ? 'нет данных' : `${(pct / 10).toFixed(1)}/10`}
         </span>
       </div>
 

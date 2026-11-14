@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
+import { formatGri, griFromPercent } from '@/lib/format/gri'
 import { prisma } from '@/lib/db'
 import { EmptyState } from '@/components/common/EmptyState'
 
@@ -44,7 +45,7 @@ export default async function InsightsPage() {
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Средний GRI</p>
             <span className="material-symbols-outlined text-xl text-primary/40 group-hover:text-primary transition-colors">analytics</span>
           </div>
-          <p className="text-3xl font-mono font-bold text-on-surface">{(avgScore / 10).toFixed(1)}</p>
+          <p className="text-3xl font-mono font-bold text-on-surface">{formatGri(griFromPercent(avgScore), { scale: true, empty: '—' })}</p>
           <p className="text-[10px] font-mono text-primary mt-2 uppercase tracking-tight">Показатель по всей базе</p>
         </div>
       </section>

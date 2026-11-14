@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
+import { formatGri, griColor, griFromPercent } from '@/lib/format/gri'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
 import { getSiteUrl } from '@/lib/site-url'
@@ -143,15 +144,16 @@ function fmtMult(n: number | null | undefined): string {
   return `${Math.round(n * 10) / 10}×`
 }
 
-function ScoreBar({ label, score }: { label: string; score: number }) {
+function ScoreBar({ label, score, gri = false }: { label: string; score: number; gri?: boolean }) {
   const clamped = Math.max(0, Math.min(100, score))
-  const color = scoreColor(clamped)
+  // GRI (input 0–100) is shown on its own scale 0–10 with the GRI zones (R-036).
+  const color = gri ? griColor(griFromPercent(clamped), '#EF4444') : scoreColor(clamped)
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-sm text-on-surface">{label}</span>
         <span className="text-xs font-mono font-bold" style={{ color }}>
-          {Math.round(clamped)}/100
+          {gri ? formatGri(griFromPercent(clamped), { scale: true, empty: '—' }) : `${Math.round(clamped)}/100`}
         </span>
       </div>
       <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
@@ -311,11 +313,11 @@ async function GriBody({ subject }: { subject: ReportSubject }) {
         <div className="flex items-baseline gap-3">
           <span
             className="font-mono text-5xl font-extrabold"
-            style={{ color: scoreColor(data.overall) }}
+            style={{ color: griColor(griFromPercent(data.overall), '#EF4444') }}
           >
-            {data.overall}
+            {formatGri(griFromPercent(data.overall), { empty: '—' })}
           </span>
-          <span className="text-sm text-on-surface-variant">/100</span>
+          <span className="text-sm text-on-surface-variant">/ 10</span>
         </div>
       </Section>
 
@@ -323,7 +325,7 @@ async function GriBody({ subject }: { subject: ReportSubject }) {
         <Section title="Готовность по блокам">
           <div className="space-y-4">
             {data.blocks.map((b) => (
-              <ScoreBar key={b.key} label={b.label} score={b.score} />
+              <ScoreBar key={b.key} label={b.label} score={b.score} gri />
             ))}
           </div>
         </Section>
@@ -385,29 +387,38 @@ async function PointABody({ subject }: { subject: ReportSubject }) {
             <p className="text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-1">
               Общая оценка
             </p>
-            <p
-              className="font-mono text-3xl font-extrabold"
-              style={{ color: scoreColor(data.overallScore) }}
-            >
-              {Math.round(data.overallScore)}
-              <span className="text-sm text-on-surface-variant font-normal">
-                /100
-              </span>
-            </p>
+            {/* No official score (R-032/R-033): said, never drawn as 0. */}
+            {data.overallScore === null ? (
+              <p className="text-sm text-on-surface-variant">Балл появится, когда данных хватит</p>
+            ) : (
+              <p
+                className="font-mono text-3xl font-extrabold"
+                style={{ color: scoreColor(data.overallScore) }}
+              >
+                {Math.round(data.overallScore)}
+                <span className="text-sm text-on-surface-variant font-normal">
+                  /100
+                </span>
+              </p>
+            )}
           </div>
           <div>
             <p className="text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-1">
               Индекс здоровья
             </p>
-            <p
-              className="font-mono text-3xl font-extrabold"
-              style={{ color: scoreColor(data.healthIndex) }}
-            >
-              {Math.round(data.healthIndex)}
-              <span className="text-sm text-on-surface-variant font-normal">
-                /100
-              </span>
-            </p>
+            {data.healthIndex === null ? (
+              <p className="text-sm text-on-surface-variant">—</p>
+            ) : (
+              <p
+                className="font-mono text-3xl font-extrabold"
+                style={{ color: scoreColor(data.healthIndex) }}
+              >
+                {Math.round(data.healthIndex)}
+                <span className="text-sm text-on-surface-variant font-normal">
+                  /100
+                </span>
+              </p>
+            )}
           </div>
         </div>
       </Section>
@@ -422,9 +433,13 @@ async function PointABody({ subject }: { subject: ReportSubject }) {
 
       <Section title="Оценки по блокам">
         <div className="space-y-4">
-          {data.blocks.map((b) => (
+          {data.blocks.map((b) => (b.score === null ? (
+            <p key={b.key} className="text-sm text-on-surface-variant">
+              {b.label}: нет данных — блок не оценивался (это не слабость)
+            </p>
+          ) : (
             <ScoreBar key={b.key} label={b.label} score={b.score} />
-          ))}
+          )))}
         </div>
       </Section>
 
@@ -448,9 +463,9 @@ async function PointABody({ subject }: { subject: ReportSubject }) {
                     </span>
                     <span
                       className="text-xs font-mono font-bold"
-                      style={{ color: scoreColor(b.score) }}
+                      style={{ color: b.score === null ? undefined : scoreColor(b.score) }}
                     >
-                      {Math.round(b.score)}/100
+                      {b.score === null ? 'нет данных' : `${Math.round(b.score)}/100`}
                     </span>
                   </div>
                   {b.diagnosis && (

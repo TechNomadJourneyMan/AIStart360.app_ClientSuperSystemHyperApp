@@ -18,11 +18,39 @@ describe('chat tools', () => {
   it('get_point_a reads the company snapshot only', async () => {
     const m = memoryClient({ point_a_snapshots: [
       { id: 's-other', company_id: 'other', created_at: '2026-10-11', overall: 99, blocks: [] },
-      { id: 's1', company_id: 'co', created_at: '2026-10-10', overall: 64, confidence: 0.5, blocks: [{ key: 'finance', title: 'Финансы', score: 70, checks: [] }], v4: {}, change_reasons: [{ text: 'x' }] },
+      { id: 's1', company_id: 'co', created_at: '2026-10-10', config_version: 'default@1/r2|v4', overall: 64, stage: 'growth', confidence: 0.5, blocks: [{ key: 'finance', title: 'Финансы', score: 70, weight: 0.7, checks: [] }, { key: 'sales', title: 'Продажи', score: null, weight: 0.3, checks: [] }], v4: { assessment: 'full' }, change_reasons: [{ text: 'x' }] },
     ] })
     const r = await tool('get_point_a').run({}, ctx(m))
-    expect(r).toMatchObject({ overall: 64, recent_changes: ['x'] })
+    expect(r).toMatchObject({ assessment: 'scored', overall: 64, stage: 'growth', recent_changes: ['x'], blocks_without_data: ['sales', 'operations', 'marketing', 'strategy'] })
     expect((r.blocks as Array<{ key: string }>)[0].key).toBe('finance')
+  })
+
+  // I2 (R-032/R-033): the audit example — answers on «Операции» only → no overall, no zeros.
+  it('get_point_a: no official score → overall / stage null and «Балл появится, когда данных хватит»', async () => {
+    const m = memoryClient({ point_a_snapshots: [
+      { id: 's1', company_id: 'co', created_at: '2026-11-14', config_version: 'default@1/r1|v4', overall: 100, stage: 'scale', blocks: [
+        { key: 'finance', title: 'Финансы', score: null, weight: 0.25, checks: [] },
+        { key: 'sales', title: 'Продажи', score: null, weight: 0.2, checks: [] },
+        { key: 'operations', title: 'Операции', score: 100, weight: 0.15, checks: [] },
+        { key: 'marketing', title: 'Маркетинг', score: null, weight: 0.12, checks: [] },
+        { key: 'strategy', title: 'Стратегия', score: null, weight: 0.1, checks: [] },
+      ], v4: { assessment: 'full' }, change_reasons: [] },
+    ] })
+    const r = await tool('get_point_a').run({}, ctx(m))
+    expect(r).toMatchObject({ assessment: 'no_score', overall: null, stage: null })
+    expect(String(r.note)).toMatch(/Балл появится, когда данных хватит/)
+    const blocks = r.blocks as Array<{ key: string; score: number | null }>
+    expect(blocks.find((b) => b.key === 'operations')!.score).toBe(100)
+    expect(blocks.filter((b) => b.key !== 'operations').every((b) => b.score === null)).toBe(true)
+  })
+
+  it('get_point_a before the full questionnaire: no block scores', async () => {
+    const m = memoryClient({ point_a_snapshots: [
+      { id: 's1', company_id: 'co', created_at: '2026-11-14', config_version: 'default@1/r2|v4', overall: null, blocks: [{ key: 'finance', title: 'Финансы', score: 80, weight: 1, checks: [] }], v4: { assessment: 'preliminary' }, change_reasons: [] },
+    ] })
+    const r = await tool('get_point_a').run({}, ctx(m))
+    expect(r).toMatchObject({ assessment: 'preliminary', overall: null })
+    expect((r.blocks as Array<{ score: number | null }>)[0].score).toBeNull()
   })
 
   it('propose_metric_value checks the metric, the period and the range; writes nothing itself', async () => {

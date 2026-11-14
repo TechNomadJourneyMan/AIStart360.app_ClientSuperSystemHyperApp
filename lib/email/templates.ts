@@ -10,6 +10,7 @@
  */
 
 import { formatMoment } from './brand'
+import { formatGri, toGri } from '@/lib/format/gri'
 import type { EmailContent, EmailFact } from './layout'
 
 const nameOrNull = (v: string | null | undefined): string | null => {
@@ -211,11 +212,11 @@ export interface GriEmailInput {
 }
 
 export function buildGriCompletedEmail(input: GriEmailInput): BuiltEmail {
-  const showScore = input.includeScore !== false && typeof input.griIndex === 'number' && Number.isFinite(input.griIndex)
+  const showScore = input.includeScore !== false && toGri(input.griIndex) !== null
   const facts: EmailFact[] = [
     { label: 'Оценка', value: nameOrNull(input.assessment) ?? 'GRI — индекс готовности к росту' },
     { label: 'Статус', value: 'Пройдена' },
-    { label: 'Индекс GRI', value: showScore ? `${(input.griIndex as number).toFixed(1)} из 10` : null },
+    { label: 'Индекс GRI', value: showScore ? `${formatGri(input.griIndex)} из 10` : null },
     ...momentFacts(input.completedAt ?? new Date(), 'Завершено'),
     { label: 'Компания', value: nameOrNull(input.company) },
   ]

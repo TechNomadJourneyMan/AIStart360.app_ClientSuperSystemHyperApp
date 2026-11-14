@@ -744,7 +744,7 @@ function buildHorizons(
       ],
       kpis: [
         { label: 'Целевая выручка/год', target: goals.goal_3y_revenue_year != null ? `${goals.goal_3y_revenue_year.toLocaleString('ru-RU')} ₸` : '—' },
-        ...(targetOverall !== null ? [{ label: 'Целевой GRI', target: `${targetOverall}/100` }] : []),
+        ...(targetOverall !== null ? [{ label: 'Целевая оценка Точки А', target: `${targetOverall}/100` }] : []),
       ],
     },
     one_year: {

@@ -12,6 +12,7 @@ import { isSurveyCompleted, loadSurveyCompletionMarkers, surveyCompletedAt } fro
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
+import { loadSnapshotsByDiagnostic, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
@@ -78,18 +79,27 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
   // последний раз открывал его карточку. Сбой записи карточку не ломает.
   // The mark is written together with the last read (one round trip).
-  const [{ data: pointB }, , surveyStatuses] = await Promise.all([
+  const rawCurrentDiag = [...diags].reverse().find((d) => d.is_current) ?? diags[diags.length - 1] ?? null
+  // The snapshot that wrote the current diagnostic rides in the same round trip.
+  const [{ data: pointB }, , surveyStatuses, currentSnaps] = await Promise.all([
     diagIds.length
       ? sb.from('point_b_analysis').select('calculated_at').in('diagnostic_id', diagIds).order('calculated_at', { ascending: true }).limit(1)
       : Promise.resolve({ data: [] as Array<{ calculated_at: string }> }),
     markClientViewed(sb, guard.actor.id, userId),
     loadSurveyStaffStatuses(sb, [userId], { fullSubmittedAt: new Map([[userId, surveyCompleted]]) }),
+    rawCurrentDiag ? loadSnapshotsByDiagnostic(sb, [String(rawCurrentDiag.id)]) : Promise.resolve(new Map<string, OfficialSnapshotRow>()),
   ])
 
   const gri = griRes.data ?? []
   const griFirst = gri.length ? gri[gri.length - 1].created_at : null
   const griStarted = [griFirst, draftRes.data?.updated_at ?? null].filter(Boolean).sort()[0] ?? null
-  const currentDiag = [...diags].reverse().find((d) => d.is_current) ?? diags[diags.length - 1] ?? null
+  // The OFFICIAL numbers of the current diagnostic (lib/point-a/official.ts, R-033/R-032).
+  const currentOfficial = rawCurrentDiag
+    ? officialPointA(rawCurrentDiag as Record<string, unknown>, currentSnaps.get(String(rawCurrentDiag.id)) ?? null)
+    : null
+  const currentDiag = rawCurrentDiag && currentOfficial
+    ? officialDiagnosticRow(rawCurrentDiag as Record<string, unknown>, currentOfficial) as unknown as typeof rawCurrentDiag
+    : null
   const currentGri = gri.find((g) => g.is_current) ?? gri[0] ?? null
 
   const journey = buildJourney({

@@ -164,7 +164,7 @@ describe('buildReviewContext / parseAiDraft', () => {
       expertPointB: null,
     })
     expect(ctx.text).toContain('Кассовый разрыв')
-    expect(ctx.text).toContain('«Команда» (gri:team): 4 из 10')
+    expect(ctx.text).toContain('«Команда» (gri:team): 4.0 из 10') // R-036: formatGri
     expect(ctx.text).toContain('Нет CRM')
     expect(ctx.numbers).toEqual(expect.arrayContaining([62, 40, 5.1, 80]))
   })
