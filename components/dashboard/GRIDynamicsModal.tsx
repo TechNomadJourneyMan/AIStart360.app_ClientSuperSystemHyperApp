@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { formatGri } from '@/lib/format/gri'
 import { OnboardingStatusBadges } from './OnboardingStatusBadges'
 
 interface AssessmentRow {
@@ -187,7 +188,7 @@ export function GRIDynamicsModal({ open, onClose }: Props) {
               <div className="bg-surface-container-low rounded-xl p-3 border border-white/[0.04]">
                 <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">Текущий GRI</p>
                 <p className="text-xl font-mono font-bold" style={{ color: scoreColor(latest.gri_index) }}>
-                  {latest.gri_index.toFixed(1)}
+                  {formatGri(latest.gri_index, { empty: '—' })}
                 </p>
                 <p className="text-[10px] font-mono mt-1" style={{ color: scoreColor(latest.gri_index) }}>
                   {scoreLabel(latest.gri_index)}
@@ -313,7 +314,7 @@ export function GRIDynamicsModal({ open, onClose }: Props) {
                         />
                       </div>
                       <span className="text-xs font-mono font-bold w-8 text-right tabular-nums" style={{ color }}>
-                        {score.toFixed(1)}
+                        {formatGri(score, { empty: '—' })}
                       </span>
                     </div>
                   )

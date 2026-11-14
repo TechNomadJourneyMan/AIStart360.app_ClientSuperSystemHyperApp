@@ -1,4 +1,5 @@
 import type { CrmDeal, CrmContact, CrmSyncResult } from './types'
+import { guardCrmEndpoint, type Resolver } from './endpoint-guard'
 
 /**
  * Bitrix24 REST API client
@@ -7,33 +8,41 @@ import type { CrmDeal, CrmContact, CrmSyncResult } from './types'
  * Supports two auth modes:
  *   1. Incoming webhook URL (simpler, no OAuth)
  *   2. OAuth access token (full API)
+ *
+ * R-225: every call goes through guardCrmEndpoint (lib/crm/endpoint-guard.ts) — allowlisted
+ * Bitrix24 host, webhook only as https://<same host>/rest/<id>/<key>/, public addresses only —
+ * so a user-typed domain/webhook can never point the server at internal services. Redirects are
+ * not followed (a 3xx surfaces as an HTTP error) and the OAuth token is URL-encoded.
  */
 
 interface Bitrix24Config {
   domain: string       // e.g. "mycompany.bitrix24.kz"
   accessToken: string  // OAuth token or webhook secret path
   webhookUrl?: string  // e.g. "https://mycompany.bitrix24.kz/rest/1/abc123/"
+  /** DNS resolver for the SSRF guard (tests inject one; default: system DNS). */
+  resolve?: Resolver
 }
 
-/** Strip protocol and trailing slashes from domain input */
-function normalizeDomain(raw: string): string {
-  return raw
-    .replace(/^https?:\/\//, '')
-    .replace(/\/+$/, '')
-}
-
-function buildUrl(config: Bitrix24Config, method: string): string {
-  if (config.webhookUrl) {
-    // Webhook mode: https://domain/rest/USER_ID/SECRET/method.json
-    return `${config.webhookUrl.replace(/\/$/, '')}/${method}.json`
+/** Guarded request URL for `method`, or an Error with a user-facing message. */
+async function buildUrl(config: Bitrix24Config, method: string): Promise<string> {
+  let domain = config.domain?.trim() ?? ''
+  if (!domain && config.webhookUrl) {
+    try { domain = new URL(config.webhookUrl).hostname } catch { /* guard rejects below */ }
   }
-  // OAuth mode — normalize domain to prevent https://https:// double prefix
-  const domain = normalizeDomain(config.domain)
-  return `https://${domain}/rest/${method}.json?auth=${config.accessToken}`
+  // Webhook mode passes the webhook URL as the "token" the guard validates; OAuth mode passes none
+  // (a token is never a URL there).
+  const g = await guardCrmEndpoint('bitrix24', domain, config.webhookUrl ?? '', config.resolve)
+  if (!g.ok) throw new Error(g.error)
+  if (config.webhookUrl) {
+    if (!g.webhookUrl) throw new Error('Неверный адрес вебхука Bitrix24')
+    // Webhook mode: https://domain/rest/USER_ID/SECRET/method.json
+    return `${g.webhookUrl}${method}.json`
+  }
+  return `https://${g.host}/rest/${method}.json?auth=${encodeURIComponent(config.accessToken)}`
 }
 
 async function callApi(config: Bitrix24Config, method: string, params?: Record<string, unknown>) {
-  const url = buildUrl(config, method)
+  const url = await buildUrl(config, method)
 
   // 15-second timeout to avoid hanging
   const controller = new AbortController()
@@ -45,6 +54,8 @@ async function callApi(config: Bitrix24Config, method: string, params?: Record<s
       headers: { 'Content-Type': 'application/json' },
       body: params ? JSON.stringify(params) : undefined,
       signal: controller.signal,
+      // A redirect could lead to an address the guard never saw.
+      redirect: 'manual',
     })
 
     if (!res.ok) {

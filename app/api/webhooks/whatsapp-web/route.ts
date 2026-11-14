@@ -38,6 +38,7 @@ import { enqueueOmnichannelProcessingJob } from "@/lib/omnichannel/processing-jo
 import { drainOmnichannelProcessingJobs } from "@/lib/omnichannel/process-job-queue";
 import { runInBackground, trackBackground } from "@/lib/background";
 import { canRunAfterResponse } from "@/lib/runtime/platform";
+import { webhookRefusal } from "@/lib/runtime/webhook-log";
 import { mirrorWhatsAppInbound } from "@/lib/comm/inbound";
 
 const WEBHOOK_PATH = "/api/webhooks/whatsapp-web";
@@ -182,37 +183,40 @@ async function markFailed(
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) return response(503);
+  // INT-01: every refusal / failure leaves one structured line (route, status,
+  // reason, request id) — never the body, a phone number or a message text.
+  const refuse = webhookRefusal("webhooks/whatsapp-web", req);
+  if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) return refuse(503, "bridge_disabled", response);
   const databaseQueue = shouldUseDatabaseQueue();
   // Production database mode must use the dedicated, least-privilege DSN.
   // Never silently fall back to the application's broad DATABASE_URL/service
   // role when the durable queue has been selected.
-  if (databaseQueue && !shouldUseOmnichannelPostgres()) return response(503);
+  if (databaseQueue && !shouldUseOmnichannelPostgres()) return refuse(503, "database_queue_dsn_missing", response);
   const secret = hmacSecret(process.env.WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET);
   const configuredSession =
     process.env.WHATSAPP_WEB_BRIDGE_SESSION_ID?.trim() || "primary";
-  if (!secret) return response(503);
+  if (!secret) return refuse(503, "secret_not_configured", response);
   if (
     !req.headers
       .get("content-type")
       ?.toLowerCase()
       .startsWith("application/json")
   ) {
-    return response(415);
+    return refuse(415, "unsupported_content_type", response);
   }
 
   const declaredLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return response(413);
+    return refuse(413, "body_too_large", response);
   }
 
   let rawBody: Buffer;
   try {
     rawBody = Buffer.from(await req.arrayBuffer());
   } catch {
-    return response(400);
+    return refuse(400, "body_unreadable", response);
   }
-  if (rawBody.byteLength > MAX_BODY_BYTES) return response(413);
+  if (rawBody.byteLength > MAX_BODY_BYTES) return refuse(413, "body_too_large", response);
 
   const verified = verifySignedBridgeRequest({
     method: "POST",
@@ -228,17 +232,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
     maxSkewSeconds: 60,
   });
-  if (!verified.ok) return response(401);
+  if (!verified.ok) return refuse(401, "bad_signature", response);
 
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody.toString("utf8")) as unknown;
   } catch {
-    return response(400);
+    return refuse(400, "invalid_json", response);
   }
   const parsed = parseWhatsAppWebBridgeEvent(payload);
-  if (!parsed) return response(400);
-  if (parsed.sessionId !== configuredSession) return response(403);
+  if (!parsed) return refuse(400, "invalid_event", response);
+  if (parsed.sessionId !== configuredSession) return refuse(403, "session_mismatch", response);
 
   // The bridge keeps event_id stable across delivery attempts. Hash the
   // validated session-scoped identity (rather than transport headers or JSON
@@ -285,7 +289,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // bridge event in its durable outbox. If the current owner succeeds, the
     // next attempt observes a terminal audit and receives 200. If it crashed,
     // the database lease becomes reclaimable.
-    if (!claimed) return response(503);
+    if (!claimed) return refuse(503, "claim_in_flight", response);
     auditClaimed = true;
 
     if (ingested.shouldQueue) {
@@ -313,30 +317,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             data: eventData,
           });
         }
-      } catch {
-        await markFailed(
-          store,
-          audit.id,
-          databaseQueue
-            ? "database_queue_enqueue_failed"
-            : inline
-              ? "inline_processing_failed"
-              : "inngest_enqueue_failed",
-        );
-        return response(500);
+      } catch (error) {
+        const code = databaseQueue
+          ? "database_queue_enqueue_failed"
+          : inline
+            ? "inline_processing_failed"
+            : "inngest_enqueue_failed";
+        await markFailed(store, audit.id, code);
+        return refuse(500, code, response, error);
       }
     }
 
     await store.transitionWebhookEvent(audit.id, "processed");
     mirrorToPlatformConversation(parsed, ingested);
     return response();
-  } catch {
+  } catch (error) {
     // Before the compare-and-set this request does not own the audit row. Do
     // not overwrite a concurrent worker's `processing` state on an ingest or
     // claim error; leaving received/failed makes the delivery safely retryable.
     if (auditId && auditClaimed) {
       await markFailed(store, auditId, "webhook_processing_failed");
     }
-    return response(500);
+    return refuse(500, "webhook_processing_failed", response, error);
   }
 }

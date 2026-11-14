@@ -15,7 +15,15 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { decideAccessRequest } from '@/lib/users/access-requests'
 import { pendingRegistrations, searchUsers, userCard } from '../data'
 import { cut, dt, esc, pageOf, pagerRow, PAGE_SIZE } from '../ui'
-import { auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { adminScope, auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { NOT_ASSIGNED, userAllowed, type BrainScope } from '@/lib/telegram/brain/scope'
+
+/**
+ * Staff limited to assigned clients (SR-17) see a person when that person is
+ * their client, or a registration still waiting for a decision (the
+ * «Заявки на доступ» queue — nobody is assigned before approval).
+ */
+const personVisible = (scope: BrainScope, u: { id: string; status: string }) => userAllowed(scope, u.id) || u.status === 'pending_approval'
 
 const STATUS: Record<string, string> = {
   pending_approval: '🕓 ждёт решения', approved: '✅ одобрен', rejected: '❌ отклонён',
@@ -45,6 +53,7 @@ async function showRegistrations(ctx: AdminCtx, page: number): Promise<void> {
 async function showUser(ctx: AdminCtx, id: string): Promise<void> {
   const u = await userCard(id)
   if (!u) return void (await ctx.show('Пользователь не найден.'))
+  if (!personVisible(await adminScope(ctx), u)) return void (await ctx.show(`⛔ ${NOT_ASSIGNED}.`))
   const sensitive = can(ctx, 'users.sensitive')
   const lines = [
     `👤 <b>${esc(u.full_name ?? '—')}</b>`,
@@ -92,7 +101,8 @@ export const userSteps: Record<string, AdminStep> = {
       const q = ctx.text.slice(0, 80)
       if (q.length < 2) return void (await ctx.reply('Нужно хотя бы 2 символа. Попробуйте ещё раз или /cancel.'))
       await ctx.clearState()
-      const { items } = await searchUsers(q, 0, PAGE_SIZE)
+      const scope = await adminScope(ctx)
+      const items = (await searchUsers(q, 0, PAGE_SIZE)).items.filter((u) => personVisible(scope, u))
       if (!items.length) return void (await ctx.reply('Никого не нашлось.'))
       await ctx.reply(`Найдено: ${items.length}${items.length === PAGE_SIZE ? '+' : ''}`, {
         inline_keyboard: items

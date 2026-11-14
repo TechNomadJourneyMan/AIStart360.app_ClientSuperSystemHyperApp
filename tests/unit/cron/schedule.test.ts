@@ -28,6 +28,11 @@ const VERCEL_SCHEDULE = [
   { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
 ]
 
+/** Added on Railway, after Vercel: the hourly backup watchdog (R-011, lib/ops/backup-freshness.ts). */
+const RAILWAY_ADDED = [{ path: '/api/cron/backup-freshness', schedule: '7 * * * *' }]
+/** What one process for everything schedules: the Vercel schedule plus the Railway additions. */
+const PORTAL_SCHEDULE = [...VERCEL_SCHEDULE, ...RAILWAY_ADDED]
+
 describe('CRON_JOBS', () => {
   it('is the schedule Vercel ran plus the queue drain of the agents service, job for job (order does not matter)', () => {
     const expected = [
@@ -41,6 +46,7 @@ describe('CRON_JOBS', () => {
       { path: '/api/cron/analytics-rollup', schedule: '0 22 * * *' },
       { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
       { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },
+      { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
     ]
     expect([...CRON_JOBS].sort(byPath)).toEqual(expected.sort(byPath))
   })
@@ -63,8 +69,8 @@ describe('CRON_JOBS', () => {
 })
 
 describe('jobsForRole', () => {
-  it("'all' (one process for everything, the default) is the schedule Vercel ran: the same nine jobs in the same order", () => {
-    expect(timesOf(jobsForRole('all'))).toEqual(VERCEL_SCHEDULE)
+  it("'all' (one process for everything, the default) is the schedule Vercel ran plus the backup watchdog, in the same order", () => {
+    expect(timesOf(jobsForRole('all'))).toEqual(PORTAL_SCHEDULE)
   })
 
   it("'all' never drains the agent queue every minute: there the Inngest maintenance does it", () => {
@@ -74,8 +80,8 @@ describe('jobsForRole', () => {
     expect(jobs.some((job) => job.schedule === '* * * * *')).toBe(false)
   })
 
-  it("'web' is the portal's own eight: the Vercel schedule without the agents digest", () => {
-    expect(timesOf(jobsForRole('web'))).toEqual(VERCEL_SCHEDULE.filter((job) => job.path !== '/api/cron/agents-digest'))
+  it("'web' is the portal's own: that schedule without the agents digest", () => {
+    expect(timesOf(jobsForRole('web'))).toEqual(PORTAL_SCHEDULE.filter((job) => job.path !== '/api/cron/agents-digest'))
   })
 
   it("'agents' is the agents digest and the queue drain every minute", () => {
@@ -94,7 +100,7 @@ describe('jobsForRole', () => {
 
   it('the two services together run everything one process ran, each job once', () => {
     const split = [...jobsForRole('web'), ...jobsForRole('agents')].filter((job) => !job.dedicatedOnly)
-    expect(timesOf(split).sort(byPath)).toEqual([...VERCEL_SCHEDULE].sort(byPath))
+    expect(timesOf(split).sort(byPath)).toEqual([...PORTAL_SCHEDULE].sort(byPath))
   })
 
   it('takes the job list as an argument; a job without a role belongs to the portal', () => {
@@ -116,6 +122,6 @@ describe('jobsForRole', () => {
     const jobs = jobsForRole('all')
     jobs.pop()
     expect([...CRON_JOBS]).toEqual(before)
-    expect(jobsForRole('all')).toHaveLength(9)
+    expect(jobsForRole('all')).toHaveLength(PORTAL_SCHEDULE.length)
   })
 })

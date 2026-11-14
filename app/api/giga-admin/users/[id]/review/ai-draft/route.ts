@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 90
 
 import { NextRequest, NextResponse } from 'next/server'
-import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaClient } from '@/lib/admin/client-scope'
+import { forbidTarget } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -17,6 +18,7 @@ import {
   validateDraftItems,
 } from '@/lib/expert-review/ai-draft'
 import { loadLatestExpertNotes } from '@/lib/point-b/compat'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 import type { SurveyStepRow } from '@/lib/survey/steps'
 
 /**
@@ -35,7 +37,7 @@ import type { SurveyStepRow } from '@/lib/survey/steps'
 const AI_LIMIT = { max: 5, windowMs: 60 * 60 * 1000 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'clients.review')
+  const guard = await requireGigaClient(req, 'clients.review', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const denied = await forbidTarget(guard.actor, params.id)
@@ -60,7 +62,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .limit(1)
       .maybeSingle(),
   ])
-  const diagnostic = (diag.data as Record<string, unknown> | null) ?? null
+  // The OFFICIAL Point A (R-033): no overall without an official score, a block
+  // without data is null — the model reads «нет данных», never «Финансы 0».
+  const rawDiagnostic = (diag.data as Record<string, unknown> | null) ?? null
+  const diagnostic = rawDiagnostic
+    ? officialDiagnosticRow(rawDiagnostic, officialPointA(rawDiagnostic, await loadOfficialSnapshot(sb, params.id)))
+    : null
 
   let pointB: Record<string, unknown> | null = null
   let expertPointB: Record<string, unknown> | null = null

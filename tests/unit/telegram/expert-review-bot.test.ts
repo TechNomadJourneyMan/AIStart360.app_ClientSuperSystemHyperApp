@@ -13,12 +13,12 @@ import { buttonData, msg, press, recordingFetch, testDeps } from './_bot-harness
 
 const VID = '7b0c4e2a-1d3f-4a5b-8c6d-9e0f1a2b3c4d'
 const EXPERT = 'e0e0e0e0-0000-4000-8000-000000000001'
-const s = vi.hoisted(() => ({ claimed: new Set<string>() }))
+const s = vi.hoisted(() => ({ claimed: new Set<string>(), assigned: [{ user_id: 'o', company_id: 'co-1' }] as Array<{ user_id: string; company_id: string | null }> }))
 
 vi.mock('@/lib/telegram/bots/expert/link', () => ({
   EXPERT_START_PREFIX: 'expert_',
   consumeExpertLinkCode: vi.fn(),
-  expertByTelegramUser: async () => ({ userId: 'e0e0e0e0-0000-4000-8000-000000000001', role: 'expert', email: 'exp@aistart360.test', name: 'Эксперт' }),
+  expertByTelegramUser: async () => ({ userId: 'e0e0e0e0-0000-4000-8000-000000000001', role: 'expert', email: 'exp@aistart360.test', name: 'Эксперт', staffRole: null, clientScope: 'assigned' }),
 }))
 vi.mock('@/lib/telegram/bots/data', () => ({ companyCard: vi.fn(), searchCompanies: vi.fn(), recentSessions: vi.fn() }))
 vi.mock('@/lib/reports/versions', () => ({ listReportVersions: vi.fn(async () => []) }))
@@ -32,6 +32,8 @@ vi.mock('@/lib/db', () => ({
         s.claimed.add(k)
         return [{ chat_id: values[1] }]
       }
+      // user_assignments of the expert (lib/telegram/brain/scope.ts assignedScope).
+      if (strings.join('?').includes('user_assignments')) return s.assigned
       return []
     }),
     $executeRaw: vi.fn(async () => 1),
@@ -42,7 +44,7 @@ const head = { id: VID, company_id: 'co-1', company_name: 'ТОО Ромашка
 const flow = vi.hoisted(() => ({
   decideReportReview: vi.fn(),
   reviewVersionHead: vi.fn(),
-  listInReviewVersions: vi.fn(async () => []),
+  listInReviewVersions: vi.fn(async (_limit?: number): Promise<Array<Record<string, unknown>>> => []),
 }))
 vi.mock('@/lib/reports/review-flow', async () => {
   const real = await vi.importActual<typeof import('@/lib/reports/review-flow')>('@/lib/reports/review-flow')
@@ -82,6 +84,8 @@ describe('expert bot: report review', () => {
     flow.decideReportReview.mockReset()
     flow.reviewVersionHead.mockReset().mockResolvedValue(head)
     s.claimed.clear()
+    s.assigned = [{ user_id: 'o', company_id: 'co-1' }]
+    flow.listInReviewVersions.mockReset().mockResolvedValue([])
   })
 
   it('sends the PDF once per chat with the two signed buttons', async () => {
@@ -96,6 +100,8 @@ describe('expert bot: report review', () => {
       { userId: 'u2', name: 'SE', email: null, phone: null, profileRole: 'client', staffRole: 'super_expert', expertBotChatId: '999', isExpert: true },
       // An admin-staff person without an expert role is not.
       { userId: 'u4', name: 'CRM', email: null, phone: null, profileRole: 'client', staffRole: 'crm_manager', expertBotChatId: '777', isExpert: false },
+      // SR-17: a legacy profiles.role admin without a staff_roles row is not a member (migration 140).
+      { userId: 'u5', name: 'Legacy', email: null, phone: null, profileRole: 'admin', staffRole: null, expertBotChatId: '888', isExpert: false },
       { userId: 'u3', name: 'Нет бота', email: null, phone: null, profileRole: 'expert', staffRole: null, expertBotChatId: null, isExpert: true },
     ]
     expect(await sendReviewDocuments(pkg, recipients, tg.fetchImpl)).toEqual([{ chatId: '555000111', status: 'sent' }, { chatId: '999', status: 'sent' }])
@@ -171,6 +177,29 @@ describe('expert bot: report review', () => {
     await run(press(signCallback('expert', 'rr.ch', VID)))
     expect(h.state.dump().size).toBe(0)
     expect(tg.lastText()).toContain('больше не ждёт проверки')
+  })
+
+  it('SR-17: a version of a client not assigned to the expert — no comment dialog, no PDF, not listed', async () => {
+    s.assigned = []
+    await run(press(signCallback('expert', 'rr.ch', VID)))
+    expect(h.state.dump().size).toBe(0)
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+
+    await run(press(signCallback('expert', 'rr.pdf', VID)))
+    expect(tg.calls.some((c) => c.method === 'sendDocument')).toBe(false)
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
+
+    flow.listInReviewVersions.mockResolvedValue([head, { ...head, id: 'other', company_id: 'co-2', company_name: 'Чужая' }])
+    s.assigned = [{ user_id: 'o', company_id: 'co-1' }]
+    await run(press(signCallback('expert', 'rr.l')))
+    expect(tg.lastText()).toContain('Отчёты на проверке: 1')
+    expect(tg.lastText()).not.toContain('Чужая')
+  })
+
+  it('SR-17: «Подтвердить» for an unassigned client is refused by the server and said so', async () => {
+    flow.decideReportReview.mockResolvedValue({ ok: false, code: 'not_assigned' })
+    await run(press(signCallback('expert', 'rr.ok', VID)))
+    expect(tg.lastText()).toContain('Клиент вам не назначен')
   })
 
   it('crafted, unsigned or admin-bot buttons never reach the decision', async () => {

@@ -44,6 +44,8 @@ vi.mock('@supabase/supabase-js', () => ({
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: async () => {} }))
 vi.mock('@/lib/notifications/create', () => ({ createNotification: async () => {} }))
+// SR-07: the impersonation refusal is covered by tests/unit/security/sr07-impersonation-account-actions.test.ts.
+vi.mock('@/lib/impersonation/guard', () => ({ refuseDuringImpersonation: async () => null }))
 
 const { POST } = await import('@/app/api/v1/settings/password/route')
 const post = async (body: unknown) => {

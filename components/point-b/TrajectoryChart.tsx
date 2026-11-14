@@ -28,17 +28,25 @@ function ChartTooltip({
   unitLabel,
 }: {
   active?: boolean
-  payload?: { value: number; payload: { label: string } }[]
+  payload?: { value: number; payload: { label: string; period?: number } }[]
   unitLabel: string
 }) {
   if (!active || !payload?.length) return null
   const p = payload[0]
+  const period = p.payload.period
   return (
     <div className="bg-surface-container-high border border-white/10 rounded-xl px-4 py-3 shadow-modal text-xs">
       <p className="font-mono text-on-surface-variant mb-1">
         {unitLabel} {p.payload.label}
       </p>
+      <p className="text-[10px] text-on-surface-variant/80">Годовой темп выручки</p>
       <p className="font-mono font-bold text-primary">{formatMoney(p.value)}</p>
+      {typeof period === 'number' && Number.isFinite(period) && (
+        <p className="mt-1 text-[10px] text-on-surface-variant/80">
+          За {unitLabel === 'Квартал' ? 'квартал' : 'месяц'}:{' '}
+          <span className="font-mono text-on-surface">{formatMoney(period)}</span>
+        </p>
+      )}
     </div>
   )
 }
@@ -60,7 +68,10 @@ export function TrajectoryChart({
   const data = points.map((p) => ({
     x: p.month,
     label: String(p.month),
+    // R-037: the line is the ANNUAL run-rate (the unit of «Обзор»); the revenue of the month / quarter goes
+    // to the tooltip.
     value: p.target_revenue,
+    period: p.monthly_revenue ?? p.quarter_revenue,
   }))
 
   return (

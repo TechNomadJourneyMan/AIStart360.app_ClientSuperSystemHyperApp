@@ -6,12 +6,11 @@
 import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
 import { CATEGORIES, SUB_FACTORS } from '@/lib/gri-calculator/gri-data'
+import { formatGri, griTone, GRI_TONE_TEXT_CLASS } from '@/lib/format/gri'
 
+/** GRI 0–10 through the one formatter (R-036). */
 function fmt(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—'
-  const n = typeof v === 'number' ? v : Number(v)
-  if (!Number.isFinite(n)) return '—'
-  return n.toFixed(1)
+  return formatGri(v, { empty: '—' })
 }
 function toNum(v: unknown): number {
   if (typeof v === 'number') return v
@@ -49,9 +48,8 @@ function subFactorTargetId(subId: string): string {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 7) return 'text-primary'
-  if (score >= 4) return 'text-amber-300'
-  return 'text-error'
+  const tone = griTone(score)
+  return tone ? GRI_TONE_TEXT_CLASS[tone] : 'text-on-surface-variant'
 }
 
 export function GRITab({ clientId }: Props) {
@@ -148,7 +146,7 @@ export function GRITab({ clientId }: Props) {
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className={`text-xl font-mono font-bold ${score === null ? 'text-on-surface-variant' : scoreColor(score)}`}>
-                      {score === null ? '—' : score.toFixed(1)}
+                      {fmt(score)}
                     </span>
                     <span className="text-[10px] font-mono text-on-surface-variant">
                       / 10

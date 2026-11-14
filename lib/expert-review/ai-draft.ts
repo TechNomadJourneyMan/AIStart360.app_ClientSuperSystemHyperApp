@@ -16,6 +16,7 @@ import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { runAnswerValidation } from '@/lib/ai/validation'
 import type { DeterministicIssue } from '@/lib/ai/validation/deterministic'
 import { GRI_SECTION_IDS, REVIEW_BLOCKS, isReviewBlockKey, type ReviewBlockKey } from './blocks'
+import { formatGri, toGri } from '@/lib/format/gri'
 
 export interface ReviewContextInput {
   surveyRows: ReadonlyArray<SurveyStepRow>
@@ -91,15 +92,19 @@ export function buildReviewContext(input: ReviewContextInput): ReviewContext {
   const d = input.diagnostic
   if (d) {
     const rows: string[] = []
+    // The caller passes the OFFICIAL row (officialDiagnosticRow): null = no score / no data.
     const overall = num(d.overall_score)
-    if (overall !== null) rows.push(`- Общий балл: ${overall} из 100`)
+    rows.push(overall !== null ? `- Общий балл: ${overall} из 100` : '- Общий балл: нет — данных для общей оценки недостаточно')
     const health = num(d.health_index)
     if (health !== null) rows.push(`- Индекс здоровья: ${health}`)
     if (d.stage) rows.push(`- Стадия: ${short(d.stage, 60)}`)
     for (const [col, label] of POINT_A_BLOCKS) {
       const b = d[col] as { score?: unknown; top_issues?: unknown } | null | undefined
       const score = num(b?.score)
-      if (score === null) continue
+      if (score === null) {
+        rows.push(`- ${label}: нет данных (не оценивался — это не слабость)`)
+        continue
+      }
       const issues = Array.isArray(b?.top_issues) ? b!.top_issues.slice(0, 3).map((x) => short(x, 160)).filter(Boolean) : []
       rows.push(`- ${label}: ${score}${issues.length ? ` (проблемы: ${issues.join('; ')})` : ''}`)
     }
@@ -115,11 +120,11 @@ export function buildReviewContext(input: ReviewContextInput): ReviewContext {
   const g = input.gri
   const griIndex = num(g?.gri_index)
   if (g && griIndex !== null) {
-    const rows: string[] = [`- Индекс GRI: ${griIndex} из 10`]
+    const rows: string[] = [`- Индекс GRI: ${formatGri(griIndex)} из 10`]
     const avgs = (g.section_avgs && typeof g.section_avgs === 'object' ? g.section_avgs : {}) as Record<string, unknown>
     for (const id of GRI_SECTION_IDS) {
       const v = num(avgs[id])
-      rows.push(`- Блок «${GRI_BLOCK_RU[id]}» (gri:${id}): ${v === null ? 'нет оценки' : `${v} из 10`}`)
+      rows.push(`- Блок «${GRI_BLOCK_RU[id]}» (gri:${id}): ${toGri(v) === null ? 'нет оценки' : `${formatGri(v)} из 10`}`)
     }
     const limits = Array.isArray(g.top_5_limits) ? g.top_5_limits : []
     const lim = limits

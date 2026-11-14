@@ -12,9 +12,11 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getWebAuthnConfig } from '@/lib/webauthn/config'
 import { listCredentials } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, WEBAUTHN_CHALLENGE_COOKIE_OPTIONS, signChallenge } from '@/lib/webauthn/challenge'
+import { guardFactorChange } from '@/lib/mfa/factor-guard'
 
 // POST /api/v1/security/webauthn/register/options
-// Begin passkey enrollment for the authenticated user.
+// Begin passkey enrollment for the authenticated user. An account that already
+// has a factor needs the step-up of this session (R-003, lib/mfa/factor-guard.ts).
 export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
@@ -23,6 +25,9 @@ export async function POST(request: Request) {
   if (await isRateLimitedKey(user.id, 'webauthn-reg-options', { max: 10, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })
   }
+
+  const guard = await guardFactorChange(request, user, 'webauthn.register')
+  if (!guard.ok) return guard.response
 
   const { rpID, rpName } = getWebAuthnConfig(request)
   const existing = await listCredentials(user.id)

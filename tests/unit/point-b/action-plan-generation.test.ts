@@ -11,6 +11,8 @@ const USER = 'cccccccc-0000-4000-8000-000000000001'
 const s = vi.hoisted(() => ({ h: null as ReturnType<typeof import('./_pbdb').pbDb> | null }))
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => s.h!.sb }))
+// The route reads through the (memoized) service client: each test gets its own fake DB.
+vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => s.h!.sb }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: USER } } }) }, from: (t: string) => s.h!.sb.from(t) }),
 }))

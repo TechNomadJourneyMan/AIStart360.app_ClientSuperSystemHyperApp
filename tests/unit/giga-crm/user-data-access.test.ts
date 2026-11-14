@@ -24,6 +24,8 @@ vi.mock('@/lib/admin/giga-actor', () => ({
   },
 }))
 vi.mock('@/lib/expert-auth', () => ({
+  // Scope of the expert (SR-03) is covered by tests/unit/access/actor-scope-routes.test.ts.
+  guardExpertClient: async () => null,
   requireExpert: async () => s.expert,
   resolveExpert: async () => (s.expert ? { ok: true, viewer: s.expert } : { ok: false, block: s.expertBlock }),
   expertBlockResponse: (block: string) =>

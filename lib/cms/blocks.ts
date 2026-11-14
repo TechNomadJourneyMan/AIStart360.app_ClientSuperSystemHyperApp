@@ -22,10 +22,23 @@ export function safeUrl(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const v = raw.trim()
   if (!v || v.length > 1000) return null
+  // R-225: browsers read `/\evil.com` and `/<tab>/evil.com` as `//evil.com` (another host), so a
+  // backslash or a control character anywhere disqualifies the URL.
+  // eslint-disable-next-line no-control-regex
+  if (/[\\\u0000-\u001f\u007f]/.test(v)) return null
   if (v.startsWith('/') && !v.startsWith('//')) return v
   try {
     const u = new URL(v)
     return u.protocol === 'https:' ? u.toString() : null
+  } catch {
+    return null
+  }
+}
+
+/** Host of our Supabase (NEXT_PUBLIC_SUPABASE_URL, inlined at build), or null. */
+function ownStorageHost(): string | null {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').hostname.toLowerCase() || null
   } catch {
     return null
   }
@@ -49,8 +62,10 @@ export function videoEmbed(raw: unknown): { kind: 'iframe' | 'file'; src: string
     const id = u.pathname.split('/').filter(Boolean).pop()
     return id && /^\d{5,12}$/.test(id) ? { kind: 'iframe', src: `https://player.vimeo.com/video/${id}` } : null
   }
-  // Direct files only from our storage: the CSP (media-src) allows nothing else.
-  const ours = host.endsWith('.supabase.co')
+  // Direct files only from OUR Supabase storage (the origin of NEXT_PUBLIC_SUPABASE_URL): the CSP
+  // media-src allows nothing else (lib/security/csp.mjs, R-013 — no *.supabase.co wildcard).
+  const own = ownStorageHost()
+  const ours = own !== null && u.hostname.toLowerCase() === own
   return ours && /\.(mp4|webm)(\?|$)/i.test(u.pathname) ? { kind: 'file', src: url } : null
 }
 

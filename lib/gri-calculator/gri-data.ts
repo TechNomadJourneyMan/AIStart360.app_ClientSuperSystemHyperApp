@@ -1,5 +1,7 @@
 // GRI Calculator — All Data Constants
 
+import { griTone, type GriTone } from '@/lib/format/gri'
+
 // ─────────────────────────────────────────────────────
 // Categories
 // ─────────────────────────────────────────────────────
@@ -272,16 +274,16 @@ export function getBlendedBenchmark(niche: string, size: string): Record<string,
 // Helper: color by score zone
 // ─────────────────────────────────────────────────────
 
+// Zones = GRI_ZONES (lib/format/gri.ts) — the one GRI threshold set (R-036, BI-60).
+const CALC_TONE_HEX: Record<GriTone, string> = { red: "#ef4444", amber: "#f59e0b", green: "#10b981" };
+const CALC_TONE_CLASS: Record<GriTone, string> = { red: "gri-slider-red", amber: "gri-slider-yellow", green: "gri-slider-green" };
+
 export function getScoreColor(score: number): string {
-  if (score < 5) return "#ef4444";
-  if (score <= 7) return "#f59e0b";
-  return "#10b981";
+  return CALC_TONE_HEX[griTone(score) ?? "red"];
 }
 
 export function getScoreZoneClass(score: number): string {
-  if (score < 5) return "gri-slider-red";
-  if (score <= 7) return "gri-slider-yellow";
-  return "gri-slider-green";
+  return CALC_TONE_CLASS[griTone(score) ?? "red"];
 }
 
 // ─────────────────────────────────────────────────────

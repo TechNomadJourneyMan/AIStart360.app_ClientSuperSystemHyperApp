@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { PORTFOLIO_GRI_DOMAINS, type PortfolioGRI } from '@/lib/portfolio-gri'
 import { plural } from '@/lib/crm/digest'
+import { formatGri, griColor, griPercentOfScale, griZone } from '@/lib/format/gri'
 
 /**
  * Portfolio GRI on the staff dashboard: mean of the clients' current GRI
@@ -39,18 +40,13 @@ function anchor(i: number): 'start' | 'middle' | 'end' {
   return 'middle'
 }
 
+// One GRI scale, formatter and zones for every screen (lib/format/gri.ts, R-036).
 function scoreColor(s: number) {
-  if (s < 3) return '#ff6b6b'
-  if (s < 6) return '#ffbd60'
-  return '#6effc0'
+  return griColor(s)
 }
 
 function scoreLabel(s: number) {
-  if (s < 3) return 'Критично'
-  if (s < 5) return 'Низкий'
-  if (s < 7) return 'Средний'
-  if (s < 9) return 'Высокий'
-  return 'Отлично'
+  return griZone(s)?.label ?? 'нет данных'
 }
 
 function Header({ overall, count }: { overall: number | null; count: number | null }) {
@@ -62,7 +58,7 @@ function Header({ overall, count }: { overall: number | null; count: number | nu
         <div className="flex items-baseline gap-1.5 mt-0.5">
           {overall !== null ? (
             <>
-              <span className="text-xl font-mono font-bold" style={{ color }}>{overall.toFixed(2)}</span>
+              <span className="text-xl font-mono font-bold" style={{ color }}>{formatGri(overall)}</span>
               <span className="text-xs text-on-surface-variant">/ 10</span>
               <span
                 className="text-[10px] font-mono px-1.5 py-0.5 rounded-full border"
@@ -174,7 +170,7 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
             )
           })}
           <text x={C} y={C - 4} textAnchor="middle" fontSize="12" fill="rgba(255,255,255,0.9)" fontFamily="monospace" fontWeight="bold">
-            {data.overall !== null ? data.overall.toFixed(1) : '—'}
+            {formatGri(data.overall, { empty: '—' })}
           </text>
           <text x={C} y={C + 9} textAnchor="middle" fontSize="6" fill="rgba(255,255,255,0.25)" fontFamily="monospace">
             GRI
@@ -188,7 +184,7 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
                 <span className="text-[11px] text-on-surface-variant">{d.label}</span>
                 {d.score !== null ? (
                   <span className="text-[11px] font-mono font-bold" style={{ color: scoreColor(d.score) }}>
-                    {d.score.toFixed(1)}
+                    {formatGri(d.score)}
                   </span>
                 ) : (
                   <span className="text-[10px] font-mono text-on-surface-variant/50">нет данных</span>
@@ -198,7 +194,7 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
                 {d.score !== null && (
                   <div
                     className="h-full rounded-full"
-                    style={{ width: `${Math.round((d.score / 10) * 100)}%`, background: scoreColor(d.score), opacity: 0.8 }}
+                    style={{ width: `${griPercentOfScale(d.score)}%`, background: scoreColor(d.score), opacity: 0.8 }}
                   />
                 )}
               </div>

@@ -178,7 +178,10 @@ export async function POST(req: NextRequest) {
     target_segments: b.target_segments,
     target_patient_count: b.target_patient_count,
     estimated_conversion: b.estimated_conversion,
-    estimated_revenue_kzt: b.estimated_revenue_kzt,
+    // growth_bundles.estimated_revenue_kzt is NOT NULL (migration 010): «нет
+    // данных» is stored as 0 until the column allows null; the API response
+    // below keeps null so the screen says «нет данных».
+    estimated_revenue_kzt: b.estimated_revenue_kzt ?? 0,
     priority: b.priority,
     complexity: b.complexity,
     effect_timeline: b.effect_timeline,

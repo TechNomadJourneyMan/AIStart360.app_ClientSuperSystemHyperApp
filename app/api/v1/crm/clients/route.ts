@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateClient, CLIENT_STATUSES } from '@/lib/crm/client-validate'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmClientBody } from '@/lib/validation/schemas'
 
 const MAX_CLIENTS = 500
 
@@ -44,14 +46,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
-  }
+  // R-149: types, caps and the key list (.strict(): no user_id / id / timestamps from the body).
+  const body = await parseJsonBody(request, CrmClientBody)
+  if (!body.ok) return body.response
 
-  const parsed = validateClient(body)
+  const parsed = validateClient(body.data)
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
 
   const value = { ...parsed.value }

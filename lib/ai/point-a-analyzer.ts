@@ -51,7 +51,8 @@ function buildPrompt(
   answers: Record<string, unknown>,
   pointA: PointA,
   company: Company | null,
-  expertNotes?: GriExpertNotes | null
+  expertNotes?: GriExpertNotes | null,
+  blocksWithoutData: readonly string[] = [],
 ): string {
   const get = (key: string) => {
     const v = answers[key]
@@ -86,6 +87,13 @@ function buildPrompt(
   const rejectionRate = (num('s3_deals_2024') + num('s3_rejections_2024')) > 0
     ? ((num('s3_rejections_2024') / (num('s3_deals_2024') + num('s3_rejections_2024'))) * 100).toFixed(1)
     : '—'
+
+  // A block without data (official Point A, R-033) is «no data», never «0/100 Critical».
+  const noData = new Set(blocksWithoutData)
+  const blockLine = (key: keyof PointA['blocks']) =>
+    noData.has(key)
+      ? 'NO DATA (not scored: the client gave no data for this block; missing data is NOT a weakness — do not call it weak or critical, recommend collecting the data)'
+      : `${pointA.blocks[key].score}/100 (${blockStatus(pointA.blocks[key].score)})`
 
   const blockStatus = (score: number) => {
     if (score >= 85) return 'Excellent'
@@ -277,11 +285,11 @@ Main Pain: ${get('s6_main_pain')}
 Overall Score: ${pointA.overall_score}/100
 Health Index: ${pointA.health_index}/100
 Stage: ${pointA.stage}
-Finance Block: ${pointA.blocks.finance.score}/100 (${blockStatus(pointA.blocks.finance.score)})
-Sales Block: ${pointA.blocks.sales.score}/100 (${blockStatus(pointA.blocks.sales.score)})
-Operations Block: ${pointA.blocks.operations.score}/100 (${blockStatus(pointA.blocks.operations.score)})
-Marketing Block: ${pointA.blocks.marketing.score}/100 (${blockStatus(pointA.blocks.marketing.score)})
-Strategy Block: ${pointA.blocks.strategy.score}/100 (${blockStatus(pointA.blocks.strategy.score)})
+Finance Block: ${blockLine('finance')}
+Sales Block: ${blockLine('sales')}
+Operations Block: ${blockLine('operations')}
+Marketing Block: ${blockLine('marketing')}
+Strategy Block: ${blockLine('strategy')}
 Risks: ${pointA.risks.map(r => `[${r.level}] ${r.area}: ${r.text}`).join('; ')}
 Data Gaps: ${pointA.data_gaps.map(g => g.field).join(', ') || 'none'}
 ${expertSection ? `
@@ -420,6 +428,8 @@ export async function analyzePointA(
   company: Company | null,
   expertNotes?: GriExpertNotes | null,
   locale: Locale = 'ru',
+  /** Keys of the blocks the official Point A has no data for (their PointA block is a placeholder). */
+  blocksWithoutData: readonly string[] = [],
 ): Promise<AIAnalysis | null> {
   // Skip if no API key (honest degradation — no fabrication without an LLM)
   if (!hasOpenRouterKey()) {
@@ -428,7 +438,7 @@ export async function analyzePointA(
   }
 
   try {
-    const context = buildPrompt(answers, pointA, company, expertNotes)
+    const context = buildPrompt(answers, pointA, company, expertNotes, blocksWithoutData)
     const system = buildSharedSystem(locale)
 
     const [summary, priorities, blocksA, blocksB] = await Promise.all([

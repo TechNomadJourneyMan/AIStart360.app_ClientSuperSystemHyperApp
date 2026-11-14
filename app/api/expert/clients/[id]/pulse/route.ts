@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 // renders «—» and the expert can still leave comments).
 
 import { NextResponse } from 'next/server'
-import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert, srGet } from '@/lib/expert-auth'
 
 interface PulseMetrics {
   avgCheck: number | null
@@ -38,6 +38,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const clientId = params.id
   if (!/^[0-9a-f-]{36}$/i.test(clientId)) return NextResponse.json({ error: 'bad id' }, { status: 400 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
   const metrics = emptyMetrics()
 
   const diagRows = await srGet<Array<{ ai_analysis: { pulse?: Partial<PulseMetrics> } | null }>>(

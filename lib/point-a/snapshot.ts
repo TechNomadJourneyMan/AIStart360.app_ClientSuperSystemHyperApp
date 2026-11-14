@@ -66,6 +66,13 @@ export type SnapshotResult =
       engine: 'v1' | 'v4'
       /** 'preliminary': the row has no score (written keeps the internal v1 for AI / logs only). */
       assessment: 'full' | 'preliminary'
+      /**
+       * The row carries an official score (R-033). false before the full
+       * questionnaire AND when v4 found too little data for an overall: then
+       * `written` is the internal v1 (AI / logs only) — never show its numbers.
+       * Optional only for hand-built results in tests; buildPointASnapshot always sets it.
+       */
+      scored?: boolean
       written: PointA
       v4: PointAV4
       changes: ChangeReason[]
@@ -77,7 +84,7 @@ export interface SnapshotDeps {
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
   lock: (companyId: string) => Promise<{ release: () => Promise<void> } | null>
-  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; preliminary: boolean; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
+  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; preliminary: boolean; noScore?: boolean; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
   /** The owner sent the full questionnaire (public.survey_completed_at). Omitted: treated as sent. */
   surveyComplete?: (service: SupabaseClient, ownerId: string) => Promise<boolean>
 }
@@ -123,7 +130,8 @@ const defaultDeps: SnapshotDeps = {
         import('./diagnostic-row'),
         import('@/lib/internal-auth'),
       ])
-      const overall = o.preliminary ? null : o.written.overall_score
+      // No official score (preliminary, or v4 without an overall): no number in events.
+      const overall = o.preliminary || o.noScore ? null : o.written.overall_score
       emitPlatformEventSafely({
         name: 'POINT_A_UPDATED', companyId: o.companyId, subjectType: 'diagnostic', subjectId: o.diagnosticId, actor: 'system',
         payload: { engine: o.engine, overall, preliminary: o.preliminary, trigger: o.trigger, changes: o.changes.slice(0, 10).map((c) => c.text) },
@@ -132,7 +140,9 @@ const defaultDeps: SnapshotDeps = {
       const baseUrl = internalBaseUrl({})
       // The AI analysis and hypotheses wait for the full questionnaire: a
       // preliminary assessment shows no numbers, and it keeps Point A cheap.
-      if (!o.preliminary && process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
+      // No official score (v4 without an overall) → no paid analysis / Point B
+      // of a score that does not exist (I2, R-033); hypotheses still run.
+      if (!o.preliminary && !o.noScore && process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
       if (!o.fromPipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
       void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
       if (!o.preliminary && o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
@@ -269,6 +279,13 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Before the full questionnaire the assessment is preliminary: a v4 row
   // without a score. No v4 score otherwise (too little data): the row stays v1 — never a 0.
   const preliminary = wantV4 && v4.assessment === 'preliminary'
+  // Sent, but v4 found too little data for an overall (R-033, BI-02): the row
+  // gets no score either. Writing the v1 result there made a block nobody
+  // answered «Финансы 0 — критично» and a v1 overall («31, старт») that the
+  // Point A page never shows. The snapshot still records engine 'v1' (v1
+  // fallback, lib/point-a/blocks-without-data.ts isV1Fallback); the official
+  // reader (lib/point-a/official.ts) takes the v4 blocks from the snapshot.
+  const noScore = wantV4 && !preliminary && v4.overall === null
   const engine: 'v1' | 'v4' = wantV4 && (v4.overall !== null || preliminary) ? 'v4' : 'v1'
   const version = `${config.version}|${wantV4 ? 'v4' : 'v1'}`
   const inputs = {
@@ -322,8 +339,8 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   if (ins.error || !snapshotId) throw new Error(`point-a: snapshot not stored (${ins.error?.code ?? 'no id'})`)
 
   const stored = await deps.store(service, {
-    userId: ownerId, companyId, result: written, preliminary,
-    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary ? 'processing' : 'none',
+    userId: ownerId, companyId, result: written, preliminary: preliminary || noScore,
+    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary && !noScore ? 'processing' : 'none',
   })
   if (!stored.ok) {
     const del = await service.from('point_a_snapshots').delete().eq('id', snapshotId)
@@ -336,6 +353,6 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Without the link the next pass is not «unchanged» and writes again — never stuck.
   if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
-  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, preliminary, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
-  return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, assessment: preliminary ? 'preliminary' : 'full', written, v4, changes }
+  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, preliminary, noScore, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
+  return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, assessment: preliminary ? 'preliminary' : 'full', scored: !preliminary && !noScore, written, v4, changes }
 }

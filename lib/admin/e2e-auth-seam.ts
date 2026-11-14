@@ -8,8 +8,7 @@ import { E2E_SEAM_COOKIE_NAME, e2eSeamEnabled, verifyE2eSeamEdge } from './e2e-a
  * Resolves an authentic seam cookie to the seeded user's REAL staff role,
  * read straight from Postgres (Prisma), because the E2E stand has no
  * reachable Supabase. The same admission rules as a personal session apply:
- * only an approved profile, super_admin from profiles.role, otherwise the
- * staff_roles row. Returns null — without touching the database — whenever
+ * only an approved profile with a staff_roles row (R-002). Returns null — without touching the database — whenever
  * the seam is disabled (always in production).
  */
 export interface E2eSeamIdentity {
@@ -33,7 +32,8 @@ export async function resolveE2eSeamIdentity(
       LIMIT 1`
     const row = rows[0]
     if (!row || row.status !== 'approved') return null
-    const role: StaffRole | null = row.role === 'super_admin' ? 'super_admin' : isStaffRole(row.staff_role) ? row.staff_role : null
+    // R-002: staff only from staff_roles (as staffRoleOf in giga-actor); profiles.role alone admits no one.
+    const role: StaffRole | null = isStaffRole(row.staff_role) ? row.staff_role : null
     return role ? { userId, role, email: row.email ?? undefined } : null
   } catch {
     return null

@@ -16,6 +16,7 @@ import {
   Legend,
 } from 'recharts'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { formatGri } from '@/lib/format/gri'
 import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 interface HistoryRow {
@@ -195,7 +196,7 @@ export default function GriDynamicsPanel() {
                           : 'text-on-surface-variant'
                     }`}
                   >
-                    {d.delta > 0 ? '▲' : d.delta < 0 ? '▼' : '•'} {Math.abs(d.delta).toFixed(1)}
+                    {d.delta > 0 ? '▲' : d.delta < 0 ? '▼' : '•'} {formatGri(Math.abs(d.delta), { empty: '0.0' })}
                   </span>
                 </li>
               ))}
@@ -217,7 +218,7 @@ export default function GriDynamicsPanel() {
                 <li key={s.id} className="flex items-center justify-between gap-3 text-sm">
                   <span className="text-on-surface truncate">{s.name || 'Без названия'}</span>
                   <span className="shrink-0 text-on-surface-variant tabular-nums">
-                    {Number(s.gri_index).toFixed(1)} · {fmtDate(s.created_at)}
+                    {formatGri(s.gri_index, { empty: '—' })} · {fmtDate(s.created_at)}
                   </span>
                 </li>
               ))}

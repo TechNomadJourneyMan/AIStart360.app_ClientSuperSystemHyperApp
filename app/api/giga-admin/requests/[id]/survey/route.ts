@@ -97,7 +97,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Cannot resolve userId' }, { status: 400 })
     }
     const target = await staffRoleOfUser(userId)
-    if (!canManageTarget(actor.role, target.staffRole)) {
+    if (!canManageTarget(actor.role, target)) {
       return NextResponse.json({ error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
     }
 

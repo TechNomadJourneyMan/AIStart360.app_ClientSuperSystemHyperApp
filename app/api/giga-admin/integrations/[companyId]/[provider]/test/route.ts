@@ -3,7 +3,7 @@
  * with the stored key (company.edit, audited).
  */
 import { NextResponse, type NextRequest } from 'next/server'
-import { requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaCompany } from '@/lib/admin/client-scope'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { auditUnavailable, checkCompany } from '@/lib/integrations/giga'
 import { providerParam, serverError, unknownProvider } from '@/lib/integrations/route-auth'
@@ -12,7 +12,7 @@ import { testIntegration } from '@/lib/integrations/service'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest, { params }: { params: { companyId: string; provider: string } }) {
-  const guard = await requireGiga(req, 'company.edit')
+  const guard = await requireGigaCompany(req, 'company.edit', params.companyId)
   if (guard.response) return guard.response
   const provider = providerParam(params.provider)
   if (!provider) return unknownProvider()

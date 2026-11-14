@@ -14,11 +14,15 @@ import { insertCredential } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
 import { getUserSecurity, upsertUserSecurity, setMfaWebauthnFlag } from '@/lib/mfa/store'
 import { generateBackupCodes, hashBackupCodes } from '@/lib/mfa/backup-codes'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { STEP_UP_RECORD_FAILED_MESSAGE, issueStepUp } from '@/lib/mfa/step-up-session'
+import { guardFactorChange } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 
 // POST /api/v1/security/webauthn/register/verify
 // Body: { response: RegistrationResponseJSON, label?: string }
+// R-003: an account that already has a factor needs the step-up of this
+// session, and only the FIRST factor of an account earns a step-up proof here.
 export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
@@ -30,6 +34,9 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as { response?: RegistrationResponseJSON; label?: string } | null
   if (!body?.response) return NextResponse.json({ ok: false, error: 'invalid_body' }, { status: 400 })
+
+  const guard = await guardFactorChange(request, user, 'webauthn.register')
+  if (!guard.ok) return guard.response
 
   const jar = await cookies()
   const expectedChallenge = readChallenge(jar.get(WEBAUTHN_CHALLENGE_COOKIE)?.value, user.id, 'reg')
@@ -84,8 +91,24 @@ export async function POST(request: Request) {
     backup_codes = codes
   }
 
-  // Trust the enrolling device for this session.
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)
+  // The first factor of the account (2FA onboarding): the user has just proven
+  // it, so this session counts as stepped up. A further key changes nothing —
+  // the session already holds its proof (guardFactorChange checked it); minting
+  // one here was the R-003 bypass (password session → own passkey → proof).
+  // SR-01 (143): recorded for the database before the cookie; without the
+  // record the user confirms the new key once more on /2fa.
+  let stepUpNotice: string | undefined
+  if (guard.firstFactor) {
+    const sessionKey = currentStepUpSessionKey()
+    if (sessionKey) {
+      try {
+        await issueStepUp(jar, user.id, sessionKey, 'first_factor_passkey')
+      } catch (err) {
+        console.error('[webauthn/register] step-up record failed', err instanceof Error ? err.message : err)
+        stepUpNotice = `${STEP_UP_RECORD_FAILED_MESSAGE} Ключ сохранён — при следующем переходе подтвердите вход им.`
+      }
+    }
+  }
 
   await logActivity({
     userId: user.id,
@@ -93,8 +116,9 @@ export async function POST(request: Request) {
     category: 'security',
     severity: 'critical',
     description: `Добавлен ключ доступа (passkey): ${label}`,
+    metadata: { first_factor: guard.firstFactor },
     req: request,
   })
 
-  return NextResponse.json({ ok: true, credential: { id: credId, label }, backup_codes })
+  return NextResponse.json({ ok: true, credential: { id: credId, label }, backup_codes, ...(stepUpNotice ? { step_up: false, notice: stepUpNotice } : {}) })
 }

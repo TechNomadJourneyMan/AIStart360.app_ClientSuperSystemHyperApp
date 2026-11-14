@@ -11,13 +11,21 @@
  *     ошибке возвращает { ok: false, error }.
  *
  * ВАЖНО: в логи не попадают ни ссылки (в них одноразовые токены), ни тело
- * письма — только вид письма, адрес и статус.
+ * письма — только вид письма, маскированный адрес (a***@domain, R-138) и статус.
+ *
+ * Таймаут Resend (INT-05): RESEND_TIMEOUT_MS (по умолчанию 10 с; с вложениями —
+ * 30 с). API Resend отвечает за доли секунды; зависший вызов держал cron или
+ * запрос бесконечно. Каждое письмо уходит с ключом идемпотентности Resend,
+ * общим для всех попыток, поэтому повтор после таймаута не даёт дубля.
  */
 
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase-service'
 import { emailFrom, emailReplyTo } from './brand'
 import { renderEmail, type EmailContent } from './layout'
+import { maskEmail } from './mask'
+
+export { maskEmail }
 
 export type EmailKind =
   | 'portal_invitation'
@@ -79,6 +87,30 @@ export interface TransactionalEmailResult {
 }
 
 const MAX_ATTEMPTS = 3
+
+/** INT-05: default wait for one Resend call; attachments (up to 40 MB) get more. */
+const RESEND_TIMEOUT_MS = 10_000
+const RESEND_ATTACHMENTS_TIMEOUT_MS = 30_000
+
+function resendTimeoutMs(withAttachments: boolean): number {
+  const raw = Number(process.env.RESEND_TIMEOUT_MS)
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw)
+  return withAttachments ? RESEND_ATTACHMENTS_TIMEOUT_MS : RESEND_TIMEOUT_MS
+}
+
+
+/** The SDK's promise, or a rejection after `ms` (the SDK takes no AbortSignal). */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`Resend timeout after ${ms} ms`)), ms)
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
 
 /**
  * Предохранитель: из тестов живые письма не уходят.
@@ -176,7 +208,7 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     const error = 'RESEND_API_KEY не задан'
-    console.error(`[email] ${input.kind} → ${input.to}: ${error}`)
+    console.error(`[email] ${input.kind} → ${maskEmail(input.to)}: ${error}`)
     return { ok: false, error }
   }
 
@@ -187,14 +219,14 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
     const base64Bytes = attachments.reduce((sum, a) => sum + Math.ceil(a.content.length / 3) * 4, 0)
     if (base64Bytes > EMAIL_ATTACHMENTS_MAX_BASE64_BYTES) {
       const error = 'вложения больше 40 МБ (лимит Resend)'
-      console.error(`[email] ${input.kind} → ${input.to}: ${error}`)
+      console.error(`[email] ${input.kind} → ${maskEmail(input.to)}: ${error}`)
       return { ok: false, error }
     }
   }
 
   const { claimed, rowId } = await claimDedupe(input)
   if (!claimed) {
-    console.info(`[email] ${input.kind} → ${input.to}: уже отправлено ранее, пропуск`)
+    console.info(`[email] ${input.kind} → ${maskEmail(input.to)}: уже отправлено ранее, пропуск`)
     return { ok: true, skipped: true }
   }
 
@@ -202,10 +234,14 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
   const resend = new Resend(apiKey)
   const replyTo = emailReplyTo()
 
+  // One key for every attempt of this letter: a retry after a timeout (the first send may have
+  // gone through) is dropped by Resend instead of reaching the client twice.
+  const idempotencyKey = `aistart360-${rowId ?? globalThis.crypto.randomUUID()}`
+  const timeoutMs = resendTimeoutMs(Boolean(attachments))
   let lastError = 'Письмо не отправлено'
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await resend.emails.send({
+      const res = await withTimeout(resend.emails.send({
         from: emailFrom(),
         to: input.to,
         subject: input.subject,
@@ -213,7 +249,7 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
         text,
         ...(replyTo ? { replyTo } : {}),
         ...(attachments ? { attachments } : {}),
-      })
+      }, { idempotencyKey }), timeoutMs)
       const err = (res as { error?: unknown } | null)?.error
       if (err) {
         lastError = typeof err === 'string' ? err : (err as { message?: string })?.message ?? JSON.stringify(err)
@@ -225,7 +261,7 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
       }
       const providerId = (res as { data?: { id?: string } } | null)?.data?.id
       await recordOutcome(input, rowId, 'sent', { providerId })
-      console.info(`[email] ${input.kind} → ${input.to}: отправлено${providerId ? ` (${providerId})` : ''}`)
+      console.info(`[email] ${input.kind} → ${maskEmail(input.to)}: отправлено${providerId ? ` (${providerId})` : ''}`)
       return { ok: true, providerId }
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e)
@@ -238,6 +274,6 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
   }
 
   await recordOutcome(input, rowId, 'failed', { error: lastError })
-  console.error(`[email] ${input.kind} → ${input.to}: ошибка — ${lastError}`)
+  console.error(`[email] ${input.kind} → ${maskEmail(input.to)}: ошибка — ${lastError}`)
   return { ok: false, error: lastError }
 }

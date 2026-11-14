@@ -1,5 +1,6 @@
 import type { PointA, DiagnosticStage } from '@/types/onboarding'
 import { parsePeriodKey, periodLabel } from '@/lib/data-layer/period-key'
+import { projectGrowth, requiredAnnualGrowth } from '@/lib/point-b/model/growth'
 
 /**
  * Point B engine (v2) — goal-driven.
@@ -47,8 +48,17 @@ export interface GapEntry extends GapMetrics {
 }
 
 export interface TrajectoryPoint {
+  /** Month 1..N of the 12-month path, or quarter 1..12 of the 3-year path. */
   month: number
+  /**
+   * The ANNUAL revenue run-rate (₸ a year) at the end of the month / quarter — the same unit as the
+   * trajectory on «Обзор» (lib/point-b/model). NOT the revenue of the month (R-037, BI-21).
+   */
   target_revenue: number
+  /** Revenue OF the month (₸) = run-rate / 12. Points of the 12-month path only. */
+  monthly_revenue?: number
+  /** Revenue OF the quarter (₸) = Σ of its three months' run-rate / 12. Points of the 3-year path only. */
+  quarter_revenue?: number
 }
 
 export interface Scenario {
@@ -320,10 +330,27 @@ export function buildTrajectory(
   months: number,
 ): TrajectoryPoint[] {
   if (current == null || current <= 0 || target == null || target <= 0 || months <= 0) return []
-  const g = Math.pow(target / current, 1 / months) // monthly growth factor
+  // The required path is the model's growth formula (lib/point-b/model/growth): run-rate_t = A · (1 + g)^(t/12)
+  // with g the yearly growth that takes A to T in `months` — so V2 and «Обзор» draw the same line (R-037).
+  const g = requiredAnnualGrowth(current, target, months)
+  if (g == null || g <= -1) return []
+  return projectGrowth({ baseAnnual: current, annualGrowth: g, months }).map((rr, k) => ({
+    month: k + 1,
+    target_revenue: Math.round(rr),
+    monthly_revenue: Math.round(rr / 12),
+  }))
+}
+
+/** The 36-month path → one point per quarter: run-rate at the quarter end and the revenue of the quarter. */
+export function toQuarterly(monthlyPath: TrajectoryPoint[]): TrajectoryPoint[] {
   const out: TrajectoryPoint[] = []
-  for (let i = 1; i <= months; i++) {
-    out.push({ month: i, target_revenue: Math.round(current * Math.pow(g, i)) })
+  for (let q = 1; q * 3 <= monthlyPath.length; q++) {
+    const months = monthlyPath.slice((q - 1) * 3, q * 3)
+    out.push({
+      month: q,
+      target_revenue: months[2].target_revenue,
+      quarter_revenue: Math.round(months.reduce((s, p) => s + p.target_revenue, 0) / 12),
+    })
   }
   return out
 }
@@ -696,8 +723,12 @@ function buildHorizons(
   const quickWins = (pointA.quick_wins ?? []).map((q) => q.action)
   const top5Titles = top5.map((t) => t.title)
 
-  const month1 = monthly12m[0]?.target_revenue ?? null
-  const quarter1 = monthly12m[2]?.target_revenue ?? null
+  // The trajectory is the ANNUAL run-rate: the revenue of a month is run-rate / 12, the revenue of the
+  // first quarter is the sum of its three months (R-037, BI-21: was the run-rate itself, ×12 / ×4).
+  const month1 = monthly12m.length >= 1 ? (monthly12m[0].monthly_revenue ?? Math.round(monthly12m[0].target_revenue / 12)) : null
+  const quarter1 = monthly12m.length >= 3
+    ? Math.round(monthly12m.slice(0, 3).reduce((s, p) => s + p.target_revenue, 0) / 12)
+    : null
 
   return {
     three_year: {
@@ -713,7 +744,7 @@ function buildHorizons(
       ],
       kpis: [
         { label: 'Целевая выручка/год', target: goals.goal_3y_revenue_year != null ? `${goals.goal_3y_revenue_year.toLocaleString('ru-RU')} ₸` : '—' },
-        ...(targetOverall !== null ? [{ label: 'Целевой GRI', target: `${targetOverall}/100` }] : []),
+        ...(targetOverall !== null ? [{ label: 'Целевая оценка Точки А', target: `${targetOverall}/100` }] : []),
       ],
     },
     one_year: {
@@ -737,7 +768,7 @@ function buildHorizons(
       target_overall_score: null,
       focus: weakOrdered.slice(0, 1),
       actions: top5Titles.slice(0, 2).length ? top5Titles.slice(0, 2).map((t) => `Приоритет квартала: ${t}`) : ['Закрыть критичный блок из GRI'],
-      kpis: quarter1 != null ? [{ label: 'Выручка к концу квартала', target: `${quarter1.toLocaleString('ru-RU')} ₸` }] : [],
+      kpis: quarter1 != null ? [{ label: 'Выручка за квартал', target: `${quarter1.toLocaleString('ru-RU')} ₸` }] : [],
     },
     month: {
       horizon: 'month',
@@ -804,9 +835,7 @@ export function calculatePointBV2(
   // Trajectories
   const monthly12m = buildTrajectory(cur, goals.goal_12m_revenue_year, 12)
   const quarterly3yFull = buildTrajectory(cur, goals.goal_3y_revenue_year, 36)
-  const quarterly_3y = quarterly3yFull
-    .filter((p) => p.month % 3 === 0)
-    .map((p) => ({ month: p.month / 3, target_revenue: p.target_revenue }))
+  const quarterly_3y = toQuarterly(quarterly3yFull)
 
   // Block targets (foundation)
   const targetBlocks: Record<string, TargetBlock> = {}
@@ -819,9 +848,14 @@ export function calculatePointBV2(
   const weights = { finance: 0.30, sales: 0.25, operations: 0.20, marketing: 0.15, strategy: 0.10 }
   // No block of Point A has a score (preliminary, before the full questionnaire):
   // a target score would be built on zeros — there is none.
-  const anyScored = BLOCK_KEYS.some((k) => !withoutData.has(k))
-  const targetOverall = anyScored ? Math.round(BLOCK_KEYS.reduce((s, k) => s + targetBlocks[k].target * weights[k], 0)) : null
-  const targetHealth = targetOverall === null ? null : Math.min(100, Math.round(targetOverall * 0.6 + (targetBlocks.finance.target > 50 ? 20 : 0) + (targetBlocks.sales.target > 50 ? 10 : 0) + (targetBlocks.operations.target > 50 ? 10 : 0)))
+  // A block without data has no current score to grow from: it takes no part
+  // in the target overall (weights renormalised over the scored blocks, I2/R-033).
+  const scoredKeys = BLOCK_KEYS.filter((k) => !withoutData.has(k))
+  const scoredWeight = scoredKeys.reduce((s, k) => s + weights[k], 0)
+  const anyScored = scoredKeys.length > 0
+  const targetOverall = anyScored ? Math.round(scoredKeys.reduce((s, k) => s + targetBlocks[k].target * weights[k], 0) / scoredWeight) : null
+  const bonus = (k: 'finance' | 'sales' | 'operations', pts: number) => (!withoutData.has(k) && targetBlocks[k].target > 50 ? pts : 0)
+  const targetHealth = targetOverall === null ? null : Math.min(100, Math.round(targetOverall * 0.6 + bonus('finance', 20) + bonus('sales', 10) + bonus('operations', 10)))
 
   // TOP-5 limits (from GRI if provided, else lowest blocks)
   const top5_limits = options.griTop5?.length

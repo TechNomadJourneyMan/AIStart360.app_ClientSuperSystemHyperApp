@@ -61,7 +61,10 @@ function api(opts: { dev?: boolean; host?: string; method?: string } = {}): Next
 const signIn = (role: string, opts: { staff?: string; enrolled?: boolean; status?: string } = {}) => {
   s.user = { id: 'u1', email: 'dev-staff@dev.aistart360.test', app_metadata: opts.enrolled ? { mfa_totp: true } : {}, user_metadata: {} }
   s.profile = { id: 'u1', role, status: opts.status ?? 'approved' }
-  s.staff = opts.staff ? { role: opts.staff } : null
+  // As devAccountShape seeds them: admin / super_admin hold the same staff_roles row (R-002 — staff come
+  // only from staff_roles).
+  const staff = opts.staff ?? (role === 'super_admin' || role === 'admin' ? role : null)
+  s.staff = staff ? { role: staff } : null
 }
 
 beforeEach(() => {
@@ -173,7 +176,7 @@ describe('the expert portal API (the gate has no request object, only next/heade
   it('dev mode on → an expert without a second factor passes where they were told to enrol', async () => {
     expect(await resolveExpert()).toEqual({ ok: false, block: 'enroll' })
     devBrowser()
-    expect(await resolveExpert()).toEqual({ ok: true, viewer: { id: 'u1', role: 'expert', email: 'dev-staff@dev.aistart360.test' } })
+    expect(await resolveExpert()).toEqual({ ok: true, viewer: { id: 'u1', role: 'expert', email: 'dev-staff@dev.aistart360.test', clientScope: 'assigned' } })
   })
 
   it('dev mode on → an enrolled expert passes without the step-up cookie', async () => {

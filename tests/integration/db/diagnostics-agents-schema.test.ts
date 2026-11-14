@@ -77,6 +77,9 @@ describe.skipIf(!dbTestsEnabled)('085–087 schema', () => {
         const count = (uid: string) =>
           asUser(db, uid, async () => (await db.query(`SELECT 1 FROM public.diagnostic_findings`)).rowCount)
         expect(await count(owner)).toBe(1)
+        // R-004 (140): an expert sees the hidden findings of ASSIGNED clients only.
+        expect(await count(staff)).toBe(0)
+        await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [owner, staff])
         expect(await count(staff)).toBe(2)
         const other = await seedUser(db, { status: 'approved' })
         expect(await count(other)).toBe(0)

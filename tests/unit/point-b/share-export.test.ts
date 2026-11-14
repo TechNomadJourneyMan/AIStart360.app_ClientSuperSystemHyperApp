@@ -101,7 +101,8 @@ describe('PDF export', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'k'
     const denied = await GET(exportReq(`type=point-b&companyId=${COMPANY}`))
     expect(denied.status).toBe(403)
-    expect((await denied.json()).error).toBe('Клиент вам не назначен')
+    // Refused already while resolving the company (SR-03: an expert reaches only assigned clients' companies).
+    expect(['forbidden', 'Клиент вам не назначен']).toContain((await denied.json()).error)
     expect(s.pdf).toHaveLength(0)
 
     s.db!.db.user_assignments.push({ user_id: OTHER_CLIENT, assignee_id: EXPERT })

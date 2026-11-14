@@ -7,6 +7,7 @@
  */
 
 import { resolveChannels } from '@/lib/notifications/preferences'
+import { formatGri } from '@/lib/format/gri'
 
 /** Русская форма множественного числа (1 / 2-4 / 5+). */
 export function plural(n: number, one: string, few: string, many: string): string {
@@ -80,7 +81,7 @@ export function buildDigestLines(data: DigestData): string[] {
   if (data.sleeping > 0) lines.push(`Спящих клиентов: ${data.sleeping}`)
   if (data.weakBlock) {
     lines.push(
-      `Слабый блок GRI: ${data.weakBlock.label} (${data.weakBlock.score.toFixed(1)}/10) — уделите ему внимание на этой неделе.`,
+      `Слабый блок GRI: ${data.weakBlock.label} (${formatGri(data.weakBlock.score, { scale: true })}) — уделите ему внимание на этой неделе.`,
     )
   }
   return lines

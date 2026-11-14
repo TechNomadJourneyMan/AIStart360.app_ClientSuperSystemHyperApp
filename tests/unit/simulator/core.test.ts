@@ -6,16 +6,18 @@ function base(over: Partial<SimInput> = {}): SimInput {
 }
 
 describe('runSimulation — revenue_growth', () => {
-  it('projects a compounded path toward the stated target, with optimistic > realistic > pessimistic', () => {
-    const r = runSimulation(base({ targetRevenueMonthly: 20_000_000 }))
+  // R-039: this test used to require the realistic path to land on the target (the goal WAS the forecast).
+  // Now the pace comes from the history and the goal is a separate line with a verdict.
+  it('projects a compounded path from the history pace, with optimistic > realistic > pessimistic; the goal is a separate line', () => {
+    const history = Array.from({ length: 12 }, (_, k) => 10_000_000 / 1.03 ** (11 - k))
+    const r = runSimulation(base({ targetRevenueMonthly: 20_000_000, revenueHistoryMonthly: history }))
     expect(r.scenarios.realistic.monthly).toHaveLength(12)
     const end = (s: 'optimistic' | 'realistic' | 'pessimistic') => r.scenarios[s].outcome.revenueEnd
-    // realistic should land near the target 20M (within its band)
-    expect(end('realistic')[0]).toBeGreaterThan(15_000_000)
-    expect(end('realistic')[1]).toBeGreaterThanOrEqual(20_000_000 * 0.9)
-    // ordering at the end
+    // realistic = 10 M × 1.03^12 ≈ 14.26 M (the band ±10%), not the 20 M goal
+    expect((end('realistic')[0] + end('realistic')[1]) / 2).toBeCloseTo(10_000_000 * 1.03 ** 12, -1)
     expect(end('optimistic')[1]).toBeGreaterThan(end('realistic')[1])
     expect(end('pessimistic')[0]).toBeLessThan(end('realistic')[0])
+    expect(r.target!.verdict).toBe('unrealistic') // optimistic 10 M × 1.04^12 ≈ 16 M < 20 M
   })
 
   it('every monthly point is a [low, high] range with low <= high', () => {
@@ -39,10 +41,12 @@ describe('runSimulation — revenue_growth', () => {
     expect(r.missingData.join(' ')).toMatch(/выручк/i)
   })
 
-  it('without a target it uses a modest default rate and flags the assumption', () => {
+  // R-039: no invented 5%/month any more — without history there is no forecast, said in the result.
+  it('without a target and without history it says there is no data for a forecast', () => {
     const r = runSimulation(base({ targetRevenueMonthly: null }))
     expect(r.confidence).not.toBe('high')
-    expect(r.assumptions.join(' ')).toMatch(/по умолчанию|темп/i)
+    expect(r.forecastAvailable).toBe(false)
+    expect(r.assumptions.join(' ')).toMatch(/Нет данных для прогноза/)
   })
 })
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { filterByScope, scopedCompanyIds } from '@/lib/admin/client-scope'
 import { dbError } from '@/lib/api-error'
 import { listReportVersions } from '@/lib/reports/versions'
 import { REPORT_STATUSES, REPORT_TYPES, type ReportStatus, type ReportType } from '@/lib/reports/types'
@@ -24,9 +25,11 @@ export async function GET(req: NextRequest) {
       reportType: type && (REPORT_TYPES as readonly string[]).includes(type) ? (type as ReportType) : null,
       limit: Number(q.get('limit') ?? 100) || 100,
     })
+    // Client scope 'assigned' (R-047): only the actor's clients' companies.
+    const allowed = await scopedCompanyIds(g.actor)
     return NextResponse.json({
       ok: true,
-      items,
+      items: filterByScope(items, allowed, (i) => i.company_id),
       can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run'), review: g.actor.permissions.includes('reports.review') },
     })
   } catch (err) {

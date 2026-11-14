@@ -9,6 +9,10 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { logAudit } from '@/lib/audit'
 import { MAX_PASSWORD_LENGTH, ownerEmail, verifyOwnerPassword } from '@/lib/admin/owner-password'
+// R-049: the trusted hop of X-Forwarded-For, not the first entry the client writes.
+import { clientIpOrUnknown as clientIp } from '@/lib/net/client-ip'
+import { impersonationOfThisSession } from '@/lib/impersonation/guard'
+import { endImpersonationInThisBrowser } from '@/lib/impersonation/exit'
 
 /** Cookie старого аварийного входа (удалён) — только стираем у тех, у кого он остался. */
 const LEGACY_GIGA_COOKIE_NAME = 'aistart360_giga'
@@ -29,11 +33,6 @@ const bodySchema = z.object({
 })
 
 const INVALID = () => NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
-
-function clientIp(req: NextRequest): string {
-  const v = (req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || 'unknown').trim()
-  return v.length > 0 && v.length <= 64 ? v : 'unknown'
-}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
@@ -84,11 +83,20 @@ export async function POST(req: NextRequest) {
   return res
 }
 
-/** DELETE /api/giga-admin/auth — выход из панели: сессия Supabase и служебные cookie. */
+/**
+ * DELETE /api/giga-admin/auth — выход из панели: сессия Supabase и служебные cookie.
+ *
+ * SR-06: во время impersonation браузер держит сессию КЛИЕНТА — тогда
+ * завершается только она (scope 'local') и закрывается запись impersonation;
+ * global signOut выкидывал клиента со всех его устройств. Режим сессии не
+ * удалось выяснить — тоже только 'local'. Обычный выход — как раньше.
+ */
 export async function DELETE(req: NextRequest) {
   const client = createServerClient()
   const { data: { user } } = await client.auth.getUser().catch(() => ({ data: { user: null } }))
-  await client.auth.signOut().catch(() => undefined)
+  const imp = await impersonationOfThisSession(user?.id ?? null)
+  if (imp.kind !== 'none') await endImpersonationInThisBrowser(req, 'panel_sign_out')
+  else await client.auth.signOut().catch(() => undefined)
   const res = NextResponse.json({ ok: true })
   res.cookies.set(LEGACY_GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
   res.cookies.set(STAFF_COOKIE_NAME, '', { path: '/', maxAge: 0 })

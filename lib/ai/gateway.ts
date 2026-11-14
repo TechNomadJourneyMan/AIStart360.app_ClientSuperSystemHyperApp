@@ -37,7 +37,7 @@ import {
   TIER_ESTIMATE_PRICES_PER_MTOK,
   worstCaseCostUsd,
 } from './providers/client'
-import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
+import { aiDeadlineMs, isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveCandidates } from './providers/router'
 import type { CostSource } from './providers/types'
 
@@ -90,6 +90,8 @@ export interface LlmRequest {
   temperature?: number
   json?: boolean
   timeoutMs?: number
+  /** One budget for all failover attempts (R-016). Default AI_BACKGROUND_DEADLINE_MS / 120 s. */
+  deadlineMs?: number
   /** Short tag for logs, e.g. "agent:diagnostic". Never log prompts. */
   label: string
   fetchImpl?: typeof fetch
@@ -165,9 +167,10 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
   // A timed-out attempt may still be generated and billed by the provider:
   // count its worst case, so budgets and agent_runs.cost_usd do not see $0.
   let lostCostUsd = 0
+  const attemptTimeoutMs = req.timeoutMs ?? 60_000
   const run = await runWithFailover(
     resolved.candidates,
-    (target) => chatCompletion(target, {
+    (target, budget) => chatCompletion(target, {
       messages: [
         { role: 'system', content: req.system },
         { role: 'user', content: req.user },
@@ -175,10 +178,12 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
       maxTokens: req.maxTokens,
       temperature: req.temperature ?? 0.2,
       json: req.json,
-      timeoutMs: req.timeoutMs ?? 60_000,
+      timeoutMs: budget.timeoutMs,
       fetchImpl: req.fetchImpl,
     }),
     {
+      attemptTimeoutMs,
+      deadlineMs: req.deadlineMs ?? aiDeadlineMs('background', attemptTimeoutMs),
       budgetCheck: providerBudgetRefusal,
       retryAlone: true,
       alsoFailoverOn: (_target, f) => isModelOrFormatRejection(f),

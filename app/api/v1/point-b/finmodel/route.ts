@@ -9,6 +9,8 @@ import { companyOfUser } from '@/lib/point-b/plan/flow'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { readJsonBody, validationErrorResponse } from '@/lib/validation/http'
+import { FinmodelPutBody } from '@/lib/validation/schemas'
 
 /**
  * GET /api/v1/point-b/finmodel — the «Финмодель» of the owner (level 2 of Point B):
@@ -60,7 +62,15 @@ export async function PUT(req: NextRequest) {
     return fail('Слишком много сохранений подряд — подождите несколько минут', 429)
   }
 
-  const parsed = parseValuesBody(await req.json().catch(() => null))
+  // R-149: the shape through Zod first (1..20 items, string key, string caps,
+  // no unknown item keys); the values themselves are checked by the store
+  // (invalid_value / unknown_key with the field). A shape error keeps the
+  // historical code 'invalid_request'.
+  const read = await readJsonBody(req)
+  if (!read.ok) return fail('Передайте хотя бы одно значение финмодели', 400, { code: 'invalid_request' })
+  const shape = FinmodelPutBody.safeParse(read.value)
+  if (!shape.success) return validationErrorResponse(shape.error, 400, { code: 'invalid_request' })
+  const parsed = parseValuesBody(shape.data)
   if (!parsed.ok) return parsed.response
 
   try {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
+import { formatGri } from '@/lib/format/gri'
 
 import { Suspense, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
@@ -104,7 +105,7 @@ function User360Inner({ id }: { id: string }) {
           {u.surveyStatus && <div className="mb-3"><SurveyStatusChips status={u.surveyStatus} /></div>}
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile label="Анкета" value={`${u.survey.percent}%`} hint={`${u.survey.startedSteps}/${u.survey.totalSteps} шагов · ${fmtAgo(u.survey.updatedAt)}`} tone="blue" />
-            <StatTile label="GRI" value={u.gri.current ? u.gri.current.index.toFixed(1) : '—'} hint={u.gri.runs ? `прохождений: ${u.gri.runs}` : u.gri.draftUpdatedAt ? 'тест в процессе' : 'не пройден'} tone="violet" />
+            <StatTile label="GRI" value={formatGri(u.gri.current?.index, { empty: '—' })} hint={u.gri.runs ? `прохождений: ${u.gri.runs}` : u.gri.draftUpdatedAt ? 'тест в процессе' : 'не пройден'} tone="violet" />
             <StatTile label="Точка А" value={u.diagnostics?.overall_score != null ? Math.round(Number(u.diagnostics.overall_score)) : '—'} hint={u.diagnostics ? `расчётов: ${u.diagnostics.runs}` : 'не рассчитана'} tone="green" />
             <StatTile label="Этап CJM" value={`${u.journey.completed}/${u.journey.total}`} hint={u.journey.current?.label ?? '—'} tone="amber" />
           </div>

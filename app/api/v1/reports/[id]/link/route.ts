@@ -11,6 +11,7 @@ import { isSameOriginMutation } from '@/lib/admin/giga-actor'
 import { apiError, dbError, safeErrorMessage } from '@/lib/api-error'
 import { publishedReportForCaller } from '@/lib/reports/client-access'
 import { linkSecretConfigured, signVersionLink, VERSION_LINK_DEFAULT_DAYS } from '@/lib/reports/version-link'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSameOriginMutation(req)) return apiError('Cross-site request blocked', 403)
@@ -22,6 +23,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       if (found.error === 'db') return dbError('api/v1/reports/:id/link', found.dbError, 'Не удалось загрузить отчёт')
       if (found.error === 'unauthenticated') return apiError('Требуется вход в систему', 401)
       return apiError('Отчёт не найден', 404)
+    }
+    // SR-07: a long-lived link to the client's report is not handed out «от имени клиента».
+    if (user) {
+      const impersonated = await refuseDuringImpersonation(req, user, 'report.version_link')
+      if (impersonated) return impersonated
     }
     if (!linkSecretConfigured()) return apiError('Ссылки на версии не настроены на сервере', 503)
     const link = await signVersionLink(found.report.id, found.report.version, VERSION_LINK_DEFAULT_DAYS)

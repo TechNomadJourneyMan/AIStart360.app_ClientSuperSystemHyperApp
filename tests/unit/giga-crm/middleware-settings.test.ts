@@ -5,6 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
+// The factor on record (lib/mfa/factor-edge.ts): these accounts have none.
+vi.mock('@/lib/mfa/factor-edge', () => ({ secondFactorOnRecordEdge: async () => false }))
 
 const s = vi.hoisted(() => ({
   settings: { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false },
@@ -68,6 +70,7 @@ describe('maintenance mode', () => {
     s.role = 'expert'
     expect(loc(await get('/expert/dashboard'))).not.toMatch(/maintenance/)
     s.role = 'super_admin'
+    s.staffRow = { role: 'super_admin' }
     expect((await get('/admin-giga-panel')).status).toBe(200)
     s.user = null
     expect((await get('/maintenance')).status).toBe(200)
@@ -82,6 +85,7 @@ describe('mandatory staff 2FA', () => {
   it('sends a staff member without 2FA to the security settings', async () => {
     s.settings.staff_require_mfa = true
     s.role = 'super_admin'
+    s.staffRow = { role: 'super_admin' }
     const r = await get('/admin-giga-panel/users')
     expect(r.status).toBe(307)
     expect(loc(r)).toContain('/settings?tab=security&mfa=required')
@@ -89,18 +93,26 @@ describe('mandatory staff 2FA', () => {
 
   it('lets staff in when not required', async () => {
     s.role = 'super_admin'
+    s.staffRow = { role: 'super_admin' }
     expect((await get('/admin-giga-panel/users')).status).toBe(200)
   })
 
   it('an enrolled staff member goes through the usual step-up', async () => {
     s.settings.staff_require_mfa = true
     s.role = 'super_admin'
+    s.staffRow = { role: 'super_admin' }
     s.user = { id: 'u1', user_metadata: { mfa_totp: true } }
     expect(loc(await get('/admin-giga-panel'))).toContain('/2fa')
   })
 })
 
 describe('no shared-password entry', () => {
+  it('R-002: a legacy super_admin profile without a staff_roles row does not open the panel', async () => {
+    s.role = 'super_admin'
+    s.staffRow = null
+    expect(loc(await get('/admin-giga-panel'))).toContain('/giga-login')
+  })
+
   it('the retired break-glass cookie does not open the panel', async () => {
     s.user = null
     const r = await get('/admin-giga-panel', 'aistart360_giga=v1.forged.token')

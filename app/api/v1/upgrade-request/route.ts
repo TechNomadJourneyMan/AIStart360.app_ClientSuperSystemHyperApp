@@ -1,8 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+
+/** R-225: featureKey is a nav href such as '/point-b' — short text, never an arbitrary blob. */
+const bodySchema = z.object({ featureKey: z.string().trim().min(1).max(100) })
 
 const FEATURE_LABELS: Record<string, string> = {
   '/metrics': 'Метрики',
@@ -23,12 +28,15 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
     const userId = user.id
 
-    const body = await req.json()
-    const { featureKey } = body as { featureKey?: string }
+    // R-225: one admin request row per call — throttle per session user.
+    const rl = await checkRateLimit(userId, 'upgrade-request', { max: 5, windowMs: 10 * 60_000 })
+    if (rl.limited) return rateLimitResponse(rl)
 
-    if (!featureKey) {
+    const parsed = bodySchema.safeParse(await req.json())
+    if (!parsed.success) {
       return NextResponse.json({ ok: false, error: 'featureKey required' }, { status: 400 })
     }
+    const { featureKey } = parsed.data
 
     const featureLabel = FEATURE_LABELS[featureKey] ?? featureKey
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -37,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch user profile info
     const profileRes = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=full_name,email`,
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=full_name,email`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
     )
     const profiles = await profileRes.json() as Array<{ full_name: string | null; email: string | null }>

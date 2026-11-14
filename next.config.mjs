@@ -1,5 +1,6 @@
 import withPWAInit from '@ducanh2912/next-pwa'
 import { withWorkflow } from 'workflow/next'
+import { buildSecurityConfig, reportSecurityConfigWarnings } from './lib/security/csp.mjs'
 
 // PWA / service worker. Disabled in development so it never interferes with the
 // dev server / HMR; it only activates in the production build. Network-first for
@@ -59,47 +60,19 @@ const OCR_TRACE_FILES = [
   './node_modules/@napi-rs/canvas-linux-x64-gnu/**',
 ]
 
+// CSP and next/image remote patterns come from env (R-013/R-135): the Supabase origin is the one in
+// NEXT_PUBLIC_SUPABASE_URL (+ its wss:// twin for Realtime) — no `*.supabase.co` wildcard; the
+// «Рынок» origin (NEXT_PUBLIC_MARKET_APP_URL) only when set and, in a production build, not a
+// loopback host. Both are NEXT_PUBLIC_*, i.e. build-time: a build without them prints a loud warning.
+// Built by a pure function so it is unit-tested (tests/unit/security/csp.test.ts).
+const securityConfig = buildSecurityConfig(process.env)
+if (!globalThis.__aistartCspWarned) {
+  globalThis.__aistartCspWarned = true
+  reportSecurityConfigWarnings(securityConfig.warnings)
+}
+const csp = securityConfig.csp
+
 /** @type {import('next').NextConfig} */
-
-// Origin of the embedded «Рынок» product (Mark-analytics SPA). The /market page
-// embeds it in an iframe and probes availability with fetch(no-cors), so CSP
-// must allow it in BOTH frame-src and connect-src. Defaults to the local Vite
-// dev server; set NEXT_PUBLIC_MARKET_APP_URL in production.
-const marketAppOrigin = (() => {
-  try {
-    return new URL(process.env.NEXT_PUBLIC_MARKET_APP_URL || 'http://localhost:5173').origin
-  } catch {
-    return 'http://localhost:5173'
-  }
-})()
-
-// 'unsafe-eval' is only needed by the dev/HMR runtime — drop it in production
-// to reduce XSS surface. 'unsafe-inline' stays (Next injects inline bootstrap
-// scripts without a nonce in 14.2.x).
-const isDev = process.env.NODE_ENV === 'development'
-const scriptSrc = isDev
-  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-  : "script-src 'self' 'unsafe-inline'"
-
-const csp = [
-  "default-src 'self'",
-  scriptSrc,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com",
-  // Content pages (GIGA-CRM CMS) may show images from any https host.
-  "img-src 'self' data: https:",
-  // Video files uploaded to the cms-media bucket.
-  "media-src 'self' https://*.supabase.co",
-  // Next's font stylesheet loader uses fetch; its CSS and font endpoints must
-  // also be allowed here. Body/headline fonts are served locally.
-  `connect-src 'self' https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com ${marketAppOrigin}`,
-  // YouTube (privacy-enhanced) and Vimeo embeds in content pages.
-  `frame-src 'self' ${marketAppOrigin} https://www.youtube-nocookie.com https://player.vimeo.com`,
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "object-src 'none'",
-].join('; ')
-
 const nextConfig = {
   // E-commerce vertical removed (2026-09-24): old links land on the client home.
   async redirects() {
@@ -145,16 +118,8 @@ const nextConfig = {
     ]
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**.supabase.co',
-      },
-      {
-        protocol: 'https',
-        hostname: 'lh3.googleusercontent.com',
-      },
-    ],
+    // Our Supabase origin (from NEXT_PUBLIC_SUPABASE_URL) + Google avatars; no *.supabase.co wildcard.
+    remotePatterns: securityConfig.remotePatterns,
   },
   // pdfkit loads its built-in .afm font-metric files from disk at runtime.
   // Bundling it into the server chunk rewrites that path and breaks PDF

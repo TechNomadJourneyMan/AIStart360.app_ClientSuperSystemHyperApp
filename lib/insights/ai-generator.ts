@@ -21,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { withoutPersonalData } from '@/lib/ai/pii'
 import { plainAnswer } from '@/lib/survey/plain'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 export const INSIGHTS_PROMPT_VERSION = 'point-a-insights-v1'
 export const INSIGHTS_MODEL = OPENROUTER_MODELS.sonnet
@@ -82,7 +83,7 @@ async function loadSnapshot(sb: SupabaseClient, userId: string): Promise<Snapsho
   // Diagnostic (current row only).
   const { data: diagnostic } = await sb
     .from('diagnostics')
-    .select('overall_score, stage, finance_score, marketing_score, operations_score, strategy_score, sales_score, risks, insights, quick_wins, data_gaps')
+    .select('id, overall_score, health_index, stage, finance_score, marketing_score, operations_score, strategy_score, sales_score, risks, insights, quick_wins, data_gaps')
     .eq('user_id', userId)
     .eq('is_current', true)
     .order('calculated_at', { ascending: false })
@@ -120,8 +121,18 @@ async function loadSnapshot(sb: SupabaseClient, userId: string): Promise<Snapsho
     recentMetrics = (metrics ?? []) as Snapshot['recentMetrics']
   }
 
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033): the model sees null
+  // for «no score» / «no data», never a v1 zero to read as «критично».
+  let officialDiagnostic: Record<string, unknown> | null = null
+  if (diagnostic) {
+    const raw = diagnostic as Record<string, unknown>
+    const official = officialPointA(raw, await loadOfficialSnapshot(sb, userId))
+    officialDiagnostic = { ...officialDiagnosticRow(raw, official), blocks_without_data: official.blocksWithoutData }
+    delete officialDiagnostic.id
+  }
+
   return {
-    diagnostic: (diagnostic as Record<string, unknown> | null) ?? null,
+    diagnostic: officialDiagnostic,
     // Contact and identity answers never reach the model (lib/ai/pii.ts).
     surveyAnswers: withoutPersonalData((survey ?? []) as Snapshot['surveyAnswers']),
     recentMetrics,
@@ -159,6 +170,7 @@ function buildUserPrompt(snapshot: Snapshot): string {
 
   if (snapshot.diagnostic) {
     lines.push('## Диагностика (текущая)')
+    lines.push('null = нет данных или общей оценки пока нет (это не слабость и не 0); blocks_without_data — блоки без данных.')
     lines.push(JSON.stringify(snapshot.diagnostic, null, 2))
     lines.push('')
   } else {

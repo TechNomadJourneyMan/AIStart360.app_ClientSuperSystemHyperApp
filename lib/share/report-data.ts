@@ -16,6 +16,9 @@ import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { createServiceClient } from '@/lib/supabase-service'
 import type { PointA, AIAnalysis } from '@/types/onboarding'
+import { OFFICIAL_SNAPSHOT_COLUMNS, hasOfficialBlockScores, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
+
+const blockKeysAll = ['finance', 'sales', 'operations', 'marketing', 'strategy']
 
 // ─── Service-role REST helper ─────────────────────────────────────────────────
 
@@ -191,14 +194,16 @@ export async function loadGriView(
 // ─── Точка А ─────────────────────────────────────────────────────────────────
 
 export interface PointAView {
-  overallScore: number
-  healthIndex: number
+  /** null = no official score yet (R-032/R-033) — never 0. */
+  overallScore: number | null
+  healthIndex: number | null
   executiveSummary: string | null
   industryContext: string | null
   blocks: Array<{
     key: string
     label: string
-    score: number
+    /** null = no data for this block (not a weakness). */
+    score: number | null
     diagnosis?: string
     benchmark_comparison?: string
     key_risk?: string
@@ -220,10 +225,19 @@ export async function loadPointAView(
   const rows = await srGet<Array<Record<string, unknown>>>(
     `diagnostics?user_id=eq.${encodeURIComponent(subject.userId)}&is_current=eq.true&select=*&limit=1`,
   )
-  const diag = rows?.[0]
-  if (!diag) return null
+  const rawDiag = rows?.[0]
+  if (!rawDiag) return null
 
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032) — the share
+  // link shows the same numbers as the client's page, «нет данных» = null.
+  const snapRows = await srGet<OfficialSnapshotRow[]>(
+    `point_a_snapshots?company_id=eq.${encodeURIComponent(String(subject.companyId))}&select=${OFFICIAL_SNAPSHOT_COLUMNS.replace(/\s+/g, '')}&order=created_at.desc&limit=1`,
+  )
+  const official = officialPointA(rawDiag, snapRows?.[0] ?? null)
+  const diag = officialDiagnosticRow(rawDiag, official)
   const pointA = diagToPointA(diag)
+  const noData = new Set(hasOfficialBlockScores(official) ? official.blocksWithoutData : blockKeysAll)
+  const scored = official.state === 'scored'
   const ai = diag.ai_analysis as AIAnalysis | null
 
   const blockOrder: Array<keyof PointA['blocks']> = [
@@ -238,7 +252,7 @@ export async function loadPointAView(
     return {
       key,
       label: POINT_A_BLOCK_LABELS[key] ?? key,
-      score: pointA.blocks[key]?.score ?? 0,
+      score: noData.has(key) ? null : pointA.blocks[key]?.score ?? null,
       diagnosis: aiBlock?.diagnosis,
       benchmark_comparison: aiBlock?.benchmark_comparison,
       key_risk: aiBlock?.key_risk,
@@ -270,8 +284,8 @@ export async function loadPointAView(
     : []
 
   return {
-    overallScore: pointA.overall_score,
-    healthIndex: pointA.health_index,
+    overallScore: scored ? official.overall : null,
+    healthIndex: scored ? official.health_index : null,
     executiveSummary: ai?.executive_summary ?? null,
     industryContext: ai?.industry_context ?? null,
     blocks,

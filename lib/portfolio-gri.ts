@@ -20,6 +20,7 @@
  */
 import { createServerClient } from '@/lib/supabase-server'
 import type { SectionId } from '@/lib/gri-assessment/sections'
+import { griZone, toGri } from '@/lib/format/gri'
 
 export type PortfolioGriDomainKey = 'product' | 'trust' | 'bizmodel' | 'cash' | 'ops' | 'team' | 'founder'
 
@@ -70,10 +71,9 @@ export interface GriIndexDistribution {
   total:      number
 }
 
-/** A GRI value on the 0–10 scale; 0, negatives, >10 and non-numbers are "no data". */
+/** A GRI value on the 0–10 scale; 0, negatives, >10 and non-numbers are "no data" (lib/format/gri.ts). */
 function griValue(v: unknown): number | null {
-  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
-  return Number.isFinite(n) && n > 0 && n <= 10 ? n : null
+  return toGri(v)
 }
 
 function sectionValue(row: GriAssessmentRow, sectionId: string): number | null {
@@ -124,11 +124,13 @@ export function aggregatePortfolioGri(rows: GriAssessmentRow[]): PortfolioGRI | 
 
 export function griIndexDistribution(rows: GriAssessmentRow[]): GriIndexDistribution {
   const values = latestPerUser(rows).map((r) => griValue(r.gri_index)).filter((v): v is number => v !== null)
+  // Bands = GRI_ZONES (the one threshold constant, lib/format/gri.ts).
+  const inZone = (key: string) => values.filter((v) => griZone(v)?.key === key).length
   return {
-    excellent:  values.filter((v) => v >= 8).length,
-    strong:     values.filter((v) => v >= 6 && v < 8).length,
-    developing: values.filter((v) => v >= 4 && v < 6).length,
-    critical:   values.filter((v) => v < 4).length,
+    excellent:  inZone('excellent'),
+    strong:     inZone('strong'),
+    developing: inZone('developing'),
+    critical:   inZone('critical'),
     total:      values.length,
   }
 }

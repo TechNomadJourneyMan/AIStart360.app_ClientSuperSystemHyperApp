@@ -3,6 +3,7 @@
 // components/gri/page/GriHero.tsx — шапка страницы GRI: текущий индекс, цель,
 // статус готовности и контекстный CTA. Чисто презентационный.
 import { motion } from 'framer-motion'
+import { formatGri, griZone } from '@/lib/format/gri'
 
 export interface GriHeroProps {
   griIndex: number | null       // null — диагностика ещё не пройдена
@@ -11,11 +12,12 @@ export interface GriHeroProps {
   onStartAssessment: () => void // CTA «Пройти тест» / «Обновить оценку»
 }
 
+/** Status from the one set of GRI zones (lib/format/gri.ts GRI_ZONES, R-036). */
 export function heroStatus(gri: number | null): { label: string; tone: 'ok' | 'warn' | 'bad' | 'none' } {
-  if (gri == null) return { label: 'Диагностика не пройдена', tone: 'none' }
-  if (gri >= 8) return { label: 'Высокая готовность', tone: 'ok' }
-  if (gri >= 6) return { label: 'Средняя готовность', tone: 'warn' }
-  return { label: 'Низкая готовность', tone: 'bad' }
+  const zone = griZone(gri)
+  if (!zone) return { label: 'Диагностика не пройдена', tone: 'none' }
+  const tone = zone.tone === 'green' ? 'ok' : zone.tone === 'amber' ? 'warn' : 'bad'
+  return { label: zone.label, tone }
 }
 
 const TONE_CLASS: Record<string, string> = {
@@ -36,7 +38,7 @@ export default function GriHero({ griIndex, target = 8.5, assessedAt, onStartAss
     >
       <div className="flex items-end gap-3">
         <span className="text-5xl font-bold text-primary tabular-nums">
-          {griIndex == null ? '—' : griIndex.toFixed(1)}
+          {formatGri(griIndex, { empty: '—' })}
         </span>
         <span className="text-sm text-on-surface-variant pb-1.5">/ цель {target}+</span>
       </div>

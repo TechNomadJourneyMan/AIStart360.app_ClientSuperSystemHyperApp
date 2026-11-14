@@ -217,7 +217,25 @@ type ListState =
   | { kind: 'no_company' }
   | { kind: 'ready'; items: ClientReportSummary[] }
 
-export default function PublishedReports() {
+/**
+ * GET /api/v1/reports for the company shown on the page. With `companyId` the
+ * list is exactly that company's (the API checks read access, as the Point A
+ * state does); without it — the caller's default company.
+ */
+export function reportsListUrl(companyId?: string | null): string {
+  const id = companyId?.trim()
+  return id ? `/api/v1/reports?companyId=${encodeURIComponent(id)}` : '/api/v1/reports'
+}
+
+/**
+ * `companyId`: the company of the page (Point A v4 passes the one it shows, so
+ * the report always matches the diagnostics above it). Omitted → the caller's
+ * default company (the legacy /point-a page).
+ * `compact` (Point A v4): while loading — only the #reports anchor; no published
+ * version yet — one quiet line instead of the full card. A published version is
+ * always the full card (PDF, link to the version, the report itself).
+ */
+export default function PublishedReports({ companyId, compact = false }: { companyId?: string | null; compact?: boolean } = {}) {
   const [list, setList] = useState<ListState>({ kind: 'loading' })
   const [openId, setOpenId] = useState<string | null>(null)
   const [details, setDetails] = useState<Record<string, ClientReport | { error: string }>>({})
@@ -225,7 +243,7 @@ export default function PublishedReports() {
   const load = useCallback(async () => {
     setList({ kind: 'loading' })
     try {
-      const res = await fetch('/api/v1/reports', { cache: 'no-store' })
+      const res = await fetch(reportsListUrl(companyId), { cache: 'no-store' })
       const body = await res.json().catch(() => null)
       if (res.status === 404 && body?.error === 'no_company') return setList({ kind: 'no_company' })
       if (!res.ok || !body?.ok) return setList({ kind: 'error', message: body?.error ?? `Ошибка сервера (${res.status})` })
@@ -233,7 +251,7 @@ export default function PublishedReports() {
     } catch {
       setList({ kind: 'error', message: 'Нет связи с сервером' })
     }
-  }, [])
+  }, [companyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -251,9 +269,18 @@ export default function PublishedReports() {
   }
 
   if (list.kind === 'no_company') return null
+  if (compact && list.kind === 'loading') return <div id="reports" className="scroll-mt-24" aria-hidden="true" />
+  if (compact && list.kind === 'ready' && list.items.length === 0) {
+    return (
+      <section id="reports" aria-label="Отчёт по Точке А" className="flex scroll-mt-24 items-center gap-2.5 rounded-2xl border border-white/[0.04] bg-surface-container px-4 py-3 text-xs text-on-surface-variant">
+        <Icon name="schedule" className="text-[18px] text-primary/70" />
+        <span>Отчёт специалиста появится здесь после проверки экспертом — с PDF и ссылкой, которой можно поделиться.</span>
+      </section>
+    )
+  }
 
   return (
-    <section id="reports" aria-label="Отчёт по Точке А" className={CARD}>
+    <section id="reports" aria-label="Отчёт по Точке А" className={cn(CARD, 'scroll-mt-24')}>
       <p className={cn(EYEBROW, 'mb-2')}>Отчёт специалиста</p>
       <h2 className="font-headline text-lg font-bold text-on-surface">Отчёт по Точке А</h2>
       <p className="mt-1 max-w-2xl text-xs leading-relaxed text-on-surface-variant">
@@ -271,7 +298,7 @@ export default function PublishedReports() {
         )}
         {list.kind === 'ready' && list.items.length === 0 && (
           <p className="rounded-xl border border-white/[0.05] bg-surface-container-low px-4 py-3 text-sm text-on-surface-variant">
-            Отчёт ещё не опубликован. Когда специалист проверит результаты диагностики, здесь появится отчёт и PDF для скачивания.
+            Отчёт ещё не опубликован. Когда специалист проверит результаты диагностики, здесь появится отчёт, PDF для скачивания и ссылка, которой можно поделиться.
           </p>
         )}
         {list.kind === 'ready' && list.items.map((r) => {

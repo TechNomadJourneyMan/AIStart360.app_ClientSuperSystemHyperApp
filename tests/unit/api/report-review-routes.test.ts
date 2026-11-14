@@ -16,6 +16,8 @@ vi.mock('@/lib/expert-auth', async () => {
   return {
     EXPERT_ROLES: new Set(['expert', 'admin', 'super_admin']),
     resolveExpert: async () => s.auth,
+    // The version's company is the expert's client (scope: tests/unit/access/actor-scope-routes.test.ts).
+    guardExpertReport: async () => null,
     expertBlockResponse: (block: string) => NextResponse.json({ ok: false, code: block === 'step_up' ? 'MFA_STEP_UP_REQUIRED' : block }, { status: block === 'unauthenticated' ? 401 : 403 }),
   }
 })

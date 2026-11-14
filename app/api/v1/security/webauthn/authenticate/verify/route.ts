@@ -12,8 +12,10 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getWebAuthnConfig } from '@/lib/webauthn/config'
 import { getCredentialForUser, updateCredentialCounter } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { issueStepUp, stepUpFailure } from '@/lib/mfa/step-up-session'
 import { logActivity } from '@/lib/activity/log'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 // POST /api/v1/security/webauthn/authenticate/verify
 // Body: { response: AuthenticationResponseJSON }
@@ -22,6 +24,9 @@ export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(request, user, 'webauthn.authenticate')
+  if (impersonated) return impersonated
 
   if (await isRateLimitedKey(user.id, 'webauthn-auth-verify', { max: 10, windowMs: 5 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })
@@ -72,7 +77,20 @@ export async function POST(request: Request) {
   }
 
   await updateCredentialCounter(cred.id, verification.authenticationInfo.newCounter)
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)
+  // R-132: the proof is bound to this Supabase session (a new sign-in is a new
+  // session and needs the second factor again).
+  const sessionKey = currentStepUpSessionKey()
+  if (!sessionKey) {
+    return NextResponse.json({ ok: false, error: 'Сессия не найдена. Войдите заново.' }, { status: 401 })
+  }
+  // SR-01 (143): recorded for the database first; no record → no cookie.
+  try {
+    await issueStepUp(jar, user.id, sessionKey, 'passkey')
+  } catch (err) {
+    console.error('[webauthn/authenticate] step-up record failed', err instanceof Error ? err.message : err)
+    const { status, error } = stepUpFailure(err)
+    return NextResponse.json({ ok: false, error }, { status })
+  }
 
   await logActivity({
     userId: user.id, action: 'security.2fa_passed', category: 'security',

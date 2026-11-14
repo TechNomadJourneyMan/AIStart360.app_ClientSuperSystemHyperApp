@@ -27,6 +27,8 @@ vi.mock('@/lib/api-identity', () => ({
   getSessionUser: async () => s.user,
   getSessionRole: async () => s.role,
   isStaffRole: (r: string | null) => ['admin', 'super_admin', 'expert', 'manager', 'analyst'].includes(r ?? ''),
+  // Staff in scope (migration 140 rule + scope: tests/unit/access/actor-scope-routes.test.ts).
+  mayActOnUser: async (_sb: unknown, caller: string, target: string) => caller === target || ['admin', 'super_admin', 'expert'].includes(s.role ?? ''),
 }))
 vi.mock('@/lib/tenancy', () => ({
   resolveTenant: async ({ companyId }: { companyId: string }) => (s.tenantRole && s.user

@@ -11,14 +11,18 @@ import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity, setMfaMetadataFlag } from '@/lib/mfa/store'
-import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
+import { MFA_COOKIE_CLEAR_OPTIONS, MFA_COOKIE_NAME, currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { forgetStepUpSession } from '@/lib/mfa/step-up-session'
+import { guardFactorChange, lastFactorRefusal } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
 
 const SCHEMA = z.object({ code: z.string().trim().min(6).max(12) })
 
 // POST /api/v1/security/2fa/disable
-// Turn off 2FA. Requires a current TOTP code or a valid backup code.
+// Turn off 2FA. Requires the step-up of this session (R-003) AND a current
+// TOTP code or a valid backup code. Staff who must keep 2FA cannot switch off
+// their only factor.
 export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
@@ -30,6 +34,9 @@ export async function POST(request: Request) {
 
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
+
+  const guard = await guardFactorChange(request, user, 'totp.disable')
+  if (!guard.ok) return guard.response
 
   const row = await getUserSecurity(user.id)
   if (!row?.totp_enabled) return NextResponse.json({ ok: false, error: 'not_enabled' }, { status: 400 })
@@ -45,6 +52,9 @@ export async function POST(request: Request) {
   if (!ok) ok = (await findBackupCodeIndex(parsed.data.code, row.backup_codes)) >= 0
   if (!ok) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
 
+  const refused = await lastFactorRefusal(request, user, { totp: false, passkeys: guard.state.passkeys, backupCodes: 0 }, 'totp.disable')
+  if (refused) return refused
+
   await upsertUserSecurity(user.id, {
     totp_enabled: false,
     totp_secret_enc: null,
@@ -54,7 +64,9 @@ export async function POST(request: Request) {
   await setMfaMetadataFlag(user.id, false)
 
   const jar = await cookies()
-  jar.set(MFA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+  jar.set(MFA_COOKIE_NAME, '', MFA_COOKIE_CLEAR_OPTIONS)
+  // SR-01 (143): the database record of this step-up goes with the cookie.
+  await forgetStepUpSession(currentStepUpSessionKey())
 
   await logActivity({
     userId: user.id,

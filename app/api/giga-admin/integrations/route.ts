@@ -5,6 +5,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { filterByScope, scopedCompanyIds } from '@/lib/admin/client-scope'
 import { providerCatalog } from '@/lib/integrations/registry'
 import { credentialsStorageReady } from '@/lib/integrations/credentials'
 import { listConnectionsForStaff } from '@/lib/integrations/store'
@@ -18,7 +19,8 @@ export async function GET(req: NextRequest) {
   const companyId = req.nextUrl.searchParams.get('companyId')
   if (companyId && !/^[A-Za-z0-9_-]{1,64}$/.test(companyId)) return NextResponse.json({ ok: false, error: 'Неверный идентификатор компании' }, { status: 400 })
   try {
-    const items = await listConnectionsForStaff({ companyId, limit: 300 })
+    // Client scope 'assigned' (R-047): connections of the actor's clients only.
+    const items = filterByScope(await listConnectionsForStaff({ companyId, limit: 300 }), await scopedCompanyIds(guard.actor), (i) => i.companyId)
     return NextResponse.json({
       ok: true,
       data: { items, catalog: providerCatalog(), encryptionReady: credentialsStorageReady(), canEdit: guard.actor.permissions.includes('company.edit') },

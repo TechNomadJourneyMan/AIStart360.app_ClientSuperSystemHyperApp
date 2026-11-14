@@ -9,10 +9,14 @@ vi.mock('framer-motion', () => ({
 import { heroStatus } from '@/components/gri/page/GriHero'
 
 describe('heroStatus', () => {
+  // R-036 / BI-60: the hero uses the one set of GRI zones (lib/format/gri.ts):
+  // < 4 critical, 4–6 developing, 6–8 strong, ≥ 8 excellent.
   it('maps GRI to readiness tone', () => {
     expect(heroStatus(null).tone).toBe('none')
-    expect(heroStatus(8.2).tone).toBe('ok')
-    expect(heroStatus(7).tone).toBe('warn')
-    expect(heroStatus(4.9).tone).toBe('bad')
+    expect(heroStatus(0).tone).toBe('none')
+    expect(heroStatus(8.2)).toEqual({ label: 'Отлично', tone: 'ok' })
+    expect(heroStatus(7)).toEqual({ label: 'Устойчиво', tone: 'ok' })
+    expect(heroStatus(4.9)).toEqual({ label: 'Развивается', tone: 'warn' })
+    expect(heroStatus(3.9)).toEqual({ label: 'Критично', tone: 'bad' })
   })
 })

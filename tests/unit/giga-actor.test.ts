@@ -33,6 +33,15 @@ vi.mock('@/lib/supabase-server', () => ({
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: table }) }))
 vi.mock('@/lib/db', () => ({ prisma: prismaMock }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (key: string) => db.settings[key] ?? false }))
+// R-132: the step-up proof is bound to the Supabase session of the request,
+// read from its auth cookie (lib/mfa/session-binding.ts).
+const SESSION_ID = '11111111-1111-4111-8111-111111111111'
+vi.mock('next/headers', () => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const token = `${b64({ alg: 'HS256' })}.${b64({ sub: 'admin-1', session_id: '11111111-1111-4111-8111-111111111111' })}.sig`
+  const auth = { name: 'sb-127-auth-token', value: `base64-${b64({ access_token: token })}` }
+  return { cookies: () => ({ getAll: () => [auth], get: (n: string) => (n === auth.name ? auth : undefined) }), headers: () => new Headers() }
+})
 
 import { getGigaActor, requireGiga, signStaffCookie, type GigaActor } from '@/lib/admin/giga-actor'
 import { verifyToken } from '@/lib/security/signed-token'
@@ -60,9 +69,10 @@ describe('getGigaActor', () => {
     db.settings = { staff_require_mfa: false }
   })
 
-  it('accepts an approved personal super_admin session', async () => {
+  it('accepts an approved personal super_admin session (staff_roles row)', async () => {
     db.getUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@example.com' } } })
     db.profile = { role: 'super_admin', status: 'approved' }
+    db.staff = { role: 'super_admin' }
 
     const actor = await getGigaActor(request())
     expect(actor).toMatchObject({ id: 'admin-1', kind: 'session', email: 'admin@example.com', role: 'super_admin' })
@@ -80,11 +90,20 @@ describe('getGigaActor', () => {
     expect(actor?.permissions).not.toContain('settings.manage')
   })
 
+  it('R-002: an approved super_admin PROFILE without a staff_roles row is not staff', async () => {
+    db.getUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@example.com' } } })
+    db.profile = { role: 'super_admin', status: 'approved' }
+    db.staff = null
+
+    await expect(getGigaActor(request())).resolves.toBeNull()
+  })
+
   it.each(['pending_approval', 'rejected', 'blocked', 'archived'])(
     'rejects a personal super_admin whose status is %s',
     async (status) => {
       db.getUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@example.com' } } })
       db.profile = { role: 'super_admin', status }
+      db.staff = { role: 'super_admin' }
 
       await expect(getGigaActor(request())).resolves.toBeNull()
     },
@@ -143,8 +162,11 @@ describe('E2E auth seam (test-only)', () => {
     expect(actor).toMatchObject({ id: USER, kind: 'session', role: 'analyst', email: 'e2e@x.kz' })
     expect(actor?.permissions).not.toContain('settings.manage')
 
-    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: null }])
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: 'super_admin' }])
     expect(await getGigaActor(req)).toMatchObject({ id: USER, role: 'super_admin' })
+    // R-002: the profile role alone admits no one.
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: null }])
+    expect(await getGigaActor(req)).toBeNull()
   })
 
   it('admits nobody whose profile is not approved or who has no staff role', async () => {
@@ -188,7 +210,7 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
   beforeEach(() => {
     vi.resetAllMocks()
     db.profile = { role: 'super_admin', status: 'approved' }
-    db.staff = null
+    db.staff = { role: 'super_admin' }
     db.security = null
     db.securityError = null
     db.profileError = null
@@ -209,10 +231,10 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
 
   it('the signed step-up cookie of the same user admits the session', async () => {
     session({ app: { mfa_totp: true } })
-    const actor = await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('admin-1')}`]))
+    const actor = await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('admin-1', SESSION_ID)}`]))
     expect(actor).toMatchObject({ id: 'admin-1', kind: 'session' })
     // Another user's proof does not count.
-    expect(await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('someone-else')}`]))).toBeNull()
+    expect(await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('someone-else', SESSION_ID)}`]))).toBeNull()
   })
 
   it('clearing the user-editable flag does not bypass the gate: enrolment is read from the database', async () => {
@@ -239,6 +261,7 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
     expect(guard.staff).toBe(true)
     // A plain client session is not staff.
     db.profile = { role: 'client', status: 'approved' }
+    db.staff = null
     expect((await requireGiga(request(), 'users.view')).staff).toBe(false)
   })
 

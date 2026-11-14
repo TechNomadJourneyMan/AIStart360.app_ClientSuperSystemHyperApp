@@ -6,8 +6,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// A staff admin sees every client; the «assigned only» list of an expert (SR-03)
+// is covered by tests/unit/access/actor-scope-routes.test.ts.
 vi.mock('@/lib/expert-auth', () => ({
-  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'expert', email: null } }),
+  expertSeesAllClients: () => true,
+  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'admin', email: null, clientScope: 'all' } }),
   expertBlockResponse: () => new Response(null, { status: 403 }),
 }))
 

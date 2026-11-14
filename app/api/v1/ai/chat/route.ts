@@ -5,6 +5,8 @@ export const maxDuration = 60
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
+import { saveChatTurn } from '@/lib/chat/turn-store'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { buildAssistantContext } from '@/lib/assistant/context'
@@ -274,11 +276,16 @@ async function persist(
     }
     if (!convId) return null
 
-    await sb.from('ai_messages').insert([
-      { conversation_id: convId, role: 'user', content: userMessage },
-      { conversation_id: convId, role: 'assistant', content: assistant.content, grounding: assistant.grounding, validation: assistant.validation },
-    ])
-    await sb.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
+    // R-228: the assistant's reply is written by the server (the user may insert only role = 'user',
+    // migration 141); saveChatTurn re-checks that the conversation is the caller's.
+    await saveChatTurn(createServiceClient(), {
+      conversationId: convId,
+      userId,
+      messages: [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: assistant.content, grounding: assistant.grounding, validation: assistant.validation },
+      ],
+    })
     return convId
   } catch {
     return null

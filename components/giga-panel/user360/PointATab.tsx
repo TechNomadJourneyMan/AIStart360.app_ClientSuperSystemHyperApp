@@ -621,7 +621,7 @@ function LegacyPointA({ userId }: { userId: string }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Точка А (диагностика)" value={round(diag?.overallScore ?? null)} hint={diag?.calculatedAt ? `рассчитана ${fmtDate(diag.calculatedAt)}${delta != null ? ` · ${delta > 0 ? '+' : ''}${delta} к прошлому` : ''}` : 'не рассчитана'} tone="green" />
+        <StatTile label="Точка А (диагностика)" value={round(diag?.overallScore ?? null)} hint={diag && diag.overallScore == null ? 'Балл появится, когда данных хватит' : diag?.calculatedAt ? `рассчитана ${fmtDate(diag.calculatedAt)}${delta != null ? ` · ${delta > 0 ? '+' : ''}${delta} к прошлому` : ''}` : 'не рассчитана'} tone="green" />
         <StatTile label="Индекс здоровья" value={round(diag?.healthIndex ?? null)} hint={diag?.stage ? `стадия: ${STAGE[diag.stage] ?? diag.stage}` : undefined} tone="blue" />
         <StatTile label="GRI (текущий замер)" value={d.gri ? d.gri.index.toFixed(1) : '—'} hint={d.gri ? fmtDate(d.gri.assessedAt) : 'тест не пройден'} tone="violet" />
         <StatTile label="Расчётов Точки А" value={d.history.length} hint={diag?.aiStatus && diag.aiStatus !== 'completed' ? `разбор ИИ: ${diag.aiStatus}` : undefined} tone="amber" />
@@ -643,7 +643,7 @@ function LegacyPointA({ userId }: { userId: string }) {
             {diag.blocks.map((b) => (
               <Panel key={b.id} title={b.label} actions={
                 <span className="flex items-center gap-2">
-                  <span className="text-lg font-bold tabular-nums text-slate-100">{round(b.score)}</span>
+                  <span className="text-lg font-bold tabular-nums text-slate-100">{b.score == null ? 'нет данных' : round(b.score)}</span>
                   {b.status && <Badge tone={STATUS[b.status]?.tone}>{STATUS[b.status]?.label ?? b.status}</Badge>}
                 </span>
               }>

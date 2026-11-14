@@ -14,7 +14,10 @@ import { listReviewQueue, type ReviewItem, type ReviewKind } from '@/lib/reports
 import { getReportVersion, listReportVersions } from '@/lib/reports/versions'
 import { reviewAiItem, transitionReportVersion, REPORT_WRONG_STATUS } from '@/lib/admin/staff-actions'
 import { cut, dt, esc, pageOf, pagerRow, pct, PAGE_SIZE } from '../ui'
-import { auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { adminScope, auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { companyAllowed, NOT_ASSIGNED } from '@/lib/telegram/brain/scope'
+
+const NOT_ASSIGNED_TEXT = `⛔ ${NOT_ASSIGNED}.`
 
 const KIND: Record<string, ReviewKind> = { f: 'finding', r: 'recommendation' }
 const KIND_CODE: Record<ReviewKind, string> = { finding: 'f', recommendation: 'r' }
@@ -31,12 +34,14 @@ export async function showReportsMenu(ctx: AdminCtx): Promise<void> {
   await ctx.show('📄 <b>Отчёты</b>', rows)
 }
 
-async function reviewQueue(): Promise<ReviewItem[]> {
-  return listReviewQueue({ limit: 200 })
+/** The AI review queue of the person's clients (SR-17: staff limited to assigned clients see only theirs). */
+async function reviewQueue(ctx: AdminCtx): Promise<ReviewItem[]> {
+  const scope = await adminScope(ctx)
+  return (await listReviewQueue({ limit: 200 })).filter((i) => companyAllowed(scope, i.company_id))
 }
 
 async function showReviewQueue(ctx: AdminCtx, page: number): Promise<void> {
-  const items = await reviewQueue()
+  const items = await reviewQueue(ctx)
   const slice = items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const lines = [`🧪 <b>Выводы ИИ на проверке: ${items.length}</b>`, 'Пока человек не проверил, клиент их не видит.']
   const rows = slice.map((i) => [ctx.button(`${i.kind === 'finding' ? (i.severity === 'critical' ? '🚨' : '🔎') : '💡'} ${cut(i.title, 30)} · ${cut(i.company_name ?? '', 14)}`, 'rw.c', KIND_CODE[i.kind], i.id)])
@@ -46,7 +51,7 @@ async function showReviewQueue(ctx: AdminCtx, page: number): Promise<void> {
 
 async function showReviewItem(ctx: AdminCtx, code: string, id: string): Promise<void> {
   const kind = KIND[code]
-  const item = kind && UUID_RE.test(id) ? (await reviewQueue()).find((i) => i.kind === kind && i.id === id) : null
+  const item = kind && UUID_RE.test(id) ? (await reviewQueue(ctx)).find((i) => i.kind === kind && i.id === id) : null
   if (!item) return void (await ctx.show('Элемент уже проверен или не найден.', [[ctx.button('‹ К очереди', 'rw.l', 0)]]))
   const lines = [
     `${item.kind === 'finding' ? '🔎 Гипотеза ИИ' : '💡 Рекомендация модели'} · ${esc(item.company_name ?? item.company_id)}`,
@@ -67,6 +72,9 @@ async function showReviewItem(ctx: AdminCtx, code: string, id: string): Promise<
 async function review(ctx: AdminCtx, code: string, id: string, decision: 'approve' | 'dismiss', reason: string | null): Promise<void> {
   const kind = KIND[code]
   if (!kind || !UUID_RE.test(id)) return
+  if ((await adminScope(ctx)).kind !== 'all' && !(await reviewQueue(ctx)).some((i) => i.kind === kind && i.id === id)) {
+    return void (await ctx.show('Элемент уже проверен или не найден.', [[ctx.button('‹ К очереди', 'rw.l', 0)]]))
+  }
   const res = await reviewAiItem({ kind, id, decision, reason, actorId: ctx.principal.userId, audit: auditFor(ctx) })
   const text = res.ok
     ? (decision === 'approve' ? '✅ Показано клиенту — войдёт в следующую версию отчёта.' : '🙈 Скрыто.')
@@ -79,7 +87,10 @@ async function review(ctx: AdminCtx, code: string, id: string, decision: 'approv
 
 async function showVersions(ctx: AdminCtx, companyId: string, page: number): Promise<void> {
   // New versions wait for the expert (in_review, 103): decided in the expert bot, the expert cabinet or GIGA.
-  const all = await listReportVersions({ companyId: companyId === '-' ? null : companyId, status: companyId === '-' ? 'in_review' : null, limit: 200 })
+  const scope = await adminScope(ctx)
+  if (companyId !== '-' && !companyAllowed(scope, companyId)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
+  const all = (await listReportVersions({ companyId: companyId === '-' ? null : companyId, status: companyId === '-' ? 'in_review' : null, limit: 200 }))
+    .filter((v) => companyAllowed(scope, v.company_id))
   const slice = all.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const head = companyId === '-' ? `🧐 <b>Версии на проверке эксперта: ${all.length}</b>\nРешение («Подтвердить» / «Нужны правки») — в боте экспертов, кабинете эксперта или GIGA → Отчёты.` : `📄 <b>Версии отчётов</b>${all[0]?.company_name ? ` · ${esc(all[0].company_name)}` : ''}`
   const rows = slice.map((v) => [ctx.button(`${(VERSION_STATUS[v.status] ?? v.status).split(' ')[0]} ${cut(v.company_name ?? '', 20)} · ${REPORT_TYPE_LABELS[v.report_type] ?? v.report_type} v${v.version}`, 'rv.c', v.id)])
@@ -90,6 +101,7 @@ async function showVersions(ctx: AdminCtx, companyId: string, page: number): Pro
 async function showVersion(ctx: AdminCtx, id: string): Promise<void> {
   const v = UUID_RE.test(id) ? await getReportVersion(id) : null
   if (!v) return void (await ctx.show('Версия отчёта не найдена.'))
+  if (!companyAllowed(await adminScope(ctx), v.company_id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
   const lines = [
     `📄 <b>${esc(v.title)}</b>`,
     `${esc(v.company_name ?? v.company_id)} · ${esc(REPORT_TYPE_LABELS[v.report_type] ?? v.report_type)} · версия ${v.version}`,
@@ -136,6 +148,7 @@ export const reportEntries: Record<string, AdminEntry> = {
     async run(ctx, [id]) {
       const v = UUID_RE.test(id) ? await getReportVersion(id) : null
       if (!v) return void (await ctx.show('Версия отчёта не найдена.'))
+      if (!companyAllowed(await adminScope(ctx), v.company_id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
       await ctx.confirm(`🚀 Опубликовать клиенту «${esc(v.title)}» (версия ${v.version}, ${esc(v.company_name ?? v.company_id)})? Предыдущая опубликованная версия будет заменена.`, 'rv.pub', [id])
     },
   },
@@ -146,6 +159,8 @@ export const reportConfirmed: Record<string, AdminEntry> = {
   'rv.pub': {
     perm: 'reports.publish',
     async run(ctx, [id]) {
+      const v = UUID_RE.test(id) ? await getReportVersion(id) : null
+      if (v && !companyAllowed(await adminScope(ctx), v.company_id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
       const res = await transitionReportVersion({ id, action: 'publish', reason: null, actorId: ctx.principal.userId, audit: auditFor(ctx) })
       const text = res.ok
         ? `✅ Опубликовано: «${esc(res.title)}», версия ${res.version}.`

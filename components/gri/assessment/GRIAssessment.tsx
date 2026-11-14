@@ -8,6 +8,7 @@ import { useEntitlements } from '@/hooks/useEntitlements'
 import { UpgradeGate } from '@/components/access/UpgradeGate'
 import { createClient } from '@/lib/supabase/client'
 import { computeGriIndex, computeSectionAvgs, scoresFingerprint } from '@/lib/gri-assessment/score'
+import { formatGri, griTone, griZone, GRI_TONE_HEX } from '@/lib/format/gri'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
   ssr: false,
@@ -157,9 +158,13 @@ const VALUE_PROPS = [
 
 const ONBOARDING_STEPS = ['Контакты', 'О бизнесе', 'Самооценка'] as const
 
-// Tone for a 0–10 section average — matches GriResultPanel (≥8 primary / ≥6 amber / else red).
+// Tone for a 0–10 value — the one set of GRI zones (lib/format/gri.ts GRI_ZONES, R-036).
+function toneOf(v: number): 'red' | 'amber' | 'green' {
+  return griTone(v) ?? 'red'
+}
 function avgBarTone(v: number) {
-  return v >= 8 ? 'bg-primary' : v >= 6 ? 'bg-amber-400' : 'bg-red-400'
+  const t = toneOf(v)
+  return t === 'green' ? 'bg-primary' : t === 'amber' ? 'bg-amber-400' : 'bg-red-400'
 }
 
 // ── Presentational helpers ─────────────────────────────────────────────
@@ -201,7 +206,7 @@ function IndexGauge({ value, reduce }: { value: number; reduce: boolean }) {
   const r = 52
   const circ = 2 * Math.PI * r
   const offset = circ * (1 - pct / 100)
-  const color = value >= 8 ? '#6effc0' : value >= 5 ? '#ffbd60' : '#ffb4ab'
+  const color = GRI_TONE_HEX[toneOf(value)]
   return (
     <div className="relative mx-auto h-40 w-40 sm:h-44 sm:w-44">
       <div
@@ -227,7 +232,7 @@ function IndexGauge({ value, reduce }: { value: number; reduce: boolean }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-headline text-5xl font-black leading-none" style={{ color }}>
-          {value.toFixed(1)}
+          {formatGri(value, { empty: '—' })}
         </span>
         <span className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-on-surface-variant">
           из 10
@@ -251,7 +256,8 @@ function AssessmentScale({
       <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-10 sm:gap-2">
         {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
           const active = value === n
-          const tone = n <= 3 ? 'red' : n <= 6 ? 'yellow' : 'green'
+          const t = toneOf(n)
+          const tone = t === 'amber' ? 'yellow' : t
           const activeClass =
             tone === 'red'
               ? 'bg-red-400 text-[#3a0000] border-red-300'
@@ -284,10 +290,11 @@ function AssessmentScale({
 }
 
 function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
+  const tone = toneOf(sectionAvg)
   const t =
-    sectionAvg >= 7
+    tone === 'green'
       ? { label: 'Сильная зона', text: 'text-primary', bg: 'border-primary/25 bg-primary/[0.06]', dot: 'bg-primary' }
-      : sectionAvg >= 4
+      : tone === 'amber'
         ? { label: 'Зона риска', text: 'text-amber-300', bg: 'border-amber-400/25 bg-amber-400/[0.06]', dot: 'bg-amber-400' }
         : { label: 'Критическая зона', text: 'text-red-300', bg: 'border-red-400/25 bg-red-400/[0.06]', dot: 'bg-red-400' }
   return (
@@ -297,7 +304,7 @@ function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
         <div className={`text-xs font-semibold ${t.text}`}>{t.label}</div>
         <div className="mt-0.5 text-xs text-on-surface-variant">
           Средний балл по разделу:{' '}
-          <span className="font-semibold text-on-surface">{sectionAvg.toFixed(1)}</span>
+          <span className="font-semibold text-on-surface">{formatGri(sectionAvg, { empty: '—' })}</span>
         </div>
       </div>
     </div>
@@ -931,7 +938,7 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
                   <div className="flex items-center gap-3">
                     {isDone && (
                       <div className="text-right">
-                        <div className="font-headline text-xl font-black text-on-surface">{avg.toFixed(1)}</div>
+                        <div className="font-headline text-xl font-black text-on-surface">{formatGri(avg, { empty: '—' })}</div>
                         <div className="font-mono text-[10px] uppercase text-on-surface-variant">балл</div>
                       </div>
                     )}
@@ -1111,7 +1118,7 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
               <span className="material-symbols-outlined text-primary" aria-hidden>task_alt</span>
               <p className="text-sm text-on-surface">
                 Раздел завершён · средний балл{' '}
-                <span className="font-bold text-on-surface">{avg.toFixed(1)}</span>
+                <span className="font-bold text-on-surface">{formatGri(avg, { empty: '—' })}</span>
               </p>
             </div>
             <button
@@ -1181,10 +1188,11 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
       { label: '61–90 дней', items: weakest.slice(4, 6) },
     ]
 
+    const statusTone = toneOf(griIndex)
     const status =
-      griIndex >= 8
+      statusTone === 'green'
         ? { text: 'text-primary', dot: 'bg-primary', chip: 'border-primary/25 bg-primary/[0.06]', label: 'Отличная готовность', desc: 'Бизнес готов к агрессивному росту — усиливайте лидирующие блоки.' }
-        : griIndex >= 5
+        : statusTone === 'amber'
           ? { text: 'text-amber-300', dot: 'bg-amber-400', chip: 'border-amber-400/25 bg-amber-400/[0.06]', label: 'Средняя готовность', desc: 'Есть риски. Закройте красные зоны, прежде чем ускоряться.' }
           : { text: 'text-red-300', dot: 'bg-red-400', chip: 'border-red-400/25 bg-red-400/[0.06]', label: 'Критическое состояние', desc: 'Масштабирование невозможно без изменений в слабых блоках.' }
 
@@ -1231,7 +1239,7 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
               <div className="space-y-4 text-center sm:text-left">
                 <div className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 ${status.chip}`}>
                   <span className={`h-2 w-2 rounded-full ${status.dot}`} />
-                  <span className={`text-sm font-bold ${status.text}`}>{status.label}</span>
+                  <span className={`text-sm font-bold ${status.text}`}>{griZone(griIndex)?.label ?? status.label}</span>
                 </div>
                 <p className="max-w-md text-sm leading-relaxed text-on-surface-variant">{status.desc}</p>
                 <div className="flex items-center justify-center gap-6 sm:justify-start">
@@ -1240,7 +1248,7 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
                       Ваш индекс
                     </div>
                     <div className={`font-headline text-2xl font-black ${status.text}`}>
-                      {griIndex.toFixed(1)}
+                      {formatGri(griIndex, { empty: '—' })}
                     </div>
                   </div>
                   <div className="h-10 w-px bg-white/[0.1]" />
@@ -1279,7 +1287,7 @@ function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
                     />
                   </span>
                   <span className="w-8 text-right font-mono text-sm tabular-nums text-on-surface">
-                    {sec.avg.toFixed(1)}
+                    {formatGri(sec.avg, { empty: '—' })}
                   </span>
                 </li>
               ))}

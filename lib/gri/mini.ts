@@ -9,6 +9,7 @@
  */
 
 import { calculateGri, type GriAnswers } from './logic'
+import { GRI_ZONES, griFromPercent, griZone, type GriTone, type GriZone } from '@/lib/format/gri'
 
 /** The 6 simple inputs collected by the public wizard. */
 export interface MiniGriAnswers {
@@ -29,13 +30,23 @@ export interface MiniGriAnswers {
 export interface MiniGriBlock {
   key: 'businessModel' | 'cash' | 'product'
   label: string
+  /** Engine score, 0–100 (stored with the lead, kept for compatibility). */
   score: number
+  /** The same score on the GRI scale 0–10 (what the visitor sees), R-036. */
+  index: number
 }
 
 export interface MiniGriResult {
-  /** Частичный общий балл (среднее по 3 доступным блокам). */
+  /** Частичный общий балл (среднее по 3 доступным блокам), 0–100 — хранится в лиде. */
   overall: number
+  /** Тот же балл на шкале GRI 0–10 (показывается посетителю), R-036. */
+  index: number
   blocks: MiniGriBlock[]
+}
+
+/** 0–100 engine score → GRI 0–10 (explicit, one decimal). */
+export function miniScoreToGri(score: number): number {
+  return griFromPercent(clamp(score, 0, 100)) ?? 0
 }
 
 const BLOCK_LABELS: Record<MiniGriBlock['key'], string> = {
@@ -96,24 +107,31 @@ export function computeMiniGri(a: MiniGriAnswers): MiniGriResult {
   const demandBonus = a.steadyDemand ? 12 : 0
   const productScore = clamp(gri.productScore + demandBonus, 0, 100)
 
-  const blocks: MiniGriBlock[] = [
-    { key: 'businessModel', label: BLOCK_LABELS.businessModel, score: clamp(gri.businessModelScore, 0, 100) },
-    { key: 'cash', label: BLOCK_LABELS.cash, score: clamp(gri.cashScore, 0, 100) },
-    { key: 'product', label: BLOCK_LABELS.product, score: Math.round(productScore) },
+  const raw = [
+    { key: 'businessModel' as const, label: BLOCK_LABELS.businessModel, score: clamp(gri.businessModelScore, 0, 100) },
+    { key: 'cash' as const, label: BLOCK_LABELS.cash, score: clamp(gri.cashScore, 0, 100) },
+    { key: 'product' as const, label: BLOCK_LABELS.product, score: Math.round(productScore) },
   ]
+  const blocks: MiniGriBlock[] = raw.map((b) => ({ ...b, index: miniScoreToGri(b.score) }))
 
   const overall = Math.round(
     blocks.reduce((sum, b) => sum + b.score, 0) / blocks.length
   )
 
-  return { overall, blocks }
+  return { overall, index: miniScoreToGri(overall), blocks }
 }
 
 /** Zone helper shared by UI + (potentially) the API for copy. */
-export type MiniGriZone = 'red' | 'amber' | 'green'
+export type MiniGriZone = GriTone
+
+/**
+ * The GRI zone of a 0–100 Mini-GRI score — the same thresholds as everywhere
+ * (lib/format/gri.ts GRI_ZONES, on the 0–10 scale). A 0 is the worst zone.
+ */
+export function miniGriZone(score: number): GriZone {
+  return griZone(miniScoreToGri(score)) ?? GRI_ZONES[0]
+}
 
 export function zoneForScore(score: number): MiniGriZone {
-  if (score < 40) return 'red'
-  if (score <= 70) return 'amber'
-  return 'green'
+  return miniGriZone(score).tone
 }

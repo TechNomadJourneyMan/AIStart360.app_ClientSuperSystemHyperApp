@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { formatGri, griTone } from '@/lib/format/gri'
 import {
   Search,
   RefreshCw,
@@ -28,7 +29,7 @@ function ScoreRing({ score, size = 64 }: { score: number; size?: number }) {
   const circ = 2 * Math.PI * r
   const fill = ((score ?? 0) / 10) * circ
   const color =
-    score >= 7.0 ? '#10b981' : score >= 4.5 ? '#f59e0b' : '#ef4444'
+    griTone(score) === 'green' ? '#10b981' : griTone(score) === 'amber' ? '#f59e0b' : '#ef4444'
 
   return (
     <svg width={size} height={size} className="rotate-[-90deg]">
@@ -75,12 +76,13 @@ function churnIcon(level: string) {
 }
 
 function ScoreBar({ label, score }: { label: string; score: number }) {
-  const color = score >= 7.0 ? 'bg-emerald-500' : score >= 4.5 ? 'bg-amber-500' : 'bg-red-500'
+  const t = griTone(score)
+  const color = t === 'green' ? 'bg-emerald-500' : t === 'amber' ? 'bg-amber-500' : t === 'red' ? 'bg-red-500' : 'bg-slate-600'
   return (
     <div>
       <div className="flex justify-between mb-1">
         <span className="text-[10px] text-slate-500">{label}</span>
-        <span className="text-[10px] font-semibold text-slate-300">{(score || 0).toFixed(1)}</span>
+        <span className="text-[10px] font-semibold text-slate-300">{formatGri(score, { empty: '—' })}</span>
       </div>
       <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
         <motion.div
@@ -128,7 +130,7 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
             <ScoreRing score={score} size={44} />
             <span className="absolute inset-0 flex items-center justify-center
               text-[11px] font-bold text-slate-200 rotate-90">
-              {(score || 0).toFixed(1)}
+              {formatGri(score, { empty: '—' })}
             </span>
           </div>
         )}
@@ -256,7 +258,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
                   <ScoreRing score={gri.score} size={52} />
                   <span className="absolute inset-0 flex items-center justify-center
                     text-sm font-bold text-slate-100 rotate-90">
-                    {(gri.score || 0).toFixed(1)}
+                    {formatGri(gri.score, { empty: '—' })}
                   </span>
                 </div>
               </div>

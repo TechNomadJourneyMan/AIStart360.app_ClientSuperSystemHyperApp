@@ -130,7 +130,8 @@ async function linkedStaff(linkedBefore: Date | null): Promise<Recipient[]> {
       AND (${linkedBefore}::timestamptz IS NULL OR l.linked_at <= ${linkedBefore}::timestamptz)`
   return rows
     .map((r) => {
-      const role: StaffRole | null = r.profile_role === 'super_admin' ? 'super_admin' : isStaffRole(r.staff_role) ? r.staff_role : null
+      // Staff only from staff_roles (migration 140, SR-08): a legacy profiles.role super_admin alone is not staff.
+      const role: StaffRole | null = isStaffRole(r.staff_role) ? r.staff_role : null
       return { userId: r.user_id, chatId: r.chat_id, minLevel: r.min_level, role, mutedUntil: r.muted_until }
     })
     .filter((r) => r.role !== null)
@@ -331,7 +332,8 @@ async function notifyStaffWhatsApp(
   try {
     const isApproval = n.level === 'APPROVAL_REQUIRED'
     const people = (await optedInRecipients('staff', { verifiedBefore: event.duplicate ? event.createdAt : null }))
-      .map((r) => ({ ...r, staffRoleResolved: (r.role === 'super_admin' ? 'super_admin' : isStaffRole(r.staffRole) ? r.staffRole : null) as StaffRole | null }))
+      // Staff only from staff_roles (migration 140, SR-08).
+      .map((r) => ({ ...r, staffRoleResolved: (isStaffRole(r.staffRole) ? r.staffRole : null) as StaffRole | null }))
       .filter((r) => r.staffRoleResolved !== null)
       .filter((r) => !n.audienceUserIds || n.audienceUserIds.includes(r.userId))
       .filter((r) => (isApproval

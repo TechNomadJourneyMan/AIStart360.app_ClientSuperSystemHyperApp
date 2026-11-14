@@ -4,7 +4,8 @@ export const dynamic = 'force-dynamic'
 // recalculate, polled via ai-status), so a generous budget is fine.
 export const maxDuration = 300
 
-import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
+import { DIAGNOSTIC_POINT_A_COLUMNS } from '@/lib/point-a/from-row'
+import { loadOfficialSnapshot, officialPointA, pointAFromOfficial } from '@/lib/point-a/official'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
@@ -12,16 +13,16 @@ import { analyzePointA } from '@/lib/ai/point-a-analyzer'
 import { foreignAnalysisKeys, mergeAiAnalysis, readAiAnalysis } from '@/lib/point-a/ai-analysis'
 import type { AIAnalysis } from '@/types/onboarding'
 import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
-import { calculatePointA } from '@/lib/point-a-engine'
 import { plainAnswer } from '@/lib/survey/plain'
 import type { Company } from '@/types/onboarding'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { assertAiBudget, isAiBudgetError, aiBudgetExceededResponse } from '@/lib/ai/budget'
 import { recordAiCacheHit, setAiActor } from '@/lib/ai/usage'
 import { analyzeWithInputCache, pointAAnalysisInputHash } from '@/lib/point-a/analysis-cache'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -45,7 +46,7 @@ import { analyzeWithInputCache, pointAAnalysisInputHash } from '@/lib/point-a/an
  * ai_status='failed' — callers fire and forget, and the client polls
  * ai-status, which would otherwise show «AI анализирует…» forever.
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   // Set only after the ownership check: a caller that is not authorised must
   // never be able to flip someone's status, even through an error path.
   let target: { diagnosticId: string; userId: string } | null = null
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     if (!hasValidInternalToken(req, { userId: String(user_id), diagnosticId: String(diagnostic_id) })) {
       const caller = await getSessionUser(sb)
       if (!caller) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
-      if (caller.id !== user_id && !isStaffRole(await getSessionRole(sb, caller.id))) {
+      if (!(await mayActOnUser(sb, caller.id, String(user_id)))) {
         return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
       }
       if (await isRateLimitedKey(caller.id, 'diagnostics-ai-analyze', { max: 6, windowMs: 60_000 })) {
@@ -101,6 +102,26 @@ export async function POST(req: NextRequest) {
       if (logDetail) console.error('[ai-analyze]', error, logDetail.code ?? '', logDetail.message ?? '')
       await markFailed(target)
       return NextResponse.json({ ok: false, ai_status: 'failed', error }, { status })
+    }
+
+    // 0. The OFFICIAL Point A (R-033): no paid analysis of a score that does
+    // not exist — before the full questionnaire or when v4 found too little
+    // data. Never a v1 recalculation of an incomplete survey (I2). The row is
+    // reset to 'none' so a poller that saw 'processing' stops waiting.
+    const official = officialPointA(owned as Record<string, unknown>, await loadOfficialSnapshot(db, String(user_id)))
+    const scored = pointAFromOfficial(official)
+    if (!scored) {
+      await db
+        .from('diagnostics')
+        .update({ ai_status: 'none' })
+        .eq('id', diagnostic_id)
+        .eq('user_id', user_id)
+      return NextResponse.json({
+        ok: false,
+        ai_status: 'none',
+        reason: official.state,
+        error: 'Разбор появится, когда у Точки А будет оценка: отправьте полную анкету и добавьте данные по пустым блокам',
+      }, { status: 409 })
     }
 
     // 1. Mark as processing
@@ -153,16 +174,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. The Point A this diagnostic stores (the score the client sees, with
-    // document / manual values and v4); the survey-only engine only for a
-    // row without one.
-    const pointA = pointAFromDiagnosticRow(owned as Record<string, unknown>) ?? calculatePointA(answers)
+    // 5. The official Point A (the score the client sees); a block without
+    // data goes to the model as «нет данных», never as «0/100 critical».
+    const { pointA, blocksWithoutData } = scored
 
     // 6. Run AI analysis (with expert notes) — or reuse a previous analysis of
     // EXACTLY the same input (4 LLM calls saved per unchanged recalculation).
     const inputHash = pointAAnalysisInputHash({
       answers,
-      pointA,
+      // The no-data list joins the hash only when present: unchanged inputs of
+      // fully scored rows keep their cached analysis.
+      pointA: blocksWithoutData.length ? { ...pointA, blocksWithoutData } : pointA,
       company: (company ?? null) as Record<string, unknown> | null,
       expertNotes: expertNotes as Record<string, unknown>,
       locale,
@@ -191,7 +213,7 @@ export async function POST(req: NextRequest) {
         onCacheHit: () => recordAiCacheHit('point_a_analysis', { userId: String(user_id) }),
         analyze: async () => {
           await assertAiBudget(String(user_id), 'point_a_analysis')
-          return analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
+          return analyzePointA(answers, pointA, company as Company | null, expertNotes, locale, blocksWithoutData)
         },
       })
     } catch (err) {
@@ -255,3 +277,10 @@ async function markFailed(target: { diagnosticId: string; userId: string } | nul
     console.error('[ai-analyze] could not mark failed', err instanceof Error ? err.message : err)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After
+ * 120 s the client gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline
+ * spent (the fan-out waits 150 s (lib/point-a/diagnostic-row.ts); the model calls inside are bounded by the AI deadline). ROUTE_DEADLINE_MS_AI_ANALYZE overrides it; ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'ai-analyze', ms: 120_000 })

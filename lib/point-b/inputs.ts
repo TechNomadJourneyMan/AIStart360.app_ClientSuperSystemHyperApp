@@ -20,6 +20,7 @@ import { diagToPointA, mapGriTop5 } from './adapters'
 import { parseGoals, POINT_B_LEVER_METRICS, type PointBOptions } from './engine'
 import { loadPointBMetrics, type PointBMetricOptions } from './metrics'
 import { blocksWithoutDataOf } from '@/lib/point-a/blocks-without-data'
+import { officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 /** A revenue base older than this many months is flagged as stale. */
 export const STALE_BASE_MONTHS = 15
@@ -145,7 +146,7 @@ export async function loadPointBInputs(
     client.from('gri_assessments').select('top_5_limits').eq('user_id', userId).eq('is_current', true).limit(1),
     loadPointBMetrics(client, companyId),
     companyId
-      ? client.from('point_a_snapshots').select('id, engine, config_version, confidence, coverage, created_at, blocks, inputs').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
+      ? client.from('point_a_snapshots').select('id, engine, config_version, confidence, coverage, created_at, blocks, inputs, v4, overall, stage').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
       : Promise.resolve({ data: [], error: null }),
     companyId
       ? (opts.goals ? opts.goals() : loadGoals(client, companyId)).catch((err) => {
@@ -178,7 +179,12 @@ export async function loadPointBInputs(
   // 5. Blocks without data. v4 (and a v1 FALLBACK of a v4 company — e.g. after the express flow):
   //    a v4 block with no score; its v1 column holds unanswered = 0, which must not count as «weak».
   //    Otherwise a diagnostics row without the block column (lib/point-a/blocks-without-data.ts).
-  const without = blocksWithoutDataOf(snapRow, diagnostic)
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): the row with
+  // official numbers — no overall without an official score, a block without
+  // data null; its blocks without data join the list above.
+  const official = diagnostic ? officialPointA(diagnostic, snapRow as OfficialSnapshotRow | null) : null
+  const without = [...new Set([...blocksWithoutDataOf(snapRow, diagnostic), ...(official?.blocksWithoutData ?? [])])]
+  const officialRow = diagnostic && official ? officialDiagnosticRow(diagnostic, official) : null
 
   // 6. Revenue base with its period.
   const goalOf = (period: '12m' | '3y') => positive(goals.find((g) => g.metricId === REVENUE_GOAL_METRIC && g.periodLabel === period)?.targetValue)
@@ -199,7 +205,7 @@ export async function loadPointBInputs(
     diagnostic,
     snapshot,
     blocksWithoutData: without,
-    pointA: diagnostic ? diagToPointA(diagnostic) : null,
+    pointA: officialRow ? diagToPointA(officialRow) : null,
     answers,
     griTop5,
     metricOptions: metrics.options,

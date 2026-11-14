@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Поддельный rsync для tests/integration/db/backup.test.ts: копирует файлы-аргументы в
+# $FAKE_RSYNC_DEST и пишет argv в $FAKE_RSYNC_DEST/../rsync.log. Проверяет, что -e содержит
+# StrictHostKeyChecking=yes и существующие файлы ключа и known_hosts.
+set -euo pipefail
+dest="${FAKE_RSYNC_DEST:?}"
+mkdir -p "$dest"
+printf '%s\n' "$*" >>"$dest/../rsync.log"
+ssh_cmd="" files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -e) ssh_cmd="$2"; shift 2 ;;
+    -*) shift ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+case "$ssh_cmd" in *StrictHostKeyChecking=yes*) ;; *) echo "fake rsync: нет StrictHostKeyChecking=yes" >&2; exit 2 ;; esac
+key="$(printf '%s' "$ssh_cmd" | sed -E 's/.*-i ([^ ]+).*/\1/')"
+kh="$(printf '%s' "$ssh_cmd" | sed -E 's/.*UserKnownHostsFile=([^ ]+).*/\1/')"
+[ -s "$key" ] && [ -s "$kh" ] || { echo "fake rsync: нет файла ключа или known_hosts" >&2; exit 2; }
+cp "$key" "$dest/../seen-key"
+remote="${files[${#files[@]}-1]}"
+case "$remote" in *@*:) ;; *) echo "fake rsync: неожиданный адрес $remote" >&2; exit 2 ;; esac
+for ((i = 0; i < ${#files[@]} - 1; i++)); do cp "${files[$i]}" "$dest/"; printf '%s\n' "$(basename "${files[$i]}")" >>"$dest/../order.log"; done

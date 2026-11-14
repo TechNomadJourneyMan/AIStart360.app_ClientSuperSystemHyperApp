@@ -30,6 +30,7 @@
 
 import type { PointA } from '@/types/onboarding'
 import { assessRealism, computeGap } from '@/lib/point-b/engine'
+import { formatGri } from '@/lib/format/gri'
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
@@ -231,7 +232,7 @@ function ruleCashStability(input: RealityCheckInput): RealityCheckItem | null {
     blockId,
     blockLabelRu: BLOCK_RU[blockId],
     selfScore: self,
-    finding: `Блок оценён на ${fmt1(self)}/10, но ${facts.join(', а ')}.`,
+    finding: `Блок оценён на ${formatGri(self, { scale: true })}, но ${facts.join(', а ')}.`,
     severity: 'mismatch',
   }
 }
@@ -257,7 +258,7 @@ function ruleHighSelfVsPointA(
     blockId,
     blockLabelRu: BLOCK_RU[blockId] ?? blockId,
     selfScore: self,
-    finding: `Самооценка ${fmt1(self)}/10, но Точка А оценивает блок «${pa.label}» в ${Math.round(pa.score)}/100 (${statusRu}).`,
+    finding: `Самооценка ${formatGri(self, { scale: true })}, но Точка А оценивает блок «${pa.label}» в ${Math.round(pa.score)}/100 (${statusRu}).`,
     severity: 'mismatch',
   }
 }
@@ -282,8 +283,8 @@ function ruleGoalRealism(input: RealityCheckInput, blockId: string): RealityChec
   const levelRu = REALISM_RU[realism.level] ?? realism.level
   const finding =
     mom != null
-      ? `Самооценка ${fmt1(self)}/10, но цель требует ~${fmt1(mom)}% роста в месяц — реалистичность по данным: ${levelRu}.`
-      : `Самооценка ${fmt1(self)}/10, но реалистичность цели по данным Точки B — ${levelRu} (${Math.round(realism.score)}/100).`
+      ? `Самооценка ${formatGri(self, { scale: true })}, но цель требует ~${fmt1(mom)}% роста в месяц — реалистичность по данным: ${levelRu}.`
+      : `Самооценка ${formatGri(self, { scale: true })}, но реалистичность цели по данным Точки B — ${levelRu} (${Math.round(realism.score)}/100).`
 
   return {
     blockId,
@@ -314,7 +315,7 @@ function ruleLowSelfVsPointA(
     blockId,
     blockLabelRu: BLOCK_RU[blockId] ?? blockId,
     selfScore: self,
-    finding: `Самооценка ${fmt1(self)}/10, но Точка А даёт блоку «${pa.label}» ${Math.round(pa.score)}/100 (${statusRu}) — возможно, вы строже к себе, чем данные.`,
+    finding: `Самооценка ${formatGri(self, { scale: true })}, но Точка А даёт блоку «${pa.label}» ${Math.round(pa.score)}/100 (${statusRu}) — возможно, вы строже к себе, чем данные.`,
     severity: 'note',
   }
 }
@@ -336,7 +337,7 @@ function ruleOverallIndex(input: RealityCheckInput): RealityCheckItem | null {
     blockId: 'overall',
     blockLabelRu: 'Общий индекс',
     selfScore: griIndex,
-    finding: `Ваш GRI-индекс ${fmt1(griIndex)}/10 заметно ${direction} индекса здоровья Точки А — ${Math.round(health)}/100 (≈${fmt1(healthOn10)}/10).`,
+    finding: `Ваш GRI-индекс ${formatGri(griIndex, { scale: true })} заметно ${direction} индекса здоровья Точки А — ${Math.round(health)}/100 (≈${formatGri(healthOn10, { scale: true, allowZero: true })}).`,
     severity: 'note',
   }
 }

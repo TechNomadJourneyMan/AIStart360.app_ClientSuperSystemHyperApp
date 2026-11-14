@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Поддельный rclone для tests/integration/db/backup-script.test.ts: remote "имя:путь" — это
+# каталог $FAKE_RCLONE_ROOT/имя/путь. Умеет только то, что зовёт scripts/backup/railway-db-backup.sh.
+# Каждый вызов (argv) пишется в $FAKE_RCLONE_ROOT/calls.log — тест проверяет, что ключей там нет.
+set -euo pipefail
+root="${FAKE_RCLONE_ROOT:?}"
+printf '%s\n' "$*" >>"$root/calls.log"
+
+resolve() {
+  case "$1" in
+    *:*)
+      local name="${1%%:*}" rest="${1#*:}" upper
+      upper="$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')"
+      local var="RCLONE_CONFIG_${upper}_TYPE"
+      [ "${!var:-}" = "s3" ] || { echo "fake rclone: remote $name не настроен" >&2; exit 3; }
+      printf '%s/%s/%s' "$root" "$name" "$rest" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+cmd="$1"; shift
+# FAKE_RCLONE_FAIL=<команда> — эта команда падает, как упал бы S3 (проверка остановки шага).
+if [ "${FAKE_RCLONE_FAIL:-}" = "$cmd" ]; then echo "ERROR : Failed to $cmd: AccessDenied: 403" >&2; exit 7; fi
+args=(); opts=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --backup-dir|--max-delete|--min-age|--format) opts+=("$1" "$2"); shift 2 ;;
+    --*) opts+=("$1"); shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+opt() { local i; for ((i = 0; i < ${#opts[@]}; i++)); do if [ "${opts[$i]}" = "$1" ]; then printf '%s' "${opts[$((i + 1))]:-1}"; return 0; fi; done; return 0; }
+
+case "$cmd" in
+  copyto)
+    src="$(resolve "${args[0]}")"; dst="$(resolve "${args[1]}")"
+    mkdir -p "$(dirname "$dst")"; cp "$src" "$dst" ;;
+  deletefile) rm -f "$(resolve "${args[0]}")" ;;
+  lsf)
+    p="$(resolve "${args[0]}")"; fmt="$(opt --format)"
+    if [ -f "$p" ]; then
+      if [ "$fmt" = "s" ]; then wc -c <"$p" | tr -d ' '; else basename "$p"; fi
+    elif [ -d "$p" ]; then
+      for f in "$p"/*; do [ -f "$f" ] || continue; if [ "$fmt" = "s" ]; then wc -c <"$f" | tr -d ' '; else basename "$f"; fi; done
+    fi ;;
+  sync)
+    src="$(resolve "${args[0]}")"; dst="$(resolve "${args[1]}")"; bdir="$(resolve "$(opt --backup-dir)")"
+    [ -d "$src" ] || { echo "fake rclone: directory not found: ${args[0]}" >&2; exit 3; }
+    mkdir -p "$dst"
+    (cd "$dst" && find . -type f) | while read -r rel; do
+      if [ ! -f "$src/$rel" ]; then mkdir -p "$(dirname "$bdir/$rel")"; mv "$dst/$rel" "$bdir/$rel"; fi
+    done
+    (cd "$src" && find . -type f) | while read -r rel; do
+      if [ -f "$dst/$rel" ] && ! cmp -s "$src/$rel" "$dst/$rel"; then mkdir -p "$(dirname "$bdir/$rel")"; cp "$dst/$rel" "$bdir/$rel"; fi
+      mkdir -p "$(dirname "$dst/$rel")"; cp "$src/$rel" "$dst/$rel"
+    done ;;
+  delete) : ;;  # чистка по возрасту: в тесте всё свежее
+  size)
+    p="$(resolve "${args[0]}")"; n=0; b=0
+    if [ -d "$p" ]; then while read -r f; do n=$((n + 1)); b=$((b + $(wc -c <"$f"))); done < <(find "$p" -type f); fi
+    printf '{"count":%s,"bytes":%s}\n' "$n" "$b" ;;
+  *) echo "fake rclone: команда $cmd не поддерживается" >&2; exit 4 ;;
+esac

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 /**
  * GET  /api/v1/consents            → { ok, consents: { [kind]: boolean } }
@@ -48,6 +49,9 @@ export async function PUT(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(req, user, 'consents.change')
+  if (impersonated) return impersonated
 
   if (await isRateLimitedKey(user.id, 'consents-put', { max: 20, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })

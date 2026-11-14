@@ -3,6 +3,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { canManageAssignments } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { BULK_PERMISSIONS, bulkSchema, runBulkUserAction, validateAssignee, type BulkAction, type BulkItemResult } from '@/lib/admin/bulk-users'
@@ -32,6 +33,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Слишком много массовых операций. Попробуйте позже.' }, { status: 429 })
   }
   if (parsed.data.action === 'assign') {
+    // R-047: распределять клиентов массово может только тот, кто управляет
+    // назначениями; иначе сотрудник со скоупом «assigned» назначил бы себе
+    // любых клиентов и увидел бы их данные.
+    if (!canManageAssignments(guard.actor.role)) {
+      return NextResponse.json({ ok: false, error: 'Недостаточно прав для назначения клиентов', missing: ['assignments'] }, { status: 403 })
+    }
     const bad = await validateAssignee(parsed.data.assigneeId)
     if (bad) return NextResponse.json({ ok: false, error: bad }, { status: 400 })
   }

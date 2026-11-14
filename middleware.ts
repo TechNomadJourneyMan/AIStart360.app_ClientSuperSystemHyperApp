@@ -3,9 +3,14 @@ import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession, type SessionProfile } from '@/lib/supabase/middleware'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
+import { secondFactorOnRecordEdge } from '@/lib/mfa/factor-edge'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
+import { boundImpersonationEdge, impersonationRowEdge } from '@/lib/impersonation/state-edge'
+import { IMPERSONATION_ACCOUNT_PAGE_BLOCKED_ACTION, IMPERSONATION_LOCKED_REDIRECT, isAccountSecurityPage } from '@/lib/impersonation/account-pages'
+import { NO_SESSION_ID, authSessionFromCookies } from '@/lib/mfa/session-binding'
+import { CLIENT_NAV_DEFS } from '@/lib/client-shell/nav'
 import { verifyToken } from '@/lib/security/signed-token'
 import { blockedSectionFor, loadEdgeSections } from '@/lib/platform/sections-edge'
 import { edgeSettings } from '@/lib/settings/edge'
@@ -26,39 +31,76 @@ function redirectKeepingCookies(from: NextResponse, url: URL): NextResponse {
 }
 
 /**
- * Impersonation on API calls: view mode is read-only (mutations → 403), an
- * expired/closed session cannot mutate (→ 401), and every mutation in edit
- * mode leaves an audit row. Staff API (/api/giga-admin) is not affected.
+ * Impersonation on API calls (R-008: checked against the server record):
+ *  - a cookie counts only with the Supabase session it was minted for
+ *    (`asid`) and while its impersonation_sessions row is open — otherwise
+ *    every call (reads too) gets 401;
+ *  - view mode (cookie OR the DB row) is read-only: mutations → 403;
+ *  - every mutation in edit mode leaves an audit row;
+ *  - a session that WAS minted for an impersonation but arrives without its
+ *    cookie (deleted, expired after 12 h) is refused and its impersonation
+ *    ended — it is not a «normal» client session.
+ * Staff API (/api/giga-admin) is not affected.
+ *
+ * The Supabase session is only decoded here (no network): the route verifies
+ * it with getUser(), so a forged token cannot be used to slip past — trusting
+ * it here can only add a restriction. An expired access token is refreshed by
+ * the route; the next call carries the fresh one and is checked.
  */
 async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unknown>) => void): Promise<NextResponse | null> {
-  const token = request.cookies.get(IMP_COOKIE_NAME)?.value
-  const method = request.method.toUpperCase()
   const { pathname } = request.nextUrl
-  if (!token || !MUTATING.has(method) || pathname.startsWith('/api/giga-admin/')) return null
-  if (pathname === '/api/v1/impersonation/exit') return null
+  if (pathname.startsWith('/api/giga-admin/') || pathname === '/api/v1/impersonation/exit') return null
   // The localhost developer login (lib/dev/dev-access.ts) replaces the identity
   // of the browser and clears this cookie: a view-mode or ended impersonation
   // must not lock its routes out. Constant `false` in a production build.
   if (pathname.startsWith('/api/dev/') && devAccessEnabledForRequest(request)) return null
-  const v = await readImpersonation(token)
-  if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) {
-    return NextResponse.json({ ok: false, error: 'Сессия просмотра от имени пользователя завершена' }, { status: 401 })
+  const token = request.cookies.get(IMP_COOKIE_NAME)?.value
+  const method = request.method.toUpperCase()
+  const ended = () => NextResponse.json({ ok: false, error: 'Сессия просмотра от имени пользователя завершена' }, { status: 401 })
+
+  const auth = authSessionFromCookies(request.cookies.getAll())
+  const sessionKey = auth && auth.sessionKey !== NO_SESSION_ID && (auth.expMs === null || auth.expMs > Date.now()) ? auth.sessionKey : null
+
+  if (token) {
+    const v = await readImpersonation(token)
+    if (!v.claims) {
+      // Forged / unreadable cookie: as before, it cannot mutate.
+      if (MUTATING.has(method)) return ended()
+    } else if (v.claims.asid && sessionKey && v.claims.asid !== sessionKey) {
+      // An authentic cookie of ANOTHER session: not this browser session's.
+      return ended()
+    } else {
+      if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) return ended()
+      if (!MUTATING.has(method)) return null
+      const row = await impersonationRowEdge(v.claims.sid)
+      const mode = v.claims.mode === 'view' || row?.mode === 'view' ? 'view' : 'edit'
+      if (mode === 'view' && !isViewModeAllowed(pathname)) {
+        return NextResponse.json({ ok: false, error: 'Режим просмотра: изменения запрещены' }, { status: 403 })
+      }
+      if (pathname !== '/api/v1/events' && !READ_ONLY_POST_API.includes(pathname)) {
+        later(auditImpersonatedRequestEdge({
+          sid: v.claims.sid,
+          adminId: v.claims.aid,
+          adminLabel: v.claims.alabel,
+          adminRole: typeof v.claims.arole === 'string' ? v.claims.arole : null,
+          targetUserId: v.claims.uid,
+          method,
+          path: pathname,
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+          ua: request.headers.get('user-agent')?.slice(0, 300) || null,
+        }))
+      }
+      return null
+    }
   }
-  if (v.claims.mode === 'view' && !isViewModeAllowed(pathname)) {
-    return NextResponse.json({ ok: false, error: 'Режим просмотра: изменения запрещены' }, { status: 403 })
-  }
-  if (pathname !== '/api/v1/events' && !READ_ONLY_POST_API.includes(pathname)) {
-    later(auditImpersonatedRequestEdge({
-      sid: v.claims.sid,
-      adminId: v.claims.aid,
-      adminLabel: v.claims.alabel,
-      adminRole: typeof v.claims.arole === 'string' ? v.claims.arole : null,
-      targetUserId: v.claims.uid,
-      method,
-      path: pathname,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-      ua: request.headers.get('user-agent')?.slice(0, 300) || null,
-    }))
+
+  // No usable cookie: was this very session minted for an impersonation?
+  // ('unknown' = the binding could not be read now: do not lock everyone out.)
+  if (!sessionKey) return null
+  const bound = await boundImpersonationEdge(sessionKey)
+  if (bound && bound !== 'unknown') {
+    later(endImpersonationEdge(bound, token ? 'cookie_mismatch' : 'cookie_missing'))
+    return ended()
   }
   return null
 }
@@ -68,6 +110,9 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
   process.env.NODE_ENV !== 'production' ||
   process.env.VERCEL_ENV === 'preview' ||
   isJourneyPublicDemoEnabled()
+
+/** R-223: a file at the site root (public/*, app metadata files, PWA worker). */
+const STATIC_ROOT_FILE = /^\/[^/]+\.(svg|png|jpg|jpeg|gif|webp|ico|m4a|mp3|ttf|otf|woff|woff2|css|js|map|txt|xml)$/
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 /**
@@ -104,6 +149,21 @@ const CLIENT_DASHBOARD_PATHS = [
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']
+
+/** R-052: statuses of a client account that is not admitted yet. */
+const NOT_APPROVED_STATUSES = new Set(['pending_approval', 'requires_clarification', 'rejected'])
+/**
+ * What such a client may open: the menu sections open before approval
+ * (lib/client-shell/nav.ts) plus the account / onboarding pages around them.
+ */
+const OPEN_BEFORE_APPROVAL: string[] = [
+  ...CLIENT_NAV_DEFS.filter((d) => d.openBeforeApproval).map((d) => d.href),
+  '/client/onboarding', '/client/onboarding-medical', '/client/waiting-room', '/client/welcome',
+  '/client/journey', '/client/content',
+  '/settings', '/profile', '/notifications', '/activity',
+]
+/** The client cabinet: /client/* and the shared (dashboard) pages clients use. */
+const isClientCabinetPath = (pathname: string) => matchesRoute(pathname, '/client') || matchesAny(pathname, CLIENT_DASHBOARD_PATHS)
 /**
  * Removed legacy screens (the Prisma/NextAuth /admin and /users pages and the
  * separate owner cabinet). Old bookmarks land on the screen that replaced them.
@@ -131,10 +191,17 @@ function normalizeRole(rawRole: string | null | undefined): ValidRole {
   return 'client'
 }
 
+/**
+ * The role / status the guard works with. `unknown: true` (R-140) = the profile
+ * could not be read now (error / timeout): role and status are placeholders the
+ * caller must not act on — it answers with a retry page instead.
+ */
+type ResolvedProfile = { role: ValidRole; status: string | null; unknown?: true }
+
 function roleAndStatusFrom(
   data: SessionProfile | null | undefined,
   fallbackRole: string | null,
-): { role: ValidRole; status: string | null } {
+): ResolvedProfile {
   return {
     role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
     status: typeof data?.status === 'string' ? data.status : null,
@@ -145,16 +212,36 @@ async function resolveRoleAndStatus(
   supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
   userId: string,
   fallbackRole: string | null,
-): Promise<{ role: ValidRole; status: string | null }> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('role, status')
-    .eq('id', userId)
-    // A slow database must not hold the request until the platform's 504.
-    .abortSignal(AbortSignal.timeout(4_000))
-    .maybeSingle()
+): Promise<ResolvedProfile> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role, status')
+      .eq('id', userId)
+      // A slow database must not hold the request until the platform's 504.
+      .abortSignal(AbortSignal.timeout(4_000))
+      .maybeSingle()
+    // R-140: a failed / timed-out read is NOT «a client with no status» —
+    // that let blocked and archived accounts through and sent experts to the
+    // client dashboard. The caller answers with a retry page instead.
+    if (error) return { role: 'client', status: null, unknown: true }
+    return roleAndStatusFrom(data, fallbackRole)
+  } catch {
+    return { role: 'client', status: null, unknown: true }
+  }
+}
 
-  return roleAndStatusFrom(data, fallbackRole)
+/**
+ * R-140: the profile (role / status) could not be read. A protected page is
+ * not served on a guess — the user gets a short «temporary error» page that
+ * reloads itself. Public pages and /maintenance are not affected.
+ */
+function profileUnavailableResponse(): NextResponse {
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>Временная ошибка — AIStart360</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#e6edf3;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}main{max-width:28rem;padding:2rem;text-align:center}a{color:#6effc0}</style></head><body><main><h1 style="font-size:1.25rem">Не удалось загрузить данные аккаунта</h1><p>Сервис временно отвечает медленно. Обновите страницу через несколько секунд — она обновится и сама.</p><p><a href="">Обновить</a></p></main></body></html>`
+  return new NextResponse(html, {
+    status: 503,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '10', 'cache-control': 'no-store' },
+  })
 }
 
 /** A Supabase session cookie (`sb-<ref>-auth-token`, possibly chunked) is present. */
@@ -184,7 +271,66 @@ function oauthCodeLanded(request: NextRequest): NextResponse | null {
   return NextResponse.redirect(url)
 }
 
+/**
+ * The second-factor rule for a STAFF session (panel, SuperExpert cabinet and
+ * the staff pages outside them) — the one of the server (staffMfaGate,
+ * staffApiSecondFactor) and of the database (staff_session_ok(), migration
+ * 143, which shows staff an empty RLS without the step-up record):
+ *  - a factor on record — JWT flags OR user_security.totp_enabled OR a passkey
+ *    (a factor added after the JWT was issued counts) — needs the step-up
+ *    proof of THIS session;
+ *  - no factor → admitted, unless the platform requires 2FA for staff;
+ *  - the factor state cannot be read → 'unavailable' (fail closed).
+ * The DB is asked only when the JWT shows no factor and there is no proof.
+ */
+type StaffMfaGate = 'ok' | 'step_up' | 'enroll' | 'unavailable'
+
+async function staffSecondFactorGate(
+  user: { id: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
+  stepUpPassed: boolean,
+  settings: () => ReturnType<typeof edgeSettings>,
+): Promise<StaffMfaGate> {
+  if (stepUpPassed) return 'ok'
+  let enrolled = mfaFlagsEnrolled(user)
+  if (!enrolled) {
+    const onRecord = await secondFactorOnRecordEdge(user.id)
+    if (onRecord === null) return 'unavailable'
+    enrolled = onRecord
+  }
+  if (enrolled) return 'step_up'
+  return (await settings()).staff_require_mfa ? 'enroll' : 'ok'
+}
+
+/** The page response for a staff gate decision; null = go on. */
+function staffMfaResponse(gate: StaffMfaGate, request: NextRequest, pathname: string): NextResponse | null {
+  if (gate === 'ok') return null
+  if (gate === 'unavailable') return profileUnavailableResponse()
+  if (gate === 'step_up') {
+    const url = new URL(MFA_CHALLENGE_PATH, request.url)
+    url.searchParams.set('from', pathname)
+    return NextResponse.redirect(url)
+  }
+  // 'enroll': the enrolment page itself must stay reachable (no loop).
+  if (matchesRoute(pathname, '/settings')) return null
+  const url = new URL('/settings', request.url)
+  url.searchParams.set('tab', 'security')
+  url.searchParams.set('mfa', 'required')
+  return NextResponse.redirect(url)
+}
+
+/**
+ * R-132: the step-up proof is bound to the Supabase session. A proof that is
+ * not valid for the current session (signed out, another account signed in,
+ * a new sign-in) is deleted from the browser on the way out.
+ */
 export async function middleware(request: NextRequest, event?: NextFetchEvent) {
+  const ctx = { clearMfa: false }
+  const res = await handle(request, event, ctx)
+  if (ctx.clearMfa) res.cookies.set(MFA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+  return res
+}
+
+async function handle(request: NextRequest, event: NextFetchEvent | undefined, ctx: { clearMfa: boolean }): Promise<NextResponse> {
   // Background work that must outlive the response (audit writes).
   const later = (p: Promise<unknown>) => { if (event) event.waitUntil(p); else void p }
   const { pathname } = request.nextUrl
@@ -210,16 +356,16 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // public by definition: MCP clients fetch them before any sign-in.
     pathname.startsWith('/.well-known/oauth-protected-resource') ||
     pathname === '/.well-known/oauth-authorization-server' ||
-    pathname.startsWith('/logo') ||
-    pathname.startsWith('/fonts') ||
     // Static assets in public/ must skip the network auth (getUser + profiles):
     // otherwise every font/audio/css/js request pays 2 round-trips and, for
     // anonymous callers, gets 307→/login — which breaks SW precache and serves
     // HTML for a .ttf. public/ has no private files.
-    /\.(svg|png|jpg|jpeg|gif|webp|ico|m4a|mp3|ttf|otf|woff|woff2|css|js|map|txt|xml)$/.test(pathname) ||
-    pathname.endsWith('.svg') ||
-    pathname.endsWith('.png') ||
-    pathname.endsWith('.ico') ||
+    // R-223: only where static files really live — public/fonts/ and files at
+    // the site root (public/*, app/icon.png, robots.txt, the PWA worker files).
+    // A file extension deeper in the path (/admin-giga-panel/users/x.js) is a
+    // page route and goes through the gate.
+    pathname.startsWith('/fonts/') ||
+    STATIC_ROOT_FILE.test(pathname) ||
     // PWA service worker, workbox runtime and web manifest must be served as-is
     // (no auth redirect) or SW registration / install fails.
     pathname === '/manifest.webmanifest' ||
@@ -284,41 +430,103 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // Role comes from profiles only: user_metadata is editable by the user
   // (auth.updateUser) and must never grant a role (F-001).
-  const resolved = user
+  const resolved: ResolvedProfile | null = user
     ? profile
       ? roleAndStatusFrom(profile, null)
       : await resolveRoleAndStatus(supabase, user.id, null)
     : null
   const role = resolved?.role ?? null
 
+  // SR-07b: a page that changes the account's credentials / protection
+  // (lib/impersonation/account-pages.ts) — closed during an impersonation.
+  const accountSecurityPage = isAccountSecurityPage(pathname, request.nextUrl.searchParams)
+
+  // R-140: the profile could not be read — never guess «approved client».
+  // SR-07b: /auth/reset-password is «public» here only when nothing is unknown
+  // — it is served before the impersonation check below.
+  if (user && resolved?.unknown) {
+    const publicLike = (PUBLIC_PATHS.some((p) => pathname.startsWith(p)) && !accountSecurityPage) || pathname === GIGA_LOGIN_PATH || pathname === SUPER_EXPERT_LOGIN_PATH
+    return publicLike ? response : profileUnavailableResponse()
+  }
+
+  // The GoTrue session id of the (verified) session: the step-up proof
+  // (R-132) and the impersonation binding (R-008) are tied to it.
+  const sessionKey = user ? (authSessionFromCookies(request.cookies.getAll())?.sessionKey ?? null) : null
+  const mfaToken = request.cookies.get(MFA_COOKIE_NAME)?.value
+  const stepUpPassed = !!user && (await verifyStepUpEdge(mfaToken, user.id, sessionKey))
+  if (mfaToken && !stepUpPassed) ctx.clearMfa = true
+
   // ── Impersonation («кабинет от имени пользователя») ──
   // The browser holds the target's session; the signed cookie says an admin is
-  // driving it. Anything stale ends the session and returns to the panel.
+  // driving it. R-008: the cookie counts only with the session minted for it
+  // (`asid`) and while the DB row is open; the DB row's mode wins. Anything
+  // stale ends the session — only THAT session (scope 'local'), never every
+  // session of the client — and returns to the panel.
   let impersonating = false
+  /** SR-07b: the R-008 binding of this session could not be read now. */
+  let bindingUnknown = false
   const impToken = request.cookies.get(IMP_COOKIE_NAME)?.value
-  if (impToken) {
-    const imp = await readImpersonation(impToken)
-    const claims = imp.claims
+  const endImpersonatedSession = async (ended: 'expired' | 'closed') => {
+    await supabase.auth.signOut({ scope: 'local' })
+    response.cookies.delete(IMP_COOKIE_NAME)
+    const url = new URL(IMP_ENDED_PATH, request.url)
+    url.searchParams.set('ended', ended)
+    const out = redirectKeepingCookies(response, url)
+    out.cookies.delete(IMP_COOKIE_NAME)
+    return out
+  }
+  const imp = impToken ? await readImpersonation(impToken) : null
+  const claims = imp?.claims
+  const ownsSession = !!claims && !!user && user.id === claims.uid && (!claims.asid || claims.asid === sessionKey)
+  if (imp?.ok && claims && ownsSession && (await isImpersonationActiveEdge(claims.sid))) {
+    impersonating = true
+    const row = await impersonationRowEdge(claims.sid)
+    response.headers.set('x-impersonation', claims.mode === 'view' || row?.mode === 'view' ? 'view' : 'edit')
+    // SR-07b: the session is the client's real GoTrue session — on these pages
+    // the browser would change the client's password / 2FA directly in GoTrue
+    // (no current password asked). Staff never open them «as the client», in
+    // view or edit mode; the impersonation itself goes on.
+    if (accountSecurityPage) {
+      later(auditImpersonatedRequestEdge({
+        sid: claims.sid,
+        adminId: claims.aid,
+        adminLabel: claims.alabel,
+        adminRole: typeof claims.arole === 'string' ? claims.arole : null,
+        targetUserId: claims.uid,
+        method: request.method.toUpperCase(),
+        path: pathname,
+        ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        ua: request.headers.get('user-agent')?.slice(0, 300) || null,
+        action: IMPERSONATION_ACCOUNT_PAGE_BLOCKED_ACTION,
+        entityType: 'page',
+      }))
+      return redirectKeepingCookies(response, new URL(IMPERSONATION_LOCKED_REDIRECT, request.url))
+    }
+  } else if (imp && claims && ownsSession) {
+    // Authentic but expired / closed from the panel: drop the user session.
     const failReason = imp.ok ? 'closed' : imp.reason
-    const ownsSession = !!claims && !!user && user.id === claims.uid
-    if (imp.ok && ownsSession && (await isImpersonationActiveEdge(imp.claims.sid))) {
-      impersonating = true
-      response.headers.set('x-impersonation', imp.claims.mode)
-    } else if (claims && ownsSession) {
-      // Authentic but expired / closed from the panel: drop the user session.
-      if (failReason === 'expired') later(endImpersonationEdge(claims.sid, 'expired'))
-      await supabase.auth.signOut()
-      response.cookies.delete(IMP_COOKIE_NAME)
-      const url = new URL(IMP_ENDED_PATH, request.url)
-      url.searchParams.set('ended', failReason === 'expired' ? 'expired' : 'closed')
-      const out = redirectKeepingCookies(response, url)
-      out.cookies.delete(IMP_COOKIE_NAME)
-      return out
-    } else {
-      // Forged, or left over after the admin session changed hands.
-      response.cookies.delete(IMP_COOKIE_NAME)
+    if (failReason === 'expired') later(endImpersonationEdge(claims.sid, 'expired'))
+    return endImpersonatedSession(failReason === 'expired' ? 'expired' : 'closed')
+  } else {
+    // Forged, or left over after the admin session changed hands.
+    if (impToken) response.cookies.delete(IMP_COOKIE_NAME)
+    // R-008: a session minted for an impersonation that arrives without its
+    // cookie (deleted, or the 12 h cookie expired) is not a normal client
+    // session: end the impersonation and revoke that session.
+    if (user && sessionKey && sessionKey !== NO_SESSION_ID) {
+      const bound = await boundImpersonationEdge(sessionKey)
+      if (bound && bound !== 'unknown') {
+        later(endImpersonationEdge(bound, impToken ? 'cookie_mismatch' : 'cookie_missing'))
+        return endImpersonatedSession('closed')
+      }
+      bindingUnknown = bound === 'unknown'
     }
   }
+
+  // SR-07b: whether this session is an impersonation could not be told now —
+  // a page that changes the account is not served on a guess (fail closed, as
+  // lib/impersonation/guard.ts does for the account API). It reloads itself.
+  if (bindingUnknown && accountSecurityPage) return profileUnavailableResponse()
 
   // R4: a persistently blocked/archived user gets no further than the login
   // page, regardless of role or which route they hit. The GoTrue ban (set by
@@ -380,33 +588,26 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // Тот же порядок с 2FA, что и в ГИГА-Панели: включил второй фактор —
     // проходи его и здесь, иначе самый чувствительный экран оказался бы
     // единственным без step-up.
-    const seEnrolled = mfaFlagsEnrolled(user)
-    if (!devMode && seEnrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
-      const url = new URL(MFA_CHALLENGE_PATH, request.url)
-      url.searchParams.set('from', pathname)
-      return NextResponse.redirect(url)
-    }
-    if (!devMode && !seEnrolled && (await settings()).staff_require_mfa) {
-      const url = new URL('/settings', request.url)
-      url.searchParams.set('tab', 'security')
-      url.searchParams.set('mfa', 'required')
-      return NextResponse.redirect(url)
+    if (!devMode) {
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
     }
     return response
   }
 
-  // ГИГА-Панель: только персонал (super_admin, роль из staff_roles или личный
-  // staff-cookie во время impersonation). Права по разделам проверяет каждый
-  // API-маршрут (lib/admin/rbac.ts).
+  // ГИГА-Панель: только персонал — строка staff_roles у одобренного профиля
+  // (R-002: legacy profiles.role 'super_admin' без staff_roles персоналом не
+  // считается, как в RLS и lib/admin/giga-actor.ts) или личный staff-cookie во
+  // время impersonation. Права по разделам проверяет каждый API-маршрут.
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    let isStaff = (role === 'super_admin' && resolved?.status === 'approved') || e2eSeam !== null
+    let isStaff = e2eSeam !== null
     if (!isStaff) {
       const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
       if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true
     }
-    if (!isStaff && user && !impersonating) {
+    if (!isStaff && user && !impersonating && resolved?.status === 'approved') {
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
-      isStaff = !!staffRow
+      isStaff = isStaffRole(staffRow?.role)
     }
     if (!isStaff) {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
@@ -414,20 +615,10 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // A personal super_admin session that enrolled in 2FA must pass the step-up
     // here too — this branch returns early, so the general MFA gate below was
     // never reached and the most privileged surface was the one skipping 2FA.
+    // Platform setting: staff without 2FA must enrol before using the panel.
     if (user && !impersonating && !devMode) {
-      const enrolled = mfaFlagsEnrolled(user)
-      if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
-        const url = new URL(MFA_CHALLENGE_PATH, request.url)
-        url.searchParams.set('from', pathname)
-        return NextResponse.redirect(url)
-      }
-      // Platform setting: staff without 2FA must enrol before using the panel.
-      if (!enrolled && (await settings()).staff_require_mfa) {
-        const url = new URL('/settings', request.url)
-        url.searchParams.set('tab', 'security')
-        url.searchParams.set('mfa', 'required')
-        return NextResponse.redirect(url)
-      }
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
     }
     return response
   }
@@ -438,13 +629,16 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // обычный 'client' (SuperExpert, super_admin только в staff_roles), поэтому
     // без этой проверки его уводило бы в клиентский дашборд.
     let staffRole: string | null = null
-    if (user && role !== 'super_admin') {
+    if (user) {
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
       staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
     }
+    // R-002: a legacy profiles.role 'super_admin' without a staff_roles row is
+    // not staff — landing it in the panel would bounce it back here (loop).
+    const landingRole = role === 'super_admin' && !staffRole ? 'client' : role
     const dest = staffRole
       ? roleLandingPath(role, resolved?.status, staffRole)
-      : role === 'client' ? '/dashboard' : roleLandingPath(role, resolved?.status)
+      : landingRole === 'client' ? '/dashboard' : roleLandingPath(landingRole, resolved?.status)
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
@@ -464,19 +658,23 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // (server-verified) Supabase JWT — app_metadata, which the user cannot edit
   // (lib/mfa/flags.ts); the proof is the signed step-up cookie.
   // `/2fa` and public pages are exempt so there is no redirect loop.
-  const mfaEnrolled = mfaFlagsEnrolled(user)
+  // Staff and experts (profiles.role other than 'client': the dashboard's staff
+  // view, /clients/*, /expert/*, …) follow the panel's rule — after migration
+  // 143 RLS shows them nothing without the step-up of this session, so the
+  // page must send them to /2fa (or to enrol) instead of rendering empty data.
   if (
     user &&
     !isPublic &&
     pathname !== MFA_CHALLENGE_PATH &&
-    mfaEnrolled &&
     // The admin cannot (and must not) answer the user's second factor; the
     // session was minted server-side after the admin's own authorization.
     !impersonating &&
     !devMode
   ) {
-    const passed = await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id)
-    if (!passed) {
+    if (role !== 'client') {
+      const blocked = staffMfaResponse(await staffSecondFactorGate(user, stepUpPassed, settings), request, pathname)
+      if (blocked) return blocked
+    } else if (mfaFlagsEnrolled(user) && !stepUpPassed) {
       const url = new URL(MFA_CHALLENGE_PATH, request.url)
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
@@ -503,6 +701,24 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     if (blockedKey) {
       const url = new URL('/client/home', request.url)
       url.searchParams.set('unavailable', blockedKey)
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // ── R-052: a client account that is not approved yet ──
+  // The menu shows only the sections open before approval
+  // (lib/client-shell/nav.ts `openBeforeApproval`); the other cabinet
+  // sections were reachable by URL. Staff whose profile role is 'client'
+  // (their role lives in staff_roles) are not affected; an admin driving a
+  // pending client's cabinet sees what the client sees.
+  if (
+    user && role === 'client' && NOT_APPROVED_STATUSES.has(resolved?.status ?? '') &&
+    isClientCabinetPath(pathname) && !OPEN_BEFORE_APPROVAL.some((p) => matchesRoute(pathname, p))
+  ) {
+    const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+    if (!isStaffRole(staffRow?.role)) {
+      const url = new URL('/client/home', request.url)
+      url.searchParams.set('unavailable', 'pending_approval')
       return NextResponse.redirect(url)
     }
   }
@@ -550,6 +766,10 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|\\.well-known/workflow/|.*\\.svg|.*\\.png).*)',
+    // R-223: only ROOT-level .svg/.png skip middleware entirely (public/*.svg,
+    // app/icon.png). The old `.*\\.svg|.*\\.png` also skipped every nested path
+    // ending so — e.g. /admin-giga-panel/users/x.png reached the page with no
+    // auth gate at all.
+    '/((?!_next/static|_next/image|favicon.ico|\\.well-known/workflow/|[^/]+\\.(?:svg|png)$).*)',
   ],
 }

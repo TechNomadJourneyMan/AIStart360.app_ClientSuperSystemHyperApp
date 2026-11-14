@@ -4,6 +4,21 @@
  * the minute the process started, and each minute fires at most once.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// The scenarios below walk the daily schedule minute by minute (04:00, 05:00, ...). The hourly backup
+// watchdog (R-011, '7 * * * *') would land in every one of those hours, so it is left out here; its
+// place in the schedule is pinned by tests/unit/cron/schedule.test.ts.
+vi.mock('@/lib/cron/schedule', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/cron/schedule')>()
+  const jobs = real.CRON_JOBS.filter((job) => job.path !== '/api/cron/backup-freshness')
+  return {
+    ...real,
+    CRON_JOBS: jobs,
+    jobsForRole: (role: Parameters<typeof real.jobsForRole>[0], list: Parameters<typeof real.jobsForRole>[1] = jobs) => real.jobsForRole(role, list),
+    dueJobs: (minute: Date, list: Parameters<typeof real.dueJobs>[1] = jobs) => real.dueJobs(minute, list),
+  }
+})
+
 import { dueJobs, jobsForRole } from '@/lib/cron/schedule'
 import { startCronRunner } from '@/lib/cron/runner'
 import { pendingBackgroundCount } from '@/lib/background'

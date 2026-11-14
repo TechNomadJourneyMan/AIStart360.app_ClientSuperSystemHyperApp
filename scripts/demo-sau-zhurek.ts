@@ -92,7 +92,7 @@ async function main() {
   const bundles = computeBundles(seg)
   console.log('  Bundles:')
   for (const b of bundles) {
-    console.log(`    #${b.priority} ${b.label.padEnd(48)} +${(b.estimated_revenue_kzt / 1_000_000).toFixed(2)}M ₸/мес`)
+    console.log(`    #${b.priority} ${b.label.padEnd(48)} ${b.estimated_revenue_kzt === null ? 'нет данных о среднем чеке' : `+${(b.estimated_revenue_kzt / 1_000_000).toFixed(2)}M ₸/мес`}`)
   }
 
   const audit = auditRevenueLosses(seg, bundles)

@@ -3,15 +3,18 @@
  *
  * Same rules as the expert bot (lib/telegram/bots/expert/notify.ts): the
  * expert's own level (default INFO) and mute, platform quiet hours (night:
- * only CRITICAL). Recipients: experts (EXPERT_ROLES) with an opted-in,
- * verified WhatsApp number (whatsapp_links, kind 'expert'). One message per
+ * only CRITICAL). Recipients: people with an opted-in, verified WhatsApp
+ * number (whatsapp_links, kind 'expert') whom the expert bot admits and who
+ * may read the client of the notice (lib/notifications/expert-audience.ts,
+ * SR-17: the assigned expert, or staff with client scope 'all'; a notice
+ * without a company — scope 'all' only). One message per
  * notice and person (outbox idempotency key). Telegram buttons become a link
  * to the expert cabinet in the template's URL button.
  *
  * Experts never go through the WhatsApp Web bridge — Cloud API only.
  */
 import { prisma } from '@/lib/db'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
+import { filterExpertAudience } from '@/lib/notifications/expert-audience'
 import { inQuietHours, reaches, routingConfig, type OrderedLevel } from '@/lib/notifications/levels'
 import type { PlatformEventRow } from '@/lib/events/platform'
 import { cloudApiConfigured, type WhatsAppEnv } from './config'
@@ -56,7 +59,7 @@ export async function notifyExpertsWhatsApp(
   const level = n.level ?? 'SUCCESS'
   const now = opts.now ?? new Date()
   const quiet = inQuietHours(level, routingConfig(), now)
-  const recipients = (await optedInRecipients('expert')).filter((r) => r.role !== null && EXPERT_ROLES.has(r.role))
+  const recipients = await filterExpertAudience(await optedInRecipients('expert'), n.companyId)
   if (recipients.length === 0) return []
 
   const payload = expertNotificationTemplate({ title: n.title ?? TITLES[n.kind], lines: n.lines, path: await clientPath(n) })

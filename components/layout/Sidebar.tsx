@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
-import { useEntitlements } from '@/hooks/useEntitlements'
+import { useEntitlements, isSectionLocked, premiumSectionOf } from '@/hooks/useEntitlements'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 
 export function Sidebar() {
@@ -43,15 +43,12 @@ export function Sidebar() {
   const primaryNav = getPrimaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
   const secondaryNav = getSecondaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
 
-  // Items locked behind a paid plan for CLIENT role
-  const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
-  // Pro access comes from the account tier (managed in GIGA-CRM), never from a
-  // client-entered code. The old «promo code» was sent to the break-glass admin
-  // login and, on a match, handed the client a SUPER-ADMIN cookie.
-  const isLocked = (href: string) =>
-    role === 'client' &&
-    access.tier !== 'pro' &&
-    PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
+  // Items locked behind a paid plan for CLIENT role (R-030): only while the
+  // access gates are on, and then by the real right (hooks/useEntitlements).
+  // Pro access comes from the account tier / entitlements (managed in GIGA-CRM),
+  // never from a client-entered code. The old «promo code» was sent to the
+  // break-glass admin login and, on a match, handed the client a SUPER-ADMIN cookie.
+  const isLocked = (href: string) => isSectionLocked(href, role, access)
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
@@ -83,14 +80,11 @@ export function Sidebar() {
     }
   }
 
+  // R-030: closing the window leaves the user where they are (it used to
+  // navigate to the locked section first and then bounce to /dashboard).
   function closePremiumModal() {
-    // If on a locked page, go back to dashboard
-    const current = premiumItem
     setPremiumItem(null)
     setRequestState('idle')
-    if (current && PREMIUM_LOCKED.some(p => pathname === p || pathname.startsWith(p + '/'))) {
-      router.push('/dashboard')
-    }
   }
 
   const toggleSubMenu = (href: string, e: React.MouseEvent) => {
@@ -148,11 +142,11 @@ export function Sidebar() {
 
           if (hasSubItems && isLocked(item.href)) {
             // Locked parent item — show as locked, navigate to page with promo modal
-            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            const lockedKey = premiumSectionOf(item.href) ?? item.href
             return (
               <button
                 key={item.href}
-                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
+                onClick={() => setPremiumItem(lockedKey)}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
@@ -241,12 +235,12 @@ export function Sidebar() {
           // Regular item (no sub-items)
           const locked = isLocked(item.href)
           if (locked) {
-            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            const lockedKey = premiumSectionOf(item.href) ?? item.href
             return (
               <button
                 key={item.href}
                 title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
-                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
+                onClick={() => setPremiumItem(lockedKey)}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150

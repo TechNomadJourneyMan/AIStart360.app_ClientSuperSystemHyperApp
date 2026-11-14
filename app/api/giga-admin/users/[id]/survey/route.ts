@@ -106,7 +106,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
-  if (!canManageTarget(guard.actor.role, target.staffRole)) {
+  if (!canManageTarget(guard.actor.role, target)) {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
   }
   try {
@@ -144,7 +144,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
-  if (!canManageTarget(guard.actor.role, target.staffRole)) {
+  if (!canManageTarget(guard.actor.role, target)) {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
   }
   const { data: rows, error } = await createServiceClient().from('survey_answers').select('question_key, answer').eq('user_id', params.id)

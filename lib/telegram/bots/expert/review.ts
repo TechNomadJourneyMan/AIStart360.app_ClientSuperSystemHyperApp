@@ -3,9 +3,11 @@
  * migration 103).
  *
  * Delivery (sendReviewDocuments): the PDF of the version («Версия N · дата»,
- * watermark «На проверке эксперта») goes with sendDocument to every linked
- * expert (telegram_bot_links bot='expert', approved, EXPERT_ROLES — the bot's
- * own gate), with two signed buttons:
+ * watermark «На проверке эксперта») goes with sendDocument to the people
+ * lib/reports/review-delivery.ts reportReviewRecipients chose (the expert
+ * assigned to the client; without one — staff SuperExperts / Admins with
+ * scope 'all', SR-17) who are linked in the bot and admitted by its gate
+ * (lib/access/actor.ts isExpertBotActor), with two signed buttons:
  *   rr.ok <version>  «✅ Подтвердить и опубликовать» — publishes at once
  *   rr.ch <version>  «✏️ Нужны правки» — asks for a comment (dialog step
  *                    rr_comment, 30 minutes, /cancel leaves it)
@@ -15,10 +17,13 @@
  * The buttons are signed (callback.ts) so a crafted callback cannot name
  * another version, but the signature does not authorise: every press goes
  * through decideReportReview, which re-reads the role, the approval, the 2FA
- * rule and the version status. A second press, or a press after a colleague
- * decided, changes nothing and says so.
+ * rule, the client scope (the reviewer must be assigned to the client, or
+ * staff with scope 'all') and the version status. A second press, or a press
+ * after a colleague decided, changes nothing and says so. The list «На
+ * проверке» and «PDF ещё раз» show only versions of the person's clients.
  */
-import { isExpertBotMember } from '@/lib/expert-auth'
+import { actorFromRows, isExpertBotActor } from '@/lib/access/actor'
+import { companyAllowed, NOT_ASSIGNED, scopeFor } from '@/lib/telegram/brain/scope'
 import { prisma } from '@/lib/db'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
 import type { ReportReviewPackage, ReportReviewRecipient } from '@/lib/reports/review-delivery'
@@ -66,8 +71,11 @@ export async function sendReviewDocuments(
   const caption = reviewCaption(pkg)
   const key = `report_review:${pkg.versionId}`
   const out: Array<{ chatId: string; status: 'sent' | 'failed' | 'skipped'; reason?: string }> = []
-  // Only people the expert bot itself admits (expert portal role or SuperExpert).
-  const chats = recipients.filter((r) => r.expertBotChatId && isExpertBotMember(r.profileRole, r.staffRole))
+  // Only people the expert bot itself admits (migration 140 rule; recipients are approved profiles).
+  const chats = recipients.filter((r) => r.expertBotChatId && isExpertBotActor(actorFromRows(r.userId, {
+    profile: { role: r.profileRole, status: 'approved' },
+    staff: r.staffRole ? { role: r.staffRole } : null,
+  })))
   for (const r of chats) {
     const chatId = r.expertBotChatId as string
     if (!(await claim(key, chatId))) {
@@ -149,8 +157,11 @@ async function decide(ctx: Ctx, versionId: string, decision: 'approve' | 'change
   await ctx.reply(outcomeText(res, label))
 }
 
+const scopeOf = (ctx: Ctx) => scopeFor(ctx.principal.userId, ctx.principal.clientScope ?? 'assigned')
+
 async function listInReview(ctx: Ctx): Promise<void> {
-  const items = await listInReviewVersions(20)
+  const scope = await scopeOf(ctx)
+  const items = (await listInReviewVersions(200)).filter((v) => companyAllowed(scope, v.company_id)).slice(0, 20)
   const lines = [`📝 <b>Отчёты на проверке: ${items.length}</b>`, '']
   for (const v of items.slice(0, 10)) lines.push(`• ${esc(cut(v.company_name ?? v.company_id, 30))} · ${esc(versionStamp(v.version, v.created_at))}`)
   if (!items.length) lines.push('Нет версий, которые ждут проверки.')
@@ -164,7 +175,9 @@ async function listInReview(ctx: Ctx): Promise<void> {
 async function resendCard(ctx: Ctx, versionId: string): Promise<void> {
   if (!UUID.test(versionId)) return
   const { reportReviewPackage } = await import('@/lib/reports/review-delivery')
-  const pkg = await reportReviewPackage(versionId)
+  const head = await reviewVersionHead(versionId)
+  if (head && !companyAllowed(await scopeOf(ctx), head.company_id)) return void (await ctx.reply(`⛔ ${NOT_ASSIGNED}.`))
+  const pkg = head ? await reportReviewPackage(versionId) : null
   if (!pkg) return void (await ctx.reply('ℹ️ Версия больше не ждёт проверки.'))
   const res = await sendDocument('expert', ctx.chatId, { filename: pkg.filename, bytes: pkg.pdf, mime: 'application/pdf' }, reviewCaption(pkg), reviewKeyboard(pkg.versionId), ctx.deps.fetchImpl)
   if (!res.ok) await ctx.reply('⚠️ Не удалось отправить PDF. Откройте версию в кабинете эксперта.')
@@ -177,6 +190,7 @@ export const reviewCallbacks: Record<string, Entry<ExpertPrincipal>> = {
     async run(ctx, [id]) {
       if (!UUID.test(id)) return
       const head = await reviewVersionHead(id)
+      if (head && !companyAllowed(await scopeOf(ctx), head.company_id)) return void (await ctx.reply(`⛔ ${NOT_ASSIGNED}.`))
       if (!head || head.status !== 'in_review') {
         await clearButtons(ctx)
         return void (await ctx.reply('ℹ️ Версия больше не ждёт проверки.'))

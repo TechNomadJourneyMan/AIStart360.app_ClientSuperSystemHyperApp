@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { dbError } from '@/lib/api-error'
 import { filterByScope, scopedClientIds } from '@/lib/admin/client-scope'
+import { loadSnapshotsByDiagnostic, officialPointA } from '@/lib/point-a/official'
 
 /**
  * GET /api/giga-admin/clients
@@ -42,16 +43,22 @@ export async function GET(req: NextRequest) {
       companyMap.set(c.user_id, { name: c.name, industry: c.industry, employees: c.employee_count })
     }
 
-    // Get latest diagnostics for each client
+    // The current diagnostic of each client with its OFFICIAL numbers
+    // (lib/point-a/official.ts, R-033/R-032): no score → null, never 0.
+    // (diagnostics has no created_at — the old order by it failed silently.)
     const { data: diagnostics } = await sb
       .from('diagnostics')
-      .select('user_id, overall_score, health_index, stage, created_at')
-      .order('created_at', { ascending: false })
+      .select('id, user_id, overall_score, health_index, stage, calculated_at')
+      .eq('is_current', true)
+      .order('calculated_at', { ascending: false })
+    const snaps = await loadSnapshotsByDiagnostic(sb, (diagnostics ?? []).map((d) => String(d.id)))
 
-    const diagMap = new Map<string, { score: number; health: number; stage: string }>()
+    const diagMap = new Map<string, { score: number | null; health: number | null; stage: string | null }>()
     for (const d of diagnostics ?? []) {
       if (!diagMap.has(d.user_id)) {
-        diagMap.set(d.user_id, { score: d.overall_score ?? 0, health: d.health_index ?? 0, stage: d.stage ?? '' })
+        const o = officialPointA(d as Record<string, unknown>, snaps.get(String(d.id)) ?? null)
+        const scored = o.state === 'scored'
+        diagMap.set(d.user_id, { score: scored ? o.overall : null, health: scored ? o.health_index : null, stage: scored ? o.stage : null })
       }
     }
 
@@ -91,14 +98,10 @@ export async function GET(req: NextRequest) {
           teamScore: avg('team'),
           founderScore: avg('owner-readiness'),
         } : null,
-        pulseMetrics: diag ? {
-          riskScore: diag.health < 40 ? 80 : diag.health < 60 ? 50 : 20,
-          churnLevel: diag.health < 40 ? 'high' : diag.health < 60 ? 'medium' : 'low',
-          churnProb: Math.max(0, 100 - diag.health),
-          avgCheck: 0,
-          lastOrder: null,
-          daysSince: null,
-        } : null,
+        // Not derived from the Point A health index any more (I2): a «churn
+        // probability» = 100 − health is not data. The old read ordered by a
+        // column diagnostics does not have, so this was always null anyway.
+        pulseMetrics: null,
       }
     })
 

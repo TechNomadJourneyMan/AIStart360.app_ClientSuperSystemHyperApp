@@ -15,8 +15,9 @@ import { canManageTarget, effectiveClientScope, hasPermission, isStaffRole, perm
  * Actor resolution for /api/giga-admin/* routes (GIGA-CRM).
  *
  * Ways into the panel, in priority order:
- *  1. PERSONAL SESSION — a Supabase session whose profile is super_admin or who
- *     holds a row in `staff_roles`. Every action is attributable to a person.
+ *  1. PERSONAL SESSION — a Supabase session of an approved profile that holds a
+ *     row in `staff_roles` (R-002: profiles.role alone is not staff). Every
+ *     action is attributable to a person.
  *  2. STAFF COOKIE — a short-lived signed token issued to a session actor when
  *     they open a user's cabinet (impersonation replaces the browser's Supabase
  *     session with the user's, so the panel keeps working through this cookie).
@@ -62,7 +63,12 @@ function actor(id: string, kind: GigaActor['kind'], who: StaffIdentity, email?: 
   return { id, kind, role: who.role, email, permissions: permissionsFor(who.role), clientScope: who.clientScope }
 }
 
-/** Staff role of a person: super_admin profile, else their `staff_roles` row. */
+/**
+ * Staff role of a person: their `staff_roles` row, on an approved profile (R-002). A `profiles.role` of
+ * super_admin alone no longer admits anyone — the same rule as the RLS of migration 140 (staff come only
+ * from staff_roles). The owner's password login (app/api/giga-admin/auth) still checks profiles.role and
+ * creates an ordinary session, which then needs the owner's staff_roles row like everyone else.
+ */
 async function staffRoleOf(
   client: { from: ReturnType<typeof createServiceClient>['from'] },
   userId: string,
@@ -80,7 +86,6 @@ async function staffRoleOf(
   // and archived profiles get no staff access, whatever their role says.
   if (p?.status !== 'approved') return null
   const row = staff as { role?: string; client_scope?: string } | null
-  if (p.role === 'super_admin') return { role: 'super_admin', clientScope: 'all' }
   const r = row?.role
   return isStaffRole(r) ? { role: r, clientScope: effectiveClientScope(r, row?.client_scope) } : null
 }
@@ -298,7 +303,7 @@ export async function forbidTarget(actor: GigaActor, userId: string): Promise<Ne
   if (!/^[0-9a-f-]{36}$/i.test(userId)) return null
   try {
     const t = await staffRoleOfUser(userId)
-    if (!canManageTarget(actor.role, t.staffRole)) {
+    if (!canManageTarget(actor.role, t)) {
       return NextResponse.json({ ok: false, error: 'Недостаточно прав для действий с этим сотрудником' }, { status: 403 })
     }
   } catch {

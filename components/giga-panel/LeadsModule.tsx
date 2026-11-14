@@ -15,6 +15,8 @@ import {
   Target,
   Gauge,
 } from 'lucide-react'
+import { formatGri, griFromPercent } from '@/lib/format/gri'
+import { zoneForScore } from '@/lib/gri/mini'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,16 +40,30 @@ type LeadFilter = 'all' | 'new' | 'converted'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
+// Lead scores are stored 0–100 (mini_gri_leads); shown on the GRI scale 0–10
+// with the one set of GRI zones (lib/format/gri.ts) — R-036.
+const miniGri = (score: number | null | undefined, scale = false) =>
+  formatGri(griFromPercent(score), { allowZero: true, scale, empty: '—' })
+
 function scoreColor(score: number): string {
-  if (score >= 70) return 'text-emerald-300'
-  if (score >= 40) return 'text-amber-300'
+  const tone = zoneForScore(score)
+  if (tone === 'green') return 'text-emerald-300'
+  if (tone === 'amber') return 'text-amber-300'
   return 'text-red-300'
 }
 
 function scoreBadge(score: number): string {
-  if (score >= 70) return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20'
-  if (score >= 40) return 'bg-amber-500/15 text-amber-300 border-amber-500/20'
+  const tone = zoneForScore(score)
+  if (tone === 'green') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20'
+  if (tone === 'amber') return 'bg-amber-500/15 text-amber-300 border-amber-500/20'
   return 'bg-red-500/15 text-red-300 border-red-500/20'
+}
+
+function scoreBar(score: number): string {
+  const tone = zoneForScore(score)
+  if (tone === 'green') return 'bg-emerald-500'
+  if (tone === 'amber') return 'bg-amber-500'
+  return 'bg-red-500'
 }
 
 function formatDate(iso: string): string {
@@ -128,7 +144,7 @@ function LeadRow({
             lead.overallScore,
           )}`}
         >
-          {lead.overallScore}
+          {miniGri(lead.overallScore)}
         </div>
 
         {/* Email + meta */}
@@ -196,7 +212,7 @@ function LeadRow({
                 <p className="text-[11px] text-slate-500 mb-3">
                   Слабейший блок:{' '}
                   <span className="text-red-300 font-semibold">{weakest.label}</span> (
-                  {weakest.score}/100)
+                  {miniGri(weakest.score, true)})
                 </p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -210,19 +226,13 @@ function LeadRow({
                         b.score,
                       )}`}
                     >
-                      {b.score}
+                      {miniGri(b.score)}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] text-slate-400 truncate">{b.label}</p>
                       <div className="h-1 mt-1 rounded-full bg-white/[0.06] overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${
-                            b.score >= 70
-                              ? 'bg-emerald-500'
-                              : b.score >= 40
-                                ? 'bg-amber-500'
-                                : 'bg-red-500'
-                          }`}
+                          className={`h-full rounded-full ${scoreBar(b.score)}`}
                           style={{ width: `${Math.max(0, Math.min(100, b.score))}%` }}
                         />
                       </div>
@@ -300,8 +310,8 @@ export function LeadsModule() {
   const convertedCount = leads.filter((l) => l.converted).length
   const avgScore =
     total > 0
-      ? Math.round(leads.reduce((sum, l) => sum + (l.overallScore || 0), 0) / total)
-      : 0
+      ? miniGri(leads.reduce((sum, l) => sum + (l.overallScore || 0), 0) / total, true)
+      : '—'
 
   const filtered = leads.filter((l) => {
     if (filter === 'new' && l.converted) return false
@@ -356,7 +366,7 @@ export function LeadsModule() {
           accent="bg-emerald-500/15 border border-emerald-500/20"
         />
         <LeadKpi
-          label="Средний GRI-скор"
+          label="Средний мини-GRI"
           value={avgScore}
           icon={<Gauge size={16} className="text-amber-400" />}
           accent="bg-amber-500/15 border border-amber-500/20"

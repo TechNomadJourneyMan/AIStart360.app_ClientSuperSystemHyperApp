@@ -11,6 +11,7 @@ import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
 import NamespaceMetricsTab from '@/components/metrics/NamespaceMetricsTab'
 import { useRealtimeSync, type RealtimeSyncBinding } from '@/hooks/useRealtimeSync'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
+import { formatGri, griTone as zoneTone } from '@/lib/format/gri'
 import type {
   GriAssessmentRow,
   CompanyRow,
@@ -27,6 +28,7 @@ const SECTION_META: Record<SectionId, { label: string; icon: string }> = {
   'owner-readiness':   { label: 'Готовность основателя', icon: 'person'          },
 }
 
+// Zones = GRI_ZONES (lib/format/gri.ts) — the one GRI threshold set (R-036).
 function griTone(score: number): {
   status: 'critical' | 'weak' | 'ok'
   bar: string
@@ -34,7 +36,8 @@ function griTone(score: number): {
   badge: string
   bg: string
 } {
-  if (score >= 7) {
+  const tone = zoneTone(score)
+  if (tone === 'green') {
     return {
       status: 'ok',
       bar:   'bg-primary',
@@ -43,7 +46,7 @@ function griTone(score: number): {
       bg:    'bg-primary/10',
     }
   }
-  if (score >= 4) {
+  if (tone === 'amber') {
     return {
       status: 'weak',
       bar:   'bg-tertiary-container',
@@ -400,7 +403,7 @@ function MetricDetailModal({
               <div className="flex items-baseline justify-between gap-3 mb-3">
                 <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">Ваша оценка раздела</p>
                 <p className={`font-mono text-lg font-bold ${section.tone.text}`}>
-                  {section.score > 0 ? `${section.score.toFixed(2)} / 10` : 'не оценён'}
+                  {section.score > 0 ? formatGri(section.score, { scale: true }) : 'не оценён'}
                 </p>
               </div>
               {section.criteria.length > 0 ? (
@@ -639,7 +642,7 @@ export default function MetricsPageClient({
             <div className="flex items-center gap-2 bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2">
               <span className="material-symbols-outlined text-sm text-secondary">radar</span>
               <span className="text-xs font-mono text-secondary">
-                GRI Score: {griIndex.toFixed(2)} / 10
+                GRI: {formatGri(griIndex, { scale: true })}
               </span>
             </div>
           )}
@@ -783,7 +786,7 @@ export default function MetricsPageClient({
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <span className="text-2xl font-mono font-bold text-on-surface">
-                        {griAssessment.gri_index.toFixed(2)}
+                        {formatGri(griAssessment.gri_index, { empty: '—' })}
                       </span>
                       <span className="text-[9px] text-on-surface-variant">/10</span>
                     </div>

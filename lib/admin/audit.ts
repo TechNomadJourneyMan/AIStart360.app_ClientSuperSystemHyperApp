@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
+import { clientIp } from '@/lib/net/client-ip'
 import type { GigaActor } from '@/lib/admin/giga-actor'
 
 /**
@@ -43,7 +44,8 @@ function clampJson(v: unknown): unknown {
 
 export function requestMeta(req?: Request | null): { ip: string | null; ua: string | null } {
   if (!req) return { ip: null, ua: null }
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null
+  // R-049: the trusted hop of X-Forwarded-For (lib/net/client-ip), not the first entry the client writes.
+  const ip = clientIp(req)
   return { ip, ua: req.headers.get('user-agent')?.slice(0, 300) ?? null }
 }
 

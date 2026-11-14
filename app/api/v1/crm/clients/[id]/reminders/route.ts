@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmReminderBody } from '@/lib/validation/schemas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NOTE_MAX = 2000
@@ -49,22 +51,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
   const userId = userData.user.id
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
-  }
-  const b = (body ?? {}) as Record<string, unknown>
-
-  if (b.due_at == null || b.due_at === '') {
-    return NextResponse.json({ ok: false, error: 'due_at required' }, { status: 400 })
-  }
-  const due = new Date(String(b.due_at))
+  // R-149: { due_at, note? } only.
+  const body = await parseJsonBody(request, CrmReminderBody)
+  if (!body.ok) return body.response
+  const due = new Date(body.data.due_at)
   if (Number.isNaN(due.getTime())) {
-    return NextResponse.json({ ok: false, error: 'due_at must be an ISO date' }, { status: 400 })
+    return NextResponse.json({ ok: false, error: 'due_at must be an ISO date', code: 'invalid_body', field: 'due_at' }, { status: 400 })
   }
-  const note = b.note == null ? null : String(b.note).trim().slice(0, NOTE_MAX) || null
+  const note = body.data.note == null ? null : body.data.note.trim().slice(0, NOTE_MAX) || null
 
   const { data: client, error: cErr } = await sb
     .from('crm_clients')

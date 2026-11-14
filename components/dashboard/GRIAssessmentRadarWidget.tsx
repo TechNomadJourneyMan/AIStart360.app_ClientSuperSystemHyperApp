@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { formatGri } from '@/lib/format/gri'
 import Link from 'next/link'
 import { GRIDynamicsModal } from './GRIDynamicsModal'
 
@@ -147,7 +148,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
           </p>
           <div className="flex items-baseline gap-1.5 mt-0.5">
             <span className="text-xl font-mono font-bold" style={{ color: overallColor }}>
-              {overall.toFixed(1)}
+              {formatGri(overall, { empty: '—' })}
             </span>
             <span className="text-xs text-on-surface-variant">/ 10</span>
             <span
@@ -329,7 +330,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
                       fontFamily="monospace"
                       fontWeight="bold"
                     >
-                      {scores[hovered].toFixed(1)} / 10
+                      {formatGri(scores[hovered], { scale: true, empty: '—' })}
                     </text>
                   </g>
                 )
@@ -344,7 +345,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
               fontFamily="monospace"
               fontWeight="bold"
             >
-              {overall.toFixed(1)}
+              {formatGri(overall, { empty: '—' })}
             </text>
             <text
               x={CX}
@@ -391,7 +392,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
                     {axis.full}
                   </span>
                   <span className="text-[11px] font-mono font-bold flex-shrink-0" style={{ color }}>
-                    {score.toFixed(1)}
+                    {formatGri(score, { empty: '—' })}
                   </span>
                 </div>
                 <div className="h-1 bg-surface-container rounded-full overflow-hidden">

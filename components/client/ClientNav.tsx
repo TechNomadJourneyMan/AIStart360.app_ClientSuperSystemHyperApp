@@ -19,7 +19,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useId, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import { trackLogout } from '@/lib/events/client'
 import { activeClientNavKey, clientShellMode, type ClientNavItem } from '@/lib/client-shell/nav'
 import type { PanelLink } from '@/lib/client-shell/staff-links'
@@ -57,15 +57,17 @@ function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string 
   const logout = async () => {
     setLeaving(true)
     trackLogout()
+    // SR-06: the server decides — during an impersonation only that session
+    // ends (the client stays signed in on their devices); a client's own
+    // sign-out is global as before (lib/auth/sign-out-client.ts).
+    let next = '/login'
     try {
-      await createClient().auth.signOut()
-    } catch {
-      /* the redirect below still leaves the cabinet; middleware re-checks the session */
+      next = await signOutThisBrowser()
     } finally {
       // Legacy cookies some older pages still clear on sign-out.
       document.cookie = 'aistart360_role=; path=/; max-age=0'
       document.cookie = 'aistart360_user_id=; path=/; max-age=0'
-      window.location.href = '/login'
+      window.location.href = next
     }
   }
 

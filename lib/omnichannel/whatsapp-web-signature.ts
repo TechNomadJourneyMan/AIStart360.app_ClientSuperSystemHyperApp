@@ -180,8 +180,10 @@ export function verifySignedBridgeRequest(
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(keyId)) {
     return { ok: false, reason: 'unknown_key' }
   }
-  const secret = input.secrets[keyId]
-  if (!secret?.trim()) return { ok: false, reason: 'unknown_key' }
+  // Own keys only (R-234): `constructor`, `__proto__`, `toString`… would otherwise read
+  // Object.prototype and throw on .trim() → unhandled 500.
+  const secret = Object.hasOwn(input.secrets, keyId) ? input.secrets[keyId] : undefined
+  if (typeof secret !== 'string' || !secret.trim()) return { ok: false, reason: 'unknown_key' }
 
   let expected: string
   try {

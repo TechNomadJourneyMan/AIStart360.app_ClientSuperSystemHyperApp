@@ -21,6 +21,9 @@ export const assistantEventsRetention = inngest.createFunction(
     // inngest 4.x registers triggers only from `triggers`; the former top-level
     // `cron` option was ignored, so the retention job never ran.
     triggers: [{ cron: 'TZ=Europe/Amsterdam 0 3 * * *' }],
+    // BE-05/06 (lib/functions/limits.ts): one at a time; a run that waited an hour is skipped (the next is tomorrow).
+    concurrency: { limit: 1 },
+    timeouts: { start: '1h', finish: '15m' },
   },
   // @ts-ignore -- handler arg types mismatch under the repo's inngest typings
   async () => {

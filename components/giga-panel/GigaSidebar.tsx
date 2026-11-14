@@ -100,8 +100,11 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
 
   const logout = async () => {
     try {
+      // SR-06: the server signs out (during an impersonation — only that
+      // session, never every device of the client); here only this
+      // browser's copy is cleared, never a global sign-out.
       await fetch('/api/giga-admin/auth', { method: 'DELETE' })
-      await createClient().auth.signOut()
+      await createClient().auth.signOut({ scope: 'local' })
     } finally {
       window.location.href = loginPath
     }

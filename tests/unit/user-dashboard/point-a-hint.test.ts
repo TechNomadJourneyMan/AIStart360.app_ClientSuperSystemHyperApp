@@ -29,4 +29,9 @@ describe('home Point A hint', () => {
     expect(snapshotIsPreliminary({ v4: null })).toBe(false)
     expect(pointAStatHint({ calculatedAt: '2026-11-02T09:00:00Z', preliminary: true }, fmt)).toBe('Снимок бизнеса · предварительно · оценка после полной анкеты')
   })
+
+  it('R-032/R-033: the full questionnaire is sent, no official score → «Балл появится, когда данных хватит»', () => {
+    expect(pointAStatHint({ calculatedAt: '2026-11-14T09:00:00Z', overallScore: null }, fmt)).toBe('Балл появится, когда данных хватит')
+    expect(pointAStatHint({ calculatedAt: '2026-11-14T09:00:00Z', overallScore: 61 }, fmt)).toBe('расчёт 2026-11-14')
+  })
 })

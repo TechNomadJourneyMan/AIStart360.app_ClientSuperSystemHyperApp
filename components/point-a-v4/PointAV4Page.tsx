@@ -7,7 +7,7 @@
  * (Realtime + polling while a recalculation runs).
  */
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { usePointAState, useRecalculatePointA, type PointAPageState } from '@/hooks/usePointAState'
 import { PointAHeader } from './PointAHeader'
@@ -24,6 +24,25 @@ import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { BTN_PRIMARY, CARD, Icon } from './ui'
 import { cn } from '@/lib/utils'
 import { AnswerEditorProvider } from './AnswerEditDialog'
+import PublishedReports from '@/components/reports/PublishedReports'
+
+/**
+ * Links into the page (#reports from the «Ваш отчёт готов» card and the expert's
+ * publication notice, #my-data / #files from the old menus and /client/my-data):
+ * the page renders after its data arrives, so the browser's own jump to the
+ * hash finds nothing — scroll once the sections exist.
+ */
+function useScrollToHash(ready: boolean) {
+  const done = useRef(false)
+  useEffect(() => {
+    if (!ready || done.current || typeof window === 'undefined') return
+    const id = decodeURIComponent(window.location.hash.slice(1))
+    if (!id) return
+    done.current = true
+    const t = window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+    return () => window.clearTimeout(t)
+  }, [ready])
+}
 
 function Skeleton() {
   return (
@@ -43,6 +62,7 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
   const state = preview ?? live.data
   const recalc = useRecalculatePointA()
   const [customize, setCustomize] = useState(false)
+  useScrollToHash(!preview && !!state && !isLoading)
 
   if (isLoading && !preview) return <div className="mx-auto max-w-6xl px-4 py-6"><Skeleton /></div>
   if (!preview && live.noCompany) {
@@ -104,6 +124,8 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
         <>
           <KeyMetricsStrip state={state} readonly={!!preview} />
           <ExpertNotes state={state} />
+          {/* R-025: the report an expert published — PDF and the link to the version (#reports). */}
+          {!preview && <PublishedReports companyId={state.companyId} compact />}
           <AttentionPanel state={state} readonly={!!preview} />
           <OverviewSection snapshot={state.snapshot} />
           <BlocksSection state={state} customize={customize} previewDetails={previewDetails} />

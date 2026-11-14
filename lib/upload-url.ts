@@ -5,7 +5,7 @@
  * URL (which could target internal services or cloud metadata endpoints).
  */
 
-/** True only for a public/sign URL under our own Supabase Storage host. */
+/** True only for a public/sign URL under our own Supabase Storage origin (NEXT_PUBLIC_SUPABASE_URL). */
 export function isSupabaseStorageUrl(raw: unknown): boolean {
   if (typeof raw !== 'string' || raw.length === 0) return false
 
@@ -18,19 +18,17 @@ export function isSupabaseStorageUrl(raw: unknown): boolean {
 
   if (url.protocol !== 'https:') return false
 
+  // Only OUR Storage origin (Round 1, P: cloud audit): without NEXT_PUBLIC_SUPABASE_URL nothing is accepted —
+  // the old «any *.supabase.co / *.supabase.in» fallback let a foreign cloud project's storage through.
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (base) {
-    let allowedHost: string
-    try {
-      allowedHost = new URL(base).host
-    } catch {
-      return false
-    }
-    if (url.host !== allowedHost) return false
-  } else if (!/\.supabase\.(co|in)$/i.test(url.host)) {
-    // Fallback when the env var is absent: accept only *.supabase.co / *.supabase.in
+  if (!base) return false
+  let allowedOrigin: string
+  try {
+    allowedOrigin = new URL(base).origin
+  } catch {
     return false
   }
+  if (url.origin !== allowedOrigin) return false
 
   // Must be a Storage object path.
   return url.pathname.startsWith('/storage/v1/object/')

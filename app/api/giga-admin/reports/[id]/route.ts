@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireGigaReport } from '@/lib/admin/client-scope'
 import { z } from 'zod'
-import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { apiError, dbError } from '@/lib/api-error'
 import { getReportVersion } from '@/lib/reports/versions'
@@ -17,9 +17,14 @@ const Schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('withdraw'), reason: z.string().trim().min(3).max(500) }).strict(),
 ])
 
-/** GET /api/giga-admin/reports/:id — one version with its frozen content and provenance. */
+/**
+ * GET /api/giga-admin/reports/:id — one version with its frozen content and
+ * provenance. The content is the client's diagnosis (scores, finances,
+ * findings): users.sensitive is required besides agents.view (R-133 — an
+ * analyst sees the list of versions, not their content).
+ */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireGiga(req, 'agents.view')
+  const g = await requireGigaReport(req, ['agents.view', 'users.sensitive'], params.id)
   if (g.response) return g.response
   if (!UUID.test(params.id)) return apiError('Версия отчёта не найдена', 404)
   try {
@@ -46,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * The audit entry is written first; without it nothing changes.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireGiga(req, 'reports.publish')
+  const g = await requireGigaReport(req, 'reports.publish', params.id)
   if (g.response) return g.response
   if (!UUID.test(params.id)) return apiError('Версия отчёта не найдена', 404)
   const parsed = Schema.safeParse(await req.json().catch(() => null))

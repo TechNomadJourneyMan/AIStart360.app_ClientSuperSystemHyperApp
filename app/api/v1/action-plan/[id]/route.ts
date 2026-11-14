@@ -2,24 +2,22 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { createClient as createSr } from '@supabase/supabase-js'
+import { createServiceClient } from '@/lib/supabase-service'
+import { mayActOnUser } from '@/lib/api-identity'
 import { logAudit } from '@/lib/audit'
 import { dbError } from '@/lib/api-error'
 
 /**
  * PATCH /api/v1/action-plan/:id
  * Body: { status?, owner?, due_date? }
- * Owner edits own tasks; staff (expert/admin) edits any client's (§19).
+ * Owner edits own tasks; another client's — only staff / an active expert per
+ * migration 140 who passed the step-up of this session and whose client scope
+ * covers the task's owner (mayActOnUser: an expert — the assigned clients,
+ * staff — by their client scope) (§19). The write goes through the service
+ * role, so this check is the only gate.
  */
 
-const STAFF = new Set(['expert', 'admin', 'super_admin'])
 const STATUSES = new Set(['open', 'in_progress', 'done'])
-
-function sr() {
-  return createSr(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-}
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
@@ -39,16 +37,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (Object.keys(patch).length === 0) return NextResponse.json({ ok: false, error: 'no fields' }, { status: 400 })
   patch.updated_at = new Date().toISOString()
 
-  const admin = sr()
-  const { data: item } = await admin.from('action_items').select('user_id').eq('id', params.id).maybeSingle()
+  const admin = createServiceClient()
+  const { data: item, error: readError } = await admin.from('action_items').select('user_id').eq('id', params.id).maybeSingle()
+  if (readError) return dbError('v1/action-plan/[id]', readError)
   if (!item) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
   const isOwner = item.user_id === user.id
-  let isStaff = false
-  if (!isOwner) {
-    const { data: prof } = await sb.from('profiles').select('role').eq('id', user.id).maybeSingle()
-    isStaff = STAFF.has((prof?.role as string) ?? '')
-    if (!isStaff) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const isStaff = !isOwner
+  if (isStaff && !(await mayActOnUser(sb, user.id, item.user_id as string))) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 
   const { error } = await admin.from('action_items').update(patch).eq('id', params.id)

@@ -29,8 +29,22 @@ const dbArg = process.argv.indexOf('--db')
 const dbName = dbArg > 0 ? process.argv[dbArg + 1] : 'aistart360_test'
 const quiet = process.argv.includes('--quiet')
 
-const admin = new URL(adminUrl)
-if (!['127.0.0.1', 'localhost', '::1'].includes(admin.hostname)) {
+// Only a disposable local server: 127.0.0.0/8, localhost, ::1 (URL keeps the
+// brackets: "[::1]"), or a unix socket (empty host). Anything else — a cloud
+// or reserve database with production data — is refused (R-010).
+function isLocalDbHost(hostname) {
+  const h = String(hostname).toLowerCase().replace(/^\[/, '').replace(/\]$/, '')
+  return h === '' || h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h)
+}
+
+let admin
+try {
+  admin = new URL(adminUrl)
+} catch {
+  console.error('Refusing to run: TEST_DB_ADMIN_URL is not a valid URL')
+  process.exit(1)
+}
+if (!isLocalDbHost(admin.hostname)) {
   console.error(`Refusing to run against non-local host ${admin.hostname}`)
   process.exit(1)
 }

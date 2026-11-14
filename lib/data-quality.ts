@@ -6,7 +6,11 @@
 // Expected columns in a YCLIENTS export (Sau Zhurek): ФИО, Телефон, Первый
 // приём, Последний приём, Кол-во приёмов, Сумма, Согласие на рассылку…
 
-import * as XLSX from 'xlsx'
+// Dates, numbers and the sheet itself are read exactly as the RFM analysis
+// reads them (lib/tabular-parse.ts): day-first dates, Excel date cells as
+// dates (not the US «4/3/26» text), «45 000,50» as 45000.5, Cyrillic CSV in
+// UTF-8 or Windows-1251.
+import { parseDayFirstDate, parseLocaleNumber, readPatientSheet } from './tabular-parse'
 
 export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
@@ -35,6 +39,8 @@ interface FieldSpec {
   label: string
   patterns: RegExp[]
   required: boolean
+  /** Header example for the «not found» message (when the pattern is not readable). */
+  example?: string
   /** How to judge fill-rate */
   expectedFillRate: number   // 0..1
 }
@@ -56,8 +62,11 @@ const FIELD_SPECS: FieldSpec[] = [
   { id: 'phone',       label: 'Телефон',       patterns: [/^телефон$|phone|^mobile|^моб/],            required: true,  expectedFillRate: 0.90 },
   { id: 'first_visit', label: 'Первый визит',  patterns: [/первы[йи].*визит|первы[йи].*приём|первое.*посещен|first.*visit|регистраци/], required: false, expectedFillRate: 0.70 },
   { id: 'last_visit',  label: 'Последний визит', patterns: [/последни[йе].*визит|последни[йе].*приём|последн.*посещен|last.*visit|дата.*визит/], required: true,  expectedFillRate: 0.70 },
-  { id: 'visits_count',label: 'Количество посещений', patterns: [/количество.*посещ|кол.во.*приё|кол.во.*визит|^приём|визит.*всего|count.*visit|frequency/], required: true,  expectedFillRate: 0.70 },
-  { id: 'total_sum',   label: 'Сумма (LTV)',   patterns: [/потратил|оплатил|общая.*сумма|^сумма$|всего|total|ltv|monetary/], required: true,  expectedFillRate: 0.50 },
+  // Not required: without it the RFM analysis segments by recency + spend (R-042)
+  // — reported as a warning below, not as an unusable file.
+  { id: 'visits_count',label: 'Количество посещений', patterns: [/количество.*посещ|кол.во.*приё|кол.во.*визит|^приём|визит.*всего|count.*visit|frequency/], required: false, expectedFillRate: 0.70 },
+  // «всего» alone also matched «Визитов всего»: a visit / count header is never the spend (as in RFM).
+  { id: 'total_sum',   label: 'Сумма (LTV)',   patterns: [/потратил|оплатил|общая.*сумма|^сумма$|сумма.*всего|всего.*сумм|^всего$|total|ltv|monetary/].map((re) => new RegExp(`^(?!.*(визит|посещ|приём|прием|кол)).*(?:${re.source})`)), required: true,  example: 'Потратил / Сумма / Оплатил', expectedFillRate: 0.50 },
   { id: 'consent',     label: 'Согласие на рассылку', patterns: [/соглас.*рассыл|соглас|consent/],      required: false, expectedFillRate: 0 },
   { id: 'birth_date',  label: 'Дата рождения', patterns: [/дата.*рожд|birth.*date|возраст/],            required: false, expectedFillRate: 0 },
 ]
@@ -90,70 +99,23 @@ function parsePhone(v: unknown): string | null {
   return digits
 }
 
-function parseDate(v: unknown): Date | null {
-  if (v === null || v === undefined || v === '') return null
-  if (v instanceof Date && !isNaN(v.getTime())) return v
-  // Excel serial number
-  if (typeof v === 'number' && v > 25000 && v < 60000) {
-    const d = XLSX.SSF.parse_date_code(v)
-    if (d) return new Date(d.y, d.m - 1, d.d)
-  }
-  const s = String(v).trim()
-  // dd.mm.yyyy / dd/mm/yyyy / yyyy-mm-dd
-  const iso = Date.parse(s)
-  if (!isNaN(iso)) return new Date(iso)
-  const m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/)
-  if (m) {
-    const [, d, mo, y] = m
-    const year = y.length === 2 ? 2000 + parseInt(y, 10) : parseInt(y, 10)
-    return new Date(year, parseInt(mo, 10) - 1, parseInt(d, 10))
-  }
-  return null
-}
+/** A visit date: day-first, Excel date cells / serials (lib/tabular-parse.ts). */
+const parseDate = parseDayFirstDate
 
-function parseNumber(v: unknown): number | null {
-  if (v === null || v === undefined || v === '') return null
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null
-  const s = String(v).replace(/\s/g, '').replace(/[,₸]/g, '')
-  const n = parseFloat(s)
-  return Number.isFinite(n) ? n : null
-}
+/** A money / count cell in the local format (lib/tabular-parse.ts). */
+const parseNumber = parseLocaleNumber
 
 /**
- * Parse CSV/XLS/XLSX file buffer into headers + rows.
- * XLS files from YCLIENTS use an older BIFF format sometimes reported
- * as corrupt by strict parsers — we try read-all cells fallback.
+ * Parse CSV/XLS/XLSX file buffer into headers + rows with TYPED cells (a date
+ * cell is a Date, a number a number) — the same reader as the RFM analysis.
+ * It used to format cells (raw: false: a date cell became the US «4/3/26»)
+ * and read CSV bytes without a charset (Cyrillic headers broke).
  */
 export function parseFileBuffer(
   buf: ArrayBuffer | Uint8Array | Buffer,
   filename: string,
 ): { headers: string[]; rows: Array<Record<string, unknown>>; error: string | null } {
-  try {
-    const ext = (filename.split('.').pop() ?? '').toLowerCase()
-    // XLSX can auto-detect format; we enforce 'cellDates' to get Date objects
-    const wb = XLSX.read(buf, {
-      type: buf instanceof Buffer ? 'buffer' : 'array',
-      cellDates: true,
-      cellText: false,
-    })
-    const firstSheet = wb.SheetNames[0]
-    if (!firstSheet) return { headers: [], rows: [], error: 'No sheets found' }
-    const sheet = wb.Sheets[firstSheet]
-
-    // Convert to array-of-arrays first to recover headers robustly
-    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false })
-    if (aoa.length === 0) return { headers: [], rows: [], error: 'Файл пуст' }
-
-    const headers = (aoa[0] as unknown[]).map((h) => String(h ?? '').trim())
-    const rows = aoa.slice(1).map((row) => {
-      const r: Record<string, unknown> = {}
-      headers.forEach((h, i) => { r[h] = (row as unknown[])[i] })
-      return r
-    })
-    return { headers, rows, error: null }
-  } catch (e) {
-    return { headers: [], rows: [], error: e instanceof Error ? e.message : 'parse error' }
-  }
+  return readPatientSheet(buf, filename)
 }
 
 export function validatePatientBase(
@@ -179,11 +141,12 @@ export function validatePatientBase(
 
   // ── Column detection issues ──────────────────────────────────────────────
   for (const spec of FIELD_SPECS) {
-    if (!detected[spec.id]) {
+    // visits_count: its own warning below (what it means for the analysis).
+    if (!detected[spec.id] && spec.id !== 'visits_count') {
       issues.push({
         severity: spec.required ? 'critical' : 'medium',
         field: spec.id,
-        message: `Колонка «${spec.label}» не найдена — ожидается заголовок вида «${spec.patterns[0].source}»`,
+        message: `Колонка «${spec.label}» не найдена — ожидается заголовок вида «${spec.example ?? spec.patterns[0].source}»`,
       })
     }
   }
@@ -223,6 +186,26 @@ export function validatePatientBase(
     if (broken > 0) issues.push({ severity: 'medium', field: 'last_visit', message: 'Некорректный формат даты последнего визита', count: broken, total: rows.length })
     if (empty > 0) issues.push({ severity: 'low', field: 'last_visit', message: 'Пустые даты последнего визита', count: empty, total: rows.length })
     if (future > 0) issues.push({ severity: 'high', field: 'last_visit', message: 'Даты в будущем (вероятно ошибка данных)', count: future, total: rows.length })
+  }
+
+  // Visit frequency: without the column the analysis cannot tell regulars from
+  // one-off patients — segments come from recency + spend only (R-042).
+  const visitsCol = detected.visits_count
+  if (!visitsCol) {
+    issues.push({
+      severity: 'high',
+      field: 'visits_count',
+      message: 'Нет колонки «Количество посещений»: частота визитов неизвестна — сегменты будут построены только по давности визита и сумме (R+M). Добавьте колонку в выгрузку для точной сегментации.',
+    })
+  } else {
+    let invalid = 0
+    for (const r of rows) {
+      const raw = r[visitsCol.raw]
+      if (raw === null || raw === undefined || raw === '') continue
+      const n = parseNumber(raw)
+      if (n === null || n < 0) invalid++
+    }
+    if (invalid > 0) issues.push({ severity: 'medium', field: 'visits_count', message: 'Количество посещений в нечитаемом формате', count: invalid, total: rows.length })
   }
 
   const sumCol = detected.total_sum

@@ -11,6 +11,7 @@
  * always did) and returns a typed result the route maps to its HTTP status.
  */
 import type { AuditEntry } from '@/lib/admin/audit'
+import { revokeSharesOfAssignee } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { sendSurveyReminderEmail } from '@/lib/email'
@@ -191,6 +192,10 @@ export async function setClientAssignment(args: {
     updated_at: now,
   }, { onConflict: 'user_id' })
   if (error) return { ok: false, code: 'db_write', status: 500, error: 'Не удалось назначить' }
+
+  // R-136: the previous assignee's public links to this client stop working.
+  const prevAssignee = (before as { assignee_id?: string | null } | null)?.assignee_id ?? null
+  if (prevAssignee && prevAssignee !== args.assigneeId) await revokeSharesOfAssignee(args.userId, prevAssignee)
 
   await args.audit({
     action: args.assigneeId ? 'user.assigned' : 'user.unassigned',

@@ -152,6 +152,8 @@ export const pbRecompute = inngest.createFunction(
     id: 'pb-recompute',
     retries: 1,
     concurrency: RECOMPUTE_CONCURRENCY,
+    // BE-06 (lib/functions/limits.ts): ≤ 10 companies a run, a short step + 3 s pause each.
+    timeouts: { start: '30m', finish: '1h' },
     triggers: [{ cron: '0 * * * *' }, { event: PB_RECOMPUTE_CONTINUE_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -164,6 +166,7 @@ export const pbRecomputeCompany = inngest.createFunction(
     retries: 0,
     concurrency: RECOMPUTE_CONCURRENCY,
     rateLimit: { key: 'event.data.companyId', limit: 1, period: '10m' },
+    timeouts: { start: '15m', finish: '15m' },
     triggers: [{ event: PB_RECOMPUTE_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -175,6 +178,7 @@ export const pbMonthlyCheckpoint = inngest.createFunction(
     id: 'pb-monthly-checkpoint',
     retries: 1,
     concurrency: { limit: 1 },
+    timeouts: { start: '1h', finish: '6h' },
     // 04:00 UTC on the 1st = 09:00 / 10:00 in Kazakhstan: the reminder arrives in the working morning.
     triggers: [{ cron: '0 4 1 * *' }, { event: PB_MONTHLY_CONTINUE_EVENT }],
   },
@@ -218,7 +222,7 @@ export async function runInviteSweep({ step }: { step: PbStep }, deps: InviteSwe
 }
 
 export const pbInviteExternal = inngest.createFunction(
-  { id: 'pb-invite-external', retries: 1, concurrency: { limit: 1 }, triggers: [{ cron: '*/15 * * * *' }] },
+  { id: 'pb-invite-external', retries: 1, concurrency: { limit: 1 }, timeouts: { start: '10m', finish: '10m' }, triggers: [{ cron: '*/15 * * * *' }] },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
   async ({ step }: { step: PbStep }) => runInviteSweep({ step }),
 )

@@ -65,6 +65,12 @@ export interface CreateShareInput {
   expiresInDays?: number
 }
 
+/**
+ * Lifetime of a NEW link minted through POST /api/share (R-136). Links that
+ * already exist keep the expiry they were created with (PO decision).
+ */
+export const SHARE_DEFAULT_TTL_DAYS = 90
+
 /** Generate a URL-safe random share token. */
 export function generateShareToken(): string {
   return randomBytes(16).toString('base64url')
@@ -199,4 +205,125 @@ export async function revokeShare(token: string): Promise<number> {
     console.warn('[share/tokens] revokeShare failed (best-effort)', err)
     return 0
   }
+}
+
+// ─── Revocation on access changes (R-136, SR-19) ─────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Outcome of a revocation: `ok: false` — the links may still work (nothing was lost silently). */
+export interface RevokeResult {
+  ok: boolean
+  revoked: number
+  error?: string
+}
+
+/** Attempts per PATCH: one retry for a transient PostgREST / network failure. */
+const REVOKE_ATTEMPTS = 2
+
+/** PATCH revoked=true on every live link matching `filter`, with one retry. Never throws. */
+async function revokeWhere(filter: string): Promise<RevokeResult> {
+  let error = 'unknown error'
+  for (let attempt = 0; attempt < REVOKE_ATTEMPTS; attempt++) {
+    try {
+      const res = await sr(`shared_reports?${filter}&revoked=eq.false`, {
+        method: 'PATCH',
+        prefer: 'return=representation',
+        body: JSON.stringify({ revoked: true }),
+      })
+      if (res.ok) {
+        const rows = (await res.json().catch(() => [])) as unknown[]
+        return { ok: true, revoked: Array.isArray(rows) ? rows.length : 0 }
+      }
+      error = `HTTP ${res.status}`
+    } catch (err) {
+      error = err instanceof Error ? err.message.split('\n')[0] : String(err)
+    }
+  }
+  return { ok: false, revoked: 0, error }
+}
+
+/**
+ * A revocation that did not happen must not be lost (SR-19): an error line,
+ * and a WARNING for the team in the GIGA feed (notification_events — durable,
+ * deduped per person) so somebody revokes the links by hand. Never throws.
+ */
+async function reportRevokeFailure(what: string, subjectUserId: string, details: Record<string, unknown>, error: string): Promise<void> {
+  console.error(`[share/tokens] ${what} failed — links may still work:`, { subjectUserId, ...details, error })
+  try {
+    const { notifyStaff } = await import('@/lib/notifications/staff')
+    await notifyStaff({
+      level: 'WARNING',
+      type: 'share.revoke_failed',
+      title: 'Публичные ссылки на отчёты не отозваны',
+      lines: [
+        `Событие: ${what}`,
+        `Пользователь: ${subjectUserId}`,
+        ...Object.entries(details).map(([k, v]) => `${k}: ${String(v)}`),
+        `Ошибка: ${error.slice(0, 200)}`,
+        'Повторите действие или отзовите ссылки вручную (shared_reports.revoked).',
+      ],
+      entityType: 'user',
+      entityId: subjectUserId,
+      dedupeKey: `share.revoke_failed:${what}:${subjectUserId}:${Object.values(details).join(':')}`,
+      link: `/admin-giga-panel/users/${subjectUserId}`,
+    })
+  } catch (err) {
+    console.error('[share/tokens] could not record the revoke failure for staff:', err instanceof Error ? err.message.split('\n')[0] : err)
+  }
+}
+
+/**
+ * R-136: an expert's links to a client stop working when the client is no
+ * longer assigned to that expert. Revokes every live link created by
+ * `assigneeId` for a company owned by `clientUserId`. Returns the outcome; a
+ * failure is NOT swallowed (`ok: false` + error).
+ */
+export async function revokeSharesOfAssigneeChecked(clientUserId: string, assigneeId: string): Promise<RevokeResult> {
+  if (!UUID_RE.test(clientUserId) || !UUID_RE.test(assigneeId) || clientUserId === assigneeId) return { ok: true, revoked: 0 }
+  let ids: string[] = []
+  let error = 'unknown error'
+  let read = false
+  for (let attempt = 0; attempt < REVOKE_ATTEMPTS && !read; attempt++) {
+    try {
+      const comp = await sr(`companies?user_id=eq.${encodeURIComponent(clientUserId)}&select=id`, { method: 'GET' })
+      if (comp.ok) {
+        ids = ((await comp.json().catch(() => [])) as Array<{ id?: string }>).map((r) => r.id).filter((id): id is string => !!id)
+        read = true
+      } else {
+        error = `companies HTTP ${comp.status}`
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message.split('\n')[0] : String(err)
+    }
+  }
+  if (!read) return { ok: false, revoked: 0, error }
+  if (!ids.length) return { ok: true, revoked: 0 }
+  const list = ids.map((id) => `"${id.replace(/"/g, '')}"`).join(',')
+  return revokeWhere(`createdById=eq.${encodeURIComponent(assigneeId)}&companyId=in.(${encodeURIComponent(list)})`)
+}
+
+/**
+ * revokeSharesOfAssigneeChecked for the assignment code paths: the change of
+ * assignment itself goes on, but a failed revocation is logged and reported
+ * to staff (reportRevokeFailure) instead of being dropped. Returns the number
+ * of revoked links (0 on failure). Never throws.
+ */
+export async function revokeSharesOfAssignee(clientUserId: string, assigneeId: string): Promise<number> {
+  const res = await revokeSharesOfAssigneeChecked(clientUserId, assigneeId)
+  if (!res.ok) await reportRevokeFailure('reassignment', assigneeId, { client: clientUserId }, res.error ?? 'unknown error')
+  return res.revoked
+}
+
+/**
+ * SR-19: every live link created by `userId` stops working — called when the
+ * person loses access (blocked, archived, rejected, any status other than
+ * 'approved'): an expert's links must not outlive the expert. Failures are
+ * logged and reported to staff, never swallowed. Returns the outcome.
+ */
+export async function revokeSharesOfCreator(userId: string, reason: string): Promise<RevokeResult> {
+  if (!UUID_RE.test(userId)) return { ok: true, revoked: 0 }
+  const res = await revokeWhere(`createdById=eq.${encodeURIComponent(userId)}`)
+  if (!res.ok) await reportRevokeFailure('access_lost', userId, { reason }, res.error ?? 'unknown error')
+  return res
 }

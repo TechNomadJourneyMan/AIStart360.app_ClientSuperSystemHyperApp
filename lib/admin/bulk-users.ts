@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod'
+import { revokeSharesOfAssignee, revokeSharesOfCreator } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
@@ -17,6 +18,7 @@ import { BULK_ACTIONS, BULK_MAX, type BulkAction } from './bulk-users-shared'
 import type { GigaActor } from '@/lib/admin/giga-actor'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { remindSurveyBatch } from '@/lib/admin/survey-reminders'
+import { scopedClientIds, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
 
 export { BULK_ACTIONS, BULK_ACTION_LABELS, BULK_MAX, BULK_PERMISSIONS, type BulkAction } from './bulk-users-shared'
 
@@ -80,7 +82,7 @@ async function loadTargets(ids: string[]): Promise<Map<string, Target>> {
 /** Причина, по которой к этому человеку действие неприменимо (или null). */
 export function targetGuard(actor: Pick<GigaActor, 'id' | 'role'>, action: BulkAction, t: Target | undefined): string | null {
   if (!t) return 'Пользователь не найден'
-  if (!canManageTarget(actor.role, t.staffRole)) return 'Недостаточно прав для этого сотрудника'
+  if (!canManageTarget(actor.role, { staffRole: t.staffRole, profileRole: t.role })) return 'Недостаточно прав для этого сотрудника'
   if ((action === 'block' || action === 'archive' || action === 'reject') && t.id === actor.id) return 'Нельзя применить к своему аккаунту'
   if ((action === 'block' || action === 'archive') && t.staffRole === 'super_admin') return 'Нельзя применить к Super Admin'
   return null
@@ -92,7 +94,16 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
   const sb = createServiceClient()
   const results = new Map<string, BulkItemResult>()
   const allowed: string[] = []
+  // Клиентский скоуп (R-047): со скоупом «assigned» — только свои клиенты.
+  // Решение по заявке (approve / reject) — очередь входящих: у новичка ещё нет
+  // ответственного, а переходы статуса проверяет само действие.
+  const intake = input.action === 'approve' || input.action === 'reject'
+  const inScope = intake ? null : await scopedClientIds(actor)
   for (const id of ids) {
+    if (inScope && !inScope.includes(id)) {
+      results.set(id, { id, ok: false, error: NOT_ASSIGNED_ERROR })
+      continue
+    }
     const why = targetGuard(actor, input.action, targets.get(id))
     if (why) results.set(id, { id, ok: false, error: why })
     else allowed.push(id)
@@ -152,6 +163,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
             user_id: id, assignee_id: input.assigneeId ?? null, assigned_by: actor.id, assigned_at: now, updated_at: now,
           }, { onConflict: 'user_id' })
           if (error) return { id, ok: false, error: 'Не удалось назначить' }
+          // R-136: the previous assignee's public links to this client stop working.
+          if (prev) await revokeSharesOfAssignee(id, prev)
           await audit(id, input.assigneeId ? 'user.assigned' : 'user.unassigned', { oldValue: { assignee_id: prev }, newValue: { assignee_id: input.assigneeId ?? null } })
           return { id, ok: true, error: null }
         }
@@ -165,6 +178,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
           if (error || !data?.length) return { id, ok: false, error: 'Статус не обновлён' }
           const ban = await sb.auth.admin.updateUserById(id, { ban_duration: '87600h' })
           if (ban?.error) console.error('[users/bulk] ban failed:', ban.error.message)
+          // SR-19: the person's public report links stop working with the account.
+          await revokeSharesOfCreator(id, `status:${next}`)
           if (input.action === 'archive') {
             await sb.from('impersonation_sessions')
               .update({ ended_at: new Date().toISOString(), end_reason: 'user_archived' })

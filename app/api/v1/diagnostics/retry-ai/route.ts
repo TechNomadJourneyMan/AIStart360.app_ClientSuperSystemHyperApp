@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
 
@@ -46,8 +46,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
     }
 
-    // Owner-or-staff only.
-    if (diag.user_id !== user.id && !isStaffRole(await getSessionRole(sb, user.id))) {
+    // Owner, or staff / an assigned expert within their client scope (SR-02).
+    if (!(await mayActOnUser(sb, user.id, diag.user_id as string | null))) {
       return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
     }
 

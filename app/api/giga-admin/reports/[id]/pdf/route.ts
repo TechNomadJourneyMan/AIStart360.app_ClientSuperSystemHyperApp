@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { requireGiga } from '@/lib/admin/giga-actor'
+import { requireGigaReport } from '@/lib/admin/client-scope'
 import { apiError, dbError, safeErrorMessage } from '@/lib/api-error'
 import { pdfDisposition } from '@/lib/reports/client-access'
 import { versionPdf } from '@/lib/reports/pdf-store'
@@ -14,10 +14,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * GET /api/giga-admin/reports/:id/pdf — staff preview of any version (same
  * renderer, content only): «Версия N · дата», and the watermark «На проверке
  * эксперта» until the version is published. agents.view (report versions) or
- * reports.review (SuperExpert reviewing in its cabinet).
+ * reports.review (SuperExpert reviewing in its cabinet) — and users.sensitive:
+ * the PDF is the client's diagnosis (R-133), within the client scope (R-047).
  */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireGiga(req, 'dashboard.view')
+  const g = await requireGigaReport(req, ['dashboard.view', 'users.sensitive'], params.id)
   if (g.response) return g.response
   if (!g.actor.permissions.includes('agents.view') && !g.actor.permissions.includes('reports.review')) {
     return apiError('Недостаточно прав', 403)

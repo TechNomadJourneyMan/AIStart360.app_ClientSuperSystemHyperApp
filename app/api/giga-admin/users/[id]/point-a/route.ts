@@ -5,6 +5,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { createServiceClient } from '@/lib/supabase-service'
 import { POINT_A_BLOCKS, listItems, pointABlock } from '@/lib/admin/expert-client-data'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 /**
  * GET /api/giga-admin/users/:id/point-a — Точка А клиента для вкладки User 360.
@@ -35,7 +36,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   ])
   if (diagRes.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить Точку А' }, { status: 500 })
 
-  const diag = ((diagRes.data ?? [])[0] ?? null) as Record<string, unknown> | null
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): no overall /
+  // stage / health without an official score; a block without data is null.
+  const rawDiag = ((diagRes.data ?? [])[0] ?? null) as Record<string, unknown> | null
+  const official = rawDiag ? officialPointA(rawDiag, await loadOfficialSnapshot(sb, params.id)) : null
+  const diag = rawDiag && official ? officialDiagnosticRow(rawDiag, official) : null
   const gri = ((griRes.data ?? [])[0] ?? null) as { id: string; gri_index: number | string; section_avgs: Record<string, number> | null; top_5_limits: unknown; created_at: string } | null
 
   const ai = (diag?.ai_analysis ?? null) as {
@@ -58,7 +63,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             stage: (diag.stage as string | null) ?? null,
             calculatedAt: (diag.calculated_at as string | null) ?? null,
             aiStatus: (diag.ai_status as string | null) ?? null,
-            blocks: POINT_A_BLOCKS.map((b) => pointABlock(diag, b.id, b.label, b.column)),
+            assessment: official?.state ?? null,
+            blocksWithoutData: official?.blocksWithoutData ?? [],
+            // A block without data: no score and no status (not an AI «critical»).
+            blocks: POINT_A_BLOCKS.map((b) => pointABlock(diag, b.id, b.label, b.column)).map((b) => (b.score === null ? { ...b, status: null } : b)),
             risks: listItems(diag.risks),
             insights: listItems(diag.insights),
             quickWins: listItems(diag.quick_wins),
@@ -75,8 +83,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         : null,
       history: (historyRes.data ?? []).map((h) => ({
         id: h.id as string,
-        overallScore: num(h.overall_score),
-        healthIndex: num(h.health_index),
+        // The current row: the official score (null without one); older rows as stored.
+        overallScore: diag && h.id === diag.id ? num(diag.overall_score) : num(h.overall_score),
+        healthIndex: diag && h.id === diag.id ? num(diag.health_index) : num(h.health_index),
         calculatedAt: h.calculated_at as string,
       })),
       gri: gri

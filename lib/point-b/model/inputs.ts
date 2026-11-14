@@ -24,6 +24,12 @@ function positive(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
 }
 
+/** Any finite number (zero and negative kept) or null — for values where «≤ 0» is a problem, not «no value». */
+function signedLever(metrics: PointBInputs['metricOptions']['metrics'], id: string, scale = 1): Sourced<number> {
+  const v = metrics?.[id]
+  return typeof v === 'number' && Number.isFinite(v) ? { value: v * scale, origin: 'fact', period: null } : noValue()
+}
+
 function lever(metrics: PointBInputs['metricOptions']['metrics'], id: string, scale = 1): Sourced<number> {
   const v = positive(metrics?.[id])
   return v === null ? noValue() : { value: v * scale, origin: 'fact', period: null }
@@ -94,7 +100,8 @@ export function buildModelInputs(input: {
     levers: withDerivedActiveBase(levers),
     history: sanitizeHistory(input.history),
     // The registry stores the margin in percent points («35» = 35%); the model works with fractions.
-    grossMargin: lever(metrics, POINT_B_LEVER_METRICS.margin, 0.01),
+    // A margin ≤ 0 is kept (BI-28): sales at or below cost are a critical problem, not a missing value.
+    grossMargin: signedLever(metrics, POINT_B_LEVER_METRICS.margin, 0.01),
     finmodel: input.finmodel ?? null,
     goal: modelGoal(input.goals, now),
     now: now.toISOString(),

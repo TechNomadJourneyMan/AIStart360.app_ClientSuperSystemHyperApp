@@ -2,11 +2,12 @@
  * lib/geo/country.ts — the visitor's country (ISO 3166-1 alpha-2) from the request headers.
  *
  * Vercel's edge sets `x-vercel-ip-country`; Railway sends nothing of the sort, only the visitor's IP
- * (`x-real-ip` / `x-forwarded-for`). So the header wins when it is there, and otherwise the IP goes
+ * (`x-real-ip` / `x-forwarded-for`, read through lib/net/client-ip). So the header wins when it is there, and otherwise the IP goes
  * through an offline GeoIP lookup (no network call). Private, loopback, link-local and malformed
  * addresses are never looked up: they carry no country, and the caller falls back to its default.
  */
 import { BlockList, isIP } from 'node:net'
+import { clientIpFromHeaders } from '@/lib/net/client-ip'
 
 type HeaderBag = { get(name: string): string | null }
 
@@ -78,8 +79,9 @@ export function countryFromHeaders(
   const edge = h.get('x-vercel-ip-country')?.trim()
   if (edge && /^[A-Za-z]{2}$/.test(edge)) return edge.toUpperCase()
 
-  // The client is the first x-forwarded-for entry; whatever follows is proxies in front of us.
-  const raw = h.get('x-real-ip') || h.get('x-forwarded-for')?.split(',')[0]
+  // Only the address our proxy vouches for (R-049): X-Real-IP, else the rightmost trusted
+  // X-Forwarded-For entry. The leftmost entry is whatever the client typed.
+  const raw = clientIpFromHeaders(h)
   if (!raw) return null
   const ip = publicIp(raw)
   if (!ip) return null

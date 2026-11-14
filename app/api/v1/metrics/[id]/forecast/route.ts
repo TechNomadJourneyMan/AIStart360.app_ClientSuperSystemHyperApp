@@ -5,15 +5,20 @@
 // Pulls the metric's history for the caller's company, runs the
 // pure LR+EMA forecast engine, returns the contract expected by
 // `hooks/useTimeseries.ts::useForecast`:
-//   { data: ForecastPoint[], confidence: number, method: string }
+//   { data: ForecastPoint[], status, reason, n, confidence: number | null, method }
+//
+// R-040: the forecast runs on business periods only (≥ 6), the status and the
+// reason say why there is none, the confidence comes from the fit. The periods
+// come from the value history or, when it has fewer, from metric_facts.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { fetchTimeseries, resolveSeriesCompany, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
-import { forecast } from '@/lib/metrics/forecast'
+import { fetchPeriodFacts, fetchTimeseries, resolveSeriesCompany, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
+import { businessPeriods, forecastSeries, FORECAST_MIN_POINTS, type ForecastOutcome, type SeriesPoint } from '@/lib/metrics/forecast'
+import { getMetricById } from '@/lib/metrics/registry'
 import { safeErrorMessage } from '@/lib/api-error'
 
 const PeriodSchema = z.enum(['1M', '3M', '6M', '1Y', 'ALL']).default('3M')
@@ -52,8 +57,22 @@ export async function GET(
       ? await fetchTimeseries(supabase, { companyId, metricKey: metricId, period })
       : []
 
-    const points = forecast(series)
-    return NextResponse.json({ data: points, confidence: 0.7, method: 'lr+ema' })
+    // Business periods: the value history, or metric_facts when they hold more periods.
+    let basis: SeriesPoint[] = series
+    if (companyId && businessPeriods(series).length < FORECAST_MIN_POINTS) {
+      const facts = await fetchPeriodFacts(supabase, { companyId, metricKey: metricId })
+      if (businessPeriods(facts).length > businessPeriods(series).length) basis = facts
+    }
+    const unit = getMetricById(metricId)?.unit ?? ''
+    const outcome: ForecastOutcome = forecastSeries(basis, { upperBound: unit === '%' ? 100 : null })
+    return NextResponse.json({
+      data: outcome.points,
+      status: outcome.status,
+      reason: outcome.reason,
+      n: outcome.n,
+      confidence: outcome.confidence,
+      method: 'lr+ema',
+    })
   } catch (err) {
     console.error('[v1/metrics/[id]/forecast]', err instanceof Error ? err.message : err)
     const message = safeErrorMessage(err, 'Не удалось построить прогноз')

@@ -5,12 +5,17 @@
  * applies the data rules every tool shares:
  *   - only CLIENT companies: owner profile is a client (or legacy owner) and
  *     not staff — the expert-portal rule of lib/admin/user-data-access.ts;
+ *   - only the caller's clients (SR-05): `assignee` null — every client (staff
+ *     whose scope is 'all'); a UUID — only companies whose owner is assigned
+ *     to that person (user_assignments), the rule of migration 140. A company
+ *     without an owner is visible only with scope 'all';
  *   - contacts are masked without the PII scope (lib/mcp/pii.ts);
  *   - unreviewed AI hypotheses are never listed;
  *   - every list is bounded (limit ≤ 50) and paged by an opaque cursor.
  */
 import { prisma } from '@/lib/db'
 import { contactEmail, contactPhone, freeText } from './pii'
+import { officialBlockScore, officialPointA, officialScore, snapshotFromJoined } from '@/lib/point-a/official'
 
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
 const num = (v: unknown): number | null => {
@@ -42,14 +47,24 @@ export function decodeOffsetCursor(cursor: string | undefined | null): number | 
 
 // ─── Client companies ────────────────────────────────────────────────────────
 
+/** null — every client; a UUID — only the clients assigned to that person. */
+export type ClientFilter = string | null
+
+/** The filter of a caller with this client scope (lib/mcp/principal.ts). */
+export function clientFilterOf(p: { userId: string; clientScope: 'all' | 'assigned' }): ClientFilter {
+  return p.clientScope === 'all' ? null : p.userId
+}
+
 /** Is this a client company (visible through MCP)? */
-export async function clientCompanyExists(companyId: string): Promise<boolean> {
+export async function clientCompanyExists(companyId: string, assignee: ClientFilter): Promise<boolean> {
   if (!COMPANY_ID_RE.test(companyId)) return false
+  if (assignee !== null && !UUID_RE.test(assignee)) return false
   const rows = await prisma.$queryRaw<Array<{ ok: boolean }>>`
     SELECT true AS ok FROM public.companies c LEFT JOIN public.profiles p ON p.id = c.user_id
     WHERE c.id = ${companyId}
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
-           AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))`
+           AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${assignee}::uuid))`
   return rows.length > 0
 }
 
@@ -68,20 +83,28 @@ export interface ClientListItem {
  * only for callers who may see e-mails (otherwise a hit would confirm an
  * address the caller cannot read).
  */
-export async function searchClients(p: { query: string | null; pii: boolean; limit: number; offset: number }): Promise<{ items: ClientListItem[]; hasMore: boolean }> {
+export async function searchClients(p: { query: string | null; pii: boolean; limit: number; offset: number; assignee: ClientFilter }): Promise<{ items: ClientListItem[]; hasMore: boolean }> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return { items: [], hasMore: false }
   const term = p.query?.trim().slice(0, 80) || null
   const pat = term ? like(term) : null
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT c.id, c.name, c.industry, c.stage, p.id::text AS owner_id, p.full_name, p.email, p.status AS owner_status,
-           d.overall_score::float AS score, d.calculated_at
+           d.overall_score::float AS score, d.has_diag, d.calculated_at,
+           s.snap_engine, s.snap_config_version, s.snap_blocks, s.snap_v4, s.snap_overall, s.snap_stage
     FROM public.companies c
     LEFT JOIN public.profiles p ON p.id = c.user_id
     LEFT JOIN LATERAL (
-      SELECT overall_score, calculated_at FROM public.diagnostics
+      SELECT overall_score, true AS has_diag, calculated_at FROM public.diagnostics
       WHERE company_id = c.id AND is_current ORDER BY calculated_at DESC LIMIT 1
     ) d ON true
+    LEFT JOIN LATERAL (
+      SELECT ps.engine AS snap_engine, ps.config_version AS snap_config_version, ps.blocks AS snap_blocks,
+             ps.v4 AS snap_v4, ps.overall::float AS snap_overall, ps.stage AS snap_stage
+      FROM public.point_a_snapshots ps WHERE ps.company_id = c.id ORDER BY ps.created_at DESC LIMIT 1
+    ) s ON true
     WHERE (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
       AND (${term}::text IS NULL
            OR c.name ILIKE ${pat}
            OR p.full_name ILIKE ${pat}
@@ -97,17 +120,12 @@ export async function searchClients(p: { query: string | null; pii: boolean; lim
       owner: r.owner_id
         ? { user_id: String(r.owner_id), full_name: (r.full_name as string | null) ?? null, email: contactEmail(r.email as string | null, p.pii), status: (r.owner_status as string | null) ?? null }
         : null,
-      overall_score: num(r.score),
+      // The OFFICIAL score (lib/point-a/official.ts): null without one, never a v1 number.
+      overall_score: officialScore(officialPointA(r.has_diag ? { overall_score: r.score } : null, snapshotFromJoined(r))),
       diagnostic_at: iso(r.calculated_at),
     })),
     hasMore: rows.length > p.limit,
   }
-}
-
-function areaScore(v: unknown): number | null {
-  if (typeof v === 'number' || typeof v === 'string') return num(v)
-  if (v && typeof v === 'object') return num((v as Record<string, unknown>).score ?? (v as Record<string, unknown>).value)
-  return null
 }
 
 function gapList(raw: unknown): string[] {
@@ -122,7 +140,8 @@ function gapList(raw: unknown): string[] {
 }
 
 /** Card of a client: company, owner, contact person, current diagnostic, latest session, counts. */
-export async function clientCard(p: { companyId?: string; userId?: string; pii: boolean }): Promise<Record<string, unknown> | null> {
+export async function clientCard(p: { companyId?: string; userId?: string; pii: boolean; assignee: ClientFilter }): Promise<Record<string, unknown> | null> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return null
   if (p.companyId !== undefined && !COMPANY_ID_RE.test(p.companyId)) return null
   if (p.userId !== undefined && !UUID_RE.test(p.userId)) return null
   const companyId = p.companyId ?? null
@@ -139,6 +158,7 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
            OR (${companyId}::text IS NULL AND ${userId}::text IS NOT NULL AND c.user_id = ${userId}::uuid))
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
     LIMIT 1`
   const c = rows[0]
   if (!c) return null
@@ -147,6 +167,12 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
     SELECT overall_score::float AS score, health_index::float AS health, stage, finance_score, sales_score,
            operations_score, marketing_score, strategy_score, data_gaps, calculated_at
     FROM public.diagnostics WHERE company_id = ${id} AND is_current ORDER BY calculated_at DESC LIMIT 1`
+  const [snapRow] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT engine AS snap_engine, config_version AS snap_config_version, blocks AS snap_blocks, v4 AS snap_v4,
+           overall::float AS snap_overall, stage AS snap_stage
+    FROM public.point_a_snapshots WHERE company_id = ${id} ORDER BY created_at DESC LIMIT 1`
+  // The OFFICIAL Point A (R-033): «нет данных» = null, never a 0.
+  const official = diag ? officialPointA({ ...diag, overall_score: diag.score, health_index: diag.health }, snapshotFromJoined(snapRow)) : null
   const [sess] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT id::text, kind, status, completeness::float AS completeness, started_at, completed_at
     FROM public.diagnostic_sessions WHERE company_id = ${id} ORDER BY started_at DESC LIMIT 1`
@@ -194,17 +220,20 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
       registered_at: iso(c.owner_created_at),
       last_seen_at: iso(c.last_seen_at),
     } : null,
-    current_diagnostic: diag ? {
-      overall_score: num(diag.score),
-      health_index: num(diag.health),
-      stage: (diag.stage as string | null) ?? null,
+    current_diagnostic: diag && official ? {
+      overall_score: officialScore(official),
+      health_index: official.state === 'scored' ? official.health_index : null,
+      stage: official.state === 'scored' ? official.stage : null,
+      assessment: official.state,
+      // null = no data (or the full questionnaire not sent yet) — never a 0.
       area_scores: {
-        finance: areaScore(diag.finance_score),
-        sales: areaScore(diag.sales_score),
-        operations: areaScore(diag.operations_score),
-        marketing: areaScore(diag.marketing_score),
-        strategy: areaScore(diag.strategy_score),
+        finance: officialBlockScore(official, 'finance'),
+        sales: officialBlockScore(official, 'sales'),
+        operations: officialBlockScore(official, 'operations'),
+        marketing: officialBlockScore(official, 'marketing'),
+        strategy: officialBlockScore(official, 'strategy'),
       },
+      blocks_without_data: official.blocksWithoutData,
       data_gaps: gapList(diag.data_gaps),
       calculated_at: iso(diag.calculated_at),
     } : null,
@@ -260,7 +289,8 @@ export async function listDiagnostics(p: { companyId: string; pii: boolean; limi
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 /** Published report versions only — drafts, versions under review and withdrawn ones are never listed. */
-export async function listPublishedReports(p: { companyId: string | null; limit: number; offset: number }): Promise<{ items: Record<string, unknown>[]; hasMore: boolean }> {
+export async function listPublishedReports(p: { companyId: string | null; limit: number; offset: number; assignee: ClientFilter }): Promise<{ items: Record<string, unknown>[]; hasMore: boolean }> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return { items: [], hasMore: false }
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT r.id::text, r.company_id, c.name AS company_name, r.report_type, r.version, r.title,
            r.confidence::float AS confidence, r.published_at, r.created_at
@@ -271,6 +301,7 @@ export async function listPublishedReports(p: { companyId: string | null; limit:
       AND (${p.companyId}::text IS NULL OR r.company_id = ${p.companyId})
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
     ORDER BY r.published_at DESC NULLS LAST, r.id
     LIMIT ${p.limit + 1} OFFSET ${p.offset}`
   return {

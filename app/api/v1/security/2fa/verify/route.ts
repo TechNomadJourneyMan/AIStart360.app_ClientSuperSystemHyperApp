@@ -11,7 +11,9 @@ import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { generateBackupCodes, hashBackupCodes } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity, setMfaMetadataFlag } from '@/lib/mfa/store'
-import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { currentStepUpSessionKey } from '@/lib/mfa/step-up'
+import { STEP_UP_RECORD_FAILED_MESSAGE, issueStepUp } from '@/lib/mfa/step-up-session'
+import { guardFactorChange } from '@/lib/mfa/factor-guard'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
 
@@ -19,7 +21,9 @@ const SCHEMA = z.object({ code: z.string().trim().min(6).max(10) })
 
 // POST /api/v1/security/2fa/verify
 // Confirm the pending TOTP secret, enable 2FA, issue one-time backup codes, and
-// set the step-up cookie so the current session isn't immediately gated.
+// — for the account's FIRST factor only — set the step-up cookie so the current
+// session isn't immediately gated. R-003: with a factor already in place this
+// re-binds TOTP and needs the step-up of this session.
 export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
@@ -31,6 +35,9 @@ export async function POST(request: Request) {
 
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid_code' }, { status: 422 })
+
+  const guard = await guardFactorChange(request, user, 'totp.verify')
+  if (!guard.ok) return guard.response
 
   const row = await getUserSecurity(user.id)
   if (!row?.totp_pending_enc) {
@@ -84,15 +91,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Не удалось включить 2FA. Попробуйте ещё раз.' }, { status: 500 })
   }
 
-  const jar = await cookies()
-  jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)
+  // SR-01 (143): the step-up is recorded for the database before the cookie.
+  // 2FA itself is already on; without the record the user simply confirms the
+  // new factor once more on /2fa (middleware sends them there).
+  let stepUpNotice: string | undefined
+  if (guard.firstFactor) {
+    const sessionKey = currentStepUpSessionKey()
+    if (sessionKey) {
+      try {
+        await issueStepUp(await cookies(), user.id, sessionKey, 'first_factor_totp')
+      } catch (err) {
+        console.error('[2fa/verify] step-up record failed', err instanceof Error ? err.message : err)
+        stepUpNotice = `${STEP_UP_RECORD_FAILED_MESSAGE} 2FA включена — при следующем переходе подтвердите вход кодом.`
+      }
+    }
+  }
 
+  const rebound = row.totp_enabled
   await logActivity({
     userId: user.id,
-    action: 'security.2fa_enabled',
+    action: rebound ? 'security.2fa_rebound' : 'security.2fa_enabled',
     category: 'security',
     severity: 'critical',
-    description: 'Двухфакторная аутентификация включена',
+    description: rebound ? 'Приложение-аутентификатор перепривязано' : 'Двухфакторная аутентификация включена',
     req: request,
   })
   await createNotification({
@@ -105,5 +126,5 @@ export async function POST(request: Request) {
   }).catch(() => {})
 
   // Backup codes are returned ONCE here — the client must show and let the user save them.
-  return NextResponse.json({ ok: true, backup_codes: codes })
+  return NextResponse.json({ ok: true, backup_codes: codes, ...(stepUpNotice ? { step_up: false, notice: stepUpNotice } : {}) })
 }

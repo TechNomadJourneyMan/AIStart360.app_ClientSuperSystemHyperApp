@@ -4,6 +4,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { filterByScope, scopedCompanyIds } from '@/lib/admin/client-scope'
 import { searchCompanies } from '@/lib/integrations/store'
 import { serverError } from '@/lib/integrations/route-auth'
 
@@ -13,7 +14,8 @@ export async function GET(req: NextRequest) {
   const guard = await requireGiga(req, 'users.view')
   if (guard.response) return guard.response
   try {
-    const items = await searchCompanies(req.nextUrl.searchParams.get('q') ?? '')
+    // Client scope 'assigned' (R-047): the actor's clients' companies only.
+    const items = filterByScope(await searchCompanies(req.nextUrl.searchParams.get('q') ?? ''), await scopedCompanyIds(guard.actor), (i) => i.id)
     return NextResponse.json({ ok: true, data: { items } })
   } catch (err) {
     return serverError('giga-admin/integrations/companies', err)

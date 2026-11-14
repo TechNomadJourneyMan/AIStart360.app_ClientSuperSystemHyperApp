@@ -19,7 +19,8 @@ import { listAgents } from '@/lib/agents/registry'
 import { agentTaskAction, runAgentManually, updateAgentConfigAudited } from '@/lib/admin/staff-actions'
 import { searchCompanies } from '../data'
 import { cut, dt, esc, pageOf, pagerRow, PAGE_SIZE, pct, usd } from '../ui'
-import { auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { adminScope, auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep } from './context'
+import { companyAllowed, NOT_ASSIGNED, scopeCompanyIds } from '@/lib/telegram/brain/scope'
 
 export function agentRef(key: string): string {
   return createHash('sha256').update(key).digest('base64url').slice(0, 6)
@@ -164,6 +165,7 @@ async function showTask(ctx: AdminCtx, id: string): Promise<void> {
 }
 
 async function run(ctx: AdminCtx, key: string, companyId: string | null): Promise<void> {
+  if (companyId && !companyAllowed(await adminScope(ctx), companyId)) return void (await ctx.show(`⛔ ${NOT_ASSIGNED}.`))
   const res = await runAgentManually({ key, companyId, actorId: ctx.principal.userId, audit: auditFor(ctx) })
   if (!res.ok) {
     await ctx.show(`⚠️ ${esc(res.error)}`)
@@ -187,7 +189,7 @@ export const agentSteps: Record<string, AdminStep> = {
         await ctx.reply('Нужно хотя бы 2 символа. Попробуйте ещё раз или /cancel.')
         return
       }
-      const { items } = await searchCompanies(q, 0, 8)
+      const { items } = await searchCompanies(q, 0, 8, scopeCompanyIds(await adminScope(ctx)))
       if (!items.length) {
         await ctx.reply('Ничего не найдено. Попробуйте другой запрос или /cancel.')
         return

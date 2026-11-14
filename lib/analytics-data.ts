@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { griFromPercent } from '@/lib/format/gri'
 import type { PrismaClient } from '@prisma/client'
 
 type AnalyticsClientRow = {
@@ -21,6 +22,7 @@ type DbClient = {
 
 export type AnalyticsData = {
   kpis: {
+    /** GRI 0–10 (converted from GriReport.score 0–100); 0 = нет данных. */
     avgGriScore: number
     portfolioGmv: number
     activeClients: number
@@ -116,7 +118,8 @@ export async function getAnalyticsData(db: DbClient = prisma, orgId?: string): P
         id: client.id,
         name: client.name,
         industry: client.industry,
-        gri: Math.round(latest * 10),
+        // GriReport.score is 0–100 → GRI scale 0–10, explicit (R-036); 0 = нет данных.
+        gri: griFromPercent(latest) ?? 0,
         gmv: client.pulseMetrics?.avgCheck ?? 0,
         growth: roundTo(growth),
         status: toStatus(latest),
@@ -127,7 +130,7 @@ export async function getAnalyticsData(db: DbClient = prisma, orgId?: string): P
 
   return {
     kpis: {
-      avgGriScore: Math.round((avgGriAggregate._avg.score ?? 0) * 10),
+      avgGriScore: griFromPercent(avgGriAggregate._avg.score ?? 0) ?? 0,
       portfolioGmv,
       activeClients,
       churnRate: roundTo(churnBase),

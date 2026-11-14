@@ -4,6 +4,7 @@
  * secret, a prompt or a document body.
  */
 import { prisma } from '@/lib/db'
+import { officialPointA, officialScore, snapshotFromJoined } from '@/lib/point-a/official'
 
 const n = (v: unknown) => (v == null ? 0 : Number(v))
 const like = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
@@ -56,21 +57,44 @@ export interface CompanyRow {
   score: number | null
 }
 
-export async function searchCompanies(q: string | null, page = 0, size = 8): Promise<{ items: CompanyRow[]; hasMore: boolean }> {
+/**
+ * `companyIds` — the caller's client scope (lib/telegram/brain/scope.ts
+ * scopeCompanyIds): null = every company, an array = only those (SR-17).
+ */
+export async function searchCompanies(q: string | null, page = 0, size = 8, companyIds: readonly string[] | null = null): Promise<{ items: CompanyRow[]; hasMore: boolean }> {
   const term = q?.trim().slice(0, 80) || null
-  const rows = await prisma.$queryRaw<CompanyRow[]>`
+  const ids = companyIds ? Array.from(companyIds) : null
+  if (ids && ids.length === 0) return { items: [], hasMore: false }
+  // The OFFICIAL score (lib/point-a/official.ts, R-033): the current row and
+  // the latest snapshot — no score before the full questionnaire or when v4
+  // found too little data, never a v1 number from an incomplete survey.
+  const rows = await prisma.$queryRaw<Array<Omit<CompanyRow, 'score'> & Record<string, unknown>>>`
     SELECT c.id, c.name, c.industry, p.email AS owner_email, p.full_name AS owner_name, p.id::text AS owner_id,
-           (SELECT d.overall_score::float FROM public.diagnostics d
-             WHERE d.company_id = c.id AND d.is_current ORDER BY d.calculated_at DESC LIMIT 1) AS score
+           d.overall_score::float AS overall_score, d.health_index::float AS health_index, d.stage AS diag_stage,
+           s.snap_engine, s.snap_config_version, s.snap_blocks, s.snap_v4, s.snap_overall, s.snap_stage
     FROM public.companies c LEFT JOIN public.profiles p ON p.id = c.user_id
+    LEFT JOIN LATERAL (SELECT d.overall_score, d.health_index, d.stage FROM public.diagnostics d
+      WHERE d.company_id = c.id AND d.is_current ORDER BY d.calculated_at DESC LIMIT 1) d ON true
+    LEFT JOIN LATERAL (SELECT ps.engine AS snap_engine, ps.config_version AS snap_config_version, ps.blocks AS snap_blocks,
+      ps.v4 AS snap_v4, ps.overall::float AS snap_overall, ps.stage AS snap_stage
+      FROM public.point_a_snapshots ps WHERE ps.company_id = c.id ORDER BY ps.created_at DESC LIMIT 1) s ON true
     WHERE (${term}::text IS NULL
            OR c.name ILIKE ${term ? like(term) : null}
            OR p.email ILIKE ${term ? like(term) : null}
            OR p.full_name ILIKE ${term ? like(term) : null}
            OR c.contact_email ILIKE ${term ? like(term) : null})
+      AND (${ids}::text[] IS NULL OR c.id = ANY (${ids}::text[]))
     ORDER BY c.updated_at DESC NULLS LAST, c.name
     LIMIT ${size + 1} OFFSET ${page * size}`
-  return { items: rows.slice(0, size), hasMore: rows.length > size }
+  const items: CompanyRow[] = rows.slice(0, size).map((r) => {
+    const diagnostic = r.overall_score === undefined && r.snap_engine == null ? null
+      : { overall_score: r.overall_score, health_index: r.health_index, stage: r.diag_stage }
+    return {
+      id: r.id, name: r.name, industry: r.industry, owner_email: r.owner_email, owner_name: r.owner_name, owner_id: r.owner_id,
+      score: officialScore(officialPointA(diagnostic, snapshotFromJoined(r))),
+    }
+  })
+  return { items, hasMore: rows.length > size }
 }
 
 export interface FindingLine { id: string; title: string; severity: string; provenance_type: string; reviewed: boolean; visible: boolean }
@@ -108,8 +132,14 @@ export async function companyCard(id: string, opts: { includeUnreviewedHypothese
     FROM public.companies c LEFT JOIN public.profiles p ON p.id = c.user_id WHERE c.id = ${id}`
   if (!c) return null
   const [diag] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    SELECT overall_score::float AS score, health_index::float AS health, stage, calculated_at, data_gaps
+    SELECT overall_score::float AS overall_score, health_index::float AS health_index, stage, calculated_at, data_gaps
     FROM public.diagnostics WHERE company_id = ${id} AND is_current ORDER BY calculated_at DESC LIMIT 1`
+  const [snapRow] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT engine AS snap_engine, config_version AS snap_config_version, blocks AS snap_blocks, v4 AS snap_v4,
+           overall::float AS snap_overall, stage AS snap_stage
+    FROM public.point_a_snapshots WHERE company_id = ${id} ORDER BY created_at DESC LIMIT 1`
+  // The OFFICIAL Point A (R-033): no score / stage when there is none.
+  const official = diag || snapRow ? officialPointA(diag ?? null, snapshotFromJoined(snapRow)) : null
   const [sess] = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT id::text, status, stage, completeness::float AS completeness, started_at, completed_at, error
     FROM public.diagnostic_sessions WHERE company_id = ${id} ORDER BY started_at DESC LIMIT 1`
@@ -132,10 +162,10 @@ export async function companyCard(id: string, opts: { includeUnreviewedHypothese
     industry: (c.industry as string | null) ?? null,
     stage: (c.stage as string | null) ?? null,
     owner: c.owner_id ? { id: String(c.owner_id), email: (c.email as string | null) ?? null, name: (c.full_name as string | null) ?? null, status: (c.owner_status as string | null) ?? null } : null,
-    diagnostic: diag ? {
-      score: diag.score == null ? null : Number(diag.score),
-      health: diag.health == null ? null : Number(diag.health),
-      stage: (diag.stage as string | null) ?? null,
+    diagnostic: diag && official ? {
+      score: officialScore(official),
+      health: official.state === 'scored' ? official.health_index : null,
+      stage: official.state === 'scored' ? official.stage : null,
       calculatedAt: (diag.calculated_at as Date | null) ?? null,
       dataGaps: gapsOf(diag.data_gaps),
     } : null,
@@ -156,11 +186,15 @@ export async function companyCard(id: string, opts: { includeUnreviewedHypothese
 
 export interface SessionListRow { id: string; company_id: string; company_name: string | null; status: string; stage: string | null; completeness: number | null; started_at: Date; completed_at: Date | null }
 
-export async function recentSessions(page = 0, size = 8, companyId: string | null = null): Promise<{ items: SessionListRow[]; hasMore: boolean }> {
+/** `companyIds` — the caller's client scope, as in searchCompanies (null = every company). */
+export async function recentSessions(page = 0, size = 8, companyId: string | null = null, companyIds: readonly string[] | null = null): Promise<{ items: SessionListRow[]; hasMore: boolean }> {
+  const ids = companyIds ? Array.from(companyIds) : null
+  if (ids && ids.length === 0) return { items: [], hasMore: false }
   const rows = await prisma.$queryRaw<SessionListRow[]>`
     SELECT s.id::text, s.company_id, c.name AS company_name, s.status, s.stage, s.completeness::float AS completeness, s.started_at, s.completed_at
     FROM public.diagnostic_sessions s LEFT JOIN public.companies c ON c.id = s.company_id
     WHERE (${companyId}::text IS NULL OR s.company_id = ${companyId})
+      AND (${ids}::text[] IS NULL OR s.company_id = ANY (${ids}::text[]))
     ORDER BY s.started_at DESC LIMIT ${size + 1} OFFSET ${page * size}`
   return { items: rows.slice(0, size), hasMore: rows.length > size }
 }

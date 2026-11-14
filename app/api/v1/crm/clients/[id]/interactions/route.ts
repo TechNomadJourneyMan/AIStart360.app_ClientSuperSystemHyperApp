@@ -2,11 +2,13 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmInteractionBody } from '@/lib/validation/schemas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Касания, которые пользователь фиксирует вручную (status_change пишет система).
-const LOGGABLE_KINDS = ['call', 'message', 'meeting', 'note'] as const
+// Касания, которые пользователь фиксирует вручную (status_change пишет система):
+// CRM_LOGGABLE_KINDS в lib/validation/schemas.ts.
 const COMMENT_MAX = 2000
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -52,18 +54,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
   const userId = userData.user.id
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
-  }
-  const b = (body ?? {}) as Record<string, unknown>
-  const kind = String(b.kind ?? '')
-  if (!(LOGGABLE_KINDS as readonly string[]).includes(kind)) {
-    return NextResponse.json({ ok: false, error: 'invalid kind' }, { status: 400 })
-  }
-  const comment = b.comment == null ? null : String(b.comment).trim().slice(0, COMMENT_MAX) || null
+  // R-149: { kind, comment? } only; an unknown kind is a 400 with field 'kind'.
+  const body = await parseJsonBody(request, CrmInteractionBody)
+  if (!body.ok) return body.response
+  const { kind } = body.data
+  const comment = body.data.comment == null ? null : body.data.comment.trim().slice(0, COMMENT_MAX) || null
 
   // Клиент должен принадлежать пользователю.
   const { data: client, error: cErr } = await sb

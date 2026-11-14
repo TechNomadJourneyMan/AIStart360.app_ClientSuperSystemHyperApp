@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { isSameOriginMutation } from '@/lib/admin/giga-actor'
-import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertReport, resolveExpert } from '@/lib/expert-auth'
 import { decideReportReview } from '@/lib/reports/review-flow'
 import { ReviewBodySchema, reviewResponse } from '@/lib/reports/review-http'
 import { profanityResponse } from '@/lib/moderation/http'
@@ -12,14 +12,17 @@ export const dynamic = 'force-dynamic'
  * POST /api/expert/reports/:id/review
  *   { decision: 'approve' }                         → published to the client at once
  *   { decision: 'changes_requested', comment }      → back to the report agent
- * Gate: resolveExpert (approved expert / admin / super_admin + the staff 2FA
- * gate). decideReportReview re-reads the role, the approval and the version
+ * Gate: resolveExpert (approved expert / staff admin / super_admin + the staff
+ * 2FA gate) and the company of the version must be the expert's assigned
+ * client (guardExpertReport, SR-03). decideReportReview re-reads the role, the approval and the version
  * status; the audit entry is written first. A repeated decision is a no-op.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSameOriginMutation(req)) return NextResponse.json({ ok: false, error: 'Cross-site request blocked' }, { status: 403 })
   const auth = await resolveExpert()
   if (!auth.ok) return expertBlockResponse(auth.block)
+  const denied = await guardExpertReport(auth.viewer, params.id)
+  if (denied) return denied
   const parsed = ReviewBodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверные данные: для правок нужен комментарий (от 3 символов)' }, { status: 400 })
   const profane = profanityResponse({ comment: parsed.data.decision === 'changes_requested' ? parsed.data.comment : null })

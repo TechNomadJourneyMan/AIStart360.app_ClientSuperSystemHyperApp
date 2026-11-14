@@ -78,6 +78,18 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     return id
   }
 
+  /** SR-17: the reviewer of a client is the expert ASSIGNED to that client (user_assignments). */
+  async function assign(clientId: string, assigneeId: string): Promise<void> {
+    await prisma.$executeRaw`
+      INSERT INTO public.user_assignments (user_id, assignee_id) VALUES (${clientId}::uuid, ${assigneeId}::uuid)
+      ON CONFLICT (user_id) DO UPDATE SET assignee_id = EXCLUDED.assignee_id`
+  }
+  async function expertOf(clientId: string): Promise<string> {
+    const id = await user('expert')
+    await assign(clientId, id)
+    return id
+  }
+
   async function seed(name = 'Review Co') {
     const owner = await user('client')
     const companyId = randomUUID()
@@ -162,7 +174,10 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
       await prisma.$executeRaw`DELETE FROM public.diagnostics WHERE company_id = ANY(${companies}::text[])`
       await prisma.$executeRaw`DELETE FROM public.companies WHERE id = ANY(${companies}::text[])`
     }
-    if (users.length) await prisma.$executeRaw`DELETE FROM auth.users WHERE id = ANY(${users}::uuid[])`
+    if (users.length) {
+      await prisma.$executeRaw`DELETE FROM public.user_assignments WHERE user_id = ANY(${users}::uuid[]) OR assignee_id = ANY(${users}::uuid[])`
+      await prisma.$executeRaw`DELETE FROM auth.users WHERE id = ANY(${users}::uuid[])`
+    }
     await closeTestPool()
   })
 
@@ -202,9 +217,19 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     expect(ev[0].payload).toMatchObject({ status: 'in_review', review_required: true, version: 1 })
 
     // Hook for other channels (W6): recipients and the package for this version.
-    const expert = await user('expert')
+    // SR-17: without an assignee — staff with reports.review and scope 'all' only, never every expert.
+    const stranger = await user('expert')
+    const superExpert = await user('client', 'approved', 'super_expert')
+    const legacyAdmin = await user('admin')
+    const fallback = await reportReviewRecipients(v.id)
+    expect(fallback.find((r) => r.userId === stranger)).toBeUndefined()
+    expect(fallback.find((r) => r.userId === legacyAdmin)).toBeUndefined()
+    expect(fallback.find((r) => r.userId === superExpert)).toMatchObject({ staffRole: 'super_expert' })
+    // With an assigned expert: only that expert.
+    const expert = await expertOf(s.owner)
     const recipients = await reportReviewRecipients(v.id)
-    expect(recipients.find((r) => r.userId === expert)).toMatchObject({ profileRole: 'expert', isExpert: true })
+    expect(recipients.map((r) => r.userId)).toEqual([expert])
+    expect(recipients[0]).toMatchObject({ profileRole: 'expert', isExpert: true })
     expect(recipients.find((r) => r.userId === s.owner)).toBeUndefined()
     const pkg = await reportReviewPackage(v.id)
     expect(pkg).toMatchObject({ versionId: v.id, version: 1, filename: expect.stringMatching(/^aistart360-point_a-v1-\d{4}-\d{2}-\d{2}-review\.pdf$/) })
@@ -215,7 +240,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     const s = await seed()
     await runAgent(s.companyId, { session_id: s.sessionId })
     const [v] = await versions(s.companyId)
-    const expert = await user('expert')
+    const expert = await expertOf(s.owner)
     const saved = { token: process.env.WHATSAPP_TOKEN, phone: process.env.WHATSAPP_PHONE_NUMBER_ID }
     spy.whatsapp = []
     try {
@@ -244,7 +269,8 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     await runAgent(s.companyId)
     const [v] = await versions(s.companyId)
     const expert = await user('expert')
-    await decide(v.id, expert, 'changes_requested', { comment: 'Проверьте выручку' })
+    // The decision is taken by staff with scope 'all'; the expert stays unassigned for the RLS check.
+    await decide(v.id, await user('client', 'approved', 'super_expert'), 'changes_requested', { comment: 'Проверьте выручку' })
     await reviewItem({ kind: 'finding', id: s.hidden, decision: 'approve', actorId: 'staff-1' })
     await runAgent(s.companyId)
     const [, v2] = await versions(s.companyId)
@@ -254,6 +280,9 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
       const read = (uid: string, sql: string) => asUser(db, uid, async () => (await db.query(sql, [s.companyId])).rows)
       expect(await read(s.owner, `SELECT id FROM public.report_versions WHERE company_id = $1`)).toEqual([])
       expect(await read(s.owner, `SELECT id FROM public.report_version_reviews WHERE company_id = $1`)).toEqual([])
+      // R-004 (140): an expert reads the reports of ASSIGNED clients only.
+      expect(await read(expert, `SELECT id FROM public.report_versions WHERE company_id = $1`)).toEqual([])
+      await db.query(`INSERT INTO public.user_assignments (user_id, assignee_id) VALUES ($1, $2)`, [s.owner, expert])
       expect((await read(expert, `SELECT id FROM public.report_versions WHERE company_id = $1`)).length).toBe(2)
       expect((await read(expert, `SELECT decision FROM public.report_version_reviews WHERE company_id = $1`))).toEqual([{ decision: 'changes_requested' }])
       const forge = asUser(db, expert, () => db.query(
@@ -267,7 +296,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     const s = await seed()
     await runAgent(s.companyId)
     const [v] = await versions(s.companyId)
-    const expert = await user('expert')
+    const expert = await expertOf(s.owner)
 
     auditFails = true
     expect(await decide(v.id, expert, 'approve')).toEqual({ ok: false, code: 'audit_unavailable' })
@@ -310,8 +339,18 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     expect(await decide(v.id, await user('client', 'approved', 'crm_manager'), 'approve')).toEqual({ ok: false, code: 'forbidden' })
     expect(await decide(v.id, randomUUID(), 'approve')).toEqual({ ok: false, code: 'forbidden' })
 
+    // SR-17: an approved expert NOT assigned to the client may not decide (web or Telegram).
+    const stranger = await user('expert')
+    expect(await decide(v.id, stranger, 'approve')).toEqual({ ok: false, code: 'not_assigned' })
+    // A SuperExpert limited to assigned clients is refused too; a legacy profiles.role admin is no reviewer at all.
+    const limited = await user('client', 'approved', 'super_expert')
+    await prisma.$executeRaw`UPDATE public.staff_roles SET client_scope = 'assigned' WHERE user_id = ${limited}::uuid`
+    expect(await decide(v.id, limited, 'approve')).toEqual({ ok: false, code: 'not_assigned' })
+    expect(await decide(v.id, await user('admin'), 'approve')).toEqual({ ok: false, code: 'forbidden' })
+    expect(audits).toHaveLength(0)
+
     // Telegram: the platform requires staff 2FA and the expert has none enrolled.
-    const expert = await user('expert')
+    const expert = await expertOf(s.owner)
     await prisma.$executeRaw`
       INSERT INTO public.system_settings (key, value) VALUES ('staff_require_mfa', 'true'::jsonb)
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
@@ -332,6 +371,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     await runAgent(s2.companyId)
     const [w] = await versions(s2.companyId)
     await prisma.$executeRaw`UPDATE public.report_versions SET status = 'superseded' WHERE id = ${w.id}::uuid`
+    await assign(s2.owner, expert)
     expect(await decide(w.id, expert, 'approve')).toMatchObject({ ok: false, code: 'wrong_status', status: 'superseded' })
   })
 
@@ -339,7 +379,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     const s = await seed()
     await runAgent(s.companyId, { session_id: s.sessionId })
     const [v1] = await versions(s.companyId)
-    const expert = await user('expert')
+    const expert = await expertOf(s.owner)
 
     expect(await decide(v1.id, expert, 'changes_requested', { comment: ' ' })).toEqual({ ok: false, code: 'comment_required' })
     const res = await decide(v1.id, expert, 'changes_requested', { comment: 'Выручка в выводе не совпадает с P&L' })
@@ -378,7 +418,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
       ON CONFLICT (agent_key) DO UPDATE SET settings = EXCLUDED.settings`
     expect(await flow.reviewRerunsMax()).toBe(1)
     await runAgent(s.companyId, { session_id: s.sessionId })
-    const expert = await user('expert')
+    const expert = await expertOf(s.owner)
     const [v1] = await versions(s.companyId)
     expect(await decide(v1.id, expert, 'changes_requested', { comment: 'Первая правка' })).toMatchObject({ rerun: { state: 'queued', attempt: 1, max: 1 } })
 
@@ -397,8 +437,9 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     const s = await seed()
     await runAgent(s.companyId)
     const [v] = await versions(s.companyId)
-    const a = await user('expert')
-    const b = await user('expert')
+    const a = await expertOf(s.owner)
+    // One assignee per client: the second reviewer is staff with scope 'all'.
+    const b = await user('client', 'approved', 'super_expert')
     const results = await Promise.all([decide(v.id, a, 'approve'), decide(v.id, b, 'approve'), decide(v.id, a, 'approve')])
     expect(results.every((r) => r.ok)).toBe(true)
     expect(results.filter((r) => r.ok && !r.already)).toHaveLength(1)
@@ -413,7 +454,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     const [v] = await versions(s.companyId)
     const { token } = await signVersionLink(v.id, 1)
     expect(await resolveVersionLink(token)).toEqual({ ok: false })
-    await decide(v.id, await user('expert'), 'approve')
+    await decide(v.id, await expertOf(s.owner), 'approve')
     const open = await resolveVersionLink(token)
     expect(open.ok && open.version.version).toBe(1)
     // Wrong version number in the token (e.g. a forged copy for another version) → closed.

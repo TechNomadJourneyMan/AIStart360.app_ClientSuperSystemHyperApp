@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { describeRule, isVisible, userSegments, type UserFacts } from '@/lib/platform/visibility'
 import { blockSchema, pageSaveSchema, parseInline, safeUrl, slugify, videoEmbed } from '@/lib/cms/blocks'
 import { pathIsHidden } from '@/lib/platform/sections'
@@ -48,11 +48,23 @@ describe('cms blocks', () => {
     expect(safeUrl('data:text/html,x')).toBeNull()
   })
 
+  it('R-225: backslash / control-char tricks that browsers read as //host are refused', () => {
+    expect(safeUrl('/\\evil.com')).toBeNull()
+    expect(safeUrl('/\\/evil.com')).toBeNull()
+    expect(safeUrl('/\t/evil.com')).toBeNull()
+    expect(safeUrl('/\n/evil.com')).toBeNull()
+    expect(safeUrl('/client/home?x=1')).toBe('/client/home?x=1')
+  })
+
   it('embeds known video hosts only', () => {
     expect(videoEmbed('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toEqual({ kind: 'iframe', src: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ' })
     expect(videoEmbed('https://youtu.be/dQw4w9WgXcQ')?.kind).toBe('iframe')
     expect(videoEmbed('https://vimeo.com/123456789')?.src).toBe('https://player.vimeo.com/video/123456789')
-    expect(videoEmbed('https://abc.supabase.co/storage/v1/object/public/cms-media/v.mp4')?.kind).toBe('file')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://supabase.aistart360.app')
+    expect(videoEmbed('https://supabase.aistart360.app/storage/v1/object/public/cms-media/v.mp4')?.kind).toBe('file')
+    // R-013: only OUR Supabase host — not any cloud project.
+    expect(videoEmbed('https://abc.supabase.co/storage/v1/object/public/cms-media/v.mp4')).toBeNull()
+    vi.unstubAllEnvs()
     expect(videoEmbed('https://cdn.example.com/v.mp4')).toBeNull()
     expect(videoEmbed('https://evil.example.com/page')).toBeNull()
   })

@@ -6,6 +6,7 @@
 // оценки, не живая база (внизу честный дисклеймер).
 import { useMemo, useState } from 'react'
 import { computeGaps, listIndustries, type IndustryId } from '@/lib/gri/benchmarks'
+import { formatGri, formatGriDelta } from '@/lib/format/gri'
 
 const INDUSTRIES = listIndustries()
 
@@ -64,7 +65,7 @@ export default function GriBenchmarks({
                 <span className="text-on-surface truncate">{g.blockLabelRu}</span>
                 <span className="shrink-0 flex items-center gap-2 tabular-nums">
                   <span className="text-on-surface-variant text-xs">
-                    {g.you.toFixed(1)} / {g.top20.toFixed(1)}
+                    {formatGri(g.you, { empty: '—' })} / {formatGri(g.top20, { empty: '—' })}
                   </span>
                   <span
                     className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
@@ -73,7 +74,7 @@ export default function GriBenchmarks({
                         : 'bg-primary/10 text-primary'
                     }`}
                   >
-                    {behind ? `−${g.gap.toFixed(1)}` : `+${Math.abs(g.gap).toFixed(1)}`}
+                    {formatGriDelta(behind ? -Math.abs(g.gap) : Math.abs(g.gap))}
                   </span>
                 </span>
               </div>

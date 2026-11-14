@@ -3,7 +3,7 @@ import { buildPointASnapshot, snapshotInputs, type SnapshotDeps } from '@/lib/po
 import { changeReasons, inputsHash } from '@/lib/point-a/snapshot-diff'
 import { resolveAllMetrics } from '@/lib/metrics/resolver'
 import { memoryClient, type Row } from '../data-layer/memory-client'
-import { CURRENT_TYPICAL } from '../point-a/fixtures/answer-sets'
+import { CURRENT_FULL_STRONG, CURRENT_TYPICAL } from '../point-a/fixtures/answer-sets'
 
 const NOW = new Date('2026-10-12T00:00:00Z')
 
@@ -71,7 +71,7 @@ describe('buildPointASnapshot', () => {
   })
 
   it('point_a_v4 on: the diagnostics row is the v4 result', async () => {
-    const { state, deps, store } = setup()
+    const { state, deps, store } = setup(CURRENT_FULL_STRONG)
     state.useV4 = true
     const r = await buildPointASnapshot('co', { trigger: 'manual' }, deps)
     if (r.status !== 'written') throw new Error(r.status)
@@ -114,6 +114,36 @@ describe('buildPointASnapshot', () => {
     if (r.status !== 'written') throw new Error(r.status)
     expect(r.v4.overall).toBeNull()
     expect(r.engine).toBe('v1')
+  })
+
+  it('R-033: sent questionnaire, v4 without an overall → the diagnostics row gets no score (no v1 overall, no v1-zero blocks)', async () => {
+    const { m, state, deps, store, after } = setup({ s6_main_pain: 'Нет клиентов' })
+    state.useV4 = true
+    const r = await buildPointASnapshot('co', { trigger: 'event' }, deps)
+    if (r.status !== 'written') throw new Error(r.status)
+    expect(r.v4.assessment).toBe('full')
+    expect(r.v4.overall).toBeNull()
+    // Before R-033 the v1 result (unanswered = 0) went into the row as the score.
+    expect(r.written.blocks.finance.score).toBe(0)
+    expect(store.mock.calls[0][1]).toMatchObject({ preliminary: true })
+    expect(r.scored).toBe(false)
+    expect(after).toHaveBeenCalledWith(expect.objectContaining({ preliminary: false, noScore: true }))
+    // The official reader sees «нет оценки», and no block scored 0.
+    const { officialPointA } = await import('@/lib/point-a/official')
+    const row = { id: 'diag-1', overall_score: null, health_index: null, stage: null, finance_score: null, sales_score: null, operations_score: null, marketing_score: null, strategy_score: null }
+    const o = officialPointA(row, m.db.point_a_snapshots[0] as never)
+    expect(o.state).toBe('no_score')
+    expect(o.blocks.some((b) => b.score === 0)).toBe(false)
+  })
+
+  it('R-033: a scored v4 result is still written with its score', async () => {
+    const { state, deps, store } = setup(CURRENT_FULL_STRONG)
+    state.useV4 = true
+    const r = await buildPointASnapshot('co', { trigger: 'manual' }, deps)
+    if (r.status !== 'written') throw new Error(r.status)
+    expect(r.v4.overall).not.toBeNull()
+    expect(r.scored).toBe(true)
+    expect(store.mock.calls[0][1]).toMatchObject({ preliminary: false })
   })
 
   it('a snapshot that cannot be stored writes no diagnostic and fails (queue retry)', async () => {

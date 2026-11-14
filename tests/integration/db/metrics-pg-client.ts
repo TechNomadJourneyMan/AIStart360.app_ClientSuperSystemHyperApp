@@ -13,7 +13,19 @@
  * (like PostgREST's JSON).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import pg from 'pg'
 import { asUser, type Db } from '../../helpers/pg-rls'
+
+/**
+ * PostgREST returns a DATE as the string 'YYYY-MM-DD'. node-pg parses it into a
+ * Date at LOCAL midnight, which normalise() would turn into the previous day's
+ * ISO string east of UTC (Asia/Almaty: 2026-11-13 → '2026-11-12T19:00:00Z').
+ */
+const PG_DATE_OID = 1082
+const POSTGREST_TYPES = {
+  getTypeParser: ((oid: number, format?: 'text' | 'binary') =>
+    oid === PG_DATE_OID ? (v: string) => v : pg.types.getTypeParser(oid, format)) as typeof pg.types.getTypeParser,
+}
 
 type Row = Record<string, unknown>
 type Result = { data: unknown; error: { message: string; code?: string } | null }
@@ -199,7 +211,7 @@ export function pgSupabase(db: Db, userId: string | null): SupabaseClient {
   let chain: Promise<unknown> = Promise.resolve()
   const run = (sql: string, params: unknown[]): Promise<Row[]> => {
     const exec = async () => {
-      const q = () => db.query(sql, params)
+      const q = () => db.query({ text: sql, values: params, types: POSTGREST_TYPES })
       const res = userId ? await asUser(db, userId, q) : await asServiceSafe(db, q)
       return res.rows as Row[]
     }

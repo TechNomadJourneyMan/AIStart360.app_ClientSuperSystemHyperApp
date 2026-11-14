@@ -8,6 +8,7 @@ import { isStaffRole } from '@/lib/admin/rbac'
 import { DEV_MODE_COOKIE, DEV_MODE_COOKIE_OPTIONS, devAccessEnabledForRequest, devNotFound } from '@/lib/dev/dev-access'
 import { DEV_ROLES, DevAccountError, devAccountShape, ensureDevAccount, findAuthUserByEmail } from '@/lib/dev/dev-accounts'
 import { clearIdentityCookies } from '@/lib/dev/dev-cookies'
+import { recordDevStepUp } from '@/lib/dev/dev-step-up'
 import { roleLandingPath } from '@/lib/role-landing'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createClient } from '@/lib/supabase/server'
@@ -89,6 +90,9 @@ export async function POST(request: NextRequest) {
       await supabase.auth.signOut({ scope: 'local' })
       return sessionFailed('the session belongs to another account')
     }
+
+    // SR-01 (143): dev mode counts as the second factor — for RLS too.
+    await recordDevStepUp(verified.data.session?.access_token, account.userId)
 
     const res = NextResponse.json({ ok: true, redirect })
     // The browser is somebody else now: nothing of the previous identity stays.

@@ -4,7 +4,10 @@ import { GriScoreDial } from '@/components/gri/GriScoreDial'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
+import { getOfficialGri } from '@/lib/gri/official'
+import { griFromPercent } from '@/lib/format/gri'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 export const metadata: Metadata = { title: 'Профиль клиента | Админ' }
 
@@ -29,8 +32,17 @@ async function fetchClientData(id: string) {
     const { data: profile } = await sb.from('profiles').select('*').eq('id', id).single()
     if (profile) {
       const { data: company } = await sb.from('companies').select('*').eq('user_id', id).maybeSingle()
-      const { data: diagnostic } = await sb.from('diagnostics').select('*').eq('user_id', id).eq('is_current', true).maybeSingle()
-      return { type: 'supabase', data: { profile, company, diagnostic } }
+      const { data: rawDiagnostic } = await sb.from('diagnostics').select('*').eq('user_id', id).eq('is_current', true).maybeSingle()
+      // Point A with its OFFICIAL numbers (lib/point-a/official.ts, R-033): a block without data is null.
+      const diagnostic = rawDiagnostic
+        ? officialDiagnosticRow(rawDiagnostic as Record<string, unknown>, officialPointA(rawDiagnostic as Record<string, unknown>, await loadOfficialSnapshot(sb, id)))
+        : null
+      // GRI (R-036): the official GRI (gri_assessments, 0–10) — not Point A.
+      const gri = await getOfficialGri(sb, id).catch((err) => {
+        console.error('[clients/[id]] GRI read failed:', err)
+        return null
+      })
+      return { type: 'supabase', data: { profile, company, diagnostic, gri } }
     }
     
     return null
@@ -78,9 +90,16 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const stage = result.type === 'prisma' ? data.stage : data.company?.stage
   const griReport = result.type === 'prisma' ? data.griReports?.[0] : data.diagnostic
   
-  const overallScore = griReport 
-    ? (result.type === 'prisma' ? griReport.score / 10 : griReport.overall_score / 10)
-    : 0
+  // The dial shows GRI on 0–10 only (R-036): the official GRI for Supabase
+  // clients — never Point A (diagnostics.overall_score); the legacy Prisma
+  // GriReport.score (0–100) converted explicitly. No GRI → «нет данных».
+  const officialGri = result.type === 'prisma' ? null : data.gri ?? null
+  const overallScore = result.type === 'prisma'
+    ? griFromPercent(griReport?.score) ?? 0
+    : officialGri?.index ?? 0
+  const griDate: string | null = result.type === 'prisma'
+    ? griReport?.calculatedAt ?? null
+    : officialGri?.assessedAt ?? null
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -125,12 +144,12 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           {/* Main Score */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-surface-container-low rounded-3xl border border-white/[0.04] p-8 shadow-sm">
-               <GriScoreDial score={overallScore} label="Current GRI Score" />
+               <GriScoreDial score={overallScore} label="GRI-индекс" />
                <div className="mt-8 space-y-4">
                  <div className="flex justify-between items-center text-xs font-mono uppercase tracking-widest text-on-surface-variant">
                    <span>Дата последнего GRI</span>
                    <span className="text-on-surface font-bold">
-                     {new Date(griReport.calculatedAt || griReport.calculated_at).toLocaleDateString('ru-RU')}
+                     {griDate ? new Date(griDate).toLocaleDateString('ru-RU') : 'нет данных'}
                    </span>
                  </div>
                  <div className="h-px bg-white/[0.04]" />
@@ -148,9 +167,11 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                  { key: 'finance', val: griReport.cashScore ?? (griReport.finance_score?.score) },
                  { key: 'operations', val: griReport.operationsScore ?? (griReport.operations_score?.score) },
                  { key: 'team', val: griReport.teamScore ?? (griReport.strategy_score?.score) }, // Simple mapping
-                 { key: 'marketing', val: (griReport.marketing_score?.score) ?? 0 }
+                 { key: 'marketing', val: (griReport.marketing_score?.score) ?? null }
                ].map((block) => {
-                 const score = block.val ?? 0
+                 // No value = «нет данных» (official Point A: a block without data is null), never 0.
+                 const known = typeof block.val === 'number' && Number.isFinite(block.val)
+                 const score: number = known ? block.val : 0
                  return (
                    <div key={block.key} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
                      <div className="flex items-center justify-between mb-4">
@@ -158,7 +179,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                            <span className="material-symbols-outlined text-primary text-lg">{blockIcon(block.key)}</span>
                            <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">{blockLabel(block.key)}</h3>
                         </div>
-                        <span className={`text-2xl font-mono font-bold ${scoreColor(score)}`}>{score}</span>
+                        <span className={`text-2xl font-mono font-bold ${known ? scoreColor(score) : 'text-on-surface-variant'}`}>{known ? score : 'нет данных'}</span>
                      </div>
                      <div className="h-1.5 bg-surface-container rounded-full overflow-hidden border border-white/[0.02]">
                         <div className={`h-full rounded-full transition-all duration-1000 ${barColor(score)}`} style={{ width: `${score}%` }} />

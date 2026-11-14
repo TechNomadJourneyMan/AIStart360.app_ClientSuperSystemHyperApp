@@ -21,6 +21,8 @@ vi.mock('@/lib/automation/survey-modes', () => ({
 vi.mock('@/lib/notifications/notify', () => ({
   notifyClient: async (input: Record<string, unknown>) => { h.sent.push(input); return { ok: true } },
 }))
+// R-026: runReminders asks the maintenance switch first (lib/automation/maintenance-gate.ts); off here.
+vi.mock('@/lib/settings/store', () => ({ getSetting: async () => ({ enabled: false, message: '', until: '' }) }))
 
 const { planReminders, runReminders } = await import('@/lib/automation/reminders')
 

@@ -16,7 +16,7 @@ import { prisma } from '@/lib/db'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { listAgentOverviews, listApprovals } from '@/lib/agents/admin'
 import { TOOLS, ToolInputError, parseToolArgs, runTool, type AnyTool } from '@/lib/mcp/tools'
-import { clientCard, clientCompanyExists, COMPANY_ID_RE } from '@/lib/mcp/data'
+import { clientCard, clientCompanyExists, clientFilterOf, COMPANY_ID_RE } from '@/lib/mcp/data'
 import { freeText } from '@/lib/mcp/pii'
 import type { McpPrincipal } from '@/lib/mcp/principal'
 import type { McpRole, McpScope } from '@/lib/mcp/scopes'
@@ -47,13 +47,19 @@ export function mcpRoleOf(role: BrainRole): McpRole {
   return { kind: 'expert', profileRole: role.profileRole }
 }
 
+/**
+ * Client scope of the MCP data layer (SR-05): an expert reads only the clients
+ * assigned to them (user_assignments); staff — every client here, narrowed by
+ * the brain's own staff scope (./scope.ts companyAllowed / filterResultByScope).
+ */
 function principalOf(t: ToolRunContext): McpPrincipal {
-  return { userId: t.role.userId, email: t.role.email, role: mcpRoleOf(t.role), allowed: [...t.mcpScopes] }
+  const role = mcpRoleOf(t.role)
+  return { userId: t.role.userId, email: t.role.email, role, allowed: [...t.mcpScopes], clientScope: role.kind === 'staff' ? 'all' : 'assigned' }
 }
 
 async function requireCompany(t: ToolRunContext, id: string): Promise<void> {
   if (!companyAllowed(t.scope, id)) throw new BrainToolError(NOT_ASSIGNED)
-  if (!(await clientCompanyExists(id))) throw new BrainToolError(`Компания ${id} не найдена среди клиентов`)
+  if (!(await clientCompanyExists(id, clientFilterOf(principalOf(t))))) throw new BrainToolError(`Компания ${id} не найдена среди клиентов`)
 }
 
 // ─── MCP tools ───────────────────────────────────────────────────────────────
@@ -352,7 +358,7 @@ export const CLIENT_INSIGHT_TOOLS: BrainTool[] = [
       const a = raw as { company_id: string }
       await requireCompany(t, a.company_id)
       const [card, diagnostics, gri] = await Promise.all([
-        clientCard({ companyId: a.company_id, pii: t.pii }),
+        clientCard({ companyId: a.company_id, pii: t.pii, assignee: clientFilterOf(principalOf(t)) }),
         prisma.$queryRaw<Array<{ overall_score: unknown; health_index: unknown; calculated_at: Date; is_current: boolean }>>`
           SELECT overall_score, health_index, calculated_at, is_current FROM public.diagnostics
           WHERE company_id = ${a.company_id} ORDER BY calculated_at DESC LIMIT 6`.catch(() => []),
@@ -361,7 +367,12 @@ export const CLIENT_INSIGHT_TOOLS: BrainTool[] = [
           WHERE company_id = ${a.company_id} ORDER BY created_at DESC LIMIT 5`.catch(() => []),
       ])
       if (!card) throw new BrainToolError('Клиент не найден')
-      const scores = diagnostics.map((d) => ({ overall_score: num(d.overall_score), health_index: num(d.health_index), calculated_at: iso(d.calculated_at), current: d.is_current }))
+      // The current diagnostic: the OFFICIAL score of the card (lib/mcp/data.ts →
+      // lib/point-a/official.ts) — null without one, never a v1 number.
+      const official = (card.current_diagnostic ?? null) as { overall_score?: number | null; health_index?: number | null } | null
+      const scores = diagnostics.map((d) => d.is_current
+        ? { overall_score: official?.overall_score ?? null, health_index: official?.health_index ?? null, calculated_at: iso(d.calculated_at), current: true }
+        : { overall_score: num(d.overall_score), health_index: num(d.health_index), calculated_at: iso(d.calculated_at), current: d.is_current })
       const first = scores[scores.length - 1]?.overall_score
       const last = scores[0]?.overall_score
       const latestGri = gri[0]

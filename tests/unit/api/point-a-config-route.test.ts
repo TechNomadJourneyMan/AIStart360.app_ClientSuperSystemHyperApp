@@ -66,9 +66,9 @@ describe('PATCH /api/v1/point-a/config', () => {
     h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'staff', canManage: false, legacy: false } }
     h.roles = { profiles: { role: 'client' }, staff_roles: { role: 'support' } }
     expect((await patch({ expertOverrides: { finance: { weight: 1 } } })).status).toBe(403)
-    h.roles = { profiles: { role: 'expert' }, staff_roles: null }
+    h.roles = { profiles: { role: 'expert', status: 'approved' }, staff_roles: null }
     expect((await patch({ expertOverrides: { finance: { weight: 1 } } })).status).toBe(200)
-    h.roles = { profiles: { role: 'client' }, staff_roles: { role: 'super_expert' } }
+    h.roles = { profiles: { role: 'client', status: 'approved' }, staff_roles: { role: 'super_expert' } }
     expect((await patch({ templateKey: 'ecommerce' })).status).toBe(200)
   })
   it('unknown blocks and empty bodies are refused', async () => {

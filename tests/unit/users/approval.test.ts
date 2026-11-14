@@ -43,6 +43,10 @@ vi.mock('@/lib/notifications/product', () => ({
   },
 }))
 
+// SR-19: a person who loses access loses their public report links.
+const shares = vi.hoisted(() => ({ revoke: vi.fn(async () => ({ ok: true, revoked: 1 })) }))
+vi.mock('@/lib/share/tokens', () => ({ revokeSharesOfCreator: shares.revoke }))
+
 import { applyApprovalDecision } from '@/lib/users/approval'
 
 describe('applyApprovalDecision — single source of truth for profiles.status', () => {
@@ -98,5 +102,15 @@ describe('applyApprovalDecision — single source of truth for profiles.status',
 
   it('throws when neither userId nor email is provided', async () => {
     await expect(applyApprovalDecision({ status: 'approved' } as any)).rejects.toThrow()
+  })
+
+  it('SR-19: reject revokes the person\'s public report links; approve does not', async () => {
+    shares.revoke.mockClear()
+    config.updated = [{ id: 'e0e0e0e0-0000-4000-8000-000000000001', email: 'x@y.io', full_name: 'X' }]
+    await applyApprovalDecision({ userId: 'e0e0e0e0-0000-4000-8000-000000000001', status: 'rejected', sendEmail: false })
+    expect(shares.revoke).toHaveBeenCalledWith('e0e0e0e0-0000-4000-8000-000000000001', 'status:rejected')
+    shares.revoke.mockClear()
+    await applyApprovalDecision({ userId: 'e0e0e0e0-0000-4000-8000-000000000001', status: 'approved', sendEmail: false })
+    expect(shares.revoke).not.toHaveBeenCalled()
   })
 })

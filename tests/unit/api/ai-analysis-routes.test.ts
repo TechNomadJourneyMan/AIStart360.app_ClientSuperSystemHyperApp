@@ -249,6 +249,27 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     expect(await res.json()).toMatchObject({ ok: false, ai_status: 'failed' })
     expect(h.tables.diagnostics[0]).toMatchObject({ ai_status: 'failed', ai_analysis: ANALYSIS })
   })
+
+  // I2 (R-033): the official Point A, never `?? calculatePointA(answers)`.
+  it('no official score → 409, ai_status none, no paid call, no v1 recalculation', async () => {
+    h.tables.diagnostics = [diag({ overall_score: null, health_index: null, stage: null, ai_status: 'processing' })]
+    const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ ok: false, ai_status: 'none', reason: 'no_score' })
+    expect(h.tables.diagnostics[0].ai_status).toBe('none')
+    expect(analyzerMock.analyze).not.toHaveBeenCalled()
+  })
+
+  it('blocks without data reach the model as «no data», not as a v1 recalculation', async () => {
+    h.tables.diagnostics = [diag({ operations_score: { score: 62, status: 'average', top_issues: [], recommendations: [] } })]
+    analyzerMock.analyze.mockResolvedValue(ANALYSIS)
+    await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+    expect(analyzerMock.analyze).toHaveBeenCalledTimes(1)
+    const [, pointA, , , , blocksWithoutData] = analyzerMock.analyze.mock.calls[0] as [unknown, { overall_score: number; blocks: Record<string, { score: number }> }, unknown, unknown, unknown, string[]]
+    expect(pointA.overall_score).toBe(47)
+    expect(pointA.blocks.operations.score).toBe(62)
+    expect(blocksWithoutData).toEqual(['finance', 'sales', 'marketing', 'strategy'])
+  })
 })
 
 describe('POST /api/v1/diagnostics/retry-ai', () => {

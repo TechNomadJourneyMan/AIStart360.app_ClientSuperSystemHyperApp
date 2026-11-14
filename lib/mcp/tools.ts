@@ -21,7 +21,7 @@ import { loadPointAOverview } from '@/lib/point-a/overview'
 import { listTasks, parseTaskCursor } from '@/lib/agents/admin'
 import { spendSummary } from '@/lib/ai/providers/service'
 import {
-  clientCard, clientCompanyExists, companyNames, COMPANY_ID_RE, decodeOffsetCursor, encodeOffsetCursor,
+  clientCard, clientCompanyExists, clientFilterOf, companyNames, COMPANY_ID_RE, decodeOffsetCursor, encodeOffsetCursor,
   listDiagnostics, listPublishedReports, searchClients,
 } from './data'
 import { freeText } from './pii'
@@ -63,8 +63,9 @@ function page<T>(items: T[], hasMore: boolean, offset: number, limitN: number) {
   return { items, next_cursor: hasMore ? encodeOffsetCursor(offset + limitN) : null }
 }
 
-async function requireClientCompany(id: string): Promise<void> {
-  if (!(await clientCompanyExists(id))) throw new ToolInputError(`Компания ${id} не найдена среди клиентов`)
+/** The company must be a client company inside the caller's client scope (SR-05). */
+async function requireClientCompany(id: string, ctx: ToolContext): Promise<void> {
+  if (!(await clientCompanyExists(id, clientFilterOf(ctx.principal)))) throw new ToolInputError(`Компания ${id} не найдена среди клиентов`)
 }
 
 function def<S extends z.ZodTypeAny>(d: ToolDef<S>): ToolDef<S> {
@@ -84,7 +85,7 @@ export const TOOLS = [
     }).strict(),
     async run(a, ctx) {
       const offset = offsetOf(a.cursor)
-      const r = await searchClients({ query: a.query ?? null, pii: ctx.pii, limit: a.limit, offset })
+      const r = await searchClients({ query: a.query ?? null, pii: ctx.pii, limit: a.limit, offset, assignee: clientFilterOf(ctx.principal) })
       return page(r.items, r.hasMore, offset, a.limit)
     },
   }),
@@ -98,7 +99,7 @@ export const TOOLS = [
       user_id: z.string().uuid().optional().describe('UUID владельца-клиента (owner.user_id)'),
     }).strict().refine((v) => (v.company_id ? 1 : 0) + (v.user_id ? 1 : 0) === 1, { message: 'Укажите ровно одно: company_id или user_id' }),
     async run(a, ctx) {
-      const card = await clientCard({ companyId: a.company_id, userId: a.user_id, pii: ctx.pii })
+      const card = await clientCard({ companyId: a.company_id, userId: a.user_id, pii: ctx.pii, assignee: clientFilterOf(ctx.principal) })
       if (!card) throw new ToolInputError('Клиент не найден')
       return card
     },
@@ -110,7 +111,7 @@ export const TOOLS = [
     scope: 'diagnostics:read',
     input: z.object({ company_id: companyId }).strict(),
     async run(a, ctx) {
-      await requireClientCompany(a.company_id)
+      await requireClientCompany(a.company_id, ctx)
       // Same builder as GET /api/v1/point-a/overview; read with the service
       // role after the MCP authorisation (the caller has no Supabase session).
       const sb = createServiceClient()
@@ -125,7 +126,7 @@ export const TOOLS = [
     scope: 'diagnostics:read',
     input: z.object({ company_id: companyId, limit: limit(20, 10), cursor }).strict(),
     async run(a, ctx) {
-      await requireClientCompany(a.company_id)
+      await requireClientCompany(a.company_id, ctx)
       const offset = offsetOf(a.cursor)
       const r = await listDiagnostics({ companyId: a.company_id, pii: ctx.pii, limit: a.limit, offset })
       return page(r.items, r.hasMore, offset, a.limit)
@@ -142,8 +143,8 @@ export const TOOLS = [
         .describe('Только эти метрики (идентификаторы вида biz.finance.revenue); по умолчанию все'),
       limit: limit(200, 100),
     }).strict(),
-    async run(a) {
-      await requireClientCompany(a.company_id)
+    async run(a, ctx) {
+      await requireClientCompany(a.company_id, ctx)
       const metrics = await loadCompanyMetrics(createServiceClient(), a.company_id, a.metric_ids)
       const all = [...metrics.values()].sort((x, y) => x.metricId.localeCompare(y.metricId))
       return {
@@ -170,10 +171,10 @@ export const TOOLS = [
     description: 'Опубликованные версии отчётов (Точка А, полный, GRI, Точка Б) — по компании или по всем клиентам, новые первыми. Черновики и версии на проверке не показываются.',
     scope: 'reports:read',
     input: z.object({ company_id: companyId.optional(), limit: limit(50, 20), cursor }).strict(),
-    async run(a) {
-      if (a.company_id) await requireClientCompany(a.company_id)
+    async run(a, ctx) {
+      if (a.company_id) await requireClientCompany(a.company_id, ctx)
       const offset = offsetOf(a.cursor)
-      const r = await listPublishedReports({ companyId: a.company_id ?? null, limit: a.limit, offset })
+      const r = await listPublishedReports({ companyId: a.company_id ?? null, limit: a.limit, offset, assignee: clientFilterOf(ctx.principal) })
       return page(r.items, r.hasMore, offset, a.limit)
     },
   }),

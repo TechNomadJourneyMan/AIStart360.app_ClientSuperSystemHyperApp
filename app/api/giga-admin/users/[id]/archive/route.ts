@@ -9,6 +9,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { revokeSharesOfCreator } from '@/lib/share/tokens'
 
 // POST /api/giga-admin/users/:id/archive { action: 'archive' | 'restore', reason }
 // «Удаление» пользователя = архивация: вход закрыт (статус + бан GoTrue), данные
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const target = await staffRoleOfUser(params.id)
   if (!target.profileRole) return NextResponse.json({ ok: false, error: 'Пользователь не найден' }, { status: 404 })
-  if (!canManageTarget(guard.actor.role, target.staffRole) || target.staffRole === 'super_admin') {
+  if (!canManageTarget(guard.actor.role, target) || target.staffRole === 'super_admin') {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
   }
   const { action, reason } = parsed.data
@@ -63,6 +64,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const ban = await sb.auth.admin.updateUserById(params.id, { ban_duration: action === 'archive' ? '87600h' : 'none' })
   if (ban.error) console.error('[archive] ban update failed:', ban.error.message)
   if (action === 'archive') {
+    // SR-19: an archived person's public report links stop working (failures reported to staff).
+    await revokeSharesOfCreator(params.id, 'status:archived')
     await sb.from('impersonation_sessions').update({ ended_at: new Date().toISOString(), end_reason: 'user_archived' }).eq('target_user_id', params.id).is('ended_at', null)
   }
   return NextResponse.json({ ok: true, status: nextStatus })

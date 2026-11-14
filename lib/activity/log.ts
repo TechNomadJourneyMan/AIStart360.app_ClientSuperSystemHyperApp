@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { clientIpFromHeaders } from '@/lib/net/client-ip'
 
 // Client-facing activity journal writer. Best-effort: never throws, so a logging
 // failure can't break the action that triggered it. Inserts via the service role
@@ -29,7 +30,8 @@ export async function logActivity(input: {
 }): Promise<void> {
   try {
     const h = input.req?.headers
-    const ip = h?.get('x-forwarded-for')?.split(',')[0]?.trim() ?? h?.get('x-real-ip') ?? null
+    // Trusted address only (R-049): the leftmost X-Forwarded-For entry is client-controlled.
+    const ip = clientIpFromHeaders(h)
     const ua = h?.get('user-agent') ?? null
 
     await serviceClient().from('activity_log').insert({

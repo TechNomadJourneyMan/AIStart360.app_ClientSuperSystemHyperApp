@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { withReadableAiAnalysis } from '@/lib/point-a/ai-analysis'
+import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 
 // GET /api/v1/diagnostics/current
 // The user is taken from the authenticated session — never from the query —
@@ -25,6 +26,12 @@ export async function GET(_req: NextRequest) {
     return dbError('v1/diagnostics/current', error)
   }
 
+  if (!data) return NextResponse.json({ ok: true, data: null })
+  // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): the same row
+  // with the official numbers — no overall / stage / health without an official
+  // score, a block without data is null (never «0 — критично»).
+  const official = officialPointA(data as Record<string, unknown>, await loadOfficialSnapshot(sb, user.id))
+  const row = { ...officialDiagnosticRow(data as Record<string, unknown>, official), assessment: official.state, blocks_without_data: official.blocksWithoutData }
   // ai_analysis only when it is an analysis (a pre-091 narrative there is not).
-  return NextResponse.json({ ok: true, data: data ? withReadableAiAnalysis(data) : null })
+  return NextResponse.json({ ok: true, data: withReadableAiAnalysis(row as typeof data) })
 }

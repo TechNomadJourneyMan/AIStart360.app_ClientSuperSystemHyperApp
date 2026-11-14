@@ -4,10 +4,11 @@ export const dynamic = 'force-dynamic'
 // Returns a client's REAL current GRI from the 62-criteria assessment
 // (gri_assessments) so the GRI forecast calculator (/ai-scanner) is anchored to
 // the same data the GRI test produced — instead of a disconnected score.
-// Expert/admin/super_admin only (service-role read).
+// Expert / staff admin / super_admin only (service-role read), and only for an
+// assigned client of the expert (guardExpertClient, SR-03).
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { guardExpertClient, requireExpert, srGet } from '@/lib/expert-auth'
 
 export async function GET(req: NextRequest) {
   const viewer = await requireExpert()
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest) {
 
   const userId = req.nextUrl.searchParams.get('userId')
   if (!userId) return NextResponse.json({ ok: false, error: 'userId required' }, { status: 400 })
+  const denied = await guardExpertClient(viewer, userId)
+  if (denied) return denied
 
   const rows = await srGet<Array<{ gri_index: number | null; section_avgs: unknown; top_5_limits: unknown }>>(
     `gri_assessments?user_id=eq.${encodeURIComponent(userId)}&is_current=eq.true&select=gri_index,section_avgs,top_5_limits&limit=1`,

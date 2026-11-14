@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { newLinkCode, botDeepLink, telegramConfigured, botUsername } from '@/lib/telegram'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 /**
  * GET — статус привязки Telegram текущего пользователя.
@@ -47,6 +48,9 @@ export async function POST() {
     data: { user },
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(null, user, 'telegram.link')
+  if (impersonated) return impersonated
 
   if (!telegramConfigured() || !botUsername()) {
     return NextResponse.json({ ok: false, error: 'telegram_not_configured' }, { status: 503 })
@@ -73,6 +77,9 @@ export async function DELETE() {
     data: { user },
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(null, user, 'telegram.unlink')
+  if (impersonated) return impersonated
 
   const svc = createServiceClient()
   const { error } = await svc

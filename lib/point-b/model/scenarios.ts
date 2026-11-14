@@ -334,8 +334,11 @@ export function solveFunnelScenario(i: ModelInputs, profile: ScenarioProfile, se
   // Level 2: the money of the scenario at the base pace (profit and cash flow apart).
   if (financeReady(i)) {
     const months = financeHorizon(s.months, ramp)
-    const sim = simulateFunnel(params, pathAt(1, months), months)
-    const build = financeOf(i, profile, { revenue: sim.revenue, newCustomers: sim.newCustomers }, { funnel: true, staffNeed: staff, baseMonthlyRevenue: A / 12 })
+    const path1 = pathAt(1, months)
+    const sim = simulateFunnel(params, path1, months)
+    // COGS = volume × unit cost: the same orders valued at today's check (R-038, BI-31) — the check moves the revenue, not the unit cost.
+    const volumeRevenue = Math.abs(reached.avgCheck - p0) > 1e-9 * p0 ? simulateFunnel(params, { ...path1, avgCheck: [] }, months).revenue : undefined
+    const build = financeOf(i, profile, { revenue: sim.revenue, newCustomers: sim.newCustomers, ...(volumeRevenue ? { volumeRevenue } : {}) }, { funnel: true, staffNeed: staff, baseMonthlyRevenue: A / 12 })
     if (build) return withFinance(result, build, profile, totalOverRamp, true)
   }
   return result

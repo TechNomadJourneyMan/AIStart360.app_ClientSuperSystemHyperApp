@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateClient, type ClientStatus } from '@/lib/crm/client-validate'
+import { parseJsonBody } from '@/lib/validation/http'
+import { CrmClientBody } from '@/lib/validation/schemas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -27,14 +29,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   }
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 })
-  }
+  // R-149: types, caps and the key list (.strict(): no user_id / id / timestamps from the body).
+  const body = await parseJsonBody(request, CrmClientBody)
+  if (!body.ok) return body.response
 
-  const parsed = validateClient(body, { partial: true })
+  const parsed = validateClient(body.data, { partial: true })
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
   if (Object.keys(parsed.value).length === 0) {
     return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 })

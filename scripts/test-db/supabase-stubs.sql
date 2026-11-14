@@ -70,6 +70,33 @@ CREATE TABLE IF NOT EXISTS auth.users (
 );
 GRANT SELECT ON auth.users TO service_role;
 
+-- GoTrue's sessions table (columns as in GoTrue v2). One row per sign-in; the
+-- JWT `session_id` claim is its id; GoTrue deletes it on sign-out / revoke.
+-- Read by public.staff_session_ok() (migration 143). No grants to the API
+-- roles, as on Supabase.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+                  WHERE n.nspname = 'auth' AND t.typname = 'aal_level') THEN
+    CREATE TYPE auth.aal_level AS ENUM ('aal1', 'aal2', 'aal3');
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS auth.sessions (
+  id            UUID PRIMARY KEY,
+  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at    TIMESTAMPTZ,
+  updated_at    TIMESTAMPTZ,
+  factor_id     UUID,
+  aal           auth.aal_level,
+  not_after     TIMESTAMPTZ,
+  refreshed_at  TIMESTAMP,
+  user_agent    TEXT,
+  ip            INET,
+  tag           TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON auth.sessions (user_id);
+
 CREATE OR REPLACE FUNCTION auth.jwt() RETURNS JSONB
 LANGUAGE sql STABLE AS $$
   SELECT coalesce(

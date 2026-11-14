@@ -1,4 +1,5 @@
 import { inngest } from '@/lib/inngest'
+import { INNGEST_FUNCTION_CONCURRENCY } from '@/lib/functions/limits'
 import { POINT_A_RECALC_EVENT, drainPointARecalc, requestPointARecalc } from '@/lib/point-a/recalc-queue'
 
 /**
@@ -12,7 +13,11 @@ export const pointARecalc = inngest.createFunction(
     id: 'point-a-recalc',
     retries: 0, // retries are the queue's job (attempts + backoff in Postgres)
     debounce: { key: 'event.data.companyId', period: '20s', timeout: '2m' },
-    concurrency: { limit: 1, key: 'event.data.companyId' },
+    // BE-05: one recalculation per company, and at most INNGEST_FUNCTION_CONCURRENCY (2) in all —
+    // a wave over many companies used to start one run per company at once.
+    concurrency: [{ limit: INNGEST_FUNCTION_CONCURRENCY }, { limit: 1, key: 'event.data.companyId' }],
+    // BE-06: the recalculation is queued in Postgres too (the minute drain takes it); budget 60 s.
+    timeouts: { start: '10m', finish: '3m' },
     triggers: [{ event: POINT_A_RECALC_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -28,7 +33,7 @@ export const pointARecalc = inngest.createFunction(
  * missed events; unchanged companies stop at the inputs-hash check.
  */
 export const pointANightly = inngest.createFunction(
-  { id: 'point-a-nightly', retries: 0, concurrency: { limit: 1 }, triggers: [{ cron: '0 22 * * *' }] },
+  { id: 'point-a-nightly', retries: 0, concurrency: { limit: 1 }, timeouts: { start: '1h', finish: '15m' }, triggers: [{ cron: '0 22 * * *' }] },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
   async () => {
     const { prisma } = await import('@/lib/db')

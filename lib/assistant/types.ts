@@ -185,6 +185,14 @@ export interface AssistantPointA {
   blocks: AssistantBlock[]
   /** Weakest blocks first (by score). */
   weakest_blocks: AssistantBlock[]
+  /**
+   * Labels of the blocks the OFFICIAL Point A has no data for (R-033): they
+   * are left out of `blocks` — «нет данных» is not a 0 / weakness. Optional
+   * for hand-built contexts.
+   */
+  blocks_without_data?: string[]
+  /** 'scored' | 'no_score' | 'preliminary' | 'none' (lib/point-a/official.ts). */
+  assessment?: string
   risks: Array<{ level: string; area: string; text: string }>
   data_gaps: Array<{ field: string; step: number; impact: string }>
   quick_wins: Array<{ action: string; timeline: string; area: string }>

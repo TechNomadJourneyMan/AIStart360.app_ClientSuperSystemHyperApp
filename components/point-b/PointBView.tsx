@@ -690,11 +690,11 @@ function Trajectory({ pointB }: { pointB: PointBV2 }) {
       eyebrow="Траектория"
       title="Финансовая траектория"
       icon="show_chart"
-      description="Помесячная динамика к цели на 12 месяцев и поквартальная — на 3 года."
+      description="Годовой темп выручки (выручка месяца × 12) на пути к цели: по месяцам на 12 месяцев и по кварталам на 3 года. Выручка самого месяца или квартала — в подсказке на графике."
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-4">12 месяцев · по месяцам</p>
+          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-4">12 месяцев · годовой темп по месяцам</p>
           <TrajectoryChart
             points={pointB.trajectory.monthly_12m}
             unitLabel="Месяц"
@@ -702,7 +702,7 @@ function Trajectory({ pointB }: { pointB: PointBV2 }) {
           />
         </Card>
         <Card>
-          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-4">3 года · по кварталам</p>
+          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-4">3 года · годовой темп по кварталам</p>
           <TrajectoryChart
             points={pointB.trajectory.quarterly_3y}
             unitLabel="Квартал"

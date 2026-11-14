@@ -13,7 +13,7 @@
  * says by how much the funnel missed. A client without enough history gets forecast `insufficient`
  * and the verdict `no_data`.
  */
-import { level2Warnings } from './cash'
+import { level2Warnings, marginWarnings } from './cash'
 import { fmtMoney, fmtNum } from './format'
 import { calibrate, rotateSeasonality, seasonalityIndex, type FunnelParams } from './funnel'
 import { describeHistory, HISTORY_MAX_LAG_MONTHS, HISTORY_MIN_MONTHS, projectCurrentPace, verdictFor } from './forecast'
@@ -147,7 +147,7 @@ function level0(i: ModelInputs, args: { warnings: string[]; missing: MissingInpu
     template: i.template,
     gap: gapOf(i, args.gapUsable),
     forecast,
-    verdict: verdictFor({ goal: i.goal, forecast, baseAnnual: i.base.revenueYear.value }),
+    verdict: verdictFor({ goal: i.goal, forecast, baseAnnual: i.base.revenueYear.value, baseStale: i.base.stale }),
     scenarios: [],
     missing: args.missing,
     warnings: args.warnings,
@@ -174,7 +174,7 @@ function build(raw: ModelInputs, profilesIn?: ScenarioProfile[]): ModelResult {
 
   const warnings: string[] = [...stale]
   const forecast = projectCurrentPace(raw)
-  const verdict = verdictFor({ goal: raw.goal, forecast, baseAnnual: raw.base.revenueYear.value })
+  const verdict = verdictFor({ goal: raw.goal, forecast, baseAnnual: raw.base.revenueYear.value, baseStale: raw.base.stale })
   const gap = gapOf(raw, true)
 
   if (levelInfo.level === 0) {
@@ -189,7 +189,7 @@ function build(raw: ModelInputs, profilesIn?: ScenarioProfile[]): ModelResult {
   const inputs: ModelInputs = { ...raw, levers: withDerivedActiveBase(raw.levers) }
   const profiles = normalizeProfiles(profilesIn ?? defaultProfiles(inputs.template), inputs.template)
   const seasonal = seasonalityIndex(inputs.history)
-  warnings.push(...goalWarnings(inputs, true), ...historyWarnings(inputs), ...historyVsBase(inputs))
+  warnings.push(...marginWarnings(inputs), ...goalWarnings(inputs, true), ...historyWarnings(inputs), ...historyVsBase(inputs))
   if (seasonal.defaulted) warnings.push('Сезонность не учтена: в истории выручки меньше 24 месяцев, использован индекс 1,0.')
 
   let kind: ModelResult['kind'] = levelInfo.kind

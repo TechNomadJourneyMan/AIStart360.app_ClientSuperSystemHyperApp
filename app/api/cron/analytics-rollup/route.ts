@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import { runDailyRollup } from '@/lib/analytics/rollup'
 
@@ -15,19 +15,18 @@ export const maxDuration = 60
  * 90 дней — в ограниченном цикле и с бюджетом времени; остаток доберёт
  * следующий запуск. Повторный запуск безопасен: день пересчитывается целиком.
  *
- * Auth: только заголовок `Authorization: Bearer ${CRON_SECRET}` (так шлёт
- * Vercel Cron); секрет в query не принимается — он оседал бы в логах.
+ * Auth: общий isAuthorizedCron (R-231) — только `Authorization: Bearer ${CRON_SECRET}`
+ * (так шлёт Vercel Cron), секрет в query не принимается (оседал бы в логах); без
+ * CRON_SECRET — 503, как у остальных кронов.
  */
-function authorized(req: NextRequest, secret: string): boolean {
-  const got = Buffer.from(req.headers.get('authorization') ?? '', 'utf8')
-  const want = Buffer.from(`Bearer ${secret}`, 'utf8')
-  return got.length === want.length && timingSafeEqual(got, want)
-}
-
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return NextResponse.json({ ok: false, error: 'CRON_SECRET not configured' }, { status: 500 })
-  if (!authorized(req, secret)) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  const auth = isAuthorizedCron(req)
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: auth.status === 503 ? 'cron_not_configured' : 'unauthorized' },
+      { status: auth.status },
+    )
+  }
 
   const result = await runDailyRollup(createServiceClient(), { budgetMs: 50_000 })
   if (result.failed.length) console.error('[cron/analytics-rollup] failed days:', result.failed)

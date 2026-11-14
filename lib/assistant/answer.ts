@@ -23,6 +23,7 @@ import { filterModelOutput } from './mascot/output-filter'
 import { sanitizeQualitative } from './mascot/sanitize'
 import { computeCompletion } from './completion'
 import type { AssistantContext, CompletionReport } from './types'
+import { formatGri } from '@/lib/format/gri'
 
 // ─── Result schema ───────────────────────────────────────────────────────────
 
@@ -152,9 +153,11 @@ export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string
   const g = ctx.gri
   const m = ctx.metrics
 
-  const blockLines = a.blocks
-    .map((bl) => `  - ${bl.label} (${bl.key}): ${n(bl.score)}/100 [${bl.status}]`)
-    .join('\n')
+  // Blocks the official Point A has no data for: «нет данных», never a 0 / weakness (R-033).
+  const blockLines = [
+    ...a.blocks.map((bl) => `  - ${bl.label} (${bl.key}): ${n(bl.score)}/100 [${bl.status}]`),
+    ...(a.blocks_without_data ?? []).map((label) => `  - ${label}: ${en ? 'no data (not scored — not a weakness)' : 'нет данных (не оценивался — это не слабость)'}`),
+  ].join('\n')
 
   const weakest = a.weakest_blocks.map((bl) => `${bl.label} ${n(bl.score)}`).join(', ') || '—'
   const progressBlock = formatSurveyProgress(computeCompletion(ctx), locale)
@@ -189,7 +192,7 @@ ${en ? 'Data sufficiency' : 'Достаточность данных'}: ${b.data
 ${en ? 'Growth levers' : 'Рычаги роста'}: ${list(b.levers.map((l) => `${l.label}${l.data_available ? '' : en ? ' (no data)' : ' (нет данных)'}`), 6)}
 
 --- GRI ---
-${en ? 'Has GRI assessment' : 'Есть оценка GRI'}: ${g.has_assessment ? (en ? 'yes' : 'да') : en ? 'no' : 'нет'} | ${en ? 'GRI index (0–10)' : 'Индекс GRI (0–10)'}: ${n(g.gri_index)}
+${en ? 'Has GRI assessment' : 'Есть оценка GRI'}: ${g.has_assessment ? (en ? 'yes' : 'да') : en ? 'no' : 'нет'} | ${en ? 'GRI index (0–10)' : 'Индекс GRI (0–10)'}: ${formatGri(g.gri_index, { empty: '—' })}
 ${en ? 'Top-5 GRI limits' : 'Топ-5 ограничений GRI'}: ${list(g.top_5_limits.map((t) => `${t.rank}. ${t.title} [${t.block}]`), 5)}
 
 --- ${en ? 'METRICS' : 'МЕТРИКИ'} ---

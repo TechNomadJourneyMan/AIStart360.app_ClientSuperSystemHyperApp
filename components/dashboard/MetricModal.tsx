@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import { useMetricsStore } from '@/stores/metrics.store'
 import { useMetrics } from '@/hooks/useMetrics'
-import { useTimeseries, useForecast, useMetricGoal, useAnomalies } from '@/hooks/useTimeseries'
+import { useTimeseries, useForecast, useMetricGoal, useAnomalies, forecastUnavailableNote } from '@/hooks/useTimeseries'
 import { PERIODS, PERIOD_CONFIG } from '@/types/periods'
 import type { Period } from '@/types/periods'
 import type { DataLayer, ChartPoint, AnomalyPoint } from '@/types/metrics'
@@ -98,6 +98,8 @@ export function MetricModal() {
   const cfg = PERIOD_CONFIG[selectedPeriod]
   const showForecast = cfg.showForecast && activeLayers.includes('forecast')
   const showGoal = goal && activeLayers.includes('goal')
+  // R-040: no forecast below 6 business periods — say so instead of drawing one.
+  const forecastNote = showForecast ? forecastUnavailableNote(fData) : null
 
   // Merge fact + forecast into single series for Recharts
   const chartData: ChartPoint[] = useMemo(() => {
@@ -364,6 +366,13 @@ export function MetricModal() {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
+              )}
+
+              {forecastNote && !tsLoading && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[14px] text-secondary/80" aria-hidden>info</span>
+                  {forecastNote}
+                </p>
               )}
 
               {/* Anomaly alerts */}

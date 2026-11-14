@@ -22,6 +22,11 @@ import type { PointA, BlockScore } from '@/types/onboarding'
 
 export interface NarrativeInput {
   pointA: PointA
+  /**
+   * Blocks WITHOUT data (lib/point-a/official.ts): told to the model as «нет
+   * данных», never as their placeholder «0/100 (критично)» (R-033, BI-02).
+   */
+  blocksWithoutData?: string[]
   companyName: string
   industry: string | null
   stage: string | null
@@ -72,9 +77,10 @@ const STATUS_RU: Record<BlockScore['status'], string> = {
   excellent: 'отлично',
 }
 
-function formatBlocks(blocks: PointA['blocks']): string {
+function formatBlocks(blocks: PointA['blocks'], noData: ReadonlySet<string> = new Set()): string {
   return (Object.keys(blocks) as Array<keyof PointA['blocks']>)
     .map((key) => {
+      if (noData.has(key)) return `${BLOCK_LABELS_RU[key]}: нет данных — блок не оценивался (это не слабость, а пробел в данных)`
       const b = blocks[key]
       const issues = b.top_issues?.length ? ` — проблемы: ${b.top_issues.join('; ')}` : ''
       return `${BLOCK_LABELS_RU[key]}: ${b.score}/100 (${STATUS_RU[b.status]})${issues}`
@@ -118,7 +124,7 @@ Health Index: ${pointA.health_index}/100
 Стадия (по движку): ${pointA.stage}
 
 БЛОКИ:
-${formatBlocks(pointA.blocks)}
+${formatBlocks(pointA.blocks, new Set(input.blocksWithoutData ?? []))}
 
 РИСКИ:
 ${risksTxt}

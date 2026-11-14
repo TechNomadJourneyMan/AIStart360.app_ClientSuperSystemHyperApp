@@ -3,11 +3,14 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { runSimulation, type SimInput } from '@/lib/simulator/core'
 import { trackUserAction } from '@/lib/events/server'
+import { resolveTenantWith } from '@/lib/tenancy'
+import { loadSimulatorHistory } from '@/lib/simulator/history'
 
 /**
  * GET  /api/v1/simulator            → { ok, simulations }
@@ -16,6 +19,10 @@ import { trackUserAction } from '@/lib/events/server'
  * Business simulator (K). The deterministic core computes the projection;
  * results are persisted to business_simulations (migration 052, self-only RLS).
  * A projection is never a fact — the result carries assumptions + confidence.
+ *
+ * R-039: the base pace comes from the client's monthly revenue history (metric_facts of the
+ * revenue metric, the same source as the Point B model), read here for the caller's company —
+ * never from the body. Fewer than 6 consecutive months → the result says «нет данных для прогноза».
  */
 const MAX_PER_USER = 20
 
@@ -71,7 +78,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: `Достигнут лимит сохранённых симуляций (${MAX_PER_USER}).` }, { status: 409 })
   }
 
-  const result = runSimulation(parsed.data.input as SimInput)
+  const input = parsed.data.input as SimInput
+  const revenueHistoryMonthly = input.simType === 'cost_reduction' ? [] : await companyRevenueHistory(sb, user.id)
+  const result = runSimulation({ ...input, revenueHistoryMonthly })
 
   const { data, error } = await sb
     .from('business_simulations')
@@ -89,4 +98,15 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ ok: false, error: safeErrorMessage(error) }, { status: 500 })
   void trackUserAction({ userId: user.id, name: 'SIMULATION_RUN', entityType: 'simulation', entityId: data?.id ?? null, metadata: { sim_type: parsed.data.input.simType, horizon: parsed.data.input.horizonMonths } })
   return NextResponse.json({ ok: true, id: data?.id, result })
+}
+
+/** The caller's company (owner first, then a membership) → its monthly revenue; no company / a failure → []. */
+async function companyRevenueHistory(sb: SupabaseClient, userId: string): Promise<number[]> {
+  try {
+    const tenant = await resolveTenantWith(sb, userId, { access: 'read' })
+    return tenant.ok ? await loadSimulatorHistory(sb, tenant.tenant.companyId) : []
+  } catch (err) {
+    console.error('[v1/simulator] company not resolved — no history', err instanceof Error ? err.message : err)
+    return []
+  }
 }

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
+import { useEntitlements, isSectionLocked, premiumSectionOf } from '@/hooks/useEntitlements'
 import { getNavForRole } from '@/lib/navigation'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 import type { UserRole } from '@/types'
@@ -84,13 +85,13 @@ export function MobileNav() {
   const hiddenPaths = useHiddenSectionPaths()
   const allowedNav = getNavForRole(role, { panelAccess: role === 'super_admin' || Boolean(user?.staffRole) }).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
 
-  // Items locked behind a paid plan for CLIENT role
-  const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
-  const isLocked = (href: string) =>
-    role === 'client' && PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
+  // Items locked behind a paid plan for CLIENT role (R-030): only while the
+  // access gates are on, and then by the real right — the same rule as the
+  // desktop Sidebar (hooks/useEntitlements). Gates off → no locks at all.
+  const { access } = useEntitlements()
+  const isLocked = (href: string) => isSectionLocked(href, role, access)
 
-  const getLockedKey = (href: string) =>
-    PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/')) ?? href
+  const getLockedKey = (href: string) => premiumSectionOf(href) ?? href
 
   // Filter out sections
   const filteredDrawer = DRAWER_SECTIONS.map(sec => ({

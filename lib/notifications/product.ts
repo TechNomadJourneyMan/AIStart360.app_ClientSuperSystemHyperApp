@@ -7,6 +7,7 @@
  */
 
 import { notifyClient, type NotifyClientResult } from '@/lib/notifications/notify'
+import { formatGri, toGri } from '@/lib/format/gri'
 import {
   buildGriCompletedEmail,
   buildQuestionnaireCompletedEmail,
@@ -46,7 +47,7 @@ export async function notifyGriCompleted(
 ): Promise<NotifyClientResult> {
   const email = buildGriCompletedEmail({ ...input, url: getSiteUrl('/gri') })
   const score =
-    typeof input.griIndex === 'number' && Number.isFinite(input.griIndex) ? ` Индекс GRI: ${input.griIndex.toFixed(1)} из 10.` : ''
+    toGri(input.griIndex) !== null ? ` Индекс GRI: ${formatGri(input.griIndex)} из 10.` : ''
   return notifyClient({
     userId,
     category: 'gri',

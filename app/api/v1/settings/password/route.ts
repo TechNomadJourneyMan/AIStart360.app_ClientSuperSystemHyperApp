@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity/log'
 import { createNotification } from '@/lib/notifications/create'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 import {
   PASSWORD_MAX,
   PASSWORD_MIN,
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user?.email) return fail('unauthorized', 'Сессия истекла. Войдите заново.', 401)
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(request, user, 'password.change')
+  if (impersonated) return impersonated
 
   const parsed = SCHEMA.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {

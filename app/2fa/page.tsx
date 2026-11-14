@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
@@ -110,13 +110,10 @@ function ChallengeContent() {
     }
   }
 
+  // SR-06: the server decides the scope (an impersonation session ends only
+  // itself); this browser clears only its own copy — never a global sign-out.
   const logout = async () => {
-    try {
-      await createClient().auth.signOut()
-    } catch {
-      /* ignore */
-    }
-    window.location.href = '/login'
+    window.location.href = await signOutThisBrowser('/login')
   }
 
   // Passkey-only users (no TOTP) always enter a backup code in the text field.

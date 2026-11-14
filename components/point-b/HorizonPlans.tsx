@@ -28,7 +28,7 @@ function PlanBody({ plan }: { plan: HorizonPlan }) {
         </Card>
         <Card className="!p-4">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-            Целевой GRI
+            Целевая оценка Точки А
           </p>
           <p className="text-lg font-mono font-bold text-primary">{formatScore(plan.target_overall_score)}</p>
         </Card>

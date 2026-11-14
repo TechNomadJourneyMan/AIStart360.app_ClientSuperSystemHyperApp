@@ -21,6 +21,8 @@ import { loadGoalsWithEvaluation } from '@/lib/goals/current'
 import { BLOCK_KEYS, BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
 import { blockMetricIds, loadMetricViews, type MetricView } from '@/lib/point-a/v4/metric-views'
 import type { V4Block } from '@/lib/point-a/v4/engine'
+import { OFFICIAL_DIAGNOSTIC_COLUMNS, hasOfficialBlockScores, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
+import { isPreliminary } from '@/lib/point-a/blocks-without-data'
 
 export interface ToolContext {
   companyId: string
@@ -96,10 +98,22 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
       if (!s) return { status: 'not_calculated', note: 'Точка А ещё не рассчитана — нужна заполненная анкета.' }
       const blocks = (s.blocks as V4Block[]) ?? []
       const v4 = (s.v4 ?? {}) as Record<string, unknown>
+      // The OFFICIAL Point A (lib/point-a/official.ts, R-033/R-032): the overall,
+      // stage and block scores only where they are official — before the full
+      // questionnaire none, without enough data no overall. null = «нет данных».
+      const { data: diagRows } = await t.sb.from('diagnostics').select(OFFICIAL_DIAGNOSTIC_COLUMNS).eq('company_id', t.companyId).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
+      const official = officialPointA(((diagRows ?? [])[0] as Record<string, unknown> | undefined) ?? null, s as OfficialSnapshotRow)
+      const scored = official.state === 'scored'
+      const shown = hasOfficialBlockScores(official)
       return {
-        calculated_at: s.created_at, overall: s.overall, confidence: s.confidence, coverage: s.coverage, stage: s.stage,
+        assessment: official.state,
+        note: official.state === 'preliminary' ? 'Анкета не отправлена полностью: балла и стадии нет, только находки.'
+          : official.state === 'no_score' ? 'Балл появится, когда данных хватит: блоки с данными должны весить не меньше 60 %, включая «Финансы» или «Продажи». Блоки без данных — не слабость.'
+            : undefined,
+        calculated_at: s.created_at, overall: scored ? official.overall : null, confidence: s.confidence, coverage: s.coverage, stage: scored ? official.stage : null,
+        blocks_without_data: official.blocksWithoutData,
         blocks: blocks.map((b) => ({
-          key: b.key, title: b.title, score: b.score, status: b.status, coverage: b.coverage, confidence: b.confidence, weight: b.weight,
+          key: b.key, title: b.title, score: shown ? b.score : null, status: shown && b.score !== null ? b.status : 'no_data', coverage: b.coverage, confidence: b.confidence, weight: b.weight,
           top_issues: b.top_issues, recommendations: b.recommendations, hypothesis: b.hypothesis ? { score: b.hypothesis.score, note: 'гипотеза AI, не факт' } : null,
           conflicts: b.conflicts,
         })),
@@ -120,7 +134,8 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
       const metrics = await loadMetricViews(t.sb, t.companyId, blockMetricIds(block))
       return {
         block: BLOCK_LIBRARY[block].title, description: BLOCK_LIBRARY[block].description,
-        score: b?.score ?? null, coverage: b?.coverage ?? null, confidence: b?.confidence ?? null,
+        // Before the full questionnaire a block has no official score (PO 2026-11-02).
+        score: isPreliminary(s as OfficialSnapshotRow | null) ? null : b?.score ?? null, coverage: b?.coverage ?? null, confidence: b?.confidence ?? null,
         checks: b?.checks.filter((c) => !c.excluded).map((c) => ({ id: c.id, answered: c.answered, earned: c.earned, max: c.max, issue: c.issue ?? null, missing: c.missing ?? null })) ?? [],
         needs: b?.needs ?? [], recommendations: b?.recommendations ?? [],
         metrics: metrics.map(brief),
@@ -201,7 +216,8 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
     kind: 'read',
     input: z.object({}).strict(),
     async run(_a, t) {
-      const { data: diags } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).order('created_at', { ascending: false }).limit(1)
+      // diagnostics has no created_at (the old order failed → always «not calculated»).
+      const { data: diags } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
       const diag = (diags ?? [])[0] as { id: string } | undefined
       if (!diag) return { status: 'not_calculated' }
       const { data } = await t.sb.from('point_b_analysis').select('roadmap, calculated_at').eq('diagnostic_id', diag.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)

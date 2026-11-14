@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getRequestUser } from '@/lib/request-user'
 import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
 import TelegramLinkPanel from '@/components/settings/TelegramLinkPanel'
+import { accountLockForThisSession } from '@/lib/impersonation/account-lock'
 
 export const metadata: Metadata = { title: 'Настройки' }
 export const dynamic = 'force-dynamic'
@@ -24,11 +25,16 @@ export default async function SettingsPage() {
     )
   }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle()
+  const [{ data: profile }, accountLock] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle(),
+    // SR-07b: «от имени клиента» the security tab is locked (middleware also
+    // keeps /settings?tab=security closed; the tab switch is client-side).
+    accountLockForThisSession(user.id),
+  ])
 
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>
   const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
@@ -57,7 +63,7 @@ export default async function SettingsPage() {
         <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
       </div>
 
-      <SettingsClient initial={initial} preferences={(profile?.preferences ?? {}) as Prefs} />
+      <SettingsClient initial={initial} preferences={(profile?.preferences ?? {}) as Prefs} accountLock={accountLock} />
 
       {/* Telegram personal account (userbot) — linked but managed separately */}
       <div className="bg-surface-container rounded-xl p-6">

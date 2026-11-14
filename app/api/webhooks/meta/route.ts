@@ -29,6 +29,7 @@ import { enqueueOmnichannelProcessingJob } from '@/lib/omnichannel/processing-jo
 import { drainOmnichannelProcessingJobs } from '@/lib/omnichannel/process-job-queue'
 import { trackBackground } from '@/lib/background'
 import { canRunAfterResponse } from '@/lib/runtime/platform'
+import { webhookRefusal } from '@/lib/runtime/webhook-log'
 import { processOmnichannelMessageWorkflow } from '@/workflows/process-omnichannel-message'
 
 const MAX_FAST_PATH_DELAY_MS = 30_000
@@ -112,8 +113,9 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
 
 /** Meta webhook endpoint verification (Instagram and WhatsApp). */
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const refuse = webhookRefusal('webhooks/meta', req)
   const configuredToken = process.env.META_WEBHOOK_VERIFY_TOKEN
-  if (!configuredToken) return genericResponse(503)
+  if (!configuredToken) return refuse(503, 'verify_token_not_configured', genericResponse)
 
   const params = new URL(req.url).searchParams
   const mode = params.get('hub.mode')
@@ -126,7 +128,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     || challenge === null
     || !constantTimeEqual(configuredToken, suppliedToken)
   ) {
-    return genericResponse(403)
+    return refuse(403, 'verify_token_mismatch', genericResponse)
   }
 
   return new NextResponse(challenge, {
@@ -146,25 +148,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * its SHA-256 digest and small non-sensitive counters.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // INT-02: every refusal / failure leaves one structured line (route, status,
+  // reason, request id) — never the payload, a signature or customer data.
+  const refuse = webhookRefusal('webhooks/meta', req)
   const metaAppSecret = configuredSecret(process.env.META_APP_SECRET)
   const instagramAppSecret = configuredSecret(process.env.INSTAGRAM_APP_SECRET)
     ?? metaAppSecret
-  if (!metaAppSecret && !instagramAppSecret) return genericResponse(503)
+  if (!metaAppSecret && !instagramAppSecret) return refuse(503, 'app_secret_not_configured', genericResponse)
   const backend = processingBackend()
 
   const maxBodyBytes = 1_000_000
   const declaredLength = Number(req.headers.get('content-length'))
   if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
-    return genericResponse(413)
+    return refuse(413, 'body_too_large', genericResponse)
   }
 
   let rawBody: Buffer
   try {
     rawBody = Buffer.from(await req.arrayBuffer())
   } catch {
-    return genericResponse(400)
+    return refuse(400, 'body_unreadable', genericResponse)
   }
-  if (rawBody.byteLength > maxBodyBytes) return genericResponse(413)
+  if (rawBody.byteLength > maxBodyBytes) return refuse(413, 'body_too_large', genericResponse)
 
   const signature = req.headers.get('x-hub-signature-256')
   const matchesMetaSecret = Boolean(
@@ -176,25 +181,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     && verifyMetaWebhookSignature(rawBody, signature, instagramAppSecret),
   )
   if (!matchesMetaSecret && !matchesInstagramSecret) {
-    return genericResponse(401)
+    return refuse(401, 'bad_signature', genericResponse)
   }
 
   let payload: unknown
   try {
     payload = JSON.parse(rawBody.toString('utf8')) as unknown
   } catch {
-    return genericResponse(400)
+    return refuse(400, 'invalid_json', genericResponse)
   }
 
   const object = payloadObject(payload)
   if (object === 'instagram') {
-    if (!instagramAppSecret) return genericResponse(503)
-    if (!matchesInstagramSecret) return genericResponse(401)
+    if (!instagramAppSecret) return refuse(503, 'instagram_secret_not_configured', genericResponse)
+    if (!matchesInstagramSecret) return refuse(401, 'bad_signature_instagram', genericResponse)
   } else {
     // WhatsApp and unsupported Meta objects use META_APP_SECRET. This avoids
     // cross-authentication when Instagram Login belongs to a separate app.
-    if (!metaAppSecret) return genericResponse(503)
-    if (!matchesMetaSecret) return genericResponse(401)
+    if (!metaAppSecret) return refuse(503, 'app_secret_not_configured', genericResponse)
+    if (!matchesMetaSecret) return refuse(401, 'bad_signature_meta', genericResponse)
   }
 
   let events = parseMetaWebhook(payload)
@@ -204,7 +209,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const channel = events[0].channel
   const configuredAccountId = getConfiguredMetaAccountId(channel)
-  if (!configuredAccountId) return genericResponse(503)
+  if (!configuredAccountId) return refuse(503, 'account_not_configured', genericResponse)
 
   // A Meta app can be subscribed to more than one business account. Accept
   // only the explicitly configured sender so an unrelated account's customer
@@ -271,7 +276,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // The audit lease serializes concurrent retries of the same signed Meta
     // delivery. Message upserts remain the cross-delivery idempotency guard.
     const claimed = await claimWebhookEventForProcessing(audit.id)
-    if (!claimed) return genericResponse(503)
+    if (!claimed) return refuse(503, 'claim_in_flight', genericResponse)
     auditClaimed = true
 
     for (const message of queuedMessages.values()) {
@@ -298,16 +303,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             data: eventData,
           })
         }
-      } catch {
-        await markAuditFailed(
-          audit.id,
-          backend === 'database'
-            ? 'database_queue_enqueue_failed'
-            : backend === 'workflow'
-              ? 'workflow_start_failed'
-              : 'inngest_enqueue_failed',
-        )
-        return genericResponse(500)
+      } catch (error) {
+        const code = backend === 'database'
+          ? 'database_queue_enqueue_failed'
+          : backend === 'workflow'
+            ? 'workflow_start_failed'
+            : 'inngest_enqueue_failed'
+        await markAuditFailed(audit.id, code)
+        return refuse(500, code, genericResponse, error)
       }
     }
 
@@ -316,10 +319,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // claim that the later AI run has already completed.
     await transitionWebhookEvent(audit.id, 'processed')
     return genericResponse()
-  } catch {
+  } catch (error) {
     if (auditId && auditClaimed) {
       await markAuditFailed(auditId, 'webhook_processing_failed')
     }
-    return genericResponse(500)
+    return refuse(500, 'webhook_processing_failed', genericResponse, error)
   }
 }

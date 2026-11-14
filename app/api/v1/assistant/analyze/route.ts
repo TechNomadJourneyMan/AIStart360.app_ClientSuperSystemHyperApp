@@ -10,6 +10,7 @@ import type { LlmAnalysis } from '@/lib/assistant/types'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/assistant/analyze
@@ -27,7 +28,7 @@ import { guardAiBudget } from '@/lib/ai/budget'
  */
 type LlmStatus = 'none' | 'completed' | 'failed' | 'insufficient_data'
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
@@ -112,3 +113,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After
+ * 90 s the client gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline
+ * spent (one LLM analysis (45 s AI deadline) plus reads and the write; the client polls /status). ROUTE_DEADLINE_MS_ASSISTANT_ANALYZE overrides it; ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'assistant-analyze', ms: 90_000 })

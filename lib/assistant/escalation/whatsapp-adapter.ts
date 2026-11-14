@@ -23,7 +23,7 @@ import { optedInRecipients } from '@/lib/whatsapp/links'
 import { enqueueWhatsApp, operatorExpertNumbers, outboxKey, sendWhatsAppNow } from '@/lib/whatsapp/outbox'
 import { expertNotificationTemplate } from '@/lib/whatsapp/templates'
 import type { NotificationLevel } from '@/lib/notifications/levels'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
+import { filterExpertAudienceForClient } from '@/lib/notifications/expert-audience'
 
 const PRIORITY_LEVEL: Record<ExpertCase['priority'], NotificationLevel> = {
   critical: 'CRITICAL',
@@ -50,7 +50,8 @@ export class WhatsAppEscalationAdapter implements EscalationAdapter {
   async notify(c: ExpertCase): Promise<void> {
     try {
       if (!cloudApiConfigured()) return
-      const linked = (await optedInRecipients('expert')).filter((r) => r.role !== null && EXPERT_ROLES.has(r.role))
+      // SR-17: only people who may read this client (assigned expert / staff with scope 'all').
+      const linked = await filterExpertAudienceForClient(await optedInRecipients('expert'), c.userId)
       const seen = new Set<string>()
       const targets: Array<{ userId: string | null; phone: string }> = []
       for (const r of linked) if (!seen.has(r.phone)) { seen.add(r.phone); targets.push({ userId: r.userId, phone: r.phone }) }

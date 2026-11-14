@@ -39,6 +39,7 @@ import { getMetricRegistry } from '@/lib/metrics/registry'
 import { GRI_SECTION_BY_LABEL } from '@/lib/metrics/catalog-helpers'
 import { getMetricCategory, isMetricCategoryKey } from '@/lib/metrics/taxonomy'
 import { POINT_A_ENGINE } from '@/lib/point-a-engine'
+import { OFFICIAL_SNAPSHOT_COLUMNS, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
@@ -511,6 +512,18 @@ export interface LoadOverviewOptions {
   ownerCountsClient?: SupabaseClient
 }
 
+/** The company's latest Point A snapshot for the official reading; any failure → null (the row alone). */
+async function latestSnapshot(client: Pick<SupabaseClient, 'from'>, companyId: string): Promise<OfficialSnapshotRow | null> {
+  try {
+    const { data, error } = await client.from('point_a_snapshots').select(OFFICIAL_SNAPSHOT_COLUMNS)
+      .eq('company_id', companyId).order('created_at', { ascending: false }).limit(1)
+    if (error) return null
+    return ((data ?? []) as unknown as OfficialSnapshotRow[])[0] ?? null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Gather every input of the overview for `tenant.companyId`. Core tables
  * (companies, diagnostics, survey_answers, documents) must answer; optional
@@ -617,7 +630,10 @@ export async function loadPointAOverview(
     }
   }
 
-  const diagRow = ((diag.data ?? [])[0] ?? null) as OverviewDiagnosticRow | null
+  const rawDiag = ((diag.data ?? [])[0] ?? null) as OverviewDiagnosticRow | null
+  // The OFFICIAL Point A (R-033, BI-02): the v1 zeros of blocks without data and
+  // a v1 overall where v4 has none are not problem zones / a score.
+  const diagRow = rawDiag ? officialDiagnosticRow(rawDiag as unknown as Record<string, unknown>, officialPointA(rawDiag as unknown as Record<string, unknown>, await latestSnapshot(client, companyId))) as unknown as OverviewDiagnosticRow : null
 
   return buildPointAOverview({
     companyId,

@@ -25,19 +25,25 @@ vi.mock('@/lib/db', () => ({ prisma: { adminRequest: { create: async () => ({ id
 const fakeFrom = vi.hoisted(() => (table: string) => ({
   upsert: async () => ({ error: null }),
   insert: async () => ({ error: null }),
-  select: () => ({
-    eq: () => ({
-      maybeSingle: async () => ({ data: table === 'staff_roles' ? s.staff : { status: s.status } }),
-      single: async () => ({ data: table === 'profiles' ? s.existingProfile : null }),
-    }),
-  }),
+  select: () => {
+    // R-053: /register looks up an existing company (none here) before inserting one.
+    const maybeSingle = async () => ({ data: table === 'staff_roles' ? s.staff : table === 'companies' ? null : { status: s.status } })
+    return {
+      eq: () => ({
+        maybeSingle,
+        limit: () => ({ maybeSingle }),
+        single: async () => ({ data: table === 'profiles' ? s.existingProfile : null }),
+      }),
+    }
+  },
 }))
 // The OAuth callback reads/creates the profile with the service role (the
 // fresh session is not in the request cookies yet); /register uses the session.
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: fakeFrom }) }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({
-    auth: { getUser: async () => ({ data: { user: { id: 'u-1' } } }) },
+    // R-053: the e-mail of the notification is the session's (auth.users), not the body's.
+    auth: { getUser: async () => ({ data: { user: { id: 'u-1', email: 'a@corp.kz' } } }) },
     from: fakeFrom,
   }),
 }))

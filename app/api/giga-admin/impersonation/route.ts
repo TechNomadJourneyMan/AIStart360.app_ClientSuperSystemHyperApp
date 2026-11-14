@@ -10,7 +10,9 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { IMP_COOKIE_NAME, IMP_COOKIE_OPTIONS, signImpersonation } from '@/lib/impersonation/token'
+import { IMP_BINDING_ACTION, IMP_BINDING_ENTITY, IMP_COOKIE_NAME, IMP_COOKIE_OPTIONS, signImpersonation } from '@/lib/impersonation/token'
+import { guardClientAccess } from '@/lib/admin/client-scope'
+import { NO_SESSION_ID, authSessionFromAccessToken } from '@/lib/mfa/session-binding'
 import { trackEvent } from '@/lib/events/track'
 
 /**
@@ -24,7 +26,14 @@ import { trackEvent } from '@/lib/events/track'
  *  - the session is a DB row (TTL from settings, 30 min by default) — every request inside it is audited and
  *    view mode is enforced server-side by middleware;
  *  - the user's Supabase session is minted server-side (no magic link leaves
- *    the server); a signed httpOnly cookie marks it as the admin's.
+ *    the server); a signed httpOnly cookie marks it as the admin's;
+ *  - R-048: only a CLIENT account inside the staff member's client scope can
+ *    be opened (guardClientAccess clientOnly: profiles.role 'client' and no
+ *    staff_roles row);
+ *  - R-008: the minted session's GoTrue id is bound to the DB row (required
+ *    audit row IMP_BINDING_ACTION) — middleware recognises and ends that
+ *    session even if the cookie is deleted or expires; ending revokes only
+ *    that session (signOut scope 'local').
  */
 
 const startSchema = z.object({
@@ -103,6 +112,10 @@ export async function POST(req: NextRequest) {
   if (target.status === 'blocked' || target.status === 'archived') {
     return NextResponse.json({ ok: false, error: 'Пользователь заблокирован или в архиве' }, { status: 409 })
   }
+  // R-048: the staff member's client scope, and clients only — an expert or
+  // any account with a staff_roles row is never opened «от имени».
+  const scopeDenied = await guardClientAccess(actor, userId, { clientOnly: true })
+  if (scopeDenied) return scopeDenied
   if (mode === 'edit' && !hasPermission(actor.role, 'impersonate.edit')) {
     return NextResponse.json({ ok: false, error: 'Недостаточно прав для режима правки' }, { status: 403 })
   }
@@ -196,6 +209,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Не удалось войти в кабинет пользователя' }, { status: 500 })
   }
 
+  // R-008: bind this impersonation to the session just minted. Without the
+  // binding the session could outlive the cookie unnoticed — so no binding,
+  // no impersonation: the minted session is revoked (only it: scope 'local').
+  const asid = authSessionFromAccessToken(verify.data.session?.access_token)?.sessionKey
+  const abort = async (endReason: string, status: number, error: string) => {
+    await userClient.auth.signOut({ scope: 'local' }).catch(() => undefined)
+    await sb.from('impersonation_sessions').update({ ended_at: new Date().toISOString(), end_reason: endReason }).eq('id', session.id)
+    return NextResponse.json({ ok: false, error }, { status })
+  }
+  if (!asid || asid === NO_SESSION_ID) {
+    return abort('unbound', 500, 'Не удалось привязать сессию пользователя')
+  }
+  try {
+    await recordAdminAction(actor, {
+      action: IMP_BINDING_ACTION,
+      entityType: IMP_BINDING_ENTITY,
+      entityId: asid,
+      targetUserId: userId,
+      impersonationSessionId: session.id,
+    }, req, { required: true })
+  } catch {
+    return abort('bind_failed', 503, 'Журнал аудита недоступен — вход отклонён')
+  }
+
   jar.set(IMP_COOKIE_NAME, await signImpersonation({
     sid: session.id,
     uid: userId,
@@ -204,6 +241,7 @@ export async function POST(req: NextRequest) {
     alabel: actor.email ?? actor.id,
     arole: actor.role,
     tlabel: target.email,
+    asid,
   }, ttlSeconds), IMP_COOKIE_OPTIONS)
 
   void trackEvent({

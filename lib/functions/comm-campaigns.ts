@@ -73,6 +73,9 @@ export const commCampaignRun = inngest.createFunction(
     retries: 2,
     concurrency: [{ limit: 1 }, { key: 'event.data.campaignId', limit: 1 }],
     singleton: { key: 'event.data.campaignId', mode: 'cancel' },
+    // BE-06 (lib/functions/limits.ts): a run sleeps until the sending window (a weekend included)
+    // between its sends, so `finish` is days; the watchdog revives a campaign whose run was dropped.
+    timeouts: { start: '1h', finish: '4d' },
     triggers: [{ event: COMM_CAMPAIGN_RUN_EVENT }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
@@ -101,7 +104,8 @@ export async function campaignWatchdog(deps: { now?: Date; emit?: (id: string) =
 }
 
 export const commCampaignWatchdog = inngest.createFunction(
-  { id: 'comm-campaign-watchdog', retries: 0, concurrency: { limit: 1 }, triggers: [{ cron: '*/15 * * * *' }] },
+  // BE-06: start < the 15-minute period.
+  { id: 'comm-campaign-watchdog', retries: 0, concurrency: { limit: 1 }, timeouts: { start: '10m', finish: '5m' }, triggers: [{ cron: '*/15 * * * *' }] },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.
   async () => campaignWatchdog(),
 )

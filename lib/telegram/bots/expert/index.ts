@@ -2,12 +2,16 @@
  * lib/telegram/bots/expert — the expert bot (TELEGRAM_EXPERT_BOT_*).
  *
  * Who: a person linked from the expert cabinet (/expert/profile → «Привязать
- * Telegram», `/start expert_<code>`) whose approved profile role is in
- * EXPERT_ROLES — the same gate as /api/expert/** (lib/expert-auth.ts).
- * Scope: the same as those routes — experts are platform staff and read every
- * client company (no expert↔client assignment exists, see
- * lib/reports/expert-list.ts); reports: published versions, plus versions
- * waiting for the expert (status 'in_review', 103 — ./review.ts). Model
+ * Telegram», `/start expert_<code>`) admitted by the rule of migration 140
+ * (./link.ts, lib/access/actor.ts isExpertBotActor): an active expert, or
+ * approved staff Admin / Super Admin / SuperExpert from staff_roles — never
+ * the legacy profiles.role admin / super_admin alone (SR-17).
+ * Scope: the same as /api/expert/** (SR-03) — an expert sees ONLY the clients
+ * assigned to them (user_assignments.assignee_id); staff with client scope
+ * 'all' see every client (lib/telegram/brain/scope.ts). Every list is
+ * filtered, every card / button re-checks the company («Клиент вам не
+ * назначен»). Reports: published versions, plus versions waiting for the
+ * expert (status 'in_review', 103 — ./review.ts), of the same clients. Model
  * hypotheses not yet reviewed are shown because platform staff (incl.
  * 'expert') may read them under RLS 085 — always labelled as unreviewed.
  * Writes: their own notification level / mute, and the decision on a report
@@ -20,6 +24,7 @@ import { REPORT_TYPE_LABELS } from '@/lib/reports/expert-list'
 import { listReportVersions } from '@/lib/reports/versions'
 import { renderCompanyCard, sessionLine } from '../cards'
 import { companyCard, recentSessions, searchCompanies } from '../data'
+import { companyAllowed, NOT_ASSIGNED, scopeCompanyIds, scopeFor, type BrainScope } from '@/lib/telegram/brain/scope'
 import type { BotContext, BrainInput, Entry, Router, StepEntry } from '../dispatcher'
 import { LEVEL_CODES, muteUntil, readSettings, renderSettings, writeLevel, writeMute } from '../notify-settings'
 import { sendMessage, type InlineButton, type ReplyMarkup } from '../registry'
@@ -52,18 +57,26 @@ async function brain(ctx: Ctx, input: BrainInput): Promise<void> {
   await runExpertBrain(ctx, input)
 }
 
+/** The client scope of the person, re-read on every update (fails closed to no clients). */
+export function expertScope(ctx: Ctx): Promise<BrainScope> {
+  return scopeFor(ctx.principal.userId, ctx.principal.clientScope ?? 'assigned')
+}
+
+const NOT_ASSIGNED_TEXT = `⛔ ${NOT_ASSIGNED}.`
+
 async function clientsMenu(ctx: Ctx): Promise<void> {
   await ctx.show('👥 <b>Клиенты</b>', [[ctx.button('🔎 Найти', 'cl.s')], [ctx.button('🕘 Недавние', 'cl.l', 0)]])
 }
 
 async function listClients(ctx: Ctx, page: number): Promise<void> {
-  const { items, hasMore } = await searchCompanies(null, page, PAGE_SIZE)
+  const { items, hasMore } = await searchCompanies(null, page, PAGE_SIZE, scopeCompanyIds(await expertScope(ctx)))
   const rows = items.map((c) => [ctx.button(`${cut(c.name, 34)}${c.score != null ? ` · ${Math.round(c.score)}` : ''}`, 'cl.c', c.id)])
   rows.push(pagerRow(ctx, 'cl.l', page, hasMore))
   await ctx.show(items.length ? '🕘 <b>Клиенты</b> (балл Точки А)' : 'Клиентов пока нет.', rows)
 }
 
 async function showClient(ctx: Ctx, id: string): Promise<void> {
+  if (!companyAllowed(await expertScope(ctx), id)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
   const card = await companyCard(id, { includeUnreviewedHypotheses: true })
   if (!card) return void (await ctx.show('Компания не найдена.'))
   await ctx.show(renderCompanyCard(card, { showContacts: true }), [
@@ -72,7 +85,9 @@ async function showClient(ctx: Ctx, id: string): Promise<void> {
 }
 
 async function listSessions(ctx: Ctx, companyId: string, page: number): Promise<void> {
-  const { items, hasMore } = await recentSessions(page, PAGE_SIZE, companyId === '-' ? null : companyId)
+  const scope = await expertScope(ctx)
+  if (companyId !== '-' && !companyAllowed(scope, companyId)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
+  const { items, hasMore } = await recentSessions(page, PAGE_SIZE, companyId === '-' ? null : companyId, scopeCompanyIds(scope))
   const lines = ['🩺 <b>Диагностики</b>', '', ...items.map(sessionLine)]
   if (!items.length) lines.push('Сессий нет.')
   const rows = companyId === '-' ? items.map((s) => [ctx.button(cut(s.company_name ?? s.company_id, 40), 'cl.c', s.company_id)]) : [[ctx.button('‹ К клиенту', 'cl.c', companyId)]]
@@ -81,9 +96,11 @@ async function listSessions(ctx: Ctx, companyId: string, page: number): Promise<
 }
 
 async function listReports(ctx: Ctx, companyId: string, page: number): Promise<void> {
+  const scope = await expertScope(ctx)
+  if (companyId !== '-' && !companyAllowed(scope, companyId)) return void (await ctx.show(NOT_ASSIGNED_TEXT))
   // Published only — drafts and ready versions are reviewed in GIGA, not here.
   const all = (await listReportVersions({ companyId: companyId === '-' ? null : companyId, status: 'published', limit: 200 }))
-    .filter((v) => v.status === 'published')
+    .filter((v) => v.status === 'published' && companyAllowed(scope, v.company_id))
   const slice = all.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
   const lines = ['📄 <b>Опубликованные отчёты</b>', '']
   for (const v of slice) lines.push(`• ${esc(cut(v.company_name ?? v.company_id, 30))} · ${esc(REPORT_TYPE_LABELS[v.report_type] ?? v.report_type)} v${v.version} · ${dt(v.published_at)}`)
@@ -123,7 +140,7 @@ const steps: Record<string, StepEntry<ExpertPrincipal>> = {
       const q = ctx.text.slice(0, 80)
       if (q.length < 2) return void (await ctx.reply('Нужно хотя бы 2 символа. Попробуйте ещё раз или /cancel.'))
       await ctx.clearState()
-      const { items, hasMore } = await searchCompanies(q, 0, PAGE_SIZE)
+      const { items, hasMore } = await searchCompanies(q, 0, PAGE_SIZE, scopeCompanyIds(await expertScope(ctx)))
       if (!items.length) return void (await ctx.reply('Ничего не найдено.'))
       await ctx.reply(`Найдено: ${items.length}${hasMore ? '+' : ''}`, {
         inline_keyboard: items

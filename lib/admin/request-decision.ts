@@ -21,7 +21,7 @@ export type RequestDecisionResult =
   | { ok: false; httpStatus: number; error: string; userId?: string }
 
 export async function decideRequest(
-  actor: Pick<GigaActor, 'id' | 'kind'>,
+  actor: Pick<GigaActor, 'id' | 'kind' | 'role'>,
   id: string,
   action: RequestAction,
   reason: string | undefined,
@@ -39,10 +39,17 @@ export async function decideRequest(
     requestId: id,
     action,
     reason,
-    actor: { id: actor.id, kind: actor.kind },
+    actor: { id: actor.id, kind: actor.kind, role: actor.role },
     ipAddress: req?.headers.get('x-forwarded-for') ?? undefined,
   })
   if (!res.ok) {
+    // R-007: the target is checked for every id (admin_requests row or profile UUID).
+    if (res.reason === 'forbidden') {
+      return { ok: false, httpStatus: 403, error: 'Недостаточно прав для решения по этому аккаунту', userId: res.userId }
+    }
+    if (res.reason === 'invalid_transition') {
+      return { ok: false, httpStatus: 409, error: 'Для текущего статуса аккаунта это решение не применяется', userId: res.userId }
+    }
     return { ok: false, httpStatus: 404, error: 'Профиль пользователя не найден — статус не изменён', userId: res.userId }
   }
   return { ok: true, status: res.status, userId: res.userId }

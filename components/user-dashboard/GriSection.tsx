@@ -9,10 +9,15 @@ import Link from 'next/link'
 import type { AssessmentCurrent } from '@/lib/gri-assessment/types'
 import { GRI_SECTIONS, GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
+import { formatGri, griPercentOfScale, griTone } from '@/lib/format/gri'
 import { scoresFingerprint, type GriScores } from '@/lib/gri-assessment/score'
 
 const GRI_TARGET = 8.5
-const tone = (v: number) => (v >= 7 ? 'bg-primary/80 text-primary' : v >= 4 ? 'bg-amber-400/80 text-amber-300' : 'bg-red-400/80 text-red-400')
+// One set of GRI zones (lib/format/gri.ts, R-036).
+const tone = (v: number) => {
+  const t = griTone(v)
+  return t === 'green' ? 'bg-primary/80 text-primary' : t === 'amber' ? 'bg-amber-400/80 text-amber-300' : 'bg-red-400/80 text-red-400'
+}
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
 
 interface DraftInfo { blocksStarted: number; updatedAt: string }
@@ -91,7 +96,7 @@ export default function GriSection() {
                 {draft ? 'Диагностика не завершена' : assessment ? 'Диагностика пройдена' : 'Диагностика не пройдена'}
               </span>
               <div className="mt-3 flex items-end gap-3">
-                <span className="text-5xl font-bold tabular-nums text-primary">{index == null ? '—' : index.toFixed(1)}</span>
+                <span className="text-5xl font-bold tabular-nums text-primary">{formatGri(index, { empty: '—' })}</span>
                 <span className="pb-1.5 text-sm text-on-surface-variant">/ цель {GRI_TARGET}+</span>
               </div>
               <p className="mt-2 max-w-sm text-xs leading-snug text-on-surface-variant">
@@ -129,9 +134,9 @@ export default function GriSection() {
                     <li key={sec.id} className="flex items-center gap-3">
                       <span className="w-36 shrink-0 truncate text-xs text-on-surface-variant sm:w-52">{GRI_BLOCK_RU[sec.id]}</span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                        <div className={`h-full rounded-full ${v > 0 ? bar : ''}`} style={{ width: `${v * 10}%` }} />
+                        <div className={`h-full rounded-full ${v > 0 ? bar : ''}`} style={{ width: `${griPercentOfScale(v)}%` }} />
                       </div>
-                      <span className={`w-8 text-right font-mono text-xs font-semibold ${v > 0 ? text : 'text-on-surface-variant/50'}`}>{v > 0 ? v.toFixed(1) : '—'}</span>
+                      <span className={`w-8 text-right font-mono text-xs font-semibold ${v > 0 ? text : 'text-on-surface-variant/50'}`}>{formatGri(v, { empty: '—' })}</span>
                     </li>
                   )
                 })}

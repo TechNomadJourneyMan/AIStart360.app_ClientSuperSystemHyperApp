@@ -103,6 +103,17 @@ describe('generateNarrative', () => {
     expect(args.user).toContain('ТОО Тестовая Компания')
   })
 
+  it('R-033: a block without data is «нет данных» in the prompt, never «0/100 (критично)»', async () => {
+    mockedChat.mockResolvedValueOnce(JSON.stringify(VALID_BODY))
+    const pa = makePointA()
+    pa.blocks.finance = { score: 0, status: 'critical', top_issues: [], recommendations: [] }
+    await generateNarrative(makeInput({ pointA: pa, blocksWithoutData: ['finance'] }))
+    const user = (mockedChat.mock.calls[0][0] as { user: string }).user
+    expect(user).toContain('Финансы: нет данных')
+    expect(user).not.toContain('Финансы: 0/100')
+    expect(user).toContain('Маркетинг: 40/100 (слабо)')
+  })
+
   it('returns null on malformed JSON', async () => {
     mockedChat.mockResolvedValueOnce('this is not json at all, just prose')
 

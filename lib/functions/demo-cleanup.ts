@@ -54,6 +54,9 @@ export const demoAccountsCleanup = inngest.createFunction(
   {
     id: 'demo-accounts-cleanup',
     retries: 1,
+    // BE-05/06 (lib/functions/limits.ts).
+    concurrency: { limit: 1 },
+    timeouts: { start: '1h', finish: '15m' },
     triggers: [{ cron: 'TZ=Asia/Almaty 30 4 * * *' }],
   },
   // @ts-ignore -- handler inference is incomplete in this repository's Inngest setup.

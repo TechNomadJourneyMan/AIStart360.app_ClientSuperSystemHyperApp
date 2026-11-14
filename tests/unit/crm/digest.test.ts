@@ -72,7 +72,7 @@ describe('digest text', () => {
     const lines = buildDigestLines(data)
     expect(lines[0]).toContain('Просроченных напоминаний: 3')
     expect(lines[1]).toContain('Спящих клиентов: 2')
-    expect(lines[2]).toContain('Команда (3.1/10)')
+    expect(lines[2]).toContain('Команда (3.1 / 10)') // R-036: formatGri
   })
 
   it('body is one flat string ending with the CTA hint', () => {

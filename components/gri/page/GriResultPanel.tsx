@@ -6,6 +6,7 @@
 // данные приходят из GriPageShell через props (никаких запросов здесь).
 import Link from 'next/link'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { formatGri, griTone } from '@/lib/format/gri'
 import type { Top5Limit } from '@/lib/gri-calculator/top5-action-plan'
 import type { AssessmentCurrent } from './GriPageShell'
 import DecisiveBets from './DecisiveBets'
@@ -76,7 +77,8 @@ export default function GriResultPanel({
             {GRI_SECTIONS.map((s) => {
               const raw = Number(avgs[s.id] ?? 0)
               const v = Number.isFinite(raw) ? raw : 0
-              const tone = v >= 8 ? 'bg-primary' : v >= 6 ? 'bg-amber-400' : 'bg-red-400'
+              const t = griTone(v)
+              const tone = t === 'green' ? 'bg-primary' : t === 'amber' ? 'bg-amber-400' : t === 'red' ? 'bg-red-400' : 'bg-white/[0.12]'
               return (
                 <li key={s.id} className="flex items-center gap-3">
                   <span className="flex-1 text-sm text-on-surface truncate">
@@ -89,7 +91,7 @@ export default function GriResultPanel({
                     />
                   </span>
                   <span className="w-8 text-right text-sm tabular-nums text-on-surface">
-                    {v.toFixed(1)}
+                    {formatGri(v, { empty: '—' })}
                   </span>
                 </li>
               )

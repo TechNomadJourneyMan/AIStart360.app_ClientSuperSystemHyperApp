@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { checkRateLimitForRequest, rateLimitResponse } from '@/lib/rate-limit'
 import { sendNotificationEmail } from '@/lib/email'
 import { getSiteUrl } from '@/lib/site-url'
+import { formatGri, griFromPercent } from '@/lib/format/gri'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -119,11 +120,14 @@ export async function POST(req: NextRequest) {
   // Fire-and-forget capture email. Never block the response on email failure.
   try {
     const weakest = [...blockScores].sort((a, b) => a.score - b.score)[0]
+    // Stored 0–100 (lead row), shown on the GRI scale 0–10 like every screen (R-036).
+    const gri = (score: number | undefined) =>
+      formatGri(griFromPercent(score), { scale: true, allowZero: true, empty: '—' })
     await sendNotificationEmail({
       to: email,
       subject: 'Ваш мини-GRI — предварительная оценка бизнеса',
-      title: `Ваш GRI: ${overallScore}/100`,
-      body: `Спасибо за прохождение мини-диагностики! Слабейший блок — «${weakest?.label ?? '—'}» (${weakest?.score ?? 0}/100). Зарегистрируйтесь, чтобы открыть полный GRI по 7 блокам и получить персональный план роста.`,
+      title: `Ваш предварительный GRI: ${gri(overallScore)}`,
+      body: `Спасибо за прохождение мини-диагностики! Слабейший блок — «${weakest?.label ?? '—'}» (${gri(weakest?.score)}). Зарегистрируйтесь, чтобы открыть полный GRI по 7 блокам и получить персональный план роста.`,
       ctaLabel: 'Получить полный GRI',
       ctaUrl: getSiteUrl('/register'),
     })

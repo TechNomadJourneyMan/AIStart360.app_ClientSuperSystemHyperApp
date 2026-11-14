@@ -39,7 +39,7 @@ import {
   type ToolChoice,
   type ToolDefinition,
 } from './providers/client'
-import { isModelOrFormatRejection, runWithFailover } from './providers/failover'
+import { aiDeadlineMs, isModelOrFormatRejection, runWithFailover } from './providers/failover'
 import { providerBudgetRefusal, resolveCandidates } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
@@ -143,15 +143,17 @@ export async function chatWithTools(opts: ChatWithToolsOptions): Promise<ChatWit
 
   const run = await runWithFailover(
     resolved.candidates,
-    (target) => chatCompletionWithTools(target, {
+    (target, budget) => chatCompletionWithTools(target, {
       messages: opts.messages,
       tools: opts.tools,
       toolChoice: opts.toolChoice,
       maxTokens,
       temperature: opts.temperature === null ? null : (opts.temperature ?? 0.2),
-      timeoutMs,
+      timeoutMs: budget.timeoutMs,
     }),
     {
+      attemptTimeoutMs: timeoutMs,
+      deadlineMs: aiDeadlineMs('user', timeoutMs),
       budgetCheck: providerBudgetRefusal,
       // A model that cannot take tools / images often answers 400: try the next
       // one; so does a 400 that rejects the model id or the output format.
@@ -306,8 +308,10 @@ export async function transcribeAudio(opts: TranscribeOptions): Promise<Transcri
   if (sttTargets.length) {
     const run = await runWithFailover(
       sttTargets,
-      (target) => transcribeAudioRequest(target, { bytes: opts.bytes, filename: opts.filename, mime: opts.mime, language, timeoutMs }),
+      (target, budget) => transcribeAudioRequest(target, { bytes: opts.bytes, filename: opts.filename, mime: opts.mime, language, timeoutMs: budget.timeoutMs }),
       {
+        attemptTimeoutMs: timeoutMs,
+        deadlineMs: aiDeadlineMs('user', timeoutMs),
         budgetCheck: providerBudgetRefusal,
         onFailure: (target, f) => { console.error(`${logTag(target)} ${label} transcription failed:`, f.status ?? f.message) },
       },
@@ -327,8 +331,10 @@ export async function transcribeAudio(opts: TranscribeOptions): Promise<Transcri
     ]
     const run = await runWithFailover(
       chatTargets,
-      (target) => chatCompletion(target, { messages: [{ role: 'user', content }], maxTokens: 2000, temperature: 0, timeoutMs }),
+      (target, budget) => chatCompletion(target, { messages: [{ role: 'user', content }], maxTokens: 2000, temperature: 0, timeoutMs: budget.timeoutMs }),
       {
+        attemptTimeoutMs: timeoutMs,
+        deadlineMs: aiDeadlineMs('user', timeoutMs),
         budgetCheck: providerBudgetRefusal,
         onFailure: (target, f) => { console.error(`${logTag(target)} ${label} audio chat failed:`, f.status ?? f.message) },
       },

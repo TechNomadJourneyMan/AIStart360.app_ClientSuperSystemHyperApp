@@ -30,7 +30,7 @@ function deps(audits: AuditRow[]): ServerDeps {
       if (authorization !== 'Bearer a360_pat_test') return { ok: false, status: 401, error: 'invalid_token', description: 'bad' }
       return {
         ok: true,
-        principal: { userId: '11111111-1111-4111-8111-111111111111', email: null, role: { kind: 'expert', profileRole: 'expert' }, allowed: ['clients:read', 'clients:pii'] },
+        principal: { userId: '11111111-1111-4111-8111-111111111111', email: null, role: { kind: 'expert', profileRole: 'expert' }, allowed: ['clients:read', 'clients:pii'], clientScope: 'assigned' },
         credential: { kind: 'pat', id: '22222222-2222-4222-8222-222222222222', scopes: ['clients:read'], clientId: null },
         scopes: ['clients:read'],
       }

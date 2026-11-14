@@ -371,6 +371,14 @@ describe.skipIf(!dbTestsEnabled)('MCP server (101)', async () => {
     expect(masked.data.current_diagnostic).toMatchObject({ overall_score: 64, health_index: 58, area_scores: { finance: 71 }, data_gaps: ['выручка по месяцам'] })
     expect(masked.data.key_findings.map((f: { title: string }) => f.title)).toEqual(['Кассовый разрыв'])
     expect(masked.text).not.toContain(`${tag}.owner@corp.kz`)
+    // SR-05: an expert reads only the clients assigned to them (user_assignments, migration 140 rule).
+    expect((await tool(expert, 'get_client', { user_id: ids.client })).isError).toBe(true)
+    expect((await tool(expert, 'search_clients', { query: `Ромашка ${tag}` })).data.items).toHaveLength(0)
+    expect((await tool(expert, 'get_point_a', { company_id: companyA })).isError).toBe(true)
+    await prisma.$executeRaw`
+      INSERT INTO public.user_assignments (user_id, assignee_id) VALUES (${ids.client}::uuid, ${ids.expert}::uuid)
+      ON CONFLICT (user_id) DO UPDATE SET assignee_id = EXCLUDED.assignee_id`
+    expect((await tool(expert, 'search_clients', { query: `Ромашка ${tag}` })).data.items).toHaveLength(1)
     const open = await tool(expert, 'get_client', { user_id: ids.client })
     expect(open.data.owner).toMatchObject({ email: `${tag}.owner@corp.kz`, phone: '+7 701 555 12 34' })
 

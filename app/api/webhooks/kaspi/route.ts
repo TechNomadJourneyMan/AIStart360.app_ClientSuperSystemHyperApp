@@ -8,6 +8,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
 import { BillingError, KASPI_WEBHOOK_ACTOR, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 import { trackEvent } from '@/lib/events/track'
+import { webhookRefusal } from '@/lib/runtime/webhook-log'
 
 /**
  * POST /api/webhooks/kaspi — платёжный callback Kaspi-эквайринга.
@@ -70,28 +71,30 @@ async function resolveUserId(orgId: string): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest) {
+  // R-138: one structured line per refusal (route, status, reason, request id) — no payment data.
+  const refuse = webhookRefusal('webhooks/kaspi', req)
   const secret = process.env.KASPI_WEBHOOK_SECRET
   if (!secret) {
     // Fail closed: непроверяемый платёжный callback опаснее пропущенного.
-    return NextResponse.json({ error: 'webhook_not_configured' }, { status: 503 })
+    return refuse(503, 'webhook_not_configured', (status) => NextResponse.json({ error: 'webhook_not_configured' }, { status }))
   }
 
   const rawBody = await req.text()
   if (!verifySignature(rawBody, req.headers.get(SIGNATURE_HEADER), secret)) {
-    return NextResponse.json({ error: 'invalid_signature' }, { status: 401 })
+    return refuse(401, 'invalid_signature', (status) => NextResponse.json({ error: 'invalid_signature' }, { status }))
   }
 
   let body: { paymentId?: string; orderId?: string; status?: string; amount?: number }
   try {
     body = JSON.parse(rawBody) as typeof body
   } catch {
-    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+    return refuse(400, 'invalid_json', (status) => NextResponse.json({ error: 'invalid_json' }, { status }))
   }
 
   const paymentId = body.paymentId ? String(body.paymentId) : null
   const status = (body.status ?? '').toLowerCase()
   if (!paymentId || !status) {
-    return NextResponse.json({ error: 'paymentId and status required' }, { status: 400 })
+    return refuse(400, 'missing_fields', (status) => NextResponse.json({ error: 'paymentId and status required' }, { status }))
   }
 
   const tx = await prisma.paymentTransaction.findFirst({
@@ -129,7 +132,7 @@ export async function POST(req: NextRequest) {
         performedBy: 'kaspi:webhook',
         diff: { after: { expectedKzt, receivedKzt: body.amount, paymentId } },
       })
-      return NextResponse.json({ error: 'amount_mismatch' }, { status: 409 })
+      return refuse(409, 'amount_mismatch', (status) => NextResponse.json({ error: 'amount_mismatch' }, { status }))
     }
 
     // Тариф: monthly-план получает период (продление от конца текущего

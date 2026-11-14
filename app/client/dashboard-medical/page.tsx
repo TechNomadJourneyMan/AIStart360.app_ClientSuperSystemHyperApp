@@ -37,7 +37,8 @@ interface AuditResponse {
     label: string
     target_patient_count: number
     estimated_conversion: number
-    estimated_revenue_kzt: number
+    /** null = no average check in the base → «нет данных». */
+    estimated_revenue_kzt: number | null
     priority: number
     complexity: 'easy' | 'medium' | 'hard'
     effect_timeline: string
@@ -106,7 +107,7 @@ export default function MedicalDashboardPage() {
   }, [router, loadExisting])
 
   const bundleTotal = useMemo(
-    () => (data?.bundles ?? []).reduce((s, b) => s + b.estimated_revenue_kzt, 0),
+    () => (data?.bundles ?? []).reduce((s, b) => s + (b.estimated_revenue_kzt ?? 0), 0),
     [data],
   )
 
@@ -350,7 +351,9 @@ function BundlesBlock({ bundles, total }: { bundles: AuditResponse['bundles']; t
     <section>
       <header className="flex items-baseline justify-between mb-4">
         <h2 className="font-headline text-lg font-bold text-on-surface">9 связок роста</h2>
-        <span className="text-xs text-primary font-medium">Потенциал: +{(total / 1_000_000).toFixed(1)}M ₸/мес</span>
+        <span className="text-xs text-primary font-medium">
+          {bundles.every((b) => b.estimated_revenue_kzt === null) ? 'Потенциал: нет данных о среднем чеке' : `Потенциал: +${(total / 1_000_000).toFixed(1)}M ₸/мес`}
+        </span>
       </header>
       <div className="space-y-2">
         {bundles.map((b) => {
@@ -368,7 +371,7 @@ function BundlesBlock({ bundles, total }: { bundles: AuditResponse['bundles']; t
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <span className="text-[10px] font-mono text-on-surface-variant">{b.effect_timeline}</span>
                   <span className="text-sm font-mono font-bold text-primary">
-                    +{(b.estimated_revenue_kzt / 1_000_000).toFixed(2)}M ₸
+                    {b.estimated_revenue_kzt === null ? 'нет данных о чеке' : `+${(b.estimated_revenue_kzt / 1_000_000).toFixed(2)}M ₸`}
                   </span>
                   <span className="material-symbols-outlined text-base text-on-surface-variant">
                     {open ? 'expand_less' : 'expand_more'}

@@ -368,6 +368,8 @@ function execute(p: Prepared, changes: WhatIfChange[], baseSim: CashSimulation |
   // 1. revenue
   let monthly: number[]
   let newCustomers: number[] | null = null
+  /** The same volume valued at today's check, when the check moves (R-038): COGS follows the volume, not the price. */
+  let volume: number[] | null = null
   if (p.funnel) {
     const { L0, c0, p0 } = p.funnel
     const mk = by.marketing
@@ -387,6 +389,7 @@ function execute(p: Prepared, changes: WhatIfChange[], baseSim: CashSimulation |
     const sim = simulateFunnel(p.funnel.params, path, H)
     monthly = sim.revenue
     newCustomers = sim.newCustomers
+    if (ck) volume = simulateFunnel(p.funnel.params, { ...path, avgCheck: [] }, H).revenue
   } else {
     monthly = projectGrowth({ baseAnnual: A, annualGrowth: p.annualGrowth, months: H }).map((v) => v / 12)
   }
@@ -396,14 +399,20 @@ function execute(p: Prepared, changes: WhatIfChange[], baseSim: CashSimulation |
   if (hire && (hire.revenueEffectPct ?? 0) > 0 && p.headcount) {
     const perEmployee = A / 12 / p.headcount
     for (let t = hire.startMonth; t <= H; t++) {
-      monthly[t - 1] += (hire.revenueEffectPct ?? 0) * perEmployee * hire.count * Math.min(1, (t - hire.startMonth + 1) / ramp)
+      const add = (hire.revenueEffectPct ?? 0) * perEmployee * hire.count * Math.min(1, (t - hire.startMonth + 1) / ramp)
+      monthly[t - 1] += add
+      if (volume) volume[t - 1] += add
     }
   }
   const shock = by.revenue_shock
   if (shock) {
-    for (let t = shock.startMonth; t <= Math.min(H, shock.startMonth + shock.durationMonths - 1); t++) monthly[t - 1] *= 1 + shock.pct / 100
+    for (let t = shock.startMonth; t <= Math.min(H, shock.startMonth + shock.durationMonths - 1); t++) {
+      monthly[t - 1] *= 1 + shock.pct / 100
+      if (volume) volume[t - 1] *= 1 + shock.pct / 100
+    }
   }
   monthly = monthly.map((v) => Math.max(0, v))
+  if (volume) volume = volume.map((v) => Math.max(0, v))
 
   // 3. money (level 2)
   if (!p.money) return { monthly, newCustomers, sim: null, reserve: null, moneyUnknown: false, fixedEnd: null }
@@ -423,7 +432,7 @@ function execute(p: Prepared, changes: WhatIfChange[], baseSim: CashSimulation |
     }
   }
   const ci = cashInputsOf(
-    p.inputs, p.profile, { revenue: monthly, newCustomers },
+    p.inputs, p.profile, { revenue: monthly, newCustomers, ...(volume ? { volumeRevenue: volume } : {}) },
     { funnel: p.kind === 'funnel', staffNeed: null, baseMonthlyRevenue: A / 12 }, extra,
   )
   const sim = simulateCash(ci)
@@ -547,6 +556,7 @@ function assumptionsFor(p: Prepared, changes: WhatIfChange[], baseSim: CashSimul
       out.push('Стоимость сотрудника — средняя: ФОТ, делённый на текущую численность.')
     } else if (c.kind === 'avg_check') {
       out.push(`Эластичность спроса по чеку ${plain(c.demandElasticity ?? DEFAULT_ELASTICITY)} (допущение, диапазон 0–1): конверсия меняется на −эластичность × изменение чека; конверсия не выше ${fmtPct(Math.max(CONVERSION_CEILING, p.funnel?.c0 ?? 0))}.`)
+      if (p.money) out.push('Себестоимость единицы от цены не зависит: себестоимость = объём продаж × себестоимость единицы, поэтому рост чека почти целиком идёт в валовую прибыль, а скидка так же напрямую её уменьшает; валовая маржа пересчитывается.')
     } else if (c.kind === 'conversion') {
       out.push(`Конверсия растёт линейно за ${months(p.ramp)} и не выше ${fmtPct(Math.max(CONVERSION_CEILING, p.funnel?.c0 ?? 0))}.`)
     } else if (c.kind === 'revenue_shock') {

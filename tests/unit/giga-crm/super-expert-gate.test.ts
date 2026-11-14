@@ -4,6 +4,8 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
+// The factor on record (lib/mfa/factor-edge.ts): these accounts have none.
+vi.mock('@/lib/mfa/factor-edge', () => ({ secondFactorOnRecordEdge: async () => false }))
 
 const state = vi.hoisted(() => ({ staffRole: null as string | null }))
 

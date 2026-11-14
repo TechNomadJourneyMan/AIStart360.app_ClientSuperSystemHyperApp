@@ -7,12 +7,15 @@ import { hasPermission, PERMISSIONS, type Permission, type StaffRole } from '@/l
 import type { AuditEntry } from '@/lib/admin/audit'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
 import { staffByTelegramUser } from '@/lib/telegram/staff-link'
+import { scopeFor, type BrainScope } from '@/lib/telegram/brain/scope'
 import type { BotContext, Entry, StepEntry } from '../dispatcher'
 
 export interface StaffPrincipal {
   userId: string
   role: StaffRole
   email: string | null
+  /** GIGA client scope (effectiveClientScope); absent on old test doubles = 'all'. */
+  clientScope?: 'all' | 'assigned'
 }
 
 export type AdminCtx = BotContext<StaffPrincipal>
@@ -21,7 +24,16 @@ export type AdminStep = StepEntry<StaffPrincipal> & { perm?: Permission | Permis
 
 export async function resolveStaff(telegramUserId: number): Promise<StaffPrincipal | null> {
   const s = await staffByTelegramUser(telegramUserId)
-  return s ? { userId: s.userId, role: s.role, email: s.email } : null
+  return s ? { userId: s.userId, role: s.role, email: s.email, clientScope: s.clientScope } : null
+}
+
+/**
+ * Clients this staff member may see in the bot — the GIGA rule
+ * (staff_roles.client_scope; lib/telegram/brain/scope.ts). Lists are filtered
+ * and every card re-checks the company / user (SR-17, like requireGigaClient).
+ */
+export function adminScope(ctx: AdminCtx): Promise<BrainScope> {
+  return scopeFor(ctx.principal.userId, ctx.principal.clientScope ?? 'all')
 }
 
 export function can(ctx: AdminCtx, perm: Permission): boolean {

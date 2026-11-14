@@ -43,7 +43,7 @@ async function load(req: NextRequest, params: { id: string; assessmentId: string
     return { response: NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 }) }
   }
   const target = await staffRoleOfUser(params.id)
-  if (!canManageTarget(guard.actor.role, target.staffRole)) {
+  if (!canManageTarget(guard.actor.role, target)) {
     return { response: NextResponse.json({ ok: false, error: 'Недостаточно прав для этого пользователя' }, { status: 403 }) }
   }
   const sb = createServiceClient()

@@ -7,6 +7,8 @@
  * the server checks it on every request (the UI only hides what is not allowed).
  */
 
+import { isClientProfileRole } from '@/lib/profiles/client-roles'
+
 export const STAFF_ROLES = ['super_admin', 'admin', 'super_expert', 'crm_manager', 'content_manager', 'analyst', 'support'] as const
 export type StaffRole = (typeof STAFF_ROLES)[number]
 
@@ -93,7 +95,9 @@ const CRM_MANAGER: Permission[] = [
   'dashboard.view', 'users.view', 'users.sensitive', 'users.manage', 'users.invite', 'users.approve',
   'company.edit', 'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
   'activity.view', 'cjm.view', 'analytics.view',
-  'impersonate.view', 'impersonate.edit',
+  // No impersonate.*: «вход от имени клиента» — only Super Admin, Admin and
+  // SuperExpert (PO decision, round 1: the session token of the client is in
+  // the browser, so the circle of people holding it is kept minimal).
   'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
   'agents.view',
 ]
@@ -136,7 +140,8 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   ]),
   support: new Set<Permission>([
     'dashboard.view', 'users.view', 'users.sensitive', 'survey.view', 'gri.view', 'activity.view', 'cjm.view',
-    'impersonate.view', 'inbox.view', 'leads.view',
+    // No impersonate.view (PO decision, round 1 — see CRM_MANAGER).
+    'inbox.view', 'leads.view',
   ]),
 }
 
@@ -153,6 +158,15 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
 export const CLIENT_SCOPES = ['all', 'assigned'] as const
 export type ClientScope = (typeof CLIENT_SCOPES)[number]
 const ALWAYS_ALL_SCOPE: ReadonlySet<StaffRole> = new Set<StaffRole>(['super_admin', 'admin', 'crm_manager'])
+
+/**
+ * Кто распределяет клиентов по ответственным массово (R-047): роли, которые
+ * всегда видят всех (Super Admin, Admin, CRM-менеджер). Сотрудник со скоупом
+ * «assigned» не может назначить себе чужих клиентов и так расширить свой скоуп.
+ */
+export function canManageAssignments(role: StaffRole | null | undefined): boolean {
+  return !!role && ALWAYS_ALL_SCOPE.has(role)
+}
 
 /** Итоговая область видимости для роли и значения из `staff_roles.client_scope`. */
 export function effectiveClientScope(role: StaffRole, raw: unknown): ClientScope {
@@ -178,23 +192,60 @@ const RANK: Record<StaffRole, number> = {
 }
 
 /**
- * May `actor` manage (block, edit, impersonate, change role of) a user whose
- * staff role is `target`? Non-staff targets are always manageable. Staff can only
- * manage staff strictly below them; super_admins are managed by super_admins only
- * (and never impersonated — see canImpersonate).
+ * The rank-bearing role of a TARGET person (R-048). Staff roles live in
+ * `staff_roles`, but experts are platform staff by `profiles.role = 'expert'`
+ * (D1) and legacy staff profiles (admin / super_admin / manager / analyst
+ * without a staff_roles row, 099) must not be treated as clients either.
+ * An expert ranks with super_expert: only admin / super_admin manage them.
  */
-export function canManageTarget(actor: StaffRole, target: StaffRole | null | undefined): boolean {
-  if (!target) return true
-  if (actor === 'super_admin') return true
-  return RANK[actor] > RANK[target]
+export type TargetRole = StaffRole | 'expert'
+const TARGET_RANK: Record<TargetRole, number> = { ...RANK, expert: RANK.super_expert }
+const PROFILE_TARGET_ROLE: Record<string, TargetRole> = {
+  super_admin: 'super_admin', admin: 'admin', expert: 'expert', manager: 'crm_manager', analyst: 'analyst',
 }
 
-/** Staff accounts are never impersonated: their cabinet is the admin panel. */
+/** Who a target is for rank checks: the higher of its staff role and its profile role (null = client). */
+export function targetRoleOf(t: { staffRole: StaffRole | null | undefined; profileRole: string | null | undefined }): TargetRole | null {
+  const fromStaff = t.staffRole ?? null
+  const fromProfile = (t.profileRole && PROFILE_TARGET_ROLE[t.profileRole]) || null
+  if (!fromStaff) return fromProfile
+  if (!fromProfile) return fromStaff
+  return TARGET_RANK[fromProfile] > TARGET_RANK[fromStaff] ? fromProfile : fromStaff
+}
+
+export type ManageTarget =
+  | TargetRole
+  | { staffRole: StaffRole | null | undefined; profileRole: string | null | undefined }
+  | null
+  | undefined
+
+/**
+ * May `actor` manage (block, edit, impersonate, change role of, decide on) the
+ * target? Pass the target's `{ staffRole, profileRole }` (staffRoleOfUser) so
+ * experts and legacy staff profiles count; a bare role is accepted too.
+ * Clients (no rank) are always manageable. Staff can only manage people
+ * strictly below them; super_admins are managed by super_admins only (and
+ * never impersonated — see canImpersonate).
+ */
+export function canManageTarget(actor: StaffRole, target: ManageTarget): boolean {
+  let role: TargetRole | null
+  if (target === null || target === undefined) role = null
+  else if (typeof target === 'string') role = target
+  else role = targetRoleOf(target)
+  if (!role) return true
+  if (actor === 'super_admin') return true
+  return RANK[actor] > TARGET_RANK[role]
+}
+
+/**
+ * Only client accounts are impersonated (R-048): never staff (their cabinet is
+ * the admin panel), experts, legacy staff profiles, or a person whose profile
+ * could not be read.
+ */
 export function canImpersonate(actor: StaffRole, target: { staffRole: StaffRole | null; profileRole: string | null }): boolean {
   if (!hasPermission(actor, 'impersonate.view')) return false
   if (target.staffRole) return false
-  if (target.profileRole === 'super_admin' || target.profileRole === 'admin') return false
-  return true
+  return isClientProfileRole(target.profileRole)
 }
 
 /** Which roles may `actor` grant? Only roles strictly below its own (super_admin: any). */

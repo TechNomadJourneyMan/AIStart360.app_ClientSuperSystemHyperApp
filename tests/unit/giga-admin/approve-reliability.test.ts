@@ -41,6 +41,9 @@ import { PATCH } from '@/app/api/giga-admin/requests/[id]/route'
  *   admin_requests: .select().eq().maybeSingle()  and  .update().eq()
  *   profiles:       .update().eq().select()
  */
+const USER = '00000000-0000-4000-8000-000000000123'
+const GHOST = '00000000-0000-4000-8000-0000000000ff'
+
 function makeSbStub({
   adminRow = null,
   profileUpdate,
@@ -58,8 +61,13 @@ function makeSbStub({
       }
       if (table === 'profiles') {
         return {
+          // R-007: the target is read first (a pending applicant, unless it is the ghost).
+          select: () => ({ eq: (_c: string, id: string) => ({ maybeSingle: () => Promise.resolve({ data: id === GHOST ? null : { role: 'client', status: 'pending_approval' }, error: null }) }) }),
           update: () => ({ eq: () => ({ select: () => Promise.resolve(profileUpdate) }) }),
         }
+      }
+      if (table === 'staff_roles') {
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }
       }
       throw new Error('unexpected table: ' + table)
     },
@@ -81,8 +89,8 @@ describe('PATCH /api/giga-admin/requests/[id] — approve reliability', () => {
   })
 
   it('returns 200 { ok:true } when the profile row is actually updated', async () => {
-    state.stub = makeSbStub({ profileUpdate: { data: [{ id: 'user-123' }], error: null } })
-    const res = await PATCH(makeReq('user-123', { action: 'approve' }), { params: { id: 'user-123' } })
+    state.stub = makeSbStub({ profileUpdate: { data: [{ id: USER }], error: null } })
+    const res = await PATCH(makeReq(USER, { action: 'approve' }), { params: { id: USER } })
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.ok).toBe(true)
@@ -93,29 +101,35 @@ describe('PATCH /api/giga-admin/requests/[id] — approve reliability', () => {
     // This is the exact production failure: RLS/anon client updated 0 rows but
     // the old route still returned { ok: true }. The fix must surface a failure.
     state.stub = makeSbStub({ profileUpdate: { data: [], error: null } })
-    const res = await PATCH(makeReq('ghost', { action: 'approve' }), { params: { id: 'ghost' } })
+    const res = await PATCH(makeReq(USER, { action: 'approve' }), { params: { id: USER } })
     expect(res.status).toBe(404)
     const json = await res.json()
     expect(json.ok).toBeUndefined()
     expect(json.error).toBeTruthy()
   })
 
+  it('returns 404 when the profile does not exist at all', async () => {
+    state.stub = makeSbStub({ profileUpdate: { data: [{ id: GHOST }], error: null } })
+    const res = await PATCH(makeReq(GHOST, { action: 'approve' }), { params: { id: GHOST } })
+    expect(res.status).toBe(404)
+  })
+
   it('returns 500 when the profile update itself errors', async () => {
     state.stub = makeSbStub({ profileUpdate: { data: null, error: { message: 'permission denied' } } })
-    const res = await PATCH(makeReq('user-123', { action: 'approve' }), { params: { id: 'user-123' } })
+    const res = await PATCH(makeReq(USER, { action: 'approve' }), { params: { id: USER } })
     expect(res.status).toBe(500)
   })
 
   it('returns 403 without a valid super_admin cookie', async () => {
     state.role = null
-    state.stub = makeSbStub({ profileUpdate: { data: [{ id: 'user-123' }], error: null } })
-    const res = await PATCH(makeReq('user-123', { action: 'approve' }), { params: { id: 'user-123' } })
+    state.stub = makeSbStub({ profileUpdate: { data: [{ id: USER }], error: null } })
+    const res = await PATCH(makeReq(USER, { action: 'approve' }), { params: { id: USER } })
     expect(res.status).toBe(403)
   })
 
   it('rejects an unknown action with 400', async () => {
-    state.stub = makeSbStub({ profileUpdate: { data: [{ id: 'user-123' }], error: null } })
-    const res = await PATCH(makeReq('user-123', { action: 'nuke' }), { params: { id: 'user-123' } })
+    state.stub = makeSbStub({ profileUpdate: { data: [{ id: USER }], error: null } })
+    const res = await PATCH(makeReq(USER, { action: 'nuke' }), { params: { id: USER } })
     expect(res.status).toBe(400)
   })
 })

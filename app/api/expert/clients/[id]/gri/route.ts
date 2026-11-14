@@ -12,8 +12,9 @@ export const dynamic = 'force-dynamic'
 // fell back to fixed sample scores shown as the client's.)
 
 import { NextResponse } from 'next/server'
-import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert, srGet } from '@/lib/expert-auth'
 import { CATEGORIES } from '@/lib/gri-calculator/gri-data'
+import { toGri } from '@/lib/format/gri'
 
 /** Expert tab category → gri_assessments.section_avgs key. */
 const GRI_SECTION_BY_CATEGORY: Readonly<Record<(typeof CATEGORIES)[number], string>> = {
@@ -33,11 +34,8 @@ interface AssessmentRow {
   created_at: string | null
 }
 
-function num(v: unknown): number | null {
-  if (v === null || v === undefined || v === '') return null
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? n : null
-}
+/** GRI 0–10; 0 («не отвечено») and garbage → null (lib/format/gri.ts, R-036). */
+const num = (v: unknown): number | null => toGri(v)
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await resolveExpert()
@@ -45,6 +43,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const clientId = params.id
   if (!/^[0-9a-f-]{36}$/i.test(clientId)) return NextResponse.json({ error: 'bad id' }, { status: 400 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
 
   const rows = await srGet<AssessmentRow[]>(
     `gri_assessments?user_id=eq.${clientId}&select=gri_index,section_avgs,updated_at,created_at&order=is_current.desc,created_at.desc&limit=1`,

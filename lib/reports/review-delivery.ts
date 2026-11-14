@@ -2,6 +2,13 @@
  * lib/reports/review-delivery.ts — a new report version waiting for the
  * expert reaches the people who may decide on it.
  *
+ * Who (SR-17, decision PO may change — see REVIEW_FALLBACK below): the expert
+ * ASSIGNED to the client (user_assignments.assignee_id of the company owner)
+ * when they may review reports; without such an assignee — staff with
+ * reports.review and client scope 'all' (Super Admin, Admin, SuperExpert with
+ * client_scope 'all'). Never every expert of the platform, never a legacy
+ * profiles.role admin / super_admin without staff_roles (migration 140).
+ *
  * Trigger: REPORT_GENERATED with payload.status = 'in_review' (emitted once
  * per version by report.create_version). The event router calls
  * lib/telegram/bots/expert/notify.ts routeEventToExperts, which calls
@@ -29,7 +36,7 @@ import { getReportVersion } from './versions'
 import { versionPdf, versionPdfFilename } from './pdf-store'
 import { versionStamp } from './version-stamp'
 import { canReviewReports } from './review-flow'
-import { isStaffRole } from '@/lib/admin/rbac'
+import { actorFromRows, actorReachesClient } from '@/lib/access/actor'
 
 export interface ReportReviewRecipient {
   userId: string
@@ -45,37 +52,59 @@ export interface ReportReviewRecipient {
 }
 
 /**
- * Everyone who may decide on report versions now (approved, reports.review —
- * see canReviewReports), with the contacts other channels need. The version
- * id is checked to exist and to be waiting for review; otherwise [] (nothing
- * to ask anyone about).
+ * Who is asked when the client has no assignee who may review: staff with
+ * reports.review and client scope 'all'. Safer than «every expert» (a client's
+ * report is not shown to experts of other clients). PO may widen it.
+ */
+export const REVIEW_FALLBACK = 'staff_all_scope' as const
+
+/**
+ * The people asked to decide on this version now (see the header): the
+ * assigned expert, or the fallback. Approved, reports.review (see
+ * canReviewReports), with the contacts other channels need. The version id
+ * is checked to exist and to be waiting for review; otherwise [] (nothing to
+ * ask anyone about).
  */
 export async function reportReviewRecipients(versionId: string): Promise<ReportReviewRecipient[]> {
-  const v = await prisma.$queryRaw<Array<{ status: string }>>`
-    SELECT status FROM public.report_versions WHERE id = ${versionId}::uuid`
+  const v = await prisma.$queryRaw<Array<{ status: string; client_id: string | null; assignee_id: string | null }>>`
+    SELECT v.status, c.user_id::text AS client_id, a.assignee_id::text AS assignee_id
+    FROM public.report_versions v
+    LEFT JOIN public.companies c ON c.id = v.company_id
+    LEFT JOIN public.user_assignments a ON a.user_id = c.user_id
+    WHERE v.id = ${versionId}::uuid`
   if (v[0]?.status !== 'in_review') return []
+  const clientId = v[0].client_id ?? null
+  const assigneeId = v[0].assignee_id ?? null
   const rows = await prisma.$queryRaw<Array<{
-    user_id: string; full_name: string | null; email: string | null; phone: string | null; role: string | null; staff_role: string | null; chat_id: string | null
+    user_id: string; full_name: string | null; email: string | null; phone: string | null; role: string | null; status: string | null
+    staff_role: string | null; client_scope: string | null; chat_id: string | null
   }>>`
-    SELECT p.id::text AS user_id, p.full_name, p.email, p.phone, p.role, s.role AS staff_role,
+    SELECT p.id::text AS user_id, p.full_name, p.email, p.phone, p.role, p.status, s.role AS staff_role, s.client_scope,
            CASE WHEN l.linked_at IS NOT NULL THEN l.chat_id END AS chat_id
     FROM public.profiles p
     LEFT JOIN public.staff_roles s ON s.user_id = p.id
     LEFT JOIN public.telegram_bot_links l ON l.user_id = p.id AND l.bot = 'expert'
     WHERE p.status = 'approved'
-      AND (p.role IN ('expert', 'admin', 'super_admin') OR s.role IS NOT NULL)`
-  return rows
-    .filter((r) => canReviewReports({ profileRole: r.role, staffRole: isStaffRole(r.staff_role) ? r.staff_role : null }))
+      AND (p.role = 'expert' OR s.role IS NOT NULL)`
+  const candidates = rows
     .map((r) => ({
-      userId: r.user_id,
-      name: r.full_name,
-      email: r.email,
-      phone: r.phone,
-      profileRole: r.role,
-      staffRole: r.staff_role,
-      expertBotChatId: r.chat_id,
-      isExpert: r.role === 'expert' || r.staff_role === 'super_expert',
+      r,
+      actor: actorFromRows(r.user_id, { profile: { role: r.role, status: r.status }, staff: r.staff_role ? { role: r.staff_role, client_scope: r.client_scope } : null }),
     }))
+    // migration 140: staff only from staff_roles; an expert only while approved with role 'expert'.
+    .filter(({ actor }) => (actor.activeExpert || actor.staffRole !== null) && canReviewReports({ profileRole: actor.activeExpert ? 'expert' : null, staffRole: actor.staffRole }))
+  const assigned = candidates.filter(({ actor }) => !!assigneeId && actor.id === assigneeId && actorReachesClient(actor, clientId, assigneeId))
+  const chosen = assigned.length ? assigned : candidates.filter(({ actor }) => actor.staffRole !== null && actor.clientScope === 'all')
+  return chosen.map(({ r }) => ({
+    userId: r.user_id,
+    name: r.full_name,
+    email: r.email,
+    phone: r.phone,
+    profileRole: r.role,
+    staffRole: r.staff_role,
+    expertBotChatId: r.chat_id,
+    isExpert: r.role === 'expert' || r.staff_role === 'super_expert',
+  }))
 }
 
 export interface ReportReviewPackage {
