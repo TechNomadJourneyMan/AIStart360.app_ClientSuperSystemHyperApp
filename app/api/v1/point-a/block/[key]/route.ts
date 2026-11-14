@@ -12,6 +12,7 @@ import { apiError } from '@/lib/api-error'
 import { BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
 import { blockMetricIds, loadMetricViews } from '@/lib/point-a/v4/metric-views'
 import type { V4Block } from '@/lib/point-a/v4/engine'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,9 @@ export async function GET(req: Request, { params }: { params: { key: string } })
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
   const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: 'read' })
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   const companyId = tenant.tenant.companyId

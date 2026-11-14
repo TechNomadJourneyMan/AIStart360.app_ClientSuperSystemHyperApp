@@ -12,11 +12,20 @@ import {
 } from '@/lib/access/entitlements'
 
 describe('entitlements', () => {
-  it('free tier gates paid features and limits full GRI to 1 demo run', () => {
+  it('free tier gates paid features; the full GRI is closed (Round 2: no free demo run)', () => {
     const e = entitlementsFor('free')
     expect(e.pdf_export).toBe(false)
     expect(e.ai_chat).toBe(false)
     expect(e.benchmarks).toBe(false)
+    expect(e.gri_full).toBe(false)
+    expect(e.point_a).toBe(false)
+    expect(e.point_b).toBe(false)
+    expect(e.market).toBe(false)
+    expect(canRunFullGri(e, 0)).toBe(false)
+  })
+
+  it('a free account with the full GRI opened individually is limited by the free allowance', () => {
+    const e = entitlementsFor('free', { gri_full: true })
     expect(e.gri_full_limit).toBe(1)
     expect(canRunFullGri(e, 0)).toBe(true)
     expect(canRunFullGri(e, 1)).toBe(false)
@@ -24,6 +33,7 @@ describe('entitlements', () => {
 
   it('pro tier unlocks everything with no GRI limit', () => {
     const e = entitlementsFor('pro')
+    for (const f of ['point_a', 'point_b', 'market', 'gri_full'] as const) expect(can(e, f)).toBe(true)
     expect(can(e, 'pdf_export')).toBe(true)
     expect(can(e, 'ai_chat')).toBe(true)
     expect(can(e, 'benchmarks')).toBe(true)
@@ -51,6 +61,7 @@ describe('entitlements', () => {
     expect(normalizeOverrides({ pdf_export: true, junk: 1, ai_chat: 'yes' })).toEqual({
       pdf_export: true,
     })
+    expect(normalizeOverrides({ point_a: true, market: false, x: true })).toEqual({ point_a: true, market: false })
     expect(normalizeOverrides(null)).toEqual({})
   })
 })

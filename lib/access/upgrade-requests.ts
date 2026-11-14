@@ -1,0 +1,159 @@
+/**
+ * lib/access/upgrade-requests.ts — заявка клиента на платный доступ (Раунд 2, R2-A).
+ *
+ * Хранится в существующей таблице заявок персонала `admin_requests` (её видит
+ * ГИГА-панель: «Заявки» → вкладка «Доступы»):
+ *   type = 'access', source = 'paywall' (новые) | 'upgrade_modal' (до Раунда 2),
+ *   payload = { userId, featureKey, features[], name, email, company, subject, description }.
+ * admin_requests принадлежит Prisma: колонки в кавычках camelCase ("createdAt",
+ * "updatedAt"); "userId" — внешний ключ на Prisma `users`, поэтому id профиля
+ * лежит в payload.userId (как у остальных писателей таблицы).
+ *
+ * Одна ОТКРЫТАЯ заявка на пользователя: повторное нажатие (с того же или другого
+ * пейволла) не создаёт новую строку — недостающий раздел дописывается в
+ * payload.features существующей. Закрытая (одобрена / отклонена / в архиве)
+ * заявка не мешает оставить новую. Гонку двух одновременных вставок закрывает
+ * частичный уникальный индекс миграции 144 (дубликат → 23505 → берём существующую).
+ *
+ * Оплата — намеренная заглушка: заявка ничего не покупает и тариф не меняет;
+ * тариф назначает персонал (User 360 → Биллинг, lib/payments/billing.ts).
+ * Все функции получают SERVICE-ROLE клиент: таблица закрыта для anon/authenticated (083/084).
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+/** Источники заявок на тариф (оба — заявки на платный доступ, не на регистрацию). */
+export const ACCESS_REQUEST_SOURCES = ['paywall', 'upgrade_modal'] as const
+export const NEW_REQUEST_SOURCE = 'paywall'
+/** Статусы AdminRequestStatus, при которых заявка ещё в работе. */
+export const OPEN_REQUEST_STATUSES = ['new', 'in_review', 'waiting_for_info', 'escalated'] as const
+
+const FEATURES: Record<string, { key: string; label: string }> = {
+  point_a: { key: 'point_a', label: 'Точка А' },
+  '/point-a': { key: 'point_a', label: 'Точка А' },
+  point_b: { key: 'point_b', label: 'Точка Б' },
+  '/point-b': { key: 'point_b', label: 'Точка Б' },
+  market: { key: 'market', label: 'Рынок' },
+  '/market': { key: 'market', label: 'Рынок' },
+  gri_full: { key: 'gri_full', label: 'Полный GRI' },
+  '/gri': { key: 'gri_full', label: 'Полный GRI' },
+  metrics: { key: 'metrics', label: 'Метрики' },
+  '/metrics': { key: 'metrics', label: 'Метрики' },
+  pdf_export: { key: 'pdf_export', label: 'PDF-экспорт' },
+  ai_chat: { key: 'ai_chat', label: 'AI-чат по отчёту' },
+  benchmarks: { key: 'benchmarks', label: 'Бенчмарки отрасли' },
+}
+
+/** Ключ раздела из того, что прислал UI (id фичи или href меню). Неизвестное — как есть. */
+export function normalizeRequestFeature(raw: string): { key: string; label: string } {
+  const k = raw.trim()
+  return FEATURES[k] ?? { key: k, label: k }
+}
+
+export function featureLabel(key: string): string {
+  return FEATURES[key]?.label ?? key
+}
+
+/** Тариф-заявка (а не регистрация): решение по ней не меняет profiles.status. */
+export function isTariffAccessRequest(row: { type?: unknown; source?: unknown } | null | undefined): boolean {
+  return !!row && row.type === 'access' && (ACCESS_REQUEST_SOURCES as readonly string[]).includes(String(row.source ?? ''))
+}
+
+export interface OpenAccessRequest {
+  id: string
+  features: string[]
+  payload: Record<string, unknown>
+}
+
+function featuresOf(payload: Record<string, unknown>): string[] {
+  const list = Array.isArray(payload.features) ? payload.features.filter((f): f is string => typeof f === 'string') : []
+  if (list.length) return list
+  return typeof payload.featureKey === 'string' ? [normalizeRequestFeature(payload.featureKey).key] : []
+}
+
+/** Открытая заявка пользователя на платный доступ, если есть. Ошибка чтения — исключение. */
+export async function findOpenAccessRequest(service: SupabaseClient, userId: string): Promise<OpenAccessRequest | null> {
+  const { data, error } = await service
+    .from('admin_requests')
+    .select('id, payload')
+    .eq('type', 'access')
+    .in('source', [...ACCESS_REQUEST_SOURCES])
+    .in('status', [...OPEN_REQUEST_STATUSES])
+    .eq('payload->>userId', userId)
+    .order('createdAt', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(`admin_requests read failed: ${error.message}`)
+  const row = (data as Array<{ id: string; payload: Record<string, unknown> | null }> | null)?.[0]
+  if (!row) return null
+  const payload = row.payload ?? {}
+  return { id: row.id, features: featuresOf(payload), payload }
+}
+
+function texts(person: { name: string; email: string }, features: string[]) {
+  const labels = features.map(featureLabel)
+  return {
+    subject: `Платный доступ: ${labels.join(', ')}`,
+    description:
+      `Клиент ${person.name} (${person.email}) оставил заявку на платный доступ: ${labels.join(', ')}. ` +
+      'Онлайн-оплата не подключена: свяжитесь с клиентом; тариф назначается в User 360 → Биллинг.',
+  }
+}
+
+export interface SubmitResult {
+  id: string
+  /** false — заявка уже была открыта, новая строка не создана. */
+  created: boolean
+  features: string[]
+}
+
+async function readPerson(service: SupabaseClient, userId: string): Promise<{ name: string; email: string; company: string | null }> {
+  const [{ data: profile }, { data: company }] = await Promise.all([
+    service.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
+    service.from('companies').select('name').eq('user_id', userId).limit(1).maybeSingle(),
+  ])
+  const p = (profile ?? {}) as { full_name?: string | null; email?: string | null }
+  const c = (company ?? null) as { name?: string | null } | null
+  return { name: p.full_name || p.email || 'Неизвестный', email: p.email || '—', company: c?.name ?? null }
+}
+
+async function mergeInto(service: SupabaseClient, open: OpenAccessRequest, feature: string, person: { name: string; email: string }): Promise<SubmitResult> {
+  if (open.features.includes(feature)) return { id: open.id, created: false, features: open.features }
+  const features = [...open.features, feature]
+  const { error } = await service
+    .from('admin_requests')
+    .update({ payload: { ...open.payload, features, ...texts(person, features) }, updatedAt: new Date().toISOString() })
+    .eq('id', open.id)
+  if (error) throw new Error(`admin_requests update failed: ${error.message}`)
+  return { id: open.id, created: false, features }
+}
+
+/**
+ * Создать заявку или дописать раздел в уже открытую. Никогда не плодит вторую
+ * открытую заявку того же пользователя.
+ */
+export async function submitAccessRequest(service: SupabaseClient, args: { userId: string; featureKey: string }): Promise<SubmitResult> {
+  const feature = normalizeRequestFeature(args.featureKey).key
+  const [open, person] = await Promise.all([findOpenAccessRequest(service, args.userId), readPerson(service, args.userId)])
+  if (open) return mergeInto(service, open, feature, person)
+
+  const now = new Date().toISOString()
+  const id = crypto.randomUUID()
+  const features = [feature]
+  const { error } = await service.from('admin_requests').insert({
+    id,
+    type: 'access',
+    status: 'new',
+    priority: 'medium',
+    source: NEW_REQUEST_SOURCE,
+    payload: { userId: args.userId, featureKey: feature, features, name: person.name, email: person.email, company: person.company, ...texts(person, features) },
+    createdAt: now,
+    updatedAt: now,
+  })
+  if (!error) return { id, created: true, features }
+  // A parallel request won the race (unique index of migration 144): use that one.
+  if ((error as { code?: string }).code === '23505') {
+    const winner = await findOpenAccessRequest(service, args.userId)
+    if (winner) return mergeInto(service, winner, feature, person)
+  }
+  throw new Error(`admin_requests insert failed: ${error.message}`)
+}

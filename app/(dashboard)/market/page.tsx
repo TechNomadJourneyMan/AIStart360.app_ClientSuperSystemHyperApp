@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import MarketAppEmbed from '@/components/market/MarketAppEmbed'
+import FeatureGate from '@/components/access/FeatureGate'
 
 export const metadata: Metadata = { title: 'Рынок · Mark-analytics' }
 
@@ -15,11 +16,15 @@ export const metadata: Metadata = { title: 'Рынок · Mark-analytics' }
  * Вход — только через личный кабинет (DashboardShell даёт auth-гейт),
  * сессия кабинета пробрасывается в приложение через postMessage.
  * Чек-лист «50 вопросов» живёт отдельной страницей: /market/analysis.
+ * Round 2 (R2-A): платный раздел — закрыт → пейволл; встроенное приложение не
+ * монтируется и сессия кабинета в него не передаётся (прокси /api/market → 402).
  */
 export default function MarketPage() {
   return (
-    <Suspense fallback={null}>
-      <MarketAppEmbed />
-    </Suspense>
+    <FeatureGate feature="market" wrapperClassName="px-4 py-6">
+      <Suspense fallback={null}>
+        <MarketAppEmbed />
+      </Suspense>
+    </FeatureGate>
   )
 }

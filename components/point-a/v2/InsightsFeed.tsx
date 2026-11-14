@@ -70,7 +70,7 @@ export function InsightsFeed({
   showSearch = true,
   hideHeader = false,
 }: Props) {
-  const { items, setItems, loading, loadError, reload } = useInsightsFeed(50, initialItems)
+  const { items, setItems, loading, loadError, reload, locked } = useInsightsFeed(50, initialItems)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [idx, setIdx] = useState(0)
@@ -129,6 +129,10 @@ export function InsightsFeed({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [idx, go])
+
+  // Round 2 (R2-A): Point A is a paid section — the feed is part of it. The page
+  // already shows the one Point A paywall card; no second card, no error state.
+  if (locked) return null
 
   // ─── Header ───
   const Header = !hideHeader && (

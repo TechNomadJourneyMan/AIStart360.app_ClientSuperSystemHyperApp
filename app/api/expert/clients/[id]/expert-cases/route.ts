@@ -130,6 +130,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (Object.keys(patch).length === 0)
     return NextResponse.json({ ok: false, error: 'no fields to update' }, { status: 400 })
 
+  // SLA (R2-B, migration 088 / 145): the first time the case leaves «new» is the expert's
+  // reaction — recorded here as GIGA «Эскалации» does, so the 24-hour escalation sees it.
+  if (patch.status !== undefined && patch.status !== 'new') {
+    const cur = await srGet<Array<{ status?: string; first_response_at?: string | null }>>(
+      `expert_cases?id=eq.${encodeURIComponent(caseId)}&user_id=eq.${encodeURIComponent(clientId)}&select=status,first_response_at&limit=1`,
+    )
+    const row = Array.isArray(cur) ? cur[0] : undefined
+    if (row && row.status === 'new' && !row.first_response_at) patch.first_response_at = new Date().toISOString()
+  }
+
   // Scope the update to this client's case (id AND user_id) so an expert cannot
   // mutate a case that belongs to a different client via a mismatched caseId.
   // updated_at is maintained by the DB trigger (set_updated_at).

@@ -12,6 +12,7 @@ import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
 import { ReportReadyCard, pickPublishedReport } from '@/components/reports/ReportReadyCard'
 import { officialPointA, officialScore, type OfficialSnapshotRow } from '@/lib/point-a/official'
+import { getRequestAccess } from '@/lib/access/request-access'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
@@ -43,7 +44,9 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     const res = await sb.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
     return res.error ? null : pickPublishedReport(res.data as Array<Record<string, unknown>> | null)
   }).catch(() => null)
-  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report] = await Promise.all([
+  // Round 2 (R2-A): which paid sections are closed (one server decision; a failure → nothing locked here, the API still gates).
+  const accessP = getRequestAccess(user.id).then((a) => ({ point_a: !a.sections.point_a, gri_full: !a.sections.gri_full })).catch(() => ({ point_a: false, gri_full: false }))
+  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report, paidLocked] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', user.id),
     sb.from('diagnostics').select('overall_score, health_index, stage, calculated_at').eq('user_id', user.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1).maybeSingle(),
@@ -53,6 +56,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
     visiblePagesFor(user.id),
     snapshotP,
     reportP,
+    accessP,
   ])
 
   const rows = (answersRes.data ?? []).filter((r) => isWizardVisibleKey(String(r.question_key)))
@@ -105,6 +109,7 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
       ? pages.filter((p) => p.show_in_nav).slice(0, 6).map((p) => ({ slug: p.slug, title: p.title, summary: p.summary, icon: p.icon }))
       : [],
     unavailableSection: typeof searchParams?.unavailable === 'string' ? searchParams.unavailable.slice(0, 40) : null,
+    paidLocked,
   }
 
   if (!report) return <UserHome data={data} />

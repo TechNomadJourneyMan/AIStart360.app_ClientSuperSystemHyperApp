@@ -13,7 +13,7 @@ vi.mock('@/lib/notifications/staff', () => ({ notifyStaff: vi.fn(async () => ({ 
 vi.mock('@/lib/telegram', () => ({ sendTelegramMessage: vi.fn(async () => true) }))
 
 import {
-  asksIfHuman, BOT_INTRO, botDelayMs, buildBotPrompt, CASE_TEXT, ensureBotDisclosure, HANDOFF_TEXT, isComplaint, isProfanityOnly,
+  asksIfHuman, BOT_INTRO, botDelayMs, buildBotPrompt, CASE_TEXT, caseQueuedText, ensureBotDisclosure, HANDOFF_TEXT, isComplaint, isProfanityOnly, withSlaPromise,
   overHourlyCap, rankKbByKeywords, wantsCase, wantsHuman, type BotDecision, type BotJob,
 } from '@/lib/comm/bot-rules'
 import { loadUserFacts, planBotReply, runBotReply, surveyModeFact, type BotDeps, type HandoffNotice } from '@/lib/comm/bot'
@@ -266,6 +266,36 @@ describe('runBotReply', () => {
     expect(c.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${CASE_TEXT}`)
     expect(c.db.expert_cases[0].summary).toContain('консультацию по маркетингу')
     expect(rc.d.llm).not.toHaveBeenCalled()
+  })
+
+  it('R2-B: a queued request promises the expert SLA («ответит в течение 48 часов») — only when the request exists', async () => {
+    const msg = { id: 'm-in', thread_id: 't-1', group_id: 'g', direction: 'in', channel: 'telegram', author_kind: 'user', body: 'Оформите заявку на консультацию', status: 'delivered', created_at: '2026-10-16T09:59:00.000Z', metadata: { chatId: '555' } }
+    const promise = 'Эксперт ответит в течение 48 часов.'
+
+    const ok = seed({ messages: [msg] })
+    const rok = botDeps(ok.sb)
+    rok.d.slaPromise = async () => promise
+    expect(await runBotReply(JOB, rok.d)).toMatchObject({ outcome: 'case' })
+    expect(ok.db.expert_cases).toHaveLength(1)
+    expect(ok.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${caseQueuedText(promise)}`)
+
+    // The request could not be written → no promise of an answer time.
+    const failed = seed({ messages: [msg] })
+    const insert = failed.sb.from.bind(failed.sb)
+    ;(failed.sb as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const b = insert(t) as unknown as Record<string, unknown>
+      if (t === 'expert_cases') b.insert = () => ({ select: () => ({ maybeSingle: async () => ({ data: null, error: { code: 'XX000', message: 'down' } }) }) })
+      return b
+    }
+    const rf = botDeps(failed.sb)
+    rf.d.slaPromise = async () => promise
+    expect(await runBotReply(JOB, rf.d)).toMatchObject({ outcome: 'case', caseId: null })
+    expect(failed.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${CASE_TEXT}`)
+
+    // The model's own confirmation gets the promise appended once.
+    expect(withSlaPromise('Заявку оформил.', promise)).toBe(`Заявку оформил. ${promise}`)
+    expect(withSlaPromise(`Заявку оформил. ${promise}`, promise)).toBe(`Заявку оформил. ${promise}`)
+    expect(withSlaPromise('Заявку оформил.', null)).toBe('Заявку оформил.')
   })
 
   it('an open request of the same conversation is reused', async () => {

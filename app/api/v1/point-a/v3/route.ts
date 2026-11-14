@@ -10,6 +10,7 @@ import { aggregatePointAV3, V3_METRIC_IDS, v3MetricsFromCompanyMetrics } from '@
 import { loadCompanyMetrics } from '@/lib/metrics/company-metrics'
 import type { ApiResult } from '@/types/onboarding'
 import type { PointAV3 } from '@/types/point-a-v3'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const CACHE_HEADER = 'private, max-age=300, stale-while-revalidate=600'
 
@@ -45,6 +46,9 @@ export async function GET() {
     const body: ApiResult<PointAV3> = { ok: false, error: 'Unauthorized' }
     return NextResponse.json(body, { status: 401 })
   }
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const companyId = await resolveCompanyId(supabase, user.id)
   if (!companyId) {

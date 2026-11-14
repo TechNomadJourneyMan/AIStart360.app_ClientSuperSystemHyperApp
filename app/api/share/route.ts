@@ -31,8 +31,11 @@ import { guardExpertCompany, requireExpert } from '@/lib/expert-auth'
 import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 import { createShare, revokeShare, getShareByToken, SHARE_DEFAULT_TTL_DAYS } from '@/lib/share/tokens'
 import type { SharedReportType } from '@prisma/client'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const VALID_TYPES = new Set<SharedReportType>(['survey', 'gri', 'point_a', 'point_b'])
+/** R2-A: share types that belong to a paid section. */
+const PAID_SHARE_FEATURE: Partial<Record<SharedReportType, 'point_a' | 'point_b' | 'gri_full'>> = { point_a: 'point_a', point_b: 'point_b', gri: 'gri_full' }
 
 /**
  * Confirm the authenticated caller may share `companyId`. Returns true when the
@@ -91,6 +94,15 @@ export async function POST(req: NextRequest) {
   // SR-07: a long-lived public link is never minted «от имени клиента».
   const impersonated = await refuseDuringImpersonation(req, user, 'share.create')
   if (impersonated) return impersonated
+
+  // Round 2 (R2-A): a public link of a paid section (Точка А / Б, полный GRI)
+  // would show it to an account without access — 402 like the section's API
+  // (staff exempt). The questionnaire (survey) stays shareable for free.
+  const paid = PAID_SHARE_FEATURE[type]
+  if (paid) {
+    const upgrade = await gatePaidSection(sb, user.id, paid)
+    if (upgrade) return upgrade
+  }
 
   const allowed = await canShareCompany(sb, user.id, companyId)
   if (!allowed) {

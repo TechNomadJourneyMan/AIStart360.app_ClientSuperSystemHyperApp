@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -14,6 +15,9 @@ export async function DELETE(
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'gri_full')
+  if (upgrade) return upgrade
   // Guard so a non-UUID id returns 400, not a Postgres "invalid uuid" 500.
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })

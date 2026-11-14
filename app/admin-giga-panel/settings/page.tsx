@@ -189,6 +189,33 @@ export default function SettingsPage() {
             <Links items={[{ href: '/admin-giga-panel/cases', label: 'Очередь эскалаций' }, { href: '/admin-giga-panel/experts', label: 'Эксперты' }]} />
           </Panel>
 
+          {/* R2-B: SLA экспертов — 24 ч реакция / 48 ч ответ (lib/expert-sla, миграция 145). */}
+          <Panel title={<Title icon={<Siren size={14} />}>SLA экспертов</Title>} description={SETTINGS.expert_sla.help}>
+            <SettingRow k="expert_sla" meta={meta}>
+              <Toggle checked={v.expert_sla.enabled} disabled={!canEdit || !!saving} label="Часы SLA экспертов включены"
+                onChange={(n) => void save({ expert_sla: { ...v.expert_sla, enabled: n } }, 'SLA экспертов')} />
+            </SettingRow>
+            {([
+              ['reaction_hours', 'Часов на реакцию (затем эскалация)', 168],
+              ['answer_hours', 'Часов на ответ клиенту (затем просрочка)', 720],
+            ] as const).map(([field, title, max]) => (
+              <div key={field} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] py-2.5 last:border-0">
+                <span className="text-xs text-slate-300">{title}</span>
+                <NumberSetting
+                  value={v.expert_sla[field]} min={1} max={max} suffix="ч"
+                  disabled={!canEdit} saving={saving === 'expert_sla'}
+                  onSave={(n) => save({ expert_sla: { ...v.expert_sla, [field]: n } }, 'SLA экспертов')}
+                />
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+              <span className="text-xs text-slate-300">Назначать автоматически наименее загруженному эксперту</span>
+              <Toggle checked={v.expert_sla.auto_assign} disabled={!canEdit || !!saving} label="Назначать автоматически"
+                onChange={(n) => void save({ expert_sla: { ...v.expert_sla, auto_assign: n } }, 'SLA экспертов')} />
+            </div>
+            <Links items={[{ href: '/admin-giga-panel/expert-sla', label: 'SLA экспертов' }]} />
+          </Panel>
+
           <NotificationsCard value={v.admin_notifications} meta={meta} disabled={!canEdit} saving={saving === 'admin_notifications'} onSave={(n) => save({ admin_notifications: n }, 'Уведомления')} />
 
           <Panel title={<Title icon={<Send size={14} />}>Автоматические касания</Title>}>

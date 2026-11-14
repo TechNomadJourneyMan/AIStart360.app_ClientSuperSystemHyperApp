@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
+import { isAssignableResponsible } from '@/lib/expert-sla/assign'
 import { actorClientScope, scopeAllows } from '@/lib/admin/actor-scope'
 import { CASE_PRIORITIES, CASE_STATUSES, OPEN_CASE_STATUSES, computeSlaDueAt, getSlaHours, notifyCaseAssignee, type CaseStatus } from '@/lib/admin/escalations'
 
@@ -55,9 +56,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const { status, priority, assigneeId } = parsed.data
-  if (assigneeId) {
-    const { data: staff } = await sb.from('staff_roles').select('user_id').eq('user_id', assigneeId).maybeSingle()
-    if (!staff) return NextResponse.json({ ok: false, error: 'Ответственным может быть только сотрудник' }, { status: 400 })
+  if (assigneeId && !(await isAssignableResponsible(sb, assigneeId))) {
+    return NextResponse.json({ ok: false, error: 'Ответственным может быть только сотрудник или эксперт' }, { status: 400 })
   }
 
   const now = new Date().toISOString()

@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isValidStepKey } from '@/lib/gri/plan-progress'
 import { dbError } from '@/lib/api-error'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -46,6 +47,9 @@ export async function GET(req: NextRequest) {
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'gri_full')
+  if (upgrade) return upgrade
 
   const { data, error } = await sb
     .from('gri_plan_progress')
@@ -105,6 +109,9 @@ export async function PATCH(req: NextRequest) {
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'gri_full')
+  if (upgrade) return upgrade
   const userId = userData.user.id
 
   const { error } = done

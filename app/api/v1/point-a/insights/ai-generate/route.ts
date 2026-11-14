@@ -7,6 +7,7 @@ import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { getInsightModerationEnabled } from '@/lib/settings/system-settings'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/point-a/insights/ai-generate
@@ -44,6 +45,9 @@ export async function POST() {
   }
   const userId = userData.user.id
 
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'point_a')
+  if (upgrade) return upgrade
   // Throttle this paid AI generation per user (audit 2026-07-02).
   if (await isRateLimitedKey(userId, 'point-a-insights-ai', { max: 6, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })

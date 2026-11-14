@@ -32,6 +32,15 @@ export const BOT_NAME = 'Бот AIStart360'
 export const BOT_INTRO = 'Здравствуйте! Это бот AIStart360.'
 export const HANDOFF_TEXT = 'Позову эксперта — он ответит, как только освободится.'
 export const CASE_TEXT = 'Оформил заявку — эксперт свяжется с вами, как только освободится.'
+/** The request is in the expert queue with an SLA (R2-B): «Оформил заявку. Эксперт ответит в течение 48 часов.» */
+export function caseQueuedText(promise: string): string {
+  return `Оформил заявку. ${promise}`.trim()
+}
+/** The model's own confirmation + the SLA promise (once; nothing to add without a promise). */
+export function withSlaPromise(reply: string, promise: string | null): string {
+  if (!promise || reply.includes(promise)) return reply
+  return `${reply.trim()} ${promise}`.trim()
+}
 /** At most this many bot replies per conversation per hour. */
 export const BOT_REPLIES_PER_HOUR = 10
 export const BOT_MIN_DELAY_MS = 2_000

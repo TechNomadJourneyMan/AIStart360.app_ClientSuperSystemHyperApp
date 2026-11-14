@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { discoverFilters, type FilterOption } from '@/lib/point-a/v3/top-table'
 import { safeErrorMessage } from '@/lib/api-error'
+import { gatePaidSection } from '@/lib/access/gate'
 
 interface FiltersResponse {
   ok: true
@@ -49,6 +50,9 @@ export async function GET() {
   } = await supabase.auth.getUser()
 
   if (authError || !user) return unauthorized()
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   try {
     const filters = await discoverFilters(supabase, user.id)

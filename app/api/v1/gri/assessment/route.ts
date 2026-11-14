@@ -3,9 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
-import { readEntitlements } from '@/lib/access/server'
 import { canRunFullGri } from '@/lib/access/entitlements'
-import { getAccessGatesEnabled } from '@/lib/settings/system-settings'
+import { resolveFeature } from '@/lib/access/decision'
+import { gatePaidSection, upgradeRequiredResponse } from '@/lib/access/gate'
 import {
   computeTop5Limits,
   generate90DayPlan,
@@ -48,6 +48,11 @@ export async function POST(req: NextRequest) {
     }
     const userId = userData.user.id
 
+    // Round 2 (R2-A): the full GRI is a paid section (founder's decision 2026-11:
+    // no free demo run any more). Staff are exempt; gates off → open.
+    const access = await resolveFeature(sb, userId, 'gri_full', { exemptStaff: true })
+    if (!access.allowed) return upgradeRequiredResponse('gri_full')
+
     // Idempotency: re-opening the results screen (or a double click) re-sends the
     // same answers. Storing them again would duplicate the row and burn a run of
     // the free-tier quota, so an identical submission returns the current row.
@@ -66,11 +71,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, data: { ...rest, duplicate: true } })
     }
 
-    // Фаза 6A — тарифный гейт полного GRI (решение ПО, вариант А: free = 1
-    // демо-проход). Активен ТОЛЬКО при включённом системном тумблере
-    // access_gates (default OFF — существующих не ограничиваем молча).
-    if (await getAccessGatesEnabled()) {
-      const ent = await readEntitlements(sb, userId)
+    // Run limit: only an account entitled by its tariff / override counts runs
+    // (a free account with the full GRI opened individually — gri_free_runs;
+    // Pro is unlimited). Staff and «gates off» are not limited.
+    if (access.reason === 'entitled') {
       let runs = 0
       try {
         const { count } = await sb
@@ -81,15 +85,15 @@ export async function POST(req: NextRequest) {
       } catch {
         runs = 0
       }
-      if (!canRunFullGri(ent, runs)) {
+      if (!canRunFullGri(access.ent, runs)) {
         return NextResponse.json(
           {
             ok: false,
             error: 'upgrade_required',
             feature: 'gri_full',
-            message: ent.gri_full_limit === 0
-              ? 'Полный GRI доступен на тарифе Pro.'
-              : `Бесплатный тариф включает полных проходов GRI: ${ent.gri_full_limit}. Повторные пересчёты — на тарифе Pro.`,
+            message: access.ent.gri_full_limit === 0
+              ? 'Полный GRI доступен на платном тарифе.'
+              : `Доступно полных проходов GRI: ${access.ent.gri_full_limit}. Повторные пересчёты — на платном тарифе.`,
           },
           { status: 402 },
         )
@@ -191,6 +195,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+  // Round 2 (R2-A): the full GRI is a paid section — 402 upgrade_required (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'gri_full')
+  if (upgrade) return upgrade
 
   const wantsHistory = req.nextUrl.searchParams.get('history') === '1'
 

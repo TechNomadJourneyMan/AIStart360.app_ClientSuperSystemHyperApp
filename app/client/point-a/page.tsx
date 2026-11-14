@@ -9,10 +9,16 @@ import { getSetting } from '@/lib/settings/store'
 // client code does not reach the browser (W4).
 import { ClientPointALegacy } from '@/components/point-a/legacy/lazy'
 import PointAV4Page from '@/components/point-a-v4/PointAV4Page'
+// Round 2 (R2-A): Точка А is a paid section — closed → the one paywall, nothing of the page is mounted.
+import FeatureGate from '@/components/access/FeatureGate'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PointAPage() {
   const v4 = await getSetting('point_a_v4').catch(() => true)
-  return v4 ? <main><PointAV4Page /></main> : <ClientPointALegacy />
+  return (
+    <FeatureGate feature="point_a">
+      {v4 ? <main><PointAV4Page /></main> : <ClientPointALegacy />}
+    </FeatureGate>
+  )
 }

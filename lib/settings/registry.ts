@@ -63,12 +63,12 @@ export const SETTINGS = {
   },
   access_gates: {
     group: 'registration', label: 'Тарифные ограничения (Free / Pro)',
-    help: 'Включает ограничения бесплатного тарифа: полный GRI, AI-чат, PDF, бенчмарки.',
+    help: 'Включает ограничения бесплатного тарифа: Точка А, Точка Б, Рынок и полный GRI — только платным (вместо них пейволл с заявкой на доступ), а также AI-чат, PDF, бенчмарки.',
     schema: z.boolean(), default: false, critical: true,
   },
   gri_free_runs: {
     group: 'registration', label: 'Прохождений GRI на тарифе Free',
-    help: 'Сколько полных GRI доступно бесплатно, когда тарифные ограничения включены.',
+    help: 'Полный GRI на Free закрыт (решение 2026-11). Лимит действует только для Free-аккаунта, которому полный GRI открыт индивидуально (доступ в User 360).',
     schema: z.number().int().min(0).max(20), default: 1, critical: false,
   },
   insight_moderation: {
@@ -175,6 +175,19 @@ export const SETTINGS = {
       low: z.number().int().min(1).max(720),
     }),
     default: { critical: 2, high: 4, medium: 24, low: 72 },
+    critical: false,
+  },
+  // R2-B (решение PO): эксперт реагирует за 24 ч, отвечает клиенту за 48 ч (lib/expert-sla, миграция 145).
+  expert_sla: {
+    group: 'notifications', label: 'SLA экспертов',
+    help: 'Задача эксперта (обращение клиента, отчёт или рекомендации на проверке, план Точки Б на одобрении): нет реакции за «часов на реакцию» — эскалация SuperExpert и Admin; нет ответа за «часов на ответ» — просрочка SLA и повторное уведомление. «Назначать автоматически» — задача клиента без ответственного уходит наименее загруженному эксперту; выключено — в общую очередь SuperExpert.',
+    schema: z.object({
+      enabled: z.boolean(),
+      reaction_hours: z.number().int().min(1).max(168),
+      answer_hours: z.number().int().min(1).max(720),
+      auto_assign: z.boolean(),
+    }).refine((v) => v.answer_hours >= v.reaction_hours, 'Срок ответа не может быть короче срока реакции'),
+    default: { enabled: true, reaction_hours: 24, answer_hours: 48, auto_assign: true },
     critical: false,
   },
   admin_notifications: {

@@ -40,9 +40,10 @@ import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
 import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 import { computeSlaDueAt, getSlaHours } from '@/lib/admin/escalations'
+import { clientPromiseText } from '@/lib/expert-sla/policy'
 import {
-  asksIfHuman, BOT_NAME, BOT_REPLIES_PER_HOUR, BotDecisionSchema, botDelayMs, buildBotPrompt, CASE_TEXT, clipReply,
-  ensureBotDisclosure, HANDOFF_REASON_LABELS, HANDOFF_TEXT, isComplaint, overHourlyCap, wantsCase, wantsHuman,
+  asksIfHuman, BOT_NAME, BOT_REPLIES_PER_HOUR, BotDecisionSchema, botDelayMs, buildBotPrompt, CASE_TEXT, caseQueuedText, clipReply,
+  ensureBotDisclosure, HANDOFF_REASON_LABELS, HANDOFF_TEXT, isComplaint, overHourlyCap, wantsCase, wantsHuman, withSlaPromise,
   type BotDecision, type BotJob, type HandoffReason, type KbHit,
 } from './bot-rules'
 import { loadReplyDeadline, replyDueAt, type ReplyDeadlineConfig } from './deadline'
@@ -78,6 +79,11 @@ export interface BotDeps {
   notifyInbound?: (n: InboundNotice) => Promise<void>
   deadline?: () => Promise<ReplyDeadlineConfig>
   slaDueAt?: (now: Date) => Promise<string | null>
+  /**
+   * «Эксперт ответит в течение N часов.» for a request that is really queued (expert SLA, R2-B);
+   * null — SLA off / unreadable → no promise. Default: the setting expert_sla.
+   */
+  slaPromise?: () => Promise<string | null>
 }
 
 export interface HandoffNotice {
@@ -329,6 +335,16 @@ async function defaultNotifyHandoff(n: HandoffNotice): Promise<void> {
   })
 }
 
+async function defaultSlaPromise(): Promise<string | null> {
+  try {
+    const { getSetting } = await import('@/lib/settings/store')
+    const cfg = await getSetting('expert_sla')
+    return cfg?.enabled ? clientPromiseText(cfg.answer_hours) : null
+  } catch {
+    return null
+  }
+}
+
 async function defaultSlaDueAt(now: Date): Promise<string | null> {
   try {
     return computeSlaDueAt(now, 'medium', await getSlaHours())
@@ -423,16 +439,7 @@ async function handoff(
   const { thread, message } = l
   const now = deps.now ?? new Date()
 
-  // 1. Tell the user (unless the channel just failed).
-  if (send) {
-    const base = h.kind === 'case' ? (h.reply?.trim() ? clipReply(h.reply) : CASE_TEXT) : HANDOFF_TEXT
-    const body = ensureBotDisclosure(base, h.firstReply)
-    await send({ userId: thread.user_id, channel: message.channel, body, replyToId: message.id }).catch((err: unknown) => {
-      console.error('[comm/bot] handoff reply failed', err instanceof Error ? err.message.slice(0, 120) : err)
-    })
-  }
-
-  // 2. The request.
+  // 1. The request — first, so the reply promises an answer time only for a request that exists (R2-B).
   const userName = await userNameOf(sb, thread.user_id)
   const caseId = await createCommCase(sb, {
     thread,
@@ -444,6 +451,18 @@ async function handoff(
     console.error('[comm/bot] case failed', err instanceof Error ? err.message.slice(0, 120) : err)
     return null
   })
+
+  // 2. Tell the user (unless the channel just failed).
+  if (send) {
+    const promise = h.kind === 'case' && caseId ? await (deps.slaPromise ?? defaultSlaPromise)().catch(() => null) : null
+    const base = h.kind === 'case'
+      ? (h.reply?.trim() ? withSlaPromise(clipReply(h.reply), promise) : promise ? caseQueuedText(promise) : CASE_TEXT)
+      : HANDOFF_TEXT
+    const body = ensureBotDisclosure(base, h.firstReply)
+    await send({ userId: thread.user_id, channel: message.channel, body, replyToId: message.id }).catch((err: unknown) => {
+      console.error('[comm/bot] handoff reply failed', err instanceof Error ? err.message.slice(0, 120) : err)
+    })
+  }
 
   // 3. The conversation waits for a person (the 30-minute rule takes over).
   const cfg = await (deps.deadline ?? loadReplyDeadline)().catch(() => ({ minutes: 30, window: null }))

@@ -24,9 +24,14 @@ export interface ClientNavItem {
   icon: string
   /** Unread counter (Сообщения). */
   badge?: number
+  /**
+   * Round 2 (R2-A): a paid section closed for this account — the item stays (it
+   * opens the section's paywall with «Оставить заявку на доступ»), marked with a lock.
+   */
+  locked?: boolean
 }
 
-interface ItemDef extends Omit<ClientNavItem, 'badge'> {
+interface ItemDef extends Omit<ClientNavItem, 'badge' | 'locked'> {
   /** Shown before access is approved (mirrors UserHome «open» cards). */
   openBeforeApproval: boolean
 }
@@ -58,7 +63,12 @@ export interface BuildClientNavInput {
   profileRole?: string | null
   /** Unread messages from AIStart360 (comm_threads.unread_user). */
   unreadMessages?: number
+  /** Paid sections closed for the account (server decision, lib/access/decision.ts). */
+  lockedKeys?: readonly ClientNavKey[]
 }
+
+/** Menu item of each paid section (lib/access/entitlements.ts PAID_SECTIONS); Рынок is not in this menu. */
+export const PAID_NAV_KEYS: Readonly<Record<'point_a' | 'point_b' | 'gri_full', ClientNavKey>> = { point_a: 'point_a', point_b: 'point_b', gri_full: 'gri' }
 
 function under(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`)
@@ -77,6 +87,7 @@ export function buildClientNav(input: BuildClientNavInput): ClientNavItem[] {
     .filter((d) => !hiddenByPlatform(d.href, input.hiddenPaths))
     .filter((d) => !(expert && EXPERT_BLOCKED_HREFS.includes(d.href)))
     .map(({ openBeforeApproval: _open, ...item }) => (item.key === 'messages' && unread > 0 ? { ...item, badge: unread } : item))
+    .map((item) => (input.lockedKeys?.includes(item.key) ? { ...item, locked: true } : item))
 }
 
 

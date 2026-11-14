@@ -7,6 +7,7 @@ import { trackEventOnce } from '@/lib/events/track'
 import { trackUserAction } from '@/lib/events/server'
 import { newlyCompletedSections } from '@/lib/gri-assessment/section-events'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // Server-side draft of the full GRI test (migration 072). One row per user;
 // RLS restricts every statement to the session user's own row.
@@ -27,6 +28,9 @@ export async function GET() {
   const sb = createServerClient()
   const userId = await sessionUserId(sb)
   if (!userId) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'gri_full')
+  if (upgrade) return upgrade
   const { data, error } = await sb
     .from('gri_assessment_drafts')
     .select('state, updated_at')
@@ -41,6 +45,9 @@ export async function PUT(req: NextRequest) {
   const sb = createServerClient()
   const userId = await sessionUserId(sb)
   if (!userId) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'gri_full')
+  if (upgrade) return upgrade
   if (await isRateLimitedKey(userId, 'gri-draft', { max: 60, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
@@ -69,6 +76,9 @@ export async function DELETE() {
   const sb = createServerClient()
   const userId = await sessionUserId(sb)
   if (!userId) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'gri_full')
+  if (upgrade) return upgrade
   await sb.from('gri_assessment_drafts').delete().eq('user_id', userId)
   return NextResponse.json({ ok: true })
 }

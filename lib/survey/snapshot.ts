@@ -144,6 +144,43 @@ export interface PointAStateSlice {
   recalculation?: string
 }
 
+/**
+ * Round 2 (R2-A): the express view of Point A — exactly the fields the free
+ * «Снимок бизнеса» shows (the express assessment stays free), nothing of the
+ * paid Point A page (history, discrepancies, goals, benchmarks, metrics,
+ * checks, recommendations, expert notes). GET /api/v1/point-a/state?view=express
+ * answers this for an account without the paid section.
+ */
+export function expressPointASlice(state: {
+  snapshot: {
+    createdAt: string
+    assessment?: 'full' | 'preliminary'
+    overall: number | null
+    confidence: number | null
+    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean; top_issues?: readonly string[] }>
+    uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
+  } | null
+  recalculation?: string
+}): PointAStateSlice {
+  const snap = state.snapshot
+  return {
+    recalculation: state.recalculation,
+    snapshot: snap
+      ? {
+          createdAt: snap.createdAt,
+          assessment: snap.assessment,
+          overall: snap.overall,
+          confidence: snap.confidence,
+          blocks: snap.blocks.map((b) => ({
+            key: b.key, title: b.title, score: b.score, status: b.status, coverage: b.coverage, weight: b.weight,
+            informational: b.informational, hiddenForClient: b.hiddenForClient, top_issues: b.top_issues,
+          })),
+          uploadChecklist: snap.uploadChecklist?.map((u) => ({ block: u.block, gain: u.gain })),
+        }
+      : null,
+  }
+}
+
 /** A snapshot this much older than «Готово» is the previous one (clock skew allowance). */
 const FRESH_SKEW_MS = 30_000
 

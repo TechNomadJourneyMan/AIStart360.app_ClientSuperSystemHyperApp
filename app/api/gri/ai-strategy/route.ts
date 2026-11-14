@@ -5,6 +5,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { safeErrorMessage } from '@/lib/api-error'
 import { hasAllScores, knownScores } from '@/lib/gri-calculator/assessment-seed'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator (OpenRouter).
@@ -37,6 +38,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+    const upgrade = await gatePaidSection(sb, user.id, 'gri_full')
+    if (upgrade) return upgrade
     if (await isRateLimitedKey(user.id, 'gri-ai-strategy', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }

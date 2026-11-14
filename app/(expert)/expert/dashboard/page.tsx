@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { formatGri, griNeedsAttention, meanGri, toGri, GRI_ATTENTION_BELOW } from '@/lib/format/gri'
+import { ExpertQueuePanel } from '@/components/expert-sla/ExpertQueuePanel'
 
 interface ExpertClient {
   id: string
@@ -152,6 +153,9 @@ export default function ExpertDashboardPage() {
           loading={loadingClients}
         />
       </section>
+
+      {/* SLA queue (R2-B): tasks with the time left to answer the client */}
+      <ExpertQueuePanel limit={5} showAllLink />
 
       {/* Recent clients */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">

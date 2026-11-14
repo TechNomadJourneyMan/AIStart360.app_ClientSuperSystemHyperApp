@@ -22,6 +22,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
     { href: `${GIGA_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
     { href: `${GIGA_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
+    // Expert work with the 24 h reaction / 48 h answer clock (R2-B, lib/expert-sla): overdue, queue, re-assignment.
+    { href: `${GIGA_BASE}/expert-sla`, label: 'SLA экспертов', icon: 'listchecks', permission: 'clients.review' },
     // Plan versions the experts sent for approval (pb_plan_versions in_review); the API scopes the list to the actor.
     { href: `${GIGA_BASE}/point-b-queue`, label: 'Точка Б — на одобрении', icon: 'stamp', permission: 'clients.review' },
     { href: `${GIGA_BASE}/experts`, label: 'Эксперты', icon: 'experts', permission: 'experts.manage' },
@@ -96,6 +98,7 @@ export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
     { href: `${SUPER_EXPERT_BASE}/requests`, label: 'Заявки на доступ', icon: 'inbox', permission: 'users.approve' },
     { href: `${SUPER_EXPERT_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
     { href: `${SUPER_EXPERT_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
+    { href: `${SUPER_EXPERT_BASE}/expert-sla`, label: 'SLA экспертов', icon: 'listchecks', permission: 'clients.review' },
     { href: `${SUPER_EXPERT_BASE}/accounts`, label: 'Аккаунты и компании', icon: 'building', permission: 'users.view' },
     { href: `${SUPER_EXPERT_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
   ] },

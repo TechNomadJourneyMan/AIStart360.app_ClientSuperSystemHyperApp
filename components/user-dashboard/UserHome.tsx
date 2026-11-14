@@ -7,6 +7,7 @@ import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
 import ExpertMessages from '@/components/client/ExpertMessages'
 import PointADashboardSummary from '@/components/dashboard/PointADashboardSummary'
+import Paywall from '@/components/access/Paywall'
 import { pointAStatHint } from '@/lib/user-dashboard/point-a-hint'
 import {
   IMPERSONATION_ACCOUNT_LOCKED_DETAILS,
@@ -28,6 +29,12 @@ export interface UserHomeData {
   sections: Array<{ key: string; title: string; description: string | null; icon: string | null; href: string }>
   materials: Array<{ slug: string; title: string; summary: string | null; icon: string | null }>
   unavailableSection: string | null
+  /**
+   * Round 2 (R2-A): paid sections closed for this account (the server decision,
+   * lib/access/decision.ts). Closed → the one paywall instead of the section's
+   * card, and its data is not requested (the API would answer 402).
+   */
+  paidLocked?: { point_a: boolean; gri_full: boolean }
 }
 
 /**
@@ -154,24 +161,30 @@ export default function UserHome({ data }: { data: UserHomeData }) {
             icon="my_location"
             label="Точка А"
             value={data.diagnostics?.overallScore != null ? `${Math.round(data.diagnostics.overallScore)} / 100` : '—'}
-            hint={pointAStatHint(data.diagnostics, fmtDate)}
+            hint={data.paidLocked?.point_a ? 'подробный разбор — в платном доступе' : pointAStatHint(data.diagnostics, fmtDate)}
           />
           <Stat
             icon="radar"
             label="GRI"
             value={data.gri ? formatGri(data.gri.index, { scale: true, empty: '—' }) : '—'}
-            hint={data.gri ? `оценка ${fmtDate(data.gri.assessedAt)}` : 'диагностика не пройдена'}
+            hint={data.paidLocked?.gri_full ? 'полный GRI — в платном доступе' : data.gri ? `оценка ${fmtDate(data.gri.assessedAt)}` : 'диагностика не пройдена'}
           />
         </section>
 
         {/* Point A v4 — score, key metrics, what needs attention, risks and the
             goals (synced with the questionnaire) — once Point A exists and the
             section is switched on for the account. */}
-        {data.diagnostics !== null && data.sections.some((x) => x.key === 'point_a') && <PointADashboardSummary />}
+        {data.diagnostics !== null && data.sections.some((x) => x.key === 'point_a') && (
+          data.paidLocked?.point_a ? <Paywall feature="point_a" variant="compact" /> : <PointADashboardSummary />
+        )}
 
         <ProfileSections summary={summary} />
 
-        <GriSection />
+        {data.paidLocked?.gri_full ? (
+          <section id="gri" className="scroll-mt-20"><Paywall feature="gri_full" variant="compact" /></section>
+        ) : (
+          <GriSection />
+        )}
 
         <ExpertMessages />
 

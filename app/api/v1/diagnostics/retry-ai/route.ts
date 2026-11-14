@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * POST /api/v1/diagnostics/retry-ai
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
     // dashboard "retry" button) and throttle — it re-fires the paid AI fan-out.
     const user = await getSessionUser(sb)
     if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+    // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+    const upgrade = await gatePaidSection(sb, user.id, 'point_a')
+    if (upgrade) return upgrade
     if (await isRateLimitedKey(user.id, 'diagnostics-retry-ai', { max: 10, windowMs: 60_000 })) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }

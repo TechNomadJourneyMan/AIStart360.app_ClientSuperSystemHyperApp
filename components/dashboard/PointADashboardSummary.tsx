@@ -37,6 +37,7 @@ import {
   type RevenueGoalRow,
   type RevenuePeriod,
 } from './point-a-summary-model'
+import Paywall from '@/components/access/Paywall'
 
 export type SaveRevenueGoal = (period: RevenuePeriod, annual: number) => Promise<void>
 
@@ -308,10 +309,12 @@ export function useSaveRevenueGoal(): SaveRevenueGoal {
 }
 
 export default function PointADashboardSummary({ className }: { className?: string }) {
-  const { data, isLoading, error, refetch, noCompany } = usePointAState()
+  const { data, isLoading, error, refetch, noCompany, locked } = usePointAState()
   const saveGoal = useSaveRevenueGoal()
 
   if (isLoading) return <div className={className}><Skeleton /></div>
+  // Round 2 (R2-A): Point A is a paid section — the one paywall, not an error.
+  if (locked) return <Paywall feature="point_a" variant="compact" className={className} />
   if (noCompany) {
     return (
       <section className={cn(CARD, className)}>

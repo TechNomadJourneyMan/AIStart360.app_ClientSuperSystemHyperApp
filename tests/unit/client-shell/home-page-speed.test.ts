@@ -6,7 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { memoryDb, roundTrips } from '../_round-trips'
 
 const USER = 'cccccccc-0000-4000-8000-000000000001'
-const s = vi.hoisted(() => ({ net: null as null | ReturnType<typeof import('../_round-trips').roundTrips>, tables: {} as Record<string, Array<Record<string, unknown>>> }))
+const s = vi.hoisted(() => ({
+  net: null as null | ReturnType<typeof import('../_round-trips').roundTrips>,
+  tables: {} as Record<string, Array<Record<string, unknown>>>,
+  // R2-A: the paid-section decision of the session user (lib/access/request-access.ts).
+  sections: { point_a: true, point_b: true, market: true, gri_full: true } as Record<string, boolean>,
+}))
 
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`redirect ${to}`) } }))
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => s.net!.sb }))
@@ -14,6 +19,7 @@ vi.mock('@/lib/request-user', () => ({ getRequestUser: async () => ({ id: USER, 
 vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: [] }) }))
 vi.mock('@/lib/cms/server', () => ({ visiblePagesFor: async () => [] }))
 vi.mock('@/components/user-dashboard/UserHome', () => ({ default: () => null }))
+vi.mock('@/lib/access/request-access', () => ({ getRequestAccess: async () => ({ gatesEnabled: true, staff: false, ent: {}, sections: s.sections }) }))
 
 const { default: ClientHomePage } = await import('@/app/client/home/page')
 
@@ -45,7 +51,16 @@ const dataOf = async () => (await render()).find((e) => e.props.data)!.props.dat
 const reportOf = async () => (await render()).find((e) => e.props.report)?.props.report ?? null
 
 describe('/client/home — round trips (W4)', () => {
-  beforeEach(() => seed())
+  beforeEach(() => {
+    s.sections = { point_a: true, point_b: true, market: true, gri_full: true }
+    seed()
+  })
+
+  it('R2-A: the page passes the paid-section decision to the cards (closed → paywall, nothing requested)', async () => {
+    expect((await dataOf()).paidLocked).toEqual({ point_a: false, gri_full: false })
+    s.sections = { point_a: false, point_b: false, market: false, gri_full: false }
+    expect((await dataOf()).paidLocked).toEqual({ point_a: true, gri_full: true })
+  })
 
   it('two round trips; Point A comes from the v4 snapshot', async () => {
     const data = await dataOf()

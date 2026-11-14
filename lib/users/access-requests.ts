@@ -13,6 +13,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { canManageTarget, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
+import { isTariffAccessRequest } from '@/lib/access/upgrade-requests'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
@@ -73,14 +74,21 @@ export async function decideAccessRequest(
   let userId: string | null = null
   const { data: arRow } = await sb
     .from('admin_requests')
-    .select('userId, payload')
+    .select('userId, payload, type, source')
     .eq('id', args.requestId)
     .maybeSingle()
 
+  // R2-A: a request for PAID access (paywall / the old «Pro» window) is not a
+  // registration. Deciding on it only closes the request; it never changes
+  // profiles.status (approving it must not admit a client still waiting for
+  // approval) and sends no «client approved» notices. The tariff is set in
+  // User 360 → Биллинг (lib/payments/billing.ts).
+  let paidAccess = false
   if (arRow) {
-    const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null }
+    const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null; type?: string | null; source?: string | null }
     const payload = row.payload ?? {}
     userId = row.userId ?? (typeof payload.userId === 'string' ? payload.userId : null)
+    paidAccess = isTariffAccessRequest(row)
   }
 
   // Orphaned registration: the request id is the profile UUID.
@@ -101,6 +109,31 @@ export async function decideAccessRequest(
   if ((targetIsStaff && role !== 'super_admin') || !canManageTarget(role, { staffRole: target.staffRole, profileRole: target.role })) {
     return { ok: false, reason: 'forbidden', userId }
   }
+  if (paidAccess) {
+    const { error: arErr } = await sb
+      .from('admin_requests')
+      .update({
+        status: requestStatus,
+        ...(args.action === 'reject' && args.reason ? { rejectionReason: args.reason } : {}),
+        updatedAt: new Date().toISOString(),
+      })
+      .eq('id', args.requestId)
+    if (arErr) throw new Error(`access-requests: paid-access request not updated (${arErr.message})`)
+    try {
+      await logAudit({
+        entityType: 'request',
+        entityId: args.requestId,
+        action: 'request.status_changed',
+        performedBy: args.actor.id,
+        diff: { action: args.action, status: requestStatus, userId, kind: 'paid_access', actorKind: args.actor.kind, ...(args.reason ? { reason: args.reason } : {}) },
+        ipAddress: args.ipAddress,
+      })
+    } catch (auditErr) {
+      console.error('[access-requests] audit failed:', auditErr)
+    }
+    return { ok: true, status: requestStatus, userId }
+  }
+
   let alreadyDone = false
   if (args.action === 'approve' || args.action === 'reject') {
     const next = args.action === 'approve' ? 'approved' : 'rejected'

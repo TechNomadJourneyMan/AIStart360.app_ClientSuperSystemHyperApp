@@ -12,6 +12,7 @@
 import { z } from 'zod'
 import { revokeSharesOfAssignee, revokeSharesOfCreator } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
+import { isAssignableResponsible } from '@/lib/expert-sla/assign'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
 import { BULK_ACTIONS, BULK_MAX, type BulkAction } from './bulk-users-shared'
@@ -55,11 +56,10 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
   return out
 }
 
-/** Проверка до чтения данных: ответственным может быть только сотрудник. */
+/** Проверка до чтения данных: ответственным может быть только сотрудник или одобренный эксперт (R2-B). */
 export async function validateAssignee(assigneeId: string | null | undefined): Promise<string | null> {
   if (!assigneeId) return null
-  const { data } = await createServiceClient().from('staff_roles').select('user_id').eq('user_id', assigneeId).maybeSingle()
-  return data ? null : 'Ответственным может быть только сотрудник'
+  return (await isAssignableResponsible(createServiceClient(), assigneeId)) ? null : 'Ответственным может быть только сотрудник или эксперт'
 }
 
 async function loadTargets(ids: string[]): Promise<Map<string, Target>> {

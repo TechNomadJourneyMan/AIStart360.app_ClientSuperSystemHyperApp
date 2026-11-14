@@ -48,6 +48,9 @@ const ACCESS_FEATURES = [
   { key: 'ai_chat', label: 'AI-чат' },
   { key: 'benchmarks', label: 'Бенчмарки' },
   { key: 'point_b', label: 'Точка Б' },
+  // Round 2 (R2-A): paid sections of their own (lib/access/entitlements.ts).
+  { key: 'point_a', label: 'Точка А' },
+  { key: 'market', label: 'Рынок' },
 ] as const
 
 export function AccessControls({ userId }: { userId: string }) {

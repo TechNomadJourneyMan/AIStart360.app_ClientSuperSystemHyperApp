@@ -14,6 +14,7 @@ import { pointANightly, pointARecalc } from '@/lib/functions/point-a'
 import { pbInviteExternal, pbMonthlyCheckpoint, pbRecompute, pbRecomputeCompany } from '@/lib/functions/point-b'
 import { commCampaignRun, commCampaignWatchdog } from '@/lib/functions/comm-campaigns'
 import { commBotReply, commEscalations } from '@/lib/functions/comm'
+import { expertSlaWatch } from '@/lib/functions/expert-sla'
 import { processOmnichannelMessage } from '@/lib/functions/process-omnichannel-message'
 import { backfillOmnichannel } from '@/lib/functions/backfill-omnichannel'
 import {
@@ -56,6 +57,8 @@ const ALL: readonly InngestFunction.Like[] = [
   pbMonthlyCheckpoint,
   // Point B invites created outside the working hours: email / Telegram in the next window (*/15, ≤ 10 per step).
   pbInviteExternal,
+  // Expert SLA (R2-B, lib/expert-sla): */5, 24 h without reaction → escalation, 48 h without answer → breach.
+  expertSlaWatch,
 ]
 
 /**

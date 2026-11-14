@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * Server-side proxy for the Market Intelligence backend ("Mark-analytics", a
@@ -97,6 +98,11 @@ async function handle(
   if (!user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+
+  // Round 2 (R2-A): «Рынок» is a paid section — 402 upgrade_required for an
+  // account without it (staff exempt), before anything is forwarded upstream.
+  const upgrade = await gatePaidSection(supabase, user.id, 'market')
+  if (upgrade) return upgrade
 
   const baseUrl = getBaseUrl()
   if (!baseUrl) {

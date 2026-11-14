@@ -8,6 +8,7 @@ import { resolveTenantWith, tenantErrorMessage, type TenantContext } from '@/lib
 import { metricsInputOwner } from '@/lib/metrics/materialize-tenant'
 import { safeErrorMessage } from '@/lib/api-error'
 import type { ApiResult, PointA } from '@/types/onboarding'
+import { gatePaidSection } from '@/lib/access/gate'
 
 type Resolved = { ok: true; supabase: Awaited<ReturnType<typeof createClient>>; tenant: TenantContext } | { ok: false; res: NextResponse }
 
@@ -25,6 +26,9 @@ async function resolve(req: Request): Promise<Resolved> {
     const body: ApiResult<PointA> = { ok: false, error }
     return { ok: false, res: NextResponse.json(body, { status: tenant.status }) }
   }
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required (staff exempt).
+  const upgrade = user ? await gatePaidSection(supabase, user.id, 'point_a') : null
+  if (upgrade) return { ok: false, res: upgrade }
   return { ok: true, supabase, tenant: tenant.tenant }
 }
 

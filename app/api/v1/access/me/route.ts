@@ -2,17 +2,20 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { readEntitlements } from '@/lib/access/server'
+import { resolveAccess } from '@/lib/access/decision'
 import { canRunFullGri } from '@/lib/access/entitlements'
-import { getAccessGatesEnabled } from '@/lib/settings/system-settings'
 
 /**
- * GET /api/v1/access/me — права текущего пользователя (Фаза 6, Пакет VIII).
+ * GET /api/v1/access/me — права текущего пользователя.
  *
- * Единая точка для клиентских гейтов (кнопка PDF, старт полного GRI, AI-чат,
- * бенчмарки): { gatesEnabled, entitlements, griRunsUsed, canRunFullGri }.
- * Когда gatesEnabled=false (системный тумблер access_gates выключен — fail-safe
- * дефолт) клиент ничего не ограничивает. Личность — из cookie-сессии.
+ * Тот же ответ, что дают серверные гейты (lib/access/decision.ts): UI (меню,
+ * замки, пейволл, кнопки PDF / AI-чат / бенчмарки) не решает сам.
+ *   { gatesEnabled, staff, entitlements (own rights: tariff + override),
+ *     sections: { point_a, point_b, market, gri_full } (the decision),
+ *     griRunsUsed, griRunsLimit, canRunFullGri }
+ * `sections[x] === false` — раздел закрыт: страница показывает пейволл, API отвечает 402.
+ * Когда gatesEnabled=false (тумблер access_gates выключен) всё открыто.
+ * Личность — из cookie-сессии.
  */
 export async function GET() {
   const sb = createServerClient()
@@ -22,10 +25,8 @@ export async function GET() {
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const [gatesEnabled, ent] = await Promise.all([
-      getAccessGatesEnabled(),
-      readEntitlements(sb, user.id),
-    ])
+    const access = await resolveAccess(sb, user.id)
+    const ent = access.ent
 
     let griRunsUsed = 0
     try {
@@ -40,17 +41,24 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      gatesEnabled,
+      gatesEnabled: access.gatesEnabled,
+      staff: access.staff,
+      // The account's own rights (tariff + override), whatever the switch says.
       entitlements: {
         tier: ent.tier,
         pdf_export: ent.pdf_export,
         ai_chat: ent.ai_chat,
         benchmarks: ent.benchmarks,
         point_b: ent.point_b,
+        point_a: ent.point_a,
+        market: ent.market,
+        gri_full: ent.gri_full,
       },
+      // The decision the API enforces (switch, rights, staff): false → paywall / 402.
+      sections: access.sections,
       griRunsUsed,
       griRunsLimit: Number.isFinite(ent.gri_full_limit) ? ent.gri_full_limit : null,
-      canRunFullGri: !gatesEnabled || canRunFullGri(ent, griRunsUsed),
+      canRunFullGri: !access.gatesEnabled || access.staff || canRunFullGri(ent, griRunsUsed),
     })
   } catch (error) {
     console.error('[access/me] error:', error)

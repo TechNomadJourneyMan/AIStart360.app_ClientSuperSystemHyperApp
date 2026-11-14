@@ -11,6 +11,7 @@ import { GRI_SECTIONS, GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { formatGri, griPercentOfScale, griTone } from '@/lib/format/gri'
 import { scoresFingerprint, type GriScores } from '@/lib/gri-assessment/score'
+import Paywall from '@/components/access/Paywall'
 
 const GRI_TARGET = 8.5
 // One set of GRI zones (lib/format/gri.ts, R-036).
@@ -25,7 +26,8 @@ interface DraftInfo { blocksStarted: number; updatedAt: string }
 export default function GriSection() {
   const [assessment, setAssessment] = useState<AssessmentCurrent | null>(null)
   const [draft, setDraft] = useState<DraftInfo | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  // 'locked' — Round 2 (R2-A): the full GRI is a paid section (API 402) → the one paywall.
+  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'locked'>('loading')
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +35,7 @@ export default function GriSection() {
         fetch('/api/v1/gri/assessment', { credentials: 'include' }),
         fetch('/api/v1/gri/draft', { credentials: 'include' }).catch(() => null),
       ])
+      if (curRes.status === 402) { setState('locked'); return }
       if (!curRes.ok) throw new Error(String(curRes.status))
       const cur = (await curRes.json())?.data?.current ?? null
       setAssessment(cur && typeof cur.gri_index !== 'undefined' ? (cur as AssessmentCurrent) : null)
@@ -67,6 +70,8 @@ export default function GriSection() {
 
       <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-7">
         <div aria-hidden className="pointer-events-none absolute -left-24 -bottom-24 h-64 w-64 rounded-full bg-primary/[0.07] blur-[90px]" />
+
+        {state === 'locked' && <Paywall feature="gri_full" variant="compact" className="relative" />}
 
         {state === 'loading' && (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]" aria-busy="true">

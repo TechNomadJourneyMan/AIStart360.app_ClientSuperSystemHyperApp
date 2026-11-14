@@ -116,7 +116,7 @@ describe('«Что если»: the calculators', () => {
   })
 
   it('402 renders the paywall, and the controller locks on a 402', async () => {
-    expect(viewHtml(snapOf({ access: 'locked' }))).toContain('Точка Б — на тарифе Pro')
+    expect(viewHtml(snapOf({ access: 'locked' }))).toContain('Точка Б — в платном доступе')
     const { fetchFn } = harness({ 'POST ': () => ({ status: 402, body: { error: 'upgrade_required' } }), 'GET /saved': () => savedBody() })
     const ctl = new WhatIfController(fetchFn)
     ctl.setEnabled('conversion', true)

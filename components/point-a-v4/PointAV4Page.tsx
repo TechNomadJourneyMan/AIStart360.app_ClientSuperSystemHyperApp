@@ -25,6 +25,7 @@ import { BTN_PRIMARY, CARD, Icon } from './ui'
 import { cn } from '@/lib/utils'
 import { AnswerEditorProvider } from './AnswerEditDialog'
 import PublishedReports from '@/components/reports/PublishedReports'
+import Paywall from '@/components/access/Paywall'
 
 /**
  * Links into the page (#reports from the «Ваш отчёт готов» card and the expert's
@@ -65,6 +66,9 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
   useScrollToHash(!preview && !!state && !isLoading)
 
   if (isLoading && !preview) return <div className="mx-auto max-w-6xl px-4 py-6"><Skeleton /></div>
+  // Round 2 (R2-A): the page is server-gated (FeatureGate); a switch turned on
+  // after the page loaded still lands here as a 402 → the one paywall.
+  if (!preview && live.locked) return <div className="mx-auto max-w-6xl px-4 py-6"><Paywall feature="point_a" /></div>
   if (!preview && live.noCompany) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6">

@@ -28,6 +28,9 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+  // Round 2 (R2-A): market is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'market')
+  if (upgrade) return upgrade
 
   // Throttle this paid ~50-answer AI generation per user (audit 2026-07-02).
   if (await isRateLimitedKey(userId, 'market-analysis-generate', { max: 5, windowMs: 60_000 })) {
@@ -114,6 +117,7 @@ export async function POST() {
 // ---------------------------------------------------------------------------
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /** Unwraps survey_answers jsonb ({value} or scalar). */
 function unwrap(answer: unknown): unknown {
