@@ -22,8 +22,10 @@
  *
  * Every decision, from any channel (web cabinet, GIGA, Telegram), goes through
  * decideReportReview, which re-checks on the server:
- *   • the person: approved profile, and either a profile role in EXPERT_ROLES
- *     (expert / admin / super_admin) or a staff role holding reports.review;
+ *   • the person (migration 140 rule, lib/access/actor.ts): approved profile,
+ *     and either the profile role 'expert' or a staff_roles role holding
+ *     reports.review — the legacy profile roles admin / super_admin without a
+ *     staff_roles row no longer count (SR-03);
  *   • the second factor: web callers pass `mfaVerified` after their gate
  *     (resolveExpert / requireGiga run staffMfaGate); Telegram has no step-up
  *     cookie, so there the platform rule is applied — when staff 2FA is
@@ -39,7 +41,6 @@ import { prisma } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 import { hasPermission, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { coerceSetting } from '@/lib/settings/registry'
 import { lockCompanyType, publishInTx } from './versions'
@@ -70,9 +71,9 @@ export interface Reviewer {
   name: string | null
 }
 
-/** reports.review: profile role in EXPERT_ROLES, or a staff role that holds the permission. */
+/** reports.review: profile role 'expert' (an active expert), or a staff role that holds the permission. */
 export function canReviewReports(p: { profileRole: string | null; staffRole: StaffRole | string | null }): boolean {
-  if (p.profileRole && EXPERT_ROLES.has(p.profileRole)) return true
+  if (p.profileRole === 'expert') return true
   return isStaffRole(p.staffRole) && hasPermission(p.staffRole, 'reports.review')
 }
 
@@ -85,7 +86,9 @@ export async function loadReviewer(userId: string): Promise<Reviewer | null> {
     WHERE p.id = ${userId}::uuid`
   const r = rows[0]
   if (!r || r.status !== 'approved') return null
-  const staffRole = r.role === 'super_admin' ? 'super_admin' : isStaffRole(r.staff_role) ? r.staff_role : null
+  // Staff only from staff_roles (migration 140): the legacy profiles.role
+  // super_admin alone is not staff.
+  const staffRole = isStaffRole(r.staff_role) ? r.staff_role : null
   return { userId: r.id, profileRole: r.role, staffRole, email: r.email, name: r.full_name }
 }
 

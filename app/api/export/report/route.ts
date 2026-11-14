@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { guardExpertClient, requireExpert } from '@/lib/expert-auth'
+import { guardExpertClient, guardExpertCompany, requireExpert } from '@/lib/expert-auth'
 import {
   renderGriPdf,
   renderPointAPdf,
@@ -166,9 +166,11 @@ async function resolveSubject(
     }
   }
 
-  // Not the owner — only staff may target another company.
+  // Not the owner — only staff may target another company, and an expert only
+  // a company of an assigned client (SR-03; staff Admin / Super Admin — any).
   const viewer = await requireExpert()
   if (!viewer) return null
+  if (await guardExpertCompany(viewer, requestedCompanyId)) return null
 
   // Service-role read so the staff viewer can see a company they don't own.
   const { url, key } = {

@@ -3,6 +3,7 @@
 import { flushEvents, track } from '@/lib/events/client'
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
+import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import { clearAllDrafts } from '@/lib/survey/draft'
 import { friendlyAuthError, oauthCallbackUrl } from '@/lib/auth/login-links'
 import type { UserRole } from '@/types'
@@ -269,8 +270,6 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 
   logout: async () => {
-    const supabase = createClient()
-
     // ── Demo-session cleanup ────────────────────────────────────────────
     // If the current session was created via /api/auth/demo-access we mark
     // the user with user_metadata.demo === true. On logout we ask the
@@ -299,7 +298,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       track('LOGOUT')
       flushEvents()
     } catch {}
-    await supabase.auth.signOut()
+    // SR-06: the server decides — during an impersonation only that session
+    // ends (never every device of the client); a client's own sign-out stays
+    // global as before (lib/auth/sign-out-client.ts).
+    await signOutThisBrowser()
 
     // Clear legacy cookies
     if (typeof document !== 'undefined') {

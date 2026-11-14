@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod'
+import { revokeSharesOfAssignee } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
@@ -162,6 +163,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
             user_id: id, assignee_id: input.assigneeId ?? null, assigned_by: actor.id, assigned_at: now, updated_at: now,
           }, { onConflict: 'user_id' })
           if (error) return { id, ok: false, error: 'Не удалось назначить' }
+          // R-136: the previous assignee's public links to this client stop working.
+          if (prev) await revokeSharesOfAssignee(id, prev)
           await audit(id, input.assigneeId ? 'user.assigned' : 'user.unassigned', { oldValue: { assignee_id: prev }, newValue: { assignee_id: input.assigneeId ?? null } })
           return { id, ok: true, error: null }
         }

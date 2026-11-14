@@ -8,19 +8,27 @@
  * expert / partner admin does it for the companies of their partner.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { actorFromRows } from '@/lib/access/actor'
 
-const PROFILE_EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 const STAFF_EXPERT_ROLES = new Set(['super_expert', 'admin', 'super_admin'])
 
-/** Profile role expert / admin, or a staff role super_expert / admin. */
+/**
+ * An active expert (profiles.role 'expert', approved) or an approved staff
+ * super_expert / admin / super_admin (staff_roles) — the rule of migration 140
+ * (lib/access/actor.ts). The legacy profile roles admin / super_admin without
+ * a staff_roles row no longer count (SR-02). Fails closed on a read error.
+ */
 export async function isPlatformExpert(service: SupabaseClient, userId: string): Promise<boolean> {
   const [profile, staff] = await Promise.all([
-    service.from('profiles').select('role').eq('id', userId).maybeSingle(),
+    service.from('profiles').select('role, status').eq('id', userId).maybeSingle(),
     service.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
   ])
-  const pr = (profile.data as { role?: string | null } | null)?.role ?? ''
-  const sr = (staff.data as { role?: string | null } | null)?.role ?? ''
-  return PROFILE_EXPERT_ROLES.has(pr) || STAFF_EXPERT_ROLES.has(sr)
+  if (profile.error || staff.error) return false
+  const a = actorFromRows(userId, {
+    profile: profile.data as { role?: string | null; status?: string | null } | null,
+    staff: staff.data as { role?: string | null } | null,
+  })
+  return a.activeExpert || (!!a.staffRole && STAFF_EXPERT_ROLES.has(a.staffRole))
 }
 
 /** The tenant role of the caller for this company (lib/tenancy) → expert? */

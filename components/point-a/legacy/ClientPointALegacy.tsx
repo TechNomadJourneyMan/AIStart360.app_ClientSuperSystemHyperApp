@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase-client'
+import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
 import { loadClientPointA } from '@/components/point-a/client-point-a-load'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
@@ -301,10 +302,9 @@ export default function PointAClientPage() {
             </Link>
             <button
               onClick={async () => {
-                const sb = createClient()
                 trackLogout()
-                await sb.auth.signOut()
-                window.location.href = '/login'
+                // SR-06: an impersonation ends only its own session.
+                window.location.href = await signOutThisBrowser()
               }}
               className="flex items-center gap-1.5 text-xs font-mono text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/20 rounded-lg px-3 py-1.5 transition-all"
             >

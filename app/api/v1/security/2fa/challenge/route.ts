@@ -14,6 +14,7 @@ import { getUserSecurity, upsertUserSecurity } from '@/lib/mfa/store'
 import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
 import { countCredentials } from '@/lib/webauthn/store'
 import { logActivity } from '@/lib/activity/log'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 const SCHEMA = z.object({ code: z.string().trim().min(6).max(12) })
 
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(request, user, 'mfa.challenge')
+  if (impersonated) return impersonated
 
   if (await isRateLimitedKey(user.id, 'mfa-challenge', { max: 10, windowMs: 5 * 60_000 }) || await isRateLimitedKey(user.id, 'mfa-otp-day', MFA_OTP_DAILY)) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })

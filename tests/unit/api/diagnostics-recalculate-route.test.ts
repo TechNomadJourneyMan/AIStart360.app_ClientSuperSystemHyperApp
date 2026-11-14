@@ -75,6 +75,11 @@ vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeClient
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 // The staff session in this test passed its second factor (R-005 rules: tests/unit/api/api-identity-staff-stepup.test.ts).
 vi.mock('@/lib/mfa/api-staff-gate', () => ({ staffApiSecondFactor: async () => 'ok' }))
+// The staff member is a staff_roles admin (migration 140 rule — tests/unit/access/actor-scope-routes.test.ts).
+vi.mock('@/lib/access/actor', async () => {
+  const real = await vi.importActual<typeof import('@/lib/access/actor')>('@/lib/access/actor')
+  return { ...real, resolveActor: async (id: string) => real.actorFromRows(id, { profile: { role: 'admin', status: 'approved' }, staff: { role: 'admin' } }) }
+})
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: (_k: string, p: { overallScore: unknown; stage?: unknown }) => { h.notified.push({ to: 'admins', overallScore: p.overallScore, stage: p.stage }) } }))
 vi.mock('@/lib/notifications/product', () => ({ notifyPointARecalculated: async (_u: string, p: { overallScore: unknown }) => { h.notified.push({ to: 'client', overallScore: p.overallScore }) } }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))

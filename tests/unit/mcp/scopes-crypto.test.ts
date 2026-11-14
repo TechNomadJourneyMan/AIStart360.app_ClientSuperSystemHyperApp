@@ -33,15 +33,21 @@ describe('MCP scopes ← RBAC', () => {
     expect(allowedScopes({ kind: 'expert', profileRole: 'expert' })).toEqual(['clients:read', 'clients:pii', 'diagnostics:read', 'metrics:read', 'reports:read'])
   })
 
-  it('expert profile roles are exactly the expert portal ones', async () => {
-    vi.doMock('@/lib/supabase-server', () => ({ createServerClient: vi.fn() }))
-    const { EXPERT_ROLES } = await import('@/lib/expert-auth')
-    expect([...EXPERT_PROFILE_ROLES].sort()).toEqual([...EXPERT_ROLES].sort())
+  it('SR-05: the only expert profile role is the active-expert one of migration 140', async () => {
+    const { actorFromRows } = await import('@/lib/access/actor')
+    expect([...EXPERT_PROFILE_ROLES]).toEqual(['expert'])
+    // The expert portal admits the same profile role (lib/access/actor.ts isExpertPortalActor without staff_roles).
+    for (const role of ['expert', 'admin', 'super_admin', 'manager', 'analyst']) {
+      expect(actorFromRows('u', { profile: { role, status: 'approved' }, staff: null }).activeExpert).toBe(EXPERT_PROFILE_ROLES.has(role))
+    }
   })
 
-  it('resolves the role like the panel: approved only, super_admin profile, staff row, then expert', () => {
+  it('resolves the role like the panel: approved only, staff row, then expert (never the legacy super_admin profile)', () => {
     expect(roleFromRow({ email: null, profile_role: 'client', status: 'approved', staff_role: 'analyst' })).toEqual({ kind: 'staff', staffRole: 'analyst' })
-    expect(roleFromRow({ email: null, profile_role: 'super_admin', status: 'approved', staff_role: null })).toEqual({ kind: 'staff', staffRole: 'super_admin' })
+    // SR-05: profiles.role super_admin / admin without staff_roles is nobody.
+    expect(roleFromRow({ email: null, profile_role: 'super_admin', status: 'approved', staff_role: null })).toBeNull()
+    expect(roleFromRow({ email: null, profile_role: 'admin', status: 'approved', staff_role: null })).toBeNull()
+    expect(roleFromRow({ email: null, profile_role: 'super_admin', status: 'approved', staff_role: 'super_admin' })).toEqual({ kind: 'staff', staffRole: 'super_admin' })
     // Staff are governed by RBAC even when their profile says expert.
     expect(roleFromRow({ email: null, profile_role: 'expert', status: 'approved', staff_role: 'content_manager' })).toEqual({ kind: 'staff', staffRole: 'content_manager' })
     expect(roleFromRow({ email: null, profile_role: 'expert', status: 'approved', staff_role: null })).toEqual({ kind: 'expert', profileRole: 'expert' })

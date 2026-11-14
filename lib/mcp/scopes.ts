@@ -88,11 +88,13 @@ export const SCOPE_DEFS: Record<McpScope, ScopeDef> = {
 }
 
 /**
- * Profile roles admitted as experts — the same set lib/expert-auth.ts admits to
- * the expert portal (EXPERT_ROLES; a test keeps them equal). super_admin is
- * resolved as staff first.
+ * Profile roles admitted as experts — the active-expert rule of migration 140
+ * (is_active_expert(): profiles.role 'expert', approved), the same rule
+ * lib/expert-auth.ts resolveExpert applies through lib/access/actor.ts. The
+ * legacy profile roles admin / super_admin are NOT experts (SR-05): staff come
+ * from staff_roles only.
  */
-export const EXPERT_PROFILE_ROLES: ReadonlySet<string> = new Set(['expert', 'admin', 'super_admin'])
+export const EXPERT_PROFILE_ROLES: ReadonlySet<string> = new Set(['expert'])
 
 /** Who is calling: GIGA staff (RBAC role) or an expert (profiles.role). */
 export type McpRole = { kind: 'staff'; staffRole: StaffRole } | { kind: 'expert'; profileRole: string }

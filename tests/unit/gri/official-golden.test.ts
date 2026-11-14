@@ -19,8 +19,11 @@ vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({}) }))
 
 const g = vi.hoisted(() => ({ srRows: null as unknown }))
 vi.mock('@/lib/expert-auth', () => ({
-  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'expert', email: null } }),
+  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'admin', email: null, clientScope: 'all' } }),
   expertBlockResponse: () => new Response(null, { status: 403 }),
+  // Scope (SR-03) is covered by tests/unit/access/actor-scope-routes.test.ts.
+  guardExpertClient: async () => null,
+  expertSeesAllClients: () => true,
   srGet: async () => g.srRows,
 }))
 

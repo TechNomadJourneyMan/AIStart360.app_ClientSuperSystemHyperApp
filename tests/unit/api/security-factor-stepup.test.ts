@@ -53,6 +53,8 @@ vi.mock('@/lib/activity/log', () => ({ logActivity: async (e: Record<string, unk
 vi.mock('@/lib/notifications/create', () => ({ createNotification: async () => undefined }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (k: string) => h.settings[k] ?? false }))
 vi.mock('@/lib/dev/dev-request', () => ({ devModeOnForServerRequest: () => false }))
+// SR-07: the impersonation refusal is covered by tests/unit/security/sr07-impersonation-account-actions.test.ts.
+vi.mock('@/lib/impersonation/guard', () => ({ refuseDuringImpersonation: async () => null }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: (table: string) => ({

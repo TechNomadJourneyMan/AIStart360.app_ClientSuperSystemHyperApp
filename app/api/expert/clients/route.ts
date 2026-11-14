@@ -1,16 +1,18 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { expertBlockResponse, expertSeesAllClients, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { officialGriFromRows, type GriRowLike } from '@/lib/gri/official'
 import { loadSnapshotsByDiagnostic, officialPointA } from '@/lib/point-a/official'
 
 /**
- * Service-role REST fetch — bypasses RLS on profiles (which only exposes
- * super_admin/admin/manager by default). The caller is authorised by
- * resolveExpert() first, then all client profiles are read directly.
+ * Service-role REST fetch — bypasses RLS on profiles. The caller is authorised
+ * by resolveExpert() first; then the list is the caller's client scope (the
+ * rule of migration 140, SR-03): an expert sees only the clients assigned to
+ * them (user_assignments.assignee_id — UI «Мои клиенты», PO decision), staff
+ * Admin / Super Admin see every client.
  */
 async function sbFetch<T = unknown>(path: string): Promise<T | null> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
@@ -60,7 +62,7 @@ async function sbFetchByIds<T>(ids: string[], build: (idList: string) => string)
   return out
 }
 
-// GET /api/expert/clients — list of all clients with latest diagnostic + company + comment count.
+// GET /api/expert/clients — the caller's clients (assigned; staff admins — all) with latest diagnostic + company + comment count.
 // Every read is paginated (no silent 1000-row cap) and the id filters are
 // chunked (no over-long URLs). A failed read answers 500 — it is never shown
 // as «no company / no score / 0 comments».
@@ -78,9 +80,22 @@ export async function GET() {
     status: string | null
     created_at: string
   }
-  const clients = await sbFetchAll<ClientRow>(
-    'profiles?role=in.(client,owner)&select=id,full_name,email,avatar_url,status,created_at&order=created_at.desc,id.asc',
-  )
+  const CLIENT_SELECT = 'select=id,full_name,email,avatar_url,status,created_at&order=created_at.desc,id.asc'
+  let clients: ClientRow[] | null
+  if (expertSeesAllClients(auth.viewer)) {
+    clients = await sbFetchAll<ClientRow>(`profiles?role=in.(client,owner)&${CLIENT_SELECT}`)
+  } else {
+    const assigned = await sbFetchAll<{ user_id: string }>(
+      `user_assignments?assignee_id=eq.${encodeURIComponent(auth.viewer.id)}&select=user_id&order=user_id.asc`,
+    )
+    if (!assigned) return NextResponse.json({ error: 'failed to load clients' }, { status: 500 })
+    const assignedIds = assigned.map((a) => a.user_id).filter(Boolean)
+    clients = assignedIds.length
+      ? await sbFetchByIds<ClientRow>(assignedIds, (idList) => `profiles?id=in.(${idList})&role=in.(client,owner)&${CLIENT_SELECT}`)
+      : []
+    // Chunked reads lose the global order: newest first, as for staff admins.
+    clients?.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '') || a.id.localeCompare(b.id))
+  }
   if (!clients) return NextResponse.json({ error: 'failed to load clients' }, { status: 500 })
   if (clients.length === 0) return NextResponse.json({ data: [] })
 

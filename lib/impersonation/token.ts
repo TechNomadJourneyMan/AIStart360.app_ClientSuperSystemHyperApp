@@ -56,7 +56,9 @@ export function readImpersonation(token: string | null | undefined): Promise<Ver
 }
 
 /** Mutating API paths that stay allowed in view-only mode. */
-export const VIEW_MODE_ALLOWED_API = ['/api/v1/impersonation/exit', '/api/v1/events']
+// SR-06: «Выйти» during an impersonation ends only that session (scope
+// 'local', app/api/v1/auth/sign-out) — it must work in view mode too.
+export const VIEW_MODE_ALLOWED_API = ['/api/v1/impersonation/exit', '/api/v1/events', '/api/v1/auth/sign-out']
 
 /** POST endpoints that only compute and return data (no writes): not audited, allowed in view mode. */
 export const READ_ONLY_POST_API = ['/api/v1/assistant/validate']

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
-import { isStaffRole } from '@/lib/api-identity'
+import { getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { profanityResponse } from '@/lib/moderation/http'
 
 const ALLOWED_STATUS = [
@@ -89,7 +89,11 @@ export async function PATCH(
   if (callerErr) {
     return NextResponse.json({ ok: false, error: 'Failed to load profile' }, { status: 500 })
   }
-  const callerRole = (caller as { role?: string | null } | null)?.role ?? null
+  const storedRole = (caller as { role?: string | null } | null)?.role ?? null
+  // A staff-looking profile role counts only per migration 140 + the second
+  // factor (getSessionRole → lib/access/actor.ts); a legacy admin without
+  // staff_roles or a non-approved expert answers as a client (SR-02).
+  const callerRole = isStaffRole(storedRole) ? await getSessionRole(sb, userData.user.id) : storedRole
   const staff = isStaffRole(callerRole)
   if (body.answer_text !== undefined) {
     body.answer_author_role = body.answer_text === null ? null : answerRoleFor(callerRole)

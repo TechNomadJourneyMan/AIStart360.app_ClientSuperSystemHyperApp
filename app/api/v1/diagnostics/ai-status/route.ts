@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { readAiAnalysis } from '@/lib/point-a/ai-analysis'
 
 /**
@@ -31,7 +31,8 @@ export async function GET(req: NextRequest) {
   if (error || !data) {
     return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
   }
-  if (data.user_id !== user.id && !isStaffRole(await getSessionRole(sb, user.id))) {
+  // Owner, or staff / an assigned expert (migration 140 rule, lib/access/actor.ts).
+  if (!(await mayActOnUser(sb, user.id, data.user_id as string | null))) {
     return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
   }
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
+import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import type { ApprovalStatus } from '@/types/onboarding'
 import { trackLogout } from '@/lib/events/client'
 
@@ -124,10 +125,12 @@ export default function WaitingRoomPage() {
               // otherwise middleware sees a live session and bounces the user
               // straight back in (pending client could never sign out).
               trackLogout()
-              try { await createClient().auth.signOut() } catch {}
+              // SR-06: an impersonation ends only its own session.
+              let next = '/login'
+              try { next = await signOutThisBrowser() } catch {}
               document.cookie = 'aistart360_role=; path=/; max-age=0'
               document.cookie = 'aistart360_user_id=; path=/; max-age=0'
-              window.location.href = '/login'
+              window.location.href = next
             }}
             className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2.5 py-1.5 rounded-lg transition-all">
             <span className="material-symbols-outlined text-sm">logout</span>

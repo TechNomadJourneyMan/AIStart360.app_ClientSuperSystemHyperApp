@@ -1,8 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for all /api/expert/* routes:
 // - service-role REST fetch (bypasses profiles RLS infinite-recursion)
-// - expert gate: role + approved status via service role, then the staff
-//   second-factor gate (staffMfaGate), like requireGiga
+// - expert gate: who the caller is per migration 140 (lib/access/actor.ts:
+//   active expert or staff Admin / Super Admin from staff_roles, approved),
+//   then the staff second-factor gate (staffMfaGate), like requireGiga
+// - client scope: an expert reaches only the clients assigned to them
+//   (user_assignments) — guardExpertClient / guardExpertCompany /
+//   guardExpertReport on every route that touches one client (SR-03)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from 'next/server'
@@ -10,8 +14,17 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase-server'
 import { staffMfaGate } from '@/lib/admin/giga-actor'
 import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
-import { canAccessClient, isUuid, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
+import { canAccessClient, guardCompanyAccess, isUuid, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
+import { createServiceClient } from '@/lib/supabase-service'
+import { expertPortalRole, isExpertPortalActor, resolveActor } from '@/lib/access/actor'
 
+/**
+ * Profile roles of the expert NOTIFICATION audiences (Telegram / WhatsApp
+ * recipient lists). NOT the gate of the expert portal API any more: who may
+ * use /api/expert/* is decided by resolveExpert through lib/access/actor.ts
+ * (migration 140 — the legacy profile roles admin / super_admin without a
+ * staff_roles row are not admitted).
+ */
 export const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 
 /**
@@ -56,8 +69,26 @@ export async function srGet<T = unknown>(path: string): Promise<T | null> {
 
 export interface ExpertViewer {
   id: string
+  /** 'expert', or the staff role 'admin' / 'super_admin' (staff_roles, never the legacy profile role). */
   role: string | null
   email: string | null
+  /**
+   * Which clients: 'all' (staff Admin / Super Admin) or 'assigned' (an expert:
+   * user_assignments.assignee_id = viewer). Absent on older test doubles —
+   * then derived from `role`.
+   */
+  clientScope?: 'all' | 'assigned'
+}
+
+/** The client scope of a viewer (lib/admin/client-scope.ts ScopedActor): 'all' or 'assigned'. */
+function viewerScope(viewer: ExpertViewer): { id: string; clientScope: 'all' | 'assigned' } {
+  const all = viewer.clientScope ? viewer.clientScope === 'all' : viewer.role === 'admin' || viewer.role === 'super_admin'
+  return { id: viewer.id, clientScope: all ? 'all' : 'assigned' }
+}
+
+/** Does the viewer see every client (staff Admin / Super Admin)? */
+export function expertSeesAllClients(viewer: ExpertViewer): boolean {
+  return viewerScope(viewer).clientScope === 'all'
 }
 
 /** Why a session was not admitted to the expert portal API. */
@@ -66,11 +97,14 @@ export type ExpertBlock = 'unauthenticated' | 'forbidden' | 'step_up' | 'enroll'
 export type ExpertAuth = { ok: true; viewer: ExpertViewer } | { ok: false; block: ExpertBlock }
 
 /**
- * Authorise the request as coming from an expert/admin/super_admin.
+ * Authorise the request as coming from an expert or a staff Admin / Super Admin.
  *
  * Experts are platform staff (D1), so the same rules as GIGA staff apply:
- *  - the profile must be APPROVED (pending / rejected / blocked / archived
- *    accounts get nothing, whatever their role says);
+ *  - who: lib/access/actor.ts (migration 140) — an approved profile with
+ *    role 'expert', or an approved profile with a staff_roles row admin /
+ *    super_admin. A legacy profiles.role admin / super_admin without
+ *    staff_roles is refused (SR-03); pending / rejected / blocked / archived
+ *    accounts get nothing, whatever their role says;
  *  - the second factor: when the person enrolled (or the platform requires
  *    2FA for staff) the signed step-up cookie of THIS user must be present
  *    (staffMfaGate). Middleware does not gate /api/*, so this is the gate.
@@ -83,14 +117,9 @@ export async function resolveExpert(): Promise<ExpertAuth> {
   } = await sb.auth.getUser()
   if (!user) return { ok: false, block: 'unauthenticated' }
 
-  const rows = await srGet<Array<{ id: string; role: string | null; status: string | null }>>(
-    `profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role,status&limit=1`,
-  )
-  if (rows === null) return { ok: false, block: 'unavailable' }
-  const viewer = rows[0] ?? null
-  if (!viewer || !EXPERT_ROLES.has(viewer.role ?? '') || viewer.status !== 'approved') {
-    return { ok: false, block: 'forbidden' }
-  }
+  const actor = await resolveActor(user.id)
+  if (!actor) return { ok: false, block: 'unavailable' }
+  if (!isExpertPortalActor(actor)) return { ok: false, block: 'forbidden' }
 
   let gate: Awaited<ReturnType<typeof staffMfaGate>>
   try {
@@ -100,7 +129,11 @@ export async function resolveExpert(): Promise<ExpertAuth> {
   }
   if (gate !== 'ok') return { ok: false, block: gate }
 
-  return { ok: true, viewer: { id: viewer.id, role: viewer.role, email: user.email ?? null } }
+  const role = expertPortalRole(actor)
+  return {
+    ok: true,
+    viewer: { id: user.id, role, email: user.email ?? null, clientScope: role === 'expert' ? 'assigned' : 'all' },
+  }
 }
 
 /**
@@ -115,18 +148,12 @@ export async function resolveExpertBotUser(): Promise<ExpertAuth> {
   } = await sb.auth.getUser()
   if (!user) return { ok: false, block: 'unauthenticated' }
 
-  const [profiles, staff] = await Promise.all([
-    srGet<Array<{ id: string; role: string | null; status: string | null }>>(
-      `profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role,status&limit=1`,
-    ),
-    srGet<Array<{ role: string | null }>>(`staff_roles?user_id=eq.${encodeURIComponent(user.id)}&select=role&limit=1`),
-  ])
-  if (profiles === null || staff === null) return { ok: false, block: 'unavailable' }
-  const viewer = profiles[0] ?? null
-  const staffRole = staff[0]?.role ?? null
-  if (!viewer || viewer.status !== 'approved' || !isExpertBotMember(viewer.role, staffRole)) {
-    return { ok: false, block: 'forbidden' }
-  }
+  // Migration 140 rule (lib/access/actor.ts): an active expert, a staff Admin /
+  // Super Admin, or a staff SuperExpert — never the legacy profile role alone.
+  const actor = await resolveActor(user.id)
+  if (!actor) return { ok: false, block: 'unavailable' }
+  const superExpert = actor.staffRole === 'super_expert'
+  if (!isExpertPortalActor(actor) && !superExpert) return { ok: false, block: 'forbidden' }
 
   let gate: Awaited<ReturnType<typeof staffMfaGate>>
   try {
@@ -136,7 +163,8 @@ export async function resolveExpertBotUser(): Promise<ExpertAuth> {
   }
   if (gate !== 'ok') return { ok: false, block: gate }
 
-  return { ok: true, viewer: { id: viewer.id, role: expertBotRole(viewer.role, staffRole), email: user.email ?? null } }
+  const role = isExpertPortalActor(actor) ? expertPortalRole(actor) : 'super_expert'
+  return { ok: true, viewer: { id: user.id, role, email: user.email ?? null } }
 }
 
 /**
@@ -150,19 +178,43 @@ export async function requireExpert(): Promise<ExpertViewer | null> {
 }
 
 /**
- * May this expert/admin work with THIS client's Point B? Admin / Super Admin —
- * any client. An expert (profile role 'expert') — only clients where they are
- * the assignee (user_assignments.assignee_id, lib/admin/client-scope.ts):
- * spec 2026-10-18 §17 «эксперт — только назначенные». Fails closed when the
- * assignment cannot be read. Returns the refusal response, or null to continue.
+ * May this expert/admin work with THIS client? Staff Admin / Super Admin —
+ * any client. An expert — only clients where they are the assignee
+ * (user_assignments.assignee_id): spec 2026-10-18 §17 «эксперт — только
+ * назначенные», the rule of migration 140 (lib/access/actor.ts). Fails
+ * closed when the assignment cannot be read. Returns the refusal response,
+ * or null to continue.
  */
 export async function guardExpertClient(viewer: ExpertViewer, clientId: string): Promise<NextResponse | null> {
   if (!isUuid(clientId)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
-  if (viewer.role === 'admin' || viewer.role === 'super_admin') return null
-  if (!(await canAccessClient({ id: viewer.id, clientScope: 'assigned' }, clientId))) {
+  if (!(await canAccessClient(viewerScope(viewer), clientId))) {
     return NextResponse.json({ ok: false, error: NOT_ASSIGNED_ERROR }, { status: 403 })
   }
   return null
+}
+
+/**
+ * guardExpertClient for a company: its owner must be the viewer's client (a
+ * company without an owner — staff admins only). 404 unknown company, 503
+ * unreadable (lib/admin/client-scope.ts guardCompanyAccess).
+ */
+export async function guardExpertCompany(viewer: ExpertViewer, companyId: string): Promise<NextResponse | null> {
+  if (!companyId) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
+  return guardCompanyAccess(viewerScope(viewer), companyId)
+}
+
+/**
+ * guardExpertClient for a report version (report_versions.company_id). An
+ * unknown / malformed id answers 404 like the routes do; an unreadable row 503.
+ */
+export async function guardExpertReport(viewer: ExpertViewer, versionId: string): Promise<NextResponse | null> {
+  if (!isUuid(versionId)) return NextResponse.json({ ok: false, error: 'Версия отчёта не найдена' }, { status: 404 })
+  if (expertSeesAllClients(viewer)) return null
+  const { data, error } = await createServiceClient().from('report_versions').select('company_id').eq('id', versionId).maybeSingle()
+  if (error) return NextResponse.json({ ok: false, error: 'Не удалось проверить права' }, { status: 503 })
+  const companyId = (data as { company_id?: string | null } | null)?.company_id
+  if (!companyId) return NextResponse.json({ ok: false, error: 'Версия отчёта не найдена' }, { status: 404 })
+  return guardExpertCompany(viewer, companyId)
 }
 
 /** JSON answer for a refused expert request; MFA blocks carry the same codes as GIGA. */

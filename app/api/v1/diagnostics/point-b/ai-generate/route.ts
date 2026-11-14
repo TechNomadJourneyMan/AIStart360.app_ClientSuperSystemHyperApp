@@ -11,7 +11,7 @@ import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { gateFeature } from '@/lib/access/gate'
@@ -57,7 +57,7 @@ async function handlePost(req: NextRequest) {
       if (!internal) {
         const caller = await getSessionUser(sb)
         if (!caller) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
-        if (caller.id !== userId && !isStaffRole(await getSessionRole(sb, caller.id))) {
+        if (!(await mayActOnUser(sb, caller.id, userId))) {
           return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
         }
         staffOnBehalf = caller.id !== userId

@@ -68,7 +68,8 @@ const signIn = (role: string, opts: { staff?: string; status?: string; mfa?: Met
   s.user = { id: 'u1', app_metadata: opts.mfa ?? {}, user_metadata: {} }
   s.role = role
   s.status = opts.status ?? 'approved'
-  s.staffRow = opts.staff ? { role: opts.staff } : null
+  // R-002: staff = a staff_roles row; a super_admin test account carries one.
+  s.staffRow = opts.staff ? { role: opts.staff } : role === 'super_admin' ? { role: 'super_admin' } : null
 }
 const ENROLLED = { mfa_totp: true }
 

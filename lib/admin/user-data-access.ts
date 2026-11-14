@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { requireGiga, isSameOriginMutation } from '@/lib/admin/giga-actor'
-import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import type { Permission } from '@/lib/admin/rbac'
 import { isClientProfileRole } from '@/lib/profiles/client-roles'
@@ -18,7 +18,8 @@ import { guardClientAccess } from '@/lib/admin/client-scope'
  *    passed, role unreadable) never fall back to the expert path;
  *  - a non-staff expert-portal session (approved, second factor passed — see
  *    resolveExpert) may read CLIENT accounts only — never staff, owners or
- *    other experts.
+ *    other experts — and only the clients assigned to them (staff Admin /
+ *    Super Admin — any; guardExpertClient, migration 140 rule, SR-03).
  *
  *  - GIGA staff stay inside their client scope (guardClientAccess, R-047);
  *
@@ -62,6 +63,8 @@ export async function authorizeUserDataRead(
   if (!isClientProfileRole((data as { role?: string } | null)?.role)) {
     return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
+  const denied = await guardExpertClient(viewer, userId)
+  if (denied) return { response: denied }
   return { sb, userId, viewer: viewer.id }
 }
 

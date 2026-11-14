@@ -14,6 +14,7 @@ import { getCredentialForUser, updateCredentialCounter } from '@/lib/webauthn/st
 import { WEBAUTHN_CHALLENGE_COOKIE, readChallenge } from '@/lib/webauthn/challenge'
 import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, currentStepUpSessionKey, signStepUp } from '@/lib/mfa/step-up'
 import { logActivity } from '@/lib/activity/log'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 // POST /api/v1/security/webauthn/authenticate/verify
 // Body: { response: AuthenticationResponseJSON }
@@ -22,6 +23,9 @@ export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(request, user, 'webauthn.authenticate')
+  if (impersonated) return impersonated
 
   if (await isRateLimitedKey(user.id, 'webauthn-auth-verify', { max: 10, windowMs: 5 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })

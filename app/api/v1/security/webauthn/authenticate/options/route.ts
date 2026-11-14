@@ -12,6 +12,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getWebAuthnConfig } from '@/lib/webauthn/config'
 import { listCredentials } from '@/lib/webauthn/store'
 import { WEBAUTHN_CHALLENGE_COOKIE, WEBAUTHN_CHALLENGE_COOKIE_OPTIONS, signChallenge } from '@/lib/webauthn/challenge'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 // POST /api/v1/security/webauthn/authenticate/options
 // Begin a passkey step-up for the already password-authenticated session.
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // SR-07: never «от имени клиента» (lib/impersonation/guard.ts).
+  const impersonated = await refuseDuringImpersonation(request, user, 'webauthn.authenticate')
+  if (impersonated) return impersonated
 
   if (await isRateLimitedKey(user.id, 'webauthn-auth-options', { max: 15, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })

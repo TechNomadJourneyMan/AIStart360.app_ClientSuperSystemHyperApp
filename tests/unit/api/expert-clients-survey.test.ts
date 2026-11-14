@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s = vi.hoisted(() => ({ broken: false }))
 
+// A staff admin sees every client (the expert's scope: tests/unit/access/actor-scope-routes.test.ts).
 vi.mock('@/lib/expert-auth', () => ({
-  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'expert', email: null } }),
+  expertSeesAllClients: () => true,
+  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'admin', email: null, clientScope: 'all' } }),
   expertBlockResponse: () => new Response(null, { status: 403 }),
 }))
 

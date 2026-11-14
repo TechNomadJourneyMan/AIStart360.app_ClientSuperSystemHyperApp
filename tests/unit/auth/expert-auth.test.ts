@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const s = vi.hoisted(() => ({
   user: null as null | { id: string; email?: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
   profile: null as null | { id: string; role: string; status: string },
+  staff: null as null | { user_id: string; role: string; client_scope?: string },
   profileHttpStatus: 200,
   mfaCookie: undefined as string | undefined,
   security: null as null | { totp_enabled?: boolean },
@@ -51,13 +52,16 @@ process.env.AUTH_SECRET = 'test-auth-secret-for-step-up'
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://sb.example'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key'
 
-const fetchMock = vi.fn(async () =>
-  new Response(JSON.stringify(s.profile ? [s.profile] : []), { status: s.profileHttpStatus }),
+const fetchMock = vi.fn(async (url: string) =>
+  String(url).includes('/staff_roles')
+    ? new Response(JSON.stringify(s.staff ? [s.staff] : []), { status: s.profileHttpStatus })
+    : new Response(JSON.stringify(s.profile ? [s.profile] : []), { status: s.profileHttpStatus }),
 )
 
 beforeEach(() => {
   s.user = { id: 'e-1', email: 'e@x.kz', app_metadata: {}, user_metadata: {} }
   s.profile = { id: 'e-1', role: 'expert', status: 'approved' }
+  s.staff = null
   s.profileHttpStatus = 200
   s.mfaCookie = undefined
   s.security = null
@@ -70,7 +74,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('requireExpert', () => {
   it('admits an approved expert without a second factor (platform does not require one)', async () => {
-    expect(await requireExpert()).toEqual({ id: 'e-1', role: 'expert', email: 'e@x.kz' })
+    expect(await requireExpert()).toEqual({ id: 'e-1', role: 'expert', email: 'e@x.kz', clientScope: 'assigned' })
     expect(MFA_COOKIE_NAME).toBe('aistart360_mfa')
   })
 
@@ -80,8 +84,25 @@ describe('requireExpert', () => {
     expect(await resolveExpert()).toEqual({ ok: false, block: 'forbidden' })
   })
 
+  it.each(['admin', 'super_admin', 'manager', 'analyst'])('SR-03: refuses the legacy profile role %s without a staff_roles row', async (role) => {
+    s.profile = { id: 'e-1', role, status: 'approved' }
+    expect(await resolveExpert()).toEqual({ ok: false, block: 'forbidden' })
+  })
+
+  it('SR-03: admits a staff admin by staff_roles whatever the profile role says, with every client in scope', async () => {
+    s.profile = { id: 'e-1', role: 'client', status: 'approved' }
+    s.staff = { user_id: 'e-1', role: 'admin', client_scope: 'all' }
+    expect(await requireExpert()).toEqual({ id: 'e-1', role: 'admin', email: 'e@x.kz', clientScope: 'all' })
+    s.staff = { user_id: 'e-1', role: 'crm_manager', client_scope: 'all' }
+    expect(await resolveExpert()).toEqual({ ok: false, block: 'forbidden' })
+    s.profile = { id: 'e-1', role: 'client', status: 'blocked' }
+    s.staff = { user_id: 'e-1', role: 'admin', client_scope: 'all' }
+    expect(await resolveExpert()).toEqual({ ok: false, block: 'forbidden' })
+  })
+
   it('refuses an enrolled super_admin session without the step-up cookie', async () => {
     s.profile = { id: 'e-1', role: 'super_admin', status: 'approved' }
+    s.staff = { user_id: 'e-1', role: 'super_admin' }
     s.user!.app_metadata = { mfa_totp: true }
     expect(await requireExpert()).toBeNull()
     expect(await resolveExpert()).toEqual({ ok: false, block: 'step_up' })

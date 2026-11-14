@@ -5,6 +5,10 @@
  * applies the data rules every tool shares:
  *   - only CLIENT companies: owner profile is a client (or legacy owner) and
  *     not staff — the expert-portal rule of lib/admin/user-data-access.ts;
+ *   - only the caller's clients (SR-05): `assignee` null — every client (staff
+ *     whose scope is 'all'); a UUID — only companies whose owner is assigned
+ *     to that person (user_assignments), the rule of migration 140. A company
+ *     without an owner is visible only with scope 'all';
  *   - contacts are masked without the PII scope (lib/mcp/pii.ts);
  *   - unreviewed AI hypotheses are never listed;
  *   - every list is bounded (limit ≤ 50) and paged by an opaque cursor.
@@ -43,14 +47,24 @@ export function decodeOffsetCursor(cursor: string | undefined | null): number | 
 
 // ─── Client companies ────────────────────────────────────────────────────────
 
+/** null — every client; a UUID — only the clients assigned to that person. */
+export type ClientFilter = string | null
+
+/** The filter of a caller with this client scope (lib/mcp/principal.ts). */
+export function clientFilterOf(p: { userId: string; clientScope: 'all' | 'assigned' }): ClientFilter {
+  return p.clientScope === 'all' ? null : p.userId
+}
+
 /** Is this a client company (visible through MCP)? */
-export async function clientCompanyExists(companyId: string): Promise<boolean> {
+export async function clientCompanyExists(companyId: string, assignee: ClientFilter): Promise<boolean> {
   if (!COMPANY_ID_RE.test(companyId)) return false
+  if (assignee !== null && !UUID_RE.test(assignee)) return false
   const rows = await prisma.$queryRaw<Array<{ ok: boolean }>>`
     SELECT true AS ok FROM public.companies c LEFT JOIN public.profiles p ON p.id = c.user_id
     WHERE c.id = ${companyId}
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
-           AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))`
+           AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${assignee}::uuid))`
   return rows.length > 0
 }
 
@@ -69,7 +83,8 @@ export interface ClientListItem {
  * only for callers who may see e-mails (otherwise a hit would confirm an
  * address the caller cannot read).
  */
-export async function searchClients(p: { query: string | null; pii: boolean; limit: number; offset: number }): Promise<{ items: ClientListItem[]; hasMore: boolean }> {
+export async function searchClients(p: { query: string | null; pii: boolean; limit: number; offset: number; assignee: ClientFilter }): Promise<{ items: ClientListItem[]; hasMore: boolean }> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return { items: [], hasMore: false }
   const term = p.query?.trim().slice(0, 80) || null
   const pat = term ? like(term) : null
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
@@ -89,6 +104,7 @@ export async function searchClients(p: { query: string | null; pii: boolean; lim
     ) s ON true
     WHERE (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
       AND (${term}::text IS NULL
            OR c.name ILIKE ${pat}
            OR p.full_name ILIKE ${pat}
@@ -124,7 +140,8 @@ function gapList(raw: unknown): string[] {
 }
 
 /** Card of a client: company, owner, contact person, current diagnostic, latest session, counts. */
-export async function clientCard(p: { companyId?: string; userId?: string; pii: boolean }): Promise<Record<string, unknown> | null> {
+export async function clientCard(p: { companyId?: string; userId?: string; pii: boolean; assignee: ClientFilter }): Promise<Record<string, unknown> | null> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return null
   if (p.companyId !== undefined && !COMPANY_ID_RE.test(p.companyId)) return null
   if (p.userId !== undefined && !UUID_RE.test(p.userId)) return null
   const companyId = p.companyId ?? null
@@ -141,6 +158,7 @@ export async function clientCard(p: { companyId?: string; userId?: string; pii: 
            OR (${companyId}::text IS NULL AND ${userId}::text IS NOT NULL AND c.user_id = ${userId}::uuid))
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
     LIMIT 1`
   const c = rows[0]
   if (!c) return null
@@ -271,7 +289,8 @@ export async function listDiagnostics(p: { companyId: string; pii: boolean; limi
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 /** Published report versions only — drafts, versions under review and withdrawn ones are never listed. */
-export async function listPublishedReports(p: { companyId: string | null; limit: number; offset: number }): Promise<{ items: Record<string, unknown>[]; hasMore: boolean }> {
+export async function listPublishedReports(p: { companyId: string | null; limit: number; offset: number; assignee: ClientFilter }): Promise<{ items: Record<string, unknown>[]; hasMore: boolean }> {
+  if (p.assignee !== null && !UUID_RE.test(p.assignee)) return { items: [], hasMore: false }
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT r.id::text, r.company_id, c.name AS company_name, r.report_type, r.version, r.title,
            r.confidence::float AS confidence, r.published_at, r.created_at
@@ -282,6 +301,7 @@ export async function listPublishedReports(p: { companyId: string | null; limit:
       AND (${p.companyId}::text IS NULL OR r.company_id = ${p.companyId})
       AND (c.user_id IS NULL OR (p.role IN ('client', 'owner')
            AND NOT EXISTS (SELECT 1 FROM public.staff_roles s WHERE s.user_id = c.user_id)))
+      AND (${p.assignee}::uuid IS NULL OR c.user_id IN (SELECT ua.user_id FROM public.user_assignments ua WHERE ua.assignee_id = ${p.assignee}::uuid))
     ORDER BY r.published_at DESC NULLS LAST, r.id
     LIMIT ${p.limit + 1} OFFSET ${p.offset}`
   return {

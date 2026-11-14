@@ -10,8 +10,15 @@
  *   'session'              — signed-in Supabase user (auth.getUser / getSessionUser / tenant resolve …)
  *   'staff:<perm>[,<perm>]' — GIGA staff via requireGiga* / guardComm / … holding ALL listed
  *                            permissions (lib/admin/rbac.ts PERMISSIONS);
- *                            'staff:profile-role' = staff by profiles.role (isStaffRole), no RBAC
- *   'expert'               — expert cabinet (resolveExpert / requireExpert)
+ *                            'staff:profile-role' = staff via lib/api-identity (getSessionRole /
+ *                            isStaffRole / getSessionStaff): the migration-140 rule of lib/access/actor.ts (staff_roles
+ *                            or an approved expert — never the legacy profiles.role alone) + the
+ *                            second factor, and the target client inside the caller's scope
+ *                            (mayActOnUser); no RBAC
+ *   'expert'               — expert cabinet (resolveExpert / requireExpert): an approved expert or a
+ *                            staff Admin / Super Admin (lib/access/actor.ts); a route that touches
+ *                            ONE client also scopes it (guardExpertClient / guardExpertCompany /
+ *                            guardExpertReport — tests/unit/access/actor-scope-routes.test.ts)
  *   'cron'                 — scheduler secret (isAuthorizedCron / rejectUnauthorizedCron / bearer CRON_SECRET)
  *   'webhook-signature'    — inbound webhook verified by a signature / secret token
  *   'internal-token'       — server-to-server call with x-internal-token (lib/internal-auth.ts)
@@ -328,6 +335,7 @@ export const ROUTE_AUTH_MANIFEST: Record<string, Partial<Record<HttpMethod, Rout
   '/api/v1/assistant/status': { GET: 'session' },
   '/api/v1/assistant/validate': { POST: 'session' },
   '/api/v1/auth/email-link': { POST: 'public:magic-link request, rate-limited per email and IP, uniform answer' },
+  '/api/v1/auth/sign-out': { POST: 'session' },
   '/api/v1/comm/messages': { POST: 'session' },
   '/api/v1/comm/thread': { GET: 'session' },
   '/api/v1/companies/period-goals': { GET: 'session', PATCH: 'session' },

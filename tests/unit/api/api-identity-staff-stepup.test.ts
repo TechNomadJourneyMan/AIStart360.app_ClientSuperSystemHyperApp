@@ -13,6 +13,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const SESSION = '11111111-1111-4111-8111-111111111111'
 const s = vi.hoisted(() => ({
   role: 'expert' as string | null,
+  status: 'approved',
+  staff: null as null | { role: string; client_scope?: string },
+  assigned: true,
   appMeta: {} as Record<string, unknown>,
   mfa: undefined as string | undefined,
   totpInDb: false,
@@ -59,6 +62,9 @@ const sb = {
 
 beforeEach(() => {
   s.role = 'expert'
+  s.status = 'approved'
+  s.staff = null
+  s.assigned = true
   s.appMeta = {}
   s.mfa = undefined
   s.totpInDb = false
@@ -70,6 +76,10 @@ beforeEach(() => {
     if (s.dbDown) return new Response('down', { status: 503 })
     if (String(url).includes('/user_security')) return new Response(JSON.stringify(s.totpInDb ? [{ totp_enabled: true }] : []))
     if (String(url).includes('/webauthn_credentials')) return new Response(JSON.stringify(Array.from({ length: s.passkeysInDb }, () => ({ user_id: 'u-1' }))))
+    // lib/access/actor.ts (migration 140 rule): profile, staff_roles, user_assignments.
+    if (String(url).includes('/profiles')) return new Response(JSON.stringify(s.role ? [{ role: s.role, status: s.status }] : []))
+    if (String(url).includes('/staff_roles')) return new Response(JSON.stringify(s.staff ? [s.staff] : []))
+    if (String(url).includes('/user_assignments')) return new Response(JSON.stringify(s.assigned ? [{ user_id: OTHER }] : []))
     return new Response('[]')
   }))
 })
@@ -111,6 +121,31 @@ describe('R-005: staff rights on /api/v1 need the second factor of this session'
   it('R-005: fails closed when the MFA state cannot be read', async () => {
     s.dbDown = true
     expect(await getSessionRole(sb, 'u-1')).toBeNull()
+  })
+
+  it('SR-02: the legacy profile role is not staff; a non-approved expert is nobody', async () => {
+    for (const role of ['admin', 'super_admin', 'manager', 'analyst']) {
+      s.role = role
+      expect(await getSessionRole(sb, 'u-1')).toBeNull()
+      expect(await resolveTargetUserId(sb, OTHER)).toEqual({ error: 'forbidden' })
+    }
+    s.role = 'expert'
+    s.status = 'rejected'
+    expect(await getSessionRole(sb, 'u-1')).toBeNull()
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ error: 'forbidden' })
+  })
+
+  it('SR-02: an expert acts only for assigned clients; a staff admin (staff_roles) for any', async () => {
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ userId: OTHER })
+    s.assigned = false
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ error: 'forbidden' })
+    s.role = 'client'
+    s.staff = { role: 'admin', client_scope: 'all' }
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ userId: OTHER })
+    s.staff = { role: 'super_expert', client_scope: 'assigned' }
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ error: 'forbidden' })
+    s.staff = { role: 'analyst', client_scope: 'all' }
+    expect(await resolveTargetUserId(sb, OTHER)).toEqual({ error: 'forbidden' })
   })
 
   it('R-005: clients are unaffected — same role, no extra Auth round trip', async () => {

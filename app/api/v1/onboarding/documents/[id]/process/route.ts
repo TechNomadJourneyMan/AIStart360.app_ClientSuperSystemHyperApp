@@ -5,7 +5,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { enqueueAgentTask } from '@/lib/agents/queue'
-import { getSessionRole, getSessionUser, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import {
   attachOwnerCompany,
   getDocument,
@@ -127,5 +127,8 @@ async function mayProcess(
     // Not attached yet: only the uploader's own company can be attached below.
     return 'ok'
   }
-  return isStaffRole(await getSessionRole(sb, userId)) ? 'ok' : 'denied'
+  // Staff / an expert: only for a client in their scope (migration 140 rule,
+  // lib/access/actor.ts) — never from the legacy profiles.role alone (SR-02).
+  const owner = typeof doc.user_id === 'string' ? doc.user_id : null
+  return owner && owner !== userId && (await mayActOnUser(sb, userId, owner)) ? 'ok' : 'denied'
 }

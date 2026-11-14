@@ -5,6 +5,7 @@ import { getSetting } from '@/lib/settings/store'
 import { logActivity } from '@/lib/activity/log'
 import { devModeOnForServerRequest } from '@/lib/dev/dev-request'
 import { countCredentials } from '@/lib/webauthn/store'
+import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 import { getUserSecurity } from './store'
 import { MFA_COOKIE_NAME, currentStepUpSessionKey, verifyStepUp } from './step-up'
 
@@ -26,6 +27,11 @@ import { MFA_COOKIE_NAME, currentStepUpSessionKey, verifyStepUp } from './step-u
  *
  * Staff must keep a factor while the platform setting `staff_require_mfa` is
  * on: removing the last one is refused (lastFactorRefusal()).
+ *
+ * SR-07: never from an impersonation session (cookie or the server-side
+ * binding of the GoTrue session), not even the first factor and not in edit
+ * mode — otherwise an admin «от имени» plants their own TOTP / passkey and
+ * walks away with the backup codes (lib/impersonation/guard.ts).
  */
 
 export interface FactorState {
@@ -77,6 +83,8 @@ export async function guardFactorChange(
   user: { id: string },
   action: string,
 ): Promise<FactorGuard> {
+  const impersonated = await refuseDuringImpersonation(request, user, action)
+  if (impersonated) return { ok: false, response: impersonated }
   let state: FactorState
   try {
     state = await readFactorState(user.id)

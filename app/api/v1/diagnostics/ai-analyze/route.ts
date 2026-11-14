@@ -17,7 +17,7 @@ import { plainAnswer } from '@/lib/survey/plain'
 import type { Company } from '@/types/onboarding'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { assertAiBudget, isAiBudgetError, aiBudgetExceededResponse } from '@/lib/ai/budget'
 import { recordAiCacheHit, setAiActor } from '@/lib/ai/usage'
@@ -68,7 +68,7 @@ async function handlePost(req: NextRequest) {
     if (!hasValidInternalToken(req, { userId: String(user_id), diagnosticId: String(diagnostic_id) })) {
       const caller = await getSessionUser(sb)
       if (!caller) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
-      if (caller.id !== user_id && !isStaffRole(await getSessionRole(sb, caller.id))) {
+      if (!(await mayActOnUser(sb, caller.id, String(user_id)))) {
         return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
       }
       if (await isRateLimitedKey(caller.id, 'diagnostics-ai-analyze', { max: 6, windowMs: 60_000 })) {

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
 import { logAudit } from '@/lib/audit'
-import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert } from '@/lib/expert-auth'
 import { profanityResponse } from '@/lib/moderation/http'
 const MAX_TARGET_ID = 200  // see lib/comment-targets.ts — free-form TEXT, cap length
 
@@ -155,10 +155,13 @@ export async function GET(req: NextRequest) {
   if (!clientId) return NextResponse.json({ data: [] })
 
   // A client reads the comments about itself; anyone else's need an approved
-  // expert with the second factor where required.
+  // expert with the second factor where required, and the client must be
+  // assigned to that expert (staff Admin / Super Admin — any client): SR-03.
   if (clientId !== user.id) {
     const auth = await resolveExpert()
     if (!auth.ok) return expertBlockResponse(auth.block)
+    const denied = await guardExpertClient(auth.viewer, clientId)
+    if (denied) return denied
   }
 
   let qs = `expert_comments?client_id=eq.${clientId}`
@@ -201,6 +204,9 @@ export async function POST(req: NextRequest) {
   const targetId = rawTarget || null  // empty string → general feed
 
   if (!clientId) return NextResponse.json({ error: 'clientId required' }, { status: 400 })
+  // Only about an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
   if (!text || text.length < 1 || text.length > 5000)
     return NextResponse.json({ error: 'text must be 1..5000 chars' }, { status: 400 })
   const profane = profanityResponse({ text })

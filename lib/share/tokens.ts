@@ -65,6 +65,12 @@ export interface CreateShareInput {
   expiresInDays?: number
 }
 
+/**
+ * Lifetime of a NEW link minted through POST /api/share (R-136). Links that
+ * already exist keep the expiry they were created with (PO decision).
+ */
+export const SHARE_DEFAULT_TTL_DAYS = 90
+
 /** Generate a URL-safe random share token. */
 export function generateShareToken(): string {
   return randomBytes(16).toString('base64url')
@@ -197,6 +203,35 @@ export async function revokeShare(token: string): Promise<number> {
     return Array.isArray(rows) ? rows.length : 0
   } catch (err) {
     console.warn('[share/tokens] revokeShare failed (best-effort)', err)
+    return 0
+  }
+}
+
+/**
+ * R-136: an expert's links to a client stop working when the client is no
+ * longer assigned to that expert. Revokes every live link created by
+ * `assigneeId` for a company owned by `clientUserId`. Best-effort like
+ * revokeShare: returns the number of revoked links, 0 on any error (the
+ * assignment change itself must not fail because of it).
+ */
+export async function revokeSharesOfAssignee(clientUserId: string, assigneeId: string): Promise<number> {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!UUID.test(clientUserId) || !UUID.test(assigneeId) || clientUserId === assigneeId) return 0
+  try {
+    const comp = await sr(`companies?user_id=eq.${encodeURIComponent(clientUserId)}&select=id`, { method: 'GET' })
+    if (!comp.ok) return 0
+    const ids = ((await comp.json().catch(() => [])) as Array<{ id?: string }>).map((r) => r.id).filter((id): id is string => !!id)
+    if (!ids.length) return 0
+    const list = ids.map((id) => `"${id.replace(/"/g, '')}"`).join(',')
+    const res = await sr(
+      `shared_reports?createdById=eq.${encodeURIComponent(assigneeId)}&companyId=in.(${encodeURIComponent(list)})&revoked=eq.false`,
+      { method: 'PATCH', prefer: 'return=representation', body: JSON.stringify({ revoked: true }) },
+    )
+    if (!res.ok) return 0
+    const rows = (await res.json().catch(() => [])) as unknown[]
+    return Array.isArray(rows) ? rows.length : 0
+  } catch (err) {
+    console.warn('[share/tokens] revokeSharesOfAssignee failed (best-effort)', err)
     return 0
   }
 }

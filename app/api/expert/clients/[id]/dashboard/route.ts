@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 // the specified client. Expert-only; reads via service-role to bypass RLS.
 
 import { NextResponse } from 'next/server'
-import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert, srGet } from '@/lib/expert-auth'
 import { OFFICIAL_SNAPSHOT_COLUMNS, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 interface Diagnostic {
@@ -40,6 +40,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ error: 'client id required' }, { status: 400 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
 
   // Current diagnostic
   const diagRows = await srGet<Diagnostic[]>(

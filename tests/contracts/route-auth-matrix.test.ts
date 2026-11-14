@@ -76,7 +76,7 @@ const STAFF_DIRECT = /\b(requireGiga|requireGigaClient|requireGigaCompany|requir
 const STAFF_DELEGATED = /\b(guardPointAExpert|guardPlanRoute|resolveTokenManager|getGigaActor|isGigaSuperAdmin)\s*\(/
 const EVIDENCE: Record<string, RegExp> = {
   session:
-    /\.auth\.getUser\s*\(|\b(getSessionUser|getSessionUserId|authorizeClient|requireCrmOrg|resolveTenant\w*|handleDocumentFinalize|decideSuggestion|resolveJourneyActor|resolveTargetUserId|readImpersonation|liveFileAccessDeps|resolveCallerContext|sessionUser)\s*\(|from '@\/lib\/point-b\/whatif-http'/,
+    /\.auth\.getUser\s*\(|\b(getSessionUser|getSessionUserId|authorizeClient|requireCrmOrg|resolveTenant\w*|handleDocumentFinalize|decideSuggestion|resolveJourneyActor|resolveTargetUserId|readImpersonation|endImpersonationInThisBrowser|liveFileAccessDeps|resolveCallerContext|sessionUser)\s*\(|from '@\/lib\/point-b\/whatif-http'/,
   expert: /\b(resolveExpert|requireExpert|resolveExpertBotUser|authorizeUserDataRead|resolveTokenManager)\s*\(/,
   cron: /\b(isAuthorizedCron|rejectUnauthorizedCron|isBearerAuthorized)\s*\(/,
   'internal-token': /\b(hasValidInternalToken|verifyInternalToken)\s*\(/,
@@ -158,7 +158,7 @@ describe('route auth matrix (R-046)', () => {
           if (kind === 'staff') {
             const perms = a.slice(6)
             if (perms === 'profile-role') {
-              if (!/\bisStaffRole\s*\(/.test(src)) problems.push(`${key} ${m}: ${a} but no isStaffRole()`)
+              if (!/\b(isStaffRole|getSessionStaff)\s*\(/.test(src)) problems.push(`${key} ${m}: ${a} but no isStaffRole() / getSessionStaff()`)
               continue
             }
             const direct = STAFF_DIRECT.test(src)

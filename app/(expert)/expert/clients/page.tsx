@@ -185,10 +185,10 @@ export default function ExpertClientsPage() {
             Expert Portal
           </p>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">
-            Клиенты
+            Мои клиенты
           </h1>
           <p className="text-on-surface-variant mt-1.5 text-sm">
-            Все клиенты платформы — оставляйте комментарии
+            Клиенты, назначенные вам, — оставляйте комментарии
           </p>
         </div>
 

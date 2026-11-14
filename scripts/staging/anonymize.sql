@@ -55,6 +55,17 @@ SELECT id, row_number() OVER (ORDER BY "createdAt" NULLS LAST, id)::int AS n, na
 FROM public.companies;
 CREATE UNIQUE INDEX ON _c (id);
 
+-- Ключи вопросов анкеты с контактами (lib/survey/questions.ts шаг 1 + медицинская и e-commerce-анкеты).
+-- kind: company → «Компания N», person → «Пользователь N», email → staging-адрес, null → {"value": null}.
+DROP TABLE IF EXISTS pg_temp._ck;
+CREATE TEMP TABLE _ck (key text PRIMARY KEY, kind text NOT NULL);
+INSERT INTO _ck VALUES
+  ('s1_company_name', 'company'), ('medical_clinic_name', 'company'),
+  ('s1_contact_name', 'person'), ('medical_full_name', 'person'), ('s9n_responsible_person', 'person'),
+  ('s1_contact_email', 'email'), ('medical_email', 'email'),
+  ('s1_contact_phone', 'null'), ('medical_phone', 'null'),
+  ('s1_website', 'null'), ('s1_social_media', 'null'), ('medical_clinic_website', 'null'), ('ec_website', 'null');
+
 -- Карта e-mail: старый (нижний регистр) → новый.
 DROP TABLE IF EXISTS pg_temp._em;
 CREATE TEMP TABLE _em (old text PRIMARY KEY, new text NOT NULL);
@@ -114,7 +125,7 @@ WHERE length(btrim(coalesce(c.contact_name, ''))) >= 4 AND NOT pg_temp.is_placeh
 ON CONFLICT DO NOTHING;
 INSERT INTO _nm
 SELECT DISTINCT btrim(sa.answer->>'value'), 'Контакт', true FROM public.survey_answers sa
-WHERE sa.question_key = 's1_contact_name' AND jsonb_typeof(sa.answer->'value') = 'string'
+WHERE sa.question_key IN (SELECT key FROM _ck WHERE kind = 'person') AND jsonb_typeof(sa.answer->'value') = 'string'
   AND length(btrim(sa.answer->>'value')) >= 4 AND NOT pg_temp.is_placeholder(sa.answer->>'value')
 ON CONFLICT DO NOTHING;
 -- Названия компаний: полностью и «ядро» без формы собственности и кавычек.
@@ -124,7 +135,7 @@ WHERE length(btrim(coalesce(_c.old_name, ''))) >= 4 AND NOT pg_temp.is_placehold
 ON CONFLICT DO NOTHING;
 INSERT INTO _nm
 SELECT DISTINCT btrim(sa.answer->>'value'), 'Компания', true FROM public.survey_answers sa
-WHERE sa.question_key = 's1_company_name' AND jsonb_typeof(sa.answer->'value') = 'string'
+WHERE sa.question_key IN (SELECT key FROM _ck WHERE kind = 'company') AND jsonb_typeof(sa.answer->'value') = 'string'
   AND length(btrim(sa.answer->>'value')) >= 4 AND NOT pg_temp.is_placeholder(sa.answer->>'value')
 ON CONFLICT DO NOTHING;
 INSERT INTO _nm
@@ -164,7 +175,9 @@ UPDATE _nm SET re = '(^|[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІ
   || ')(?=$|[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі0-9_])';
 -- Для финальной проверки: исходные полные строки (не отдельные слова).
 DROP TABLE IF EXISTS pg_temp._orig;
-CREATE TEMP TABLE _orig AS SELECT old FROM _nm WHERE ci AND length(old) >= 5;
+CREATE TEMP TABLE _orig AS
+SELECT old, re, CASE WHEN new LIKE 'Пользователь%' OR new LIKE 'Контакт%' THEN 'person' ELSE 'org' END AS kind
+FROM _nm WHERE ci AND length(old) >= 5;
 
 -- Перехеширование с солью (своя на каждый прогон): формат sha256-hex (64 символа) сохраняется
 -- (CHECK-ограничения), связи внутри таблицы — тоже; исходный хэш восстановить нельзя.
@@ -179,7 +192,7 @@ $f$;
 CREATE OR REPLACE FUNCTION pg_temp.re_email() RETURNS text LANGUAGE sql IMMUTABLE AS
 $f$ SELECT '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' $f$;
 CREATE OR REPLACE FUNCTION pg_temp.re_phone() RETURNS text LANGUAGE sql IMMUTABLE AS
-$f$ SELECT '(\+\d[\d\s()-]{8,16}\d)|((^|[^\d.,])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}($|[^\d]))|((^|[^\d.,])7[07]\d{9}($|[^\d]))' $f$;
+$f$ SELECT '(\+\d[\d\s()-]{8,16}\d)|((^|[^0-9A-Za-z.,+])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}($|[^0-9A-Za-z]))|((^|[^\d.,])7[07]\d{9}($|[^0-9A-Za-z]))' $f$;
 
 -- Текст: e-mail → карта / redacted, телефоны → +70000000000, имена → замены.
 CREATE OR REPLACE FUNCTION pg_temp.scrub(t text) RETURNS text LANGUAGE plpgsql AS $f$
@@ -195,8 +208,8 @@ BEGIN
   END IF;
   IF s ~ '\d{7}|\d[\s()-]\d' THEN
     s := regexp_replace(s, '\+\d[\d\s()-]{8,16}\d', '+70000000000', 'g');
-    s := regexp_replace(s, '(^|[^\d.,])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?=$|[^\d])', '\1+70000000000', 'g');
-    s := regexp_replace(s, '(^|[^\d.,+])7[07]\d{9}(?=$|[^\d])', '\1+70000000000', 'g');
+    s := regexp_replace(s, '(^|[^0-9A-Za-z.,+])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?=$|[^0-9A-Za-z])', '\1+70000000000', 'g');
+    s := regexp_replace(s, '(^|[^0-9A-Za-z.,+])7[07]\d{9}(?=$|[^0-9A-Za-z])', '\1+70000000000', 'g');
   END IF;
   lo := lower(s);
   FOR r IN SELECT old, new, ci, re FROM _nm ORDER BY length(old) DESC LOOP
@@ -216,7 +229,8 @@ BEGIN
     WHEN 'string' THEN RETURN to_jsonb(pg_temp.scrub(j #>> '{}'));
     WHEN 'object' THEN
       out := '{}'::jsonb;
-      FOR k, v IN SELECT * FROM jsonb_each(j) LOOP out := out || jsonb_build_object(k, pg_temp.scrub_j(v)); END LOOP;
+      -- ключи тоже (в jsonb бывают e-mail/имена в роли ключа)
+      FOR k, v IN SELECT * FROM jsonb_each(j) LOOP out := out || jsonb_build_object(pg_temp.scrub(k), pg_temp.scrub_j(v)); END LOOP;
       RETURN out;
     WHEN 'array' THEN
       SELECT coalesce(jsonb_agg(pg_temp.scrub_j(e) ORDER BY o), '[]'::jsonb) INTO out
@@ -402,22 +416,39 @@ UPDATE market.persons x SET full_name = 'Персона ' || s.n, name_normalize
   iin = NULL, contacts = NULL, raw = NULL, role_history = NULL
 FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) n FROM market.persons) s WHERE s.id = x.id;
 
--- ─── 4. Анкета: контакты по ключу вопроса (lib/survey/questions.ts, шаг 1) ──
+-- ─── 4. Анкета и Точка А: контакты по ключу вопроса (таблица _ck) ──────────
 
-UPDATE public.survey_answers sa SET answer = pg_temp.set_value(sa.answer, CASE sa.question_key
-    WHEN 's1_company_name' THEN to_jsonb(coalesce(
-      (SELECT 'Компания ' || n FROM _c WHERE _c.id = sa.company_id),
-      (SELECT 'Компания ' || min(n) FROM _c WHERE _c.user_id = sa.user_id),
-      'Компания U' || coalesce((SELECT n::text FROM _u WHERE _u.id = sa.user_id), '?')))
-    WHEN 's1_contact_name' THEN to_jsonb('Пользователь ' || coalesce((SELECT n::text FROM _u WHERE _u.id = sa.user_id), '?'))
-    WHEN 's1_contact_email' THEN to_jsonb(coalesce((SELECT new_email FROM _u WHERE _u.id = sa.user_id), 'redacted@staging.aistart360.test'))
-    ELSE 'null'::jsonb END)
-WHERE sa.question_key IN ('s1_company_name', 's1_contact_name', 's1_contact_email', 's1_contact_phone', 's1_website', 's1_social_media');
+-- Замена значения контактного вопроса (jsonb) для пользователя/компании.
+CREATE OR REPLACE FUNCTION pg_temp.contact_value(p_kind text, p_user uuid, p_company text) RETURNS jsonb LANGUAGE sql AS $f$
+  SELECT CASE p_kind
+    WHEN 'company' THEN to_jsonb(coalesce(
+      (SELECT 'Компания ' || n FROM pg_temp._c WHERE _c.id = p_company),
+      (SELECT 'Компания ' || min(n) FROM pg_temp._c WHERE _c.user_id = p_user),
+      'Компания U' || coalesce((SELECT n::text FROM pg_temp._u WHERE _u.id = p_user), '?')))
+    WHEN 'person' THEN to_jsonb('Пользователь ' || coalesce((SELECT n::text FROM pg_temp._u WHERE _u.id = p_user), '?'))
+    WHEN 'email' THEN to_jsonb(coalesce((SELECT new_email FROM pg_temp._u WHERE _u.id = p_user), 'redacted@staging.aistart360.test'))
+    ELSE 'null'::jsonb END
+$f$;
 
-UPDATE public.survey_answer_history SET
-  old_value = CASE WHEN old_value IS NULL THEN NULL ELSE pg_temp.set_value(old_value, to_jsonb('[обезличено]'::text)) END,
-  new_value = CASE WHEN new_value IS NULL THEN NULL ELSE pg_temp.set_value(new_value, to_jsonb('[обезличено]'::text)) END
-WHERE question_key IN ('s1_company_name', 's1_contact_name', 's1_contact_email', 's1_contact_phone', 's1_website', 's1_social_media');
+UPDATE public.survey_answers sa
+SET answer = pg_temp.set_value(sa.answer, pg_temp.contact_value(ck.kind, sa.user_id, sa.company_id))
+FROM _ck ck WHERE ck.key = sa.question_key;
+
+UPDATE public.survey_answer_history h SET
+  old_value = CASE WHEN h.old_value IS NULL THEN NULL ELSE pg_temp.set_value(h.old_value, to_jsonb('[обезличено]'::text)) END,
+  new_value = CASE WHEN h.new_value IS NULL THEN NULL ELSE pg_temp.set_value(h.new_value, to_jsonb('[обезличено]'::text)) END
+FROM _ck ck WHERE ck.key = h.question_key;
+
+-- Точка А: значения, извлечённые из тех же вопросов (field_key survey.<ключ>) и название компании.
+UPDATE public.point_a_values v SET
+  raw_value = NULL,
+  normalized_value = CASE WHEN ck.kind = 'null' THEN NULL
+                          ELSE pg_temp.contact_value(ck.kind, CASE WHEN v.user_id ~ '^[0-9a-f-]{36}$' THEN v.user_id::uuid END, v.company_id) END
+FROM _ck ck
+WHERE v.field_key = 'survey.' || ck.key;
+UPDATE public.point_a_values v SET raw_value = NULL,
+  normalized_value = pg_temp.contact_value('company', CASE WHEN v.user_id ~ '^[0-9a-f-]{36}$' THEN v.user_id::uuid END, v.company_id)
+WHERE v.field_key = 'company.name';
 
 -- ─── 5. Общая чистка всех текстовых/jsonb/массивных колонок public и market ──
 
@@ -434,9 +465,9 @@ BEGIN
       AND c.is_generated = 'NEVER'
       AND (c.data_type IN ('text', 'character varying', 'jsonb', 'json') OR c.udt_name IN ('citext', '_text', '_varchar'))
       -- не трогаем первичные id и хэши; остальные колонки чистятся только там, где нашлось совпадение
-      AND c.column_name !~* '(^id$|hash$|checksum$|sha256$|fingerprint$)'
-      -- перечислимые технические колонки (роль, статус, тип…) — не ПДн
-      AND c.column_name !~* '^(role|status|type|kind|channel|source|scenario|tier|segment|stage|level|priority|severity|category|mode|state|vertical|currency|unit|provider|action|operation|event_type|entity_type|actor_kind|actor_role|author_role|staff_role|permission|decision|capability|surface|direction|doc_type|parse_status|security_status)$'
+      AND c.column_name !~* '(^id$|hash$|checksum$|sha256$|fingerprint$|_key$|^key$)'
+      -- перечислимые технические текстовые колонки (роль, статус, тип…) — не ПДн; jsonb чистим всегда
+      AND NOT (c.data_type <> 'jsonb' AND c.column_name ~* '^(role|status|type|kind|channel|source|scenario|tier|segment|stage|level|priority|severity|category|mode|state|vertical|currency|unit|provider|action|operation|event_type|entity_type|actor_kind|actor_role|author_role|staff_role|permission|decision|capability|surface|direction|doc_type|parse_status|security_status)$')
     ORDER BY 1, 2, 3
   LOOP
     IF r.dt IN ('jsonb') THEN

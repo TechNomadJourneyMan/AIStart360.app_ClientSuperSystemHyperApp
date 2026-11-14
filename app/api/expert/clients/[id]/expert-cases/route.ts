@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 // The client reads their own cases via session-scoped routes — never this one.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, guardExpertClient, resolveExpert, srGet } from '@/lib/expert-auth'
 import { notifyUser, notifyAdmins } from '@/lib/notifications'
 import type { ExpertCase } from '@/lib/assistant/types'
 import { profanityResponse } from '@/lib/moderation/http'
@@ -51,6 +51,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ ok: false, error: 'client id required' }, { status: 400 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
 
   const rows = await srGet<Array<Record<string, unknown>>>(
     `expert_cases?user_id=eq.${clientId}` +
@@ -71,6 +74,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ ok: false, error: 'client id required' }, { status: 400 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(auth.viewer, clientId)
+  if (denied) return denied
 
   let body: {
     caseId?: string

@@ -176,7 +176,7 @@ describe('the expert portal API (the gate has no request object, only next/heade
   it('dev mode on → an expert without a second factor passes where they were told to enrol', async () => {
     expect(await resolveExpert()).toEqual({ ok: false, block: 'enroll' })
     devBrowser()
-    expect(await resolveExpert()).toEqual({ ok: true, viewer: { id: 'u1', role: 'expert', email: 'dev-staff@dev.aistart360.test' } })
+    expect(await resolveExpert()).toEqual({ ok: true, viewer: { id: 'u1', role: 'expert', email: 'dev-staff@dev.aistart360.test', clientScope: 'assigned' } })
   })
 
   it('dev mode on → an enrolled expert passes without the step-up cookie', async () => {

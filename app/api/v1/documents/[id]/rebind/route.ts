@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getSessionStaff } from '@/lib/api-identity'
 import type { ParsedDataField } from '@/lib/documents/extract'
 import { saveParsedData } from '@/lib/documents/repository'
 import { bindFieldsToMetrics } from '@/lib/documents/bind-fields'
@@ -57,17 +58,13 @@ export async function POST(
     return NextResponse.json({ ok: false, error: 'document not found' }, { status: 404 })
   }
 
-  // 3. Owner-or-admin authorization
+  // 3. Owner-or-admin authorization. «Admin» is a staff Admin / Super Admin
+  // (staff_roles, approved, second factor) — the migration 140 rule
+  // (lib/access/actor.ts); the legacy profiles.role admin alone no longer
+  // counts (SR-02).
   if (doc.user_id !== user.id) {
-    const { data: profile } = await sb
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    const role = (profile?.role ?? '').toString().toLowerCase()
-    const isAdmin =
-      role === 'admin' || role === 'super_admin' || role === 'superadmin'
+    const staff = await getSessionStaff(sb, user.id)
+    const isAdmin = staff?.role === 'admin' || staff?.role === 'super_admin'
     if (!isAdmin) {
       return NextResponse.json(
         { ok: false, error: 'forbidden' },

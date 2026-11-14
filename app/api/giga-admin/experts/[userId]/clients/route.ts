@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { revokeSharesOfAssignee } from '@/lib/share/tokens'
 import { z } from 'zod'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
@@ -102,6 +103,11 @@ export async function POST(req: NextRequest, { params }: { params: { userId: str
       { onConflict: 'user_id' },
     )
     if (error) return NextResponse.json({ ok: false, error: 'Не удалось назначить клиентов' }, { status: 500 })
+    // R-136: the previous assignees' public links to these clients stop working.
+    await Promise.all(target.map((id) => {
+      const prev = prevBy.get(id)
+      return prev ? revokeSharesOfAssignee(id, prev) : 0
+    }))
     await Promise.all(target.map((id) => recordAdminAction(actor, {
       action: 'user.assigned', entityType: 'user', entityId: id, targetUserId: id,
       oldValue: { assignee_id: prevBy.get(id) ?? null }, newValue: { assignee_id: params.userId },
@@ -136,6 +142,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { userId: s
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось снять назначение' }, { status: 500 })
 
   const removed = ((data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id)
+  // R-136: the expert's public links to the unassigned clients stop working.
+  await Promise.all(removed.map((id) => revokeSharesOfAssignee(id, params.userId)))
   await Promise.all(removed.map((id) => recordAdminAction(actor, {
     action: 'user.unassigned', entityType: 'user', entityId: id, targetUserId: id,
     oldValue: { assignee_id: params.userId }, newValue: { assignee_id: null },

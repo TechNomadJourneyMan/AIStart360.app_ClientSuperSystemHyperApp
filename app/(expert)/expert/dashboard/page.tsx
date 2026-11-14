@@ -162,7 +162,7 @@ export default function ExpertDashboardPage() {
               href="/expert/clients"
               className="text-xs text-primary hover:underline inline-flex items-center gap-1"
             >
-              Все клиенты
+              Мои клиенты
               <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
             </Link>
           </div>

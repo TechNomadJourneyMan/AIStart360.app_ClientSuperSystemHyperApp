@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { getSessionStaff, getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { profanityResponse } from '@/lib/moderation/http'
 import { staffAuthorRole, writeWithAttribution } from '@/lib/survey/attribution'
 
@@ -17,17 +17,24 @@ function isValidBlock(block: string): block is GriBlock {
 // client. This route had no auth and no role check — any caller could read or
 // write "expert notes" for an arbitrary user_id. Require an authenticated staff
 // (expert/admin) session before touching another user's notes.
-async function requireStaff(sb: ReturnType<typeof createServerClient>): Promise<NextResponse | null> {
-  const staff = await sessionStaff(sb)
+// The staff rule is that of migration 140 (getSessionStaff → lib/access/actor.ts:
+// staff_roles or an approved expert, never the legacy profiles.role alone)
+// and the target client must be inside the caller's scope (SR-02): an expert
+// reaches only the clients assigned to them.
+async function requireStaff(sb: ReturnType<typeof createServerClient>, targetUserId: string): Promise<NextResponse | null> {
+  const staff = await sessionStaff(sb, targetUserId)
   return 'response' in staff ? staff.response : null
 }
 
-async function sessionStaff(sb: ReturnType<typeof createServerClient>): Promise<{ response: NextResponse } | { id: string; role: string }> {
+async function sessionStaff(sb: ReturnType<typeof createServerClient>, targetUserId: string): Promise<{ response: NextResponse } | { id: string; role: string }> {
   const user = await getSessionUser(sb)
   if (!user) return { response: NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 }) }
-  const role = await getSessionRole(sb, user.id)
-  if (!isStaffRole(role)) return { response: NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 }) }
-  return { id: user.id, role: role as string }
+  const staff = await getSessionStaff(sb, user.id)
+  if (!staff) return { response: NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 }) }
+  if (targetUserId !== user.id && !(await mayActOnUser(sb, user.id, targetUserId))) {
+    return { response: NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 }) }
+  }
+  return staff
 }
 
 // GET /api/v1/gri/expert-notes?user_id=xxx
@@ -39,7 +46,7 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = createServerClient()
-  const denied = await requireStaff(sb)
+  const denied = await requireStaff(sb, userId)
   if (denied) return denied
 
   const { data, error } = await sb
@@ -93,7 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = createServerClient()
-    const staff = await sessionStaff(sb)
+    const staff = await sessionStaff(sb, String(user_id))
     if ('response' in staff) return staff.response
 
     const question_key = `gri_expert_${block}`

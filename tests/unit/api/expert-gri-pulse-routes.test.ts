@@ -9,6 +9,8 @@ vi.mock('@/lib/expert-auth', () => ({
   requireExpert: async () => ({ id: 'expert-1', role: 'expert' }),
   resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'expert', email: null } }),
   expertBlockResponse: () => new Response(null, { status: 403 }),
+  // The client is assigned (scope checks: tests/unit/access/actor-scope-routes.test.ts).
+  guardExpertClient: async () => null,
   srGet: async (path: string) => { state.paths.push(path); return state.rows },
 }))
 

@@ -46,7 +46,7 @@ const OK_RL: RateLimitResult = { limited: false, reason: 'ok', limit: 120, remai
 function principal(scopes: McpScope[], allowed: McpScope[] = scopes): AuthOutcome {
   return {
     ok: true,
-    principal: { userId: '11111111-1111-4111-8111-111111111111', email: 'a@staff.local', role: { kind: 'staff', staffRole: 'analyst' }, allowed },
+    principal: { userId: '11111111-1111-4111-8111-111111111111', email: 'a@staff.local', role: { kind: 'staff', staffRole: 'analyst' }, allowed, clientScope: 'all' },
     credential: { kind: 'pat', id: '22222222-2222-4222-8222-222222222222', scopes, clientId: null },
     scopes: scopes.filter((s) => allowed.includes(s)),
   }
@@ -175,7 +175,7 @@ describe('modern era (2026-07-28)', () => {
     expect(b.result!.structuredContent.items[0].company_id).toBe('co-1')
     expect(typeof b.result!.structuredContent.next_cursor).toBe('string')
     expect(JSON.parse(b.result!.content[0].text)).toEqual(b.result!.structuredContent)
-    expect(vi.mocked(data.searchClients)).toHaveBeenCalledWith({ query: 'ivan@corp.kz', pii: false, limit: 1, offset: 0 })
+    expect(vi.mocked(data.searchClients)).toHaveBeenCalledWith({ query: 'ivan@corp.kz', pii: false, limit: 1, offset: 0, assignee: null })
     const row = audits.find((a) => a.method === 'tools/call')!
     expect(row).toMatchObject({ tool: 'search_clients', status: 'ok', credentialKind: 'pat', protocolVersion: MODERN })
     expect(JSON.stringify(row)).toContain('ivan@corp.kz') // raw args reach the writer…

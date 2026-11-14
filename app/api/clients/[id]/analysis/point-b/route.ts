@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { getOfficialPointA, pointAFromOfficial } from '@/lib/point-a/official'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { requireExpert } from '@/lib/expert-auth'
+import { guardExpertClient, requireExpert } from '@/lib/expert-auth'
 import { calculatePointB } from '@/lib/point-b-engine'
 import { safeErrorMessage } from '@/lib/api-error'
 import { unwrapAnswer } from '@/lib/survey/answer-value'
@@ -17,6 +17,9 @@ import { unwrapAnswer } from '@/lib/survey/answer-value'
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   const viewer = await requireExpert()
   if (!viewer) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  // Only an assigned client (staff Admin / Super Admin — any): SR-03.
+  const denied = await guardExpertClient(viewer, params.id)
+  if (denied) return denied
   try {
     const sb = createServerClient()
 

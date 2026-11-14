@@ -15,7 +15,7 @@ CREATE TEMP TABLE _pii (check_name text, tbl text, col text, bad bigint);
 DO $$
 DECLARE r record; e bigint; p bigint;
   re_email text := '[A-Za-z0-9._%+-]+@(?!(staging|dev)\.aistart360\.test)[A-Za-z0-9.-]+\.[A-Za-z]{2,}';
-  re_phone text := '(\+\d[\d\s()-]{8,16}\d)|((^|[^\d.,])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}($|[^\d]))|((^|[^\d.,+])7[07]\d{9}($|[^\d]))';
+  re_phone text := '((^|[^0-9A-Za-z])\+\d[\d\s()-]{8,16}\d)|((^|[^0-9A-Za-z.,+])8[\s(-]?7\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}($|[^0-9A-Za-z]))|((^|[^0-9A-Za-z.,+])7[07]\d{9}($|[^0-9A-Za-z]))';
 BEGIN
   FOR r IN
     SELECT c.table_schema AS s, c.table_name AS t, c.column_name AS col
@@ -65,10 +65,12 @@ UNION ALL SELECT 'public.profiles contacts', 'public.profiles', 'phone/avatar/te
     OR telegram_username IS NOT NULL OR telegram_link_code IS NOT NULL OR telegram_link_token_hash IS NOT NULL
 UNION ALL SELECT 'public.companies', 'public.companies', 'name/contact_*', count(*) FROM public.companies
  WHERE name !~ '^Компания ' OR contact_name IS NOT NULL OR contact_phone IS NOT NULL OR contact_email IS NOT NULL
-UNION ALL SELECT 'survey contacts', 'public.survey_answers', 'answer (s1_contact_*, s1_website, s1_social_media)', count(*)
- FROM public.survey_answers WHERE question_key IN ('s1_contact_phone', 's1_website', 's1_social_media') AND answer->'value' <> 'null'::jsonb
-UNION ALL SELECT 'survey company name', 'public.survey_answers', 'answer (s1_company_name)', count(*)
- FROM public.survey_answers WHERE question_key = 's1_company_name' AND answer->>'value' !~ '^Компания '
+UNION ALL SELECT 'survey phones/sites', 'public.survey_answers', 'answer (*_phone, *_website, s1_social_media)', count(*)
+ FROM public.survey_answers WHERE question_key IN ('s1_contact_phone', 'medical_phone', 's1_website', 's1_social_media', 'medical_clinic_website', 'ec_website')
+  AND answer->'value' <> 'null'::jsonb
+UNION ALL SELECT 'survey names', 'public.survey_answers', 'answer (company/person names)', count(*)
+ FROM public.survey_answers WHERE (question_key IN ('s1_company_name', 'medical_clinic_name') AND answer->>'value' !~ '^Компания ')
+  OR (question_key IN ('s1_contact_name', 'medical_full_name', 's9n_responsible_person') AND answer->>'value' !~ '^Пользователь ')
 UNION ALL SELECT 'documents parsed_data', 'public.documents', 'parsed_data', count(*) FROM public.documents WHERE parsed_data IS NOT NULL
 UNION ALL SELECT 'journals ip/ua', 'public.admin_audit_log+activity_log+audit_logs', 'ip/user_agent', (
    (SELECT count(*) FROM public.admin_audit_log WHERE ip_address IS NOT NULL OR user_agent IS NOT NULL)
@@ -124,9 +126,12 @@ BEGIN
       AND (c.data_type IN ('text', 'character varying', 'jsonb', 'json') OR c.udt_name IN ('citext', '_text', '_varchar'))
       AND c.column_name !~* '(^id$|hash$|checksum$|sha256$|fingerprint$)'
   LOOP
+    -- ФИО — нигде; названия компаний — нигде, кроме технических идентификаторов
+    -- (id, source, sku, url, пути и имена файлов: бренд в слаге — не ПДн, см. README).
     EXECUTE format('SELECT count(*) FROM %I.%I x WHERE %I IS NOT NULL AND EXISTS
-                      (SELECT 1 FROM pg_temp._orig o WHERE strpos(lower(x.%I::text), lower(o.old)) > 0)',
-                   r.s, r.t, r.col, r.col) INTO n;
+                      (SELECT 1 FROM pg_temp._orig o WHERE x.%I::text ~* o.re AND (o.kind = ''person'' OR NOT %L))',
+                   r.s, r.t, r.col, r.col,
+                   r.col ~* '(^id$|_id$|Id$|_key$|^key$|^source$|^sku$|url$|path$|file_name$|^subject_id$|external_id$|event_id$)') INTO n;
     IF n > 0 THEN INSERT INTO _pii VALUES ('original name', r.s || '.' || r.t, r.col, n); END IF;
   END LOOP;
 END $$;

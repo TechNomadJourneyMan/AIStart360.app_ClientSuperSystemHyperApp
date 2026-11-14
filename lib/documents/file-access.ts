@@ -7,8 +7,10 @@
  *   1. the owner (session user = first folder of the path);
  *   2. GIGA staff with `users.view` + `users.sensitive`, inside their client
  *      scope (staff_roles.client_scope = 'assigned' → only assigned clients),
- *      or an approved expert-portal user for CLIENT accounts — the same rules
- *      as every other «client documents» read (lib/admin/user-data-access.ts).
+ *      or an approved expert-portal user for CLIENT accounts assigned to them
+ *      (staff Admin / Super Admin — any client; migration 140 rule, SR-03) —
+ *      the same rules as every other «client documents» read
+ *      (lib/admin/user-data-access.ts).
  *      A staff member refused by RBAC / the second factor is refused here too
  *      and never falls through to step 3;
  *   3. a reader of the owner's company (can_read_company through the caller's
@@ -100,8 +102,13 @@ export function liveFileAccessDeps(req: NextRequest): FileAccessDeps {
       const { createServiceClient } = await import('@/lib/supabase-service')
       const { isClientProfileRole } = await import('@/lib/profiles/client-roles')
       const { data } = await createServiceClient().from('profiles').select('role').eq('id', ownerId).maybeSingle()
-      // Experts read CLIENT accounts only — never staff, owners or other experts.
-      return isClientProfileRole((data as { role?: string } | null)?.role) ? 'allow' : 'deny'
+      // Experts read CLIENT accounts only — never staff, owners or other experts —
+      // and only the clients assigned to them (guardExpertClient, SR-03). An
+      // unassigned client falls through to the company rule (can_read_company
+      // under the caller's own session, which applies the same scope).
+      if (!isClientProfileRole((data as { role?: string } | null)?.role)) return 'deny'
+      const { guardExpertClient } = await import('@/lib/expert-auth')
+      return (await guardExpertClient(expert.viewer, ownerId)) ? 'none' : 'allow'
     },
 
     async canReadOwnerCompany(viewerId, ownerId) {

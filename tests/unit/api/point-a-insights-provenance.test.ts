@@ -42,6 +42,17 @@ function fakeClient() {
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => fakeClient() }))
 // The staff session in this test passed its second factor (R-005 rules: tests/unit/api/api-identity-staff-stepup.test.ts).
 vi.mock('@/lib/mfa/api-staff-gate', () => ({ staffApiSecondFactor: async () => 'ok' }))
+// Migration 140 rule (lib/access/actor.ts): an approved expert is staff; the legacy admin profile has a staff_roles row here.
+vi.mock('@/lib/access/actor', async () => {
+  const real = await vi.importActual<typeof import('@/lib/access/actor')>('@/lib/access/actor')
+  return {
+    ...real,
+    resolveActor: async (id: string) => real.actorFromRows(id, {
+      profile: { role: (h.profile as { role?: string } | null)?.role ?? null, status: 'approved' },
+      staff: ['admin', 'super_admin'].includes(String((h.profile as { role?: string } | null)?.role)) ? { role: String((h.profile as { role?: string }).role) } : null,
+    }),
+  }
+})
 
 const list = await import('@/app/api/v1/point-a/insights/route')
 const item = await import('@/app/api/v1/point-a/insights/[id]/route')

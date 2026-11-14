@@ -95,9 +95,16 @@ vi.mock('@/lib/supabase/server', () => ({
 // after authz — the 089 guard blocks parsed_data for PostgREST callers.
 const repo = vi.hoisted(() => ({ saveParsedData: vi.fn(async (..._args: unknown[]) => true) }))
 vi.mock('@/lib/documents/repository', () => ({ saveParsedData: repo.saveParsedData }))
+// Who is a staff admin: lib/api-identity getSessionStaff (migration 140 rule, tested in
+// tests/unit/api/api-identity-staff-stepup.test.ts). Here: the fake staff_roles role.
+const staffRole = vi.hoisted(() => ({ value: null as string | null }))
+vi.mock('@/lib/api-identity', () => ({
+  getSessionStaff: async (_sb: unknown, id: string) => (staffRole.value ? { id, role: staffRole.value } : null),
+}))
 
 beforeEach(() => {
   resetState()
+  staffRole.value = null
   repo.saveParsedData.mockClear()
 })
 
@@ -235,8 +242,20 @@ describe('POST /api/v1/documents/[id]/rebind', () => {
     expect(state.updateCalls).toHaveLength(0)
   })
 
-  it("allows a profile with role='admin' to rebind a document they do not own", async () => {
+  it('SR-02: the legacy profile role admin without staff_roles may not rebind another user\'s document', async () => {
+    state.user = { id: 'legacy-admin' }
+    state.tableResponses.documents = {
+      selectSingle: { data: { id: 'doc-1', user_id: 'someone-else', doc_type: 'pnl', parse_status: 'parsed', parsed_data: { fields: sampleFields } }, error: null },
+      update: { data: null, error: null },
+    }
+    state.tableResponses.profiles = { selectSingle: { data: { role: 'admin' }, error: null } }
+    expect((await callRoute('doc-1')).status).toBe(403)
+    expect(repo.saveParsedData).not.toHaveBeenCalled()
+  })
+
+  it("allows a staff admin (staff_roles) to rebind a document they do not own", async () => {
     state.user = { id: 'admin-user' }
+    staffRole.value = 'admin'
     state.tableResponses.documents = {
       selectSingle: {
         data: {
