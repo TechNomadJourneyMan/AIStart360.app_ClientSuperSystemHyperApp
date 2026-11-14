@@ -35,6 +35,7 @@ import { loadGoals } from '@/lib/goals/store'
 import { evaluateGoals } from '@/lib/goals/current'
 import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
+import type { FanOutPath } from './diagnostic-row'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
 
@@ -84,9 +85,14 @@ export interface SnapshotDeps {
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
   lock: (companyId: string) => Promise<{ release: () => Promise<void> } | null>
-  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; preliminary: boolean; noScore?: boolean; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
+  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; preliminary: boolean; noScore?: boolean; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null; paidPaths?: readonly FanOutPath[] }) => void
   /** The owner sent the full questionnaire (public.survey_completed_at). Omitted: treated as sent. */
   surveyComplete?: (service: SupabaseClient, ownerId: string) => Promise<boolean>
+  /**
+   * R2-A (ревью M-3): the paid AI calls the owner is entitled to (Point A
+   * analysis / Point B bridge). Omitted: both (hand-built deps in tests).
+   */
+  paidAi?: (service: SupabaseClient, ownerId: string) => Promise<FanOutPath[]>
 }
 
 const defaultDeps: SnapshotDeps = {
@@ -101,6 +107,7 @@ const defaultDeps: SnapshotDeps = {
     return getSetting('point_a_v4')
   },
   store: async (...args) => (await import('./diagnostic-row')).storeCurrentDiagnostic(...args),
+  paidAi: async (service, ownerId) => (await import('./diagnostic-row')).paidFanOutPaths(service, ownerId),
   surveyComplete: async (service, ownerId) => {
     // One definition of «анкета заполнена» (lib/survey/completion.ts, migration 090).
     const { data, error } = await service.rpc('survey_completed_at', { p_user: ownerId })
@@ -142,7 +149,9 @@ const defaultDeps: SnapshotDeps = {
       // preliminary assessment shows no numbers, and it keeps Point A cheap.
       // No official score (v4 without an overall) → no paid analysis / Point B
       // of a score that does not exist (I2, R-033); hypotheses still run.
-      if (!o.preliminary && !o.noScore && process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
+      // R2-A (ревью M-3): only the paid calls the owner has — a Free account gets none (no cost, nothing «failed»).
+      const paths = o.paidPaths ?? undefined
+      if (!o.preliminary && !o.noScore && process.env.OPENROUTER_API_KEY && baseUrl && (!paths || paths.length > 0)) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale, paths })
       if (!o.fromPipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
       void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
       if (!o.preliminary && o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
@@ -338,9 +347,12 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   const snapshotId = (ins.data as { id?: string } | null)?.id ?? null
   if (ins.error || !snapshotId) throw new Error(`point-a: snapshot not stored (${ins.error?.code ?? 'no id'})`)
 
+  // R2-A (ревью M-3): «processing» only when the AI analysis will really run for the owner.
+  const paidPaths = deps.paidAi ? await deps.paidAi(service, ownerId) : undefined
+  const analysisRuns = !paidPaths || paidPaths.includes('/api/v1/diagnostics/ai-analyze')
   const stored = await deps.store(service, {
     userId: ownerId, companyId, result: written, preliminary: preliminary || noScore,
-    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary && !noScore ? 'processing' : 'none',
+    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary && !noScore && analysisRuns ? 'processing' : 'none',
   })
   if (!stored.ok) {
     const del = await service.from('point_a_snapshots').delete().eq('id', snapshotId)
@@ -353,6 +365,6 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Without the link the next pass is not «unchanged» and writes again — never stuck.
   if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
-  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, preliminary, noScore, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
+  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, preliminary, noScore, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry, paidPaths })
   return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, assessment: preliminary ? 'preliminary' : 'full', scored: !preliminary && !noScore, written, v4, changes }
 }

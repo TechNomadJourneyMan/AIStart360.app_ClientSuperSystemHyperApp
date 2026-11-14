@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { CHAT_SCRIPTS, hydrate } from '@/lib/assistant/chat-scripts'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
+import { accessOfContext, paidScriptOutcome } from '@/lib/assistant/paid-context'
 
 /**
  * POST /api/v1/assistant/chat
@@ -19,6 +20,13 @@ import { localeFromRequestCookie } from '@/lib/i18n/locale'
  *
  * Returns { answer_ru, used_data, section, insufficient }.
  */
+/** «Недостаточно данных» → «Подробные цифры — в платном доступе» (only for an answer about a closed section). */
+function withoutInsufficient(text: string, locale: 'ru' | 'en'): string {
+  return locale === 'en'
+    ? text.replace(/Not enough data/g, 'Detailed figures are in paid access')
+    : text.replace(/Недостаточно данных/g, 'Подробные цифры — в платном доступе')
+}
+
 export async function POST(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
@@ -47,14 +55,31 @@ export async function POST(req: NextRequest) {
     // Portal locale from the caller's cookie (no server-to-server fire here).
     const locale = localeFromRequestCookie(req)
     const ctx = await buildAssistantContext(user.id, sb)
+    // R2-A (ревью H-2): a question about a closed paid section is answered with
+    // the paywall (where to leave the access request), never with its numbers;
+    // a mixed answer keeps the free part and says what is in paid access.
+    const paid = paidScriptOutcome(script.id, accessOfContext(ctx), locale)
+    if (paid.replace) {
+      return NextResponse.json({
+        ok: true,
+        answer_ru: paid.replace,
+        used_data: [],
+        section: script.section,
+        insufficient: false,
+        paywall: paid.paywall,
+      })
+    }
     const result = hydrate(script, ctx, locale)
+    // The numbers are not missing — they are closed: never «Недостаточно данных» for them.
+    const answer = paid.note ? `${withoutInsufficient(result.answer_ru, locale)} ${paid.note}` : result.answer_ru
 
     return NextResponse.json({
       ok: true,
-      answer_ru: result.answer_ru,
+      answer_ru: answer,
       used_data: result.used_data,
       section: script.section,
-      insufficient: result.insufficient,
+      insufficient: paid.note ? false : result.insufficient,
+      ...(paid.paywall ? { paywall: paid.paywall } : {}),
     })
   } catch (error) {
     console.error('[assistant/chat] error:', error)

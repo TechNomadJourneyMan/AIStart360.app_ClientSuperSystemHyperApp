@@ -22,12 +22,16 @@ import { useEffect, useState } from 'react'
 import { BTN_PRIMARY, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import {
+  ADD_HINT,
+  ADD_LABEL,
   ERROR_TEXT,
+  IMPERSONATION_TEXT,
   PAYMENT_NOTE,
   REQUEST_LABEL,
   SENT_TEXT,
   paywallCopy,
   readAccessRequest,
+  requestStateFor,
   sendAccessRequest,
   type RequestState,
 } from './paywall-model'
@@ -35,25 +39,38 @@ import {
 export interface PaywallProps {
   feature: string
   variant?: 'page' | 'compact'
+  /** THIS section is already in the user's open request (known on the server). */
   initialRequested?: boolean
+  /** An open request exists for other sections → «Добавить раздел к заявке». */
+  initialOpenOther?: boolean
+  /** «От имени» (server-checked): the request is the client's own — no button. */
+  impersonating?: boolean
   className?: string
 }
 
-export default function Paywall({ feature, variant = 'page', initialRequested, className }: PaywallProps) {
+function initialState(p: PaywallProps): RequestState {
+  if (p.impersonating) return 'impersonation'
+  if (p.initialRequested === true) return 'sent'
+  if (p.initialRequested === false) return p.initialOpenOther ? 'add' : 'idle'
+  return 'checking'
+}
+
+export default function Paywall(props: PaywallProps) {
+  const { feature, variant = 'page', initialRequested, impersonating, className } = props
   const copy = paywallCopy(feature)
-  const [state, setState] = useState<RequestState>(initialRequested === true ? 'sent' : initialRequested === false ? 'idle' : 'checking')
+  const [state, setState] = useState<RequestState>(() => initialState(props))
 
   useEffect(() => {
-    if (initialRequested !== undefined) return
+    if (initialRequested !== undefined || impersonating) return
     let cancelled = false
-    void readAccessRequest(fetch).then((requested) => {
-      if (!cancelled) setState((s) => (s === 'checking' ? (requested ? 'sent' : 'idle') : s))
+    void readAccessRequest(fetch).then((info) => {
+      if (!cancelled) setState((s) => (s === 'checking' ? requestStateFor(feature, info) : s))
     })
     return () => { cancelled = true }
-  }, [initialRequested])
+  }, [initialRequested, impersonating, feature])
 
   const request = async () => {
-    if (state === 'sending' || state === 'sent') return
+    if (state === 'sending' || state === 'sent' || state === 'impersonation' || state === 'checking') return
     setState('sending')
     setState(await sendAccessRequest(fetch, feature))
   }
@@ -65,20 +82,22 @@ export default function Paywall({ feature, variant = 'page', initialRequested, c
     <button
       type="button"
       onClick={() => void request()}
-      disabled={state === 'sending' || state === 'sent' || state === 'checking'}
+      disabled={state === 'sending' || state === 'sent' || state === 'checking' || state === 'impersonation'}
       data-track="pro-upgrade-request"
       data-feature={feature}
       className={BTN_PRIMARY}
     >
       <Icon name={state === 'sent' ? 'check_circle' : 'mail'} className="text-[16px]" />
-      {state === 'sending' ? 'Отправляем…' : state === 'sent' ? 'Заявка отправлена' : REQUEST_LABEL}
+      {state === 'sending' ? 'Отправляем…' : state === 'sent' ? 'Заявка отправлена' : state === 'add' ? ADD_LABEL : REQUEST_LABEL}
     </button>
   )
 
   const status = (
     <p role="status" aria-live="polite" className="text-xs">
       {state === 'sent' && <span className="text-primary">{SENT_TEXT}</span>}
+      {state === 'add' && <span className="text-on-surface-variant">{ADD_HINT}</span>}
       {state === 'error' && <span className="text-error">{ERROR_TEXT}</span>}
+      {state === 'impersonation' && <span className="text-on-surface-variant">{IMPERSONATION_TEXT}</span>}
     </p>
   )
 

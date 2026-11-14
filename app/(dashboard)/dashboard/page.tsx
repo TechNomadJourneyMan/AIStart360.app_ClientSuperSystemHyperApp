@@ -41,6 +41,7 @@ import { quarterLabel } from '@/lib/format/period'
 import { plural } from '@/lib/crm/digest'
 import { ShareButton } from '@/components/share/ShareButton'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { getRequestAccess } from '@/lib/access/request-access'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -356,6 +357,9 @@ export default async function DashboardPage() {
       const { diag, orgName, companyId, surveyStepsDone, docsCount } = await clientDataP
 
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
+      // R2-A (ревью L-6): «Поделиться» / «PDF» of Point A only with the paid section
+      // (the API answers 402 — no error toasts for a Free client).
+      const pointAOpen = await getRequestAccess(user.id).then((a) => a.sections.point_a, () => false)
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.
@@ -389,7 +393,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-                {pointA && companyId && (
+                {pointA && companyId && pointAOpen && (
                   <ShareButton type="point_a" companyId={companyId} />
                 )}
                 <OnboardingStatusBadges />

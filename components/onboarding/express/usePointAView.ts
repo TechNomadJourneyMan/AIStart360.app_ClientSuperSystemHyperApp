@@ -29,6 +29,8 @@ export function usePointAView(freshSince: number | null, onSettled?: (view: Snap
       const data = (json?.ok ? json.data : null) as PointAStateSlice | null
       const timedOut = Date.now() - started > POLL_LIMIT_MS
       const r = readSnapshotPointA(data, timedOut ? null : freshSince)
+      // R2-A: the server answered the free express view → the full Point A is in paid access.
+      if (json?.view === 'express') r.view.locked = true
       setView(r.view)
       if (!settled.current && (!r.poll || timedOut)) {
         settled.current = true

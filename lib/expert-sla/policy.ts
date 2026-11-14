@@ -59,6 +59,8 @@ export interface SlaTimes {
   answer_due_at: string
   first_response_at: string | null
   closed_at: string | null
+  /** 146: closed with an answer (true) or without one — superseded / stale / withdrawn (false). */
+  answered?: boolean | null
   escalated_at?: string | null
   breached_at?: string | null
 }
@@ -114,7 +116,7 @@ function span(ms: number): string {
  * «ответ дан». Часы округляются вниз — «осталось 1 ч» значит не меньше часа.
  */
 export function slaTimerLabel(t: SlaTimes, now: Date = new Date()): string {
-  if (t.closed_at) return 'ответ дан'
+  if (t.closed_at) return t.answered === false ? 'закрыта без ответа' : 'ответ дан'
   const left = new Date(t.answer_due_at).getTime() - now.getTime()
   return left > 0 ? `осталось ${span(left)}` : `просрочено на ${span(left)}`
 }
@@ -132,7 +134,19 @@ export function clientPromiseText(answerHours: number = DEFAULT_EXPERT_SLA.answe
 
 /** Колонки expert_sla_tasks, которые читают проход, ГИГА и кабинет эксперта. */
 export const TASK_COLUMNS =
-  'id, source, source_id, client_id, company_id, title, assignee_id, assigned_at, assigned_via, received_at, reaction_due_at, answer_due_at, first_response_at, closed_at, close_reason, escalated_at, breached_at, created_at'
+  'id, source, source_id, client_id, company_id, title, assignee_id, assigned_at, assigned_via, received_at, reaction_due_at, answer_due_at, first_response_at, closed_at, close_reason, escalated_at, breached_at, created_at, answered, lineage, assign_notified_at, queue_notified_at, escalation_notified_at, breach_notified_at, notify_attempts, info_attempts, notify_error'
+
+/** Повторы недоставленного уведомления (outbox, миграция 146): дальше — только отметка в ГИГА. */
+export const MAX_NOTIFY_ATTEMPTS = 5
+
+/** Списки id в фильтрах PostgREST (`in.(…)`) — не длиннее этого, чтобы не упереться в длину URL. */
+export const ID_CHUNK = 100
+
+export function chunked<T>(items: readonly T[], size: number = ID_CHUNK): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
 
 export const STAGE_LABELS: Record<SlaStage, string> = {
   closed: 'Ответ дан',

@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { activeImpersonation } from '@/lib/impersonation/server'
-import { findOpenAccessRequest, submitAccessRequest } from '@/lib/access/upgrade-requests'
+import { findOpenAccessRequest, isKnownRequestFeature, submitAccessRequest } from '@/lib/access/upgrade-requests'
 
 /** R-225: featureKey is a feature id ('point_a') or a nav href ('/point-b') — short text, never an arbitrary blob. */
 const bodySchema = z.object({ featureKey: z.string().trim().min(1).max(100) })
@@ -36,6 +36,10 @@ export async function POST(req: NextRequest) {
     const parsed = bodySchema.safeParse(await req.json().catch(() => null))
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: 'featureKey required' }, { status: 400 })
+    }
+    // R2-A (ревью L-5): only the known sections — no free text in the staff card.
+    if (!isKnownRequestFeature(parsed.data.featureKey)) {
+      return NextResponse.json({ ok: false, error: 'unknown featureKey' }, { status: 400 })
     }
 
     // «От имени» the request is the client's own decision — staff do not leave it for them.

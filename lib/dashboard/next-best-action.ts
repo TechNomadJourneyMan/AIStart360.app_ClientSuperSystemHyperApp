@@ -14,6 +14,7 @@ export type NbaKind =
   | 'call_clients'
   | 'fix_red_zone'
   | 'work_top_limit'
+  | 'request_access'
   | 'all_good'
 
 export interface NbaInput {
@@ -28,6 +29,11 @@ export interface NbaInput {
   criticalBlockLabel: string | null
   /** Топ-ограничение GRI, либо null. */
   griTopLimit: string | null
+  /**
+   * R2-A (ревью L-6): полный GRI закрыт для аккаунта (платный раздел) — вместо
+   * «Пройдите GRI-диагностику» (ведёт в пейволл) честное действие «заявка на доступ».
+   */
+  diagnosticLocked?: boolean
 }
 
 export interface NextBestAction {
@@ -56,6 +62,17 @@ export function pickNextBestAction(i: NbaInput): NextBestAction {
       detail: `Раздел «${i.nextSectionLabel}» ещё ждёт ответов — без него диагностика неточна.`,
       ctaLabel: 'Продолжить анкету',
       href: '/client/onboarding',
+    }
+  }
+
+  // 2a. Анкета есть, полная диагностика — в платном доступе: честно, с заявкой.
+  if (!i.hasDiagnostic && i.diagnosticLocked) {
+    return {
+      kind: 'request_access',
+      title: 'Полная диагностика — в платном доступе',
+      detail: 'Экспресс-оценка по анкете уже доступна. Полный GRI и разбор Точки А открывает менеджер — оставьте заявку.',
+      ctaLabel: 'Оставить заявку',
+      href: '/gri',
     }
   }
 

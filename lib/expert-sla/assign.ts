@@ -17,6 +17,8 @@
  * Ответственного клиента механизм НИКОГДА не меняет сам — только заполняет пустое.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isClientProfileRole } from '@/lib/profiles/client-roles'
+import { chunked } from './policy'
 
 /** Staff-роли, которые могут вести экспертную работу (вместе с profiles.role = 'expert'). Синхронно с expert_sla_is_worker (145). */
 export const SLA_WORKER_STAFF = ['super_admin', 'admin', 'super_expert'] as const
@@ -75,25 +77,62 @@ export async function loadExpertCandidates(sb: Sb): Promise<Candidate[]> {
   if (error) throw new Error(`expert-sla candidates: ${error.message?.slice(0, 120)}`)
   const ids = ((experts ?? []) as Array<{ id: string }>).map((e) => e.id)
   if (!ids.length) return []
-  const [{ data: tasks, error: tErr }, { data: clients, error: cErr }, { data: recent, error: rErr }] = await Promise.all([
-    sb.from('expert_sla_tasks').select('assignee_id').in('assignee_id', ids).is('closed_at', null).limit(5000),
-    sb.from('user_assignments').select('assignee_id').in('assignee_id', ids).limit(10000),
-    sb.from('expert_sla_tasks').select('assignee_id, assigned_at').in('assignee_id', ids).not('assigned_at', 'is', null)
-      .order('assigned_at', { ascending: false }).limit(500),
-  ])
-  if (tErr || cErr || rErr) throw new Error('expert-sla candidates: load unavailable')
-  const count = (rows: Array<{ assignee_id: string | null }> | null) => {
-    const m = new Map<string, number>()
-    for (const r of rows ?? []) if (r.assignee_id) m.set(r.assignee_id, (m.get(r.assignee_id) ?? 0) + 1)
-    return m
-  }
-  const open = count(tasks as Array<{ assignee_id: string | null }> | null)
-  const held = count(clients as Array<{ assignee_id: string | null }> | null)
+  const open = new Map<string, number>()
+  const held = new Map<string, number>()
   const last = new Map<string, string>()
-  for (const r of (recent ?? []) as Array<{ assignee_id: string | null; assigned_at: string | null }>) {
-    if (r.assignee_id && r.assigned_at && !last.has(r.assignee_id)) last.set(r.assignee_id, r.assigned_at)
+  const bump = (m: Map<string, number>, k: string | null) => { if (k) m.set(k, (m.get(k) ?? 0) + 1) }
+  for (const part of chunked(ids)) {
+    const [{ data: tasks, error: tErr }, { data: clients, error: cErr }, { data: recent, error: rErr }] = await Promise.all([
+      sb.from('expert_sla_tasks').select('assignee_id').in('assignee_id', part).is('closed_at', null).limit(5000),
+      sb.from('user_assignments').select('assignee_id').in('assignee_id', part).limit(10000),
+      sb.from('expert_sla_tasks').select('assignee_id, assigned_at').in('assignee_id', part).not('assigned_at', 'is', null)
+        .order('assigned_at', { ascending: false }).limit(500),
+    ])
+    if (tErr || cErr || rErr) throw new Error('expert-sla candidates: load unavailable')
+    for (const r of (tasks ?? []) as Array<{ assignee_id: string | null }>) bump(open, r.assignee_id)
+    for (const r of (clients ?? []) as Array<{ assignee_id: string | null }>) bump(held, r.assignee_id)
+    for (const r of (recent ?? []) as Array<{ assignee_id: string | null; assigned_at: string | null }>) {
+      if (r.assignee_id && r.assigned_at && !last.has(r.assignee_id)) last.set(r.assignee_id, r.assigned_at)
+    }
   }
   return ids.map((id) => ({ id, openTasks: open.get(id) ?? 0, clients: held.get(id) ?? 0, lastAssignedAt: last.get(id) ?? null }))
+}
+
+/**
+ * Авто-назначение — только обычным клиентам (п. 4 ревью): одобренный профиль с
+ * клиентской ролью (client / owner — lib/profiles/client-roles.ts) и без строки
+ * staff_roles. Персонал, эксперты, партнёры, legacy super_admin, неодобренные
+ * и заблокированные аккаунты ответственного автоматически не получают.
+ */
+export function isPlainClientRow(profile: { role?: string | null; status?: string | null } | null | undefined, hasStaffRow: boolean): boolean {
+  return !!profile && !hasStaffRow && profile.status === 'approved' && isClientProfileRole(profile.role)
+}
+
+export interface AutoAssignTarget {
+  /** Обычный клиент — можно назначать автоматически. */
+  plain: boolean
+  /** Текущий ответственный (user_assignments), null — нет. */
+  responsible: string | null
+}
+
+/** Для авто-назначения: кто из клиентов обычный и кто у них ответственный. Чтение — чанками по 100 id. */
+export async function loadAutoAssignTargets(sb: Sb, clientIds: readonly string[]): Promise<Map<string, AutoAssignTarget>> {
+  const ids = Array.from(new Set(clientIds))
+  const profiles = new Map<string, { role?: string | null; status?: string | null }>()
+  const staff = new Set<string>()
+  const resp = new Map<string, string | null>()
+  for (const part of chunked(ids)) {
+    const [{ data: p, error: pErr }, { data: s, error: sErr }, { data: a, error: aErr }] = await Promise.all([
+      sb.from('profiles').select('id, role, status').in('id', part),
+      sb.from('staff_roles').select('user_id').in('user_id', part),
+      sb.from('user_assignments').select('user_id, assignee_id').in('user_id', part),
+    ])
+    if (pErr || sErr || aErr) throw new Error('expert-sla auto-assign targets: load unavailable')
+    for (const r of (p ?? []) as Array<{ id: string; role: string | null; status: string | null }>) profiles.set(r.id, r)
+    for (const r of (s ?? []) as Array<{ user_id: string }>) staff.add(r.user_id)
+    for (const r of (a ?? []) as Array<{ user_id: string; assignee_id: string | null }>) resp.set(r.user_id, r.assignee_id)
+  }
+  return new Map(ids.map((id) => [id, { plain: isPlainClientRow(profiles.get(id), staff.has(id)), responsible: resp.get(id) ?? null }]))
 }
 
 /**

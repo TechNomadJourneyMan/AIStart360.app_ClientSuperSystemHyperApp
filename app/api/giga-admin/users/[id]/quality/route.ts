@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { ALL_SECTIONS_OPEN } from '@/lib/assistant/paid-context'
 
 /**
  * GET /api/giga-admin/users/:id/quality — противоречия и пробелы в анкете.
@@ -29,7 +30,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
 
   try {
-    const ctx = await buildAssistantContext(params.id, createServiceClient())
+    // Staff look at a client: the full snapshot (R2-A — paid sections are a client-side limit).
+    const ctx = await buildAssistantContext(params.id, createServiceClient(), { sections: ALL_SECTIONS_OPEN })
     const issues = await runValidation(ctx, { includeLlm: false })
     const counts = {
       error: issues.filter((i) => i.severity === 'error').length,

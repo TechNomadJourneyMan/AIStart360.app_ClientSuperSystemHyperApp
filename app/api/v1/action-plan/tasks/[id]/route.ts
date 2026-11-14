@@ -7,6 +7,8 @@ import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { profanityResponse } from '@/lib/moderation/http'
+import { actionItemSection } from '@/lib/access/decision'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * PATCH /api/v1/action-plan/tasks/[id]  { status?, snoozedUntil?, comment? }
@@ -54,6 +56,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   if (parsed.data.snoozedUntil !== undefined) patch.snoozed_until = parsed.data.snoozedUntil
   if (parsed.data.comment !== undefined) patch.user_comment = parsed.data.comment
+
+  // R2-A (ревью M-1): a task of a paid section (GRI 90-day plan / Point B) — only with that section.
+  const { data: own } = await sb.from('action_items').select('source').eq('id', id).eq('user_id', user.id).maybeSingle()
+  if (!own) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
+  const upgrade = await gatePaidSection(sb, user.id, actionItemSection((own as { source?: string | null }).source))
+  if (upgrade) return upgrade
 
   // Scope to the owner explicitly (belt-and-suspenders on top of RLS).
   const { data, error } = await sb

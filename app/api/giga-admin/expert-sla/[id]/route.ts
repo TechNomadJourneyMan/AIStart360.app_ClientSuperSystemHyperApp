@@ -4,21 +4,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
-import { actorClientScope } from '@/lib/admin/actor-scope'
+import { actorClientScope, scopeAllows } from '@/lib/admin/actor-scope'
 import { setClientAssignment } from '@/lib/admin/client-actions'
 import { createServiceClient } from '@/lib/supabase-service'
-import { createDefaultNotifier } from '@/lib/expert-sla/notify'
 import { TASK_COLUMNS } from '@/lib/expert-sla/policy'
-import { reassignClientWork, visibleTo, type SlaTaskRow } from '@/lib/expert-sla/store'
+import { reassignClientWork, type SlaTaskRow } from '@/lib/expert-sla/store'
 
 /**
  * PATCH /api/giga-admin/expert-sla/:id { assigneeId }
  *
  * Ручное переназначение (R2-B): Super Admin, Admin, SuperExpert передают работу
  * по клиенту эксперту (или берут себе). Исполнитель становится ответственным
- * клиента — все его открытые задачи и обращения переходят к нему. Скоуп:
- * переназначить можно только задачу, которую актор видит. Журнал — каждое
- * изменение; новый исполнитель получает уведомление.
+ * клиента — все его открытые задачи и обращения переходят к нему.
+ * Скоуп (п. 1 ревью): клиент задачи должен быть в скоупе актора — то же
+ * правило, что у штатного назначения ответственного (guardClientAccess /
+ * scopeAllows). Быть исполнителем задачи недостаточно: SuperExpert «только
+ * назначенные» не вернёт себе клиента, которого у него забрали.
+ * Журнал — каждое изменение; новый исполнитель получает уведомление через
+ * outbox прохода SLA (assign_notified_at сброшен, ≤ 5 минут).
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,7 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const task = found as SlaTaskRow | null
   if (!task) return NextResponse.json({ ok: false, error: 'Задача не найдена' }, { status: 404 })
   const scope = await actorClientScope(actor)
-  if (!visibleTo(scope.scope === 'all' ? { all: true } : { actorId: actor.id, clientIds: scope.clientIds }, task)) {
+  if (!scopeAllows(scope, task.client_id)) {
     return NextResponse.json({ ok: false, error: 'Этот клиент вам не назначен' }, { status: 403 })
   }
 
@@ -66,6 +69,5 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     metadata: { source: task.source, title: task.title, moved: res.moved },
   }, req)
 
-  if (assigneeId !== actor.id) await createDefaultNotifier({ sb }).assigned({ ...task, assignee_id: assigneeId })
   return NextResponse.json({ ok: true, moved: res.moved })
 }

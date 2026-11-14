@@ -271,4 +271,10 @@ export interface AssistantContext {
 
   /** Present only after the LLM layer has run (Layer 3); null otherwise. */
   llm_analysis: LlmAnalysis | null
+
+  /**
+   * R2-A: paid sections closed for the account — their data was removed from
+   * this snapshot (lib/assistant/paid-context.ts). Absent/empty → nothing closed.
+   */
+  paidLocked?: Array<'point_a' | 'point_b' | 'market' | 'gri_full'>
 }

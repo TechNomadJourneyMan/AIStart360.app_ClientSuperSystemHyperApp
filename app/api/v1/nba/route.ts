@@ -9,6 +9,7 @@ import { buildNbaSignals, type NbaSignalInput } from '@/lib/nba/signals'
 import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
 import { trackUserAction } from '@/lib/events/server'
 import { nbaEventMetadata } from '@/lib/nba/events'
+import { actionItemSection, resolveAccess } from '@/lib/access/decision'
 
 const POINT_A_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -39,8 +40,13 @@ export async function GET(_req: NextRequest) {
 
   const input: NbaSignalInput = {}
 
+  // R2-A (ревью L-1/L-6): signals of the paid sections only with access to them
+  // (staff exempt) — no main GRI limitation, plan task or Point A red zone for
+  // an account that would land on a paywall.
+  const sections = (await resolveAccess(sb, user.id)).sections
+
   // Current GRI assessment: main limitation + age.
-  try {
+  if (sections.gri_full) try {
     const { data } = await sb
       .from('gri_assessments')
       .select('top_5_limits, created_at')
@@ -60,17 +66,17 @@ export async function GET(_req: NextRequest) {
     }
   } catch { /* table may be absent — skip */ }
 
-  // Next open 90-day plan task.
-  try {
+  // Next open 90-day plan task (of a section the account can open).
+  if (sections.gri_full || sections.point_b) try {
     const { data } = await sb
       .from('action_items')
-      .select('id, title')
+      .select('id, title, source')
       .eq('user_id', user.id)
       .eq('status', 'open')
       .order('priority', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    if (data?.id) input.planNextTask = { id: String(data.id), title: data.title ?? 'Следующий шаг плана' }
+      .limit(20)
+    const next = ((data ?? []) as Array<{ id: unknown; title: string | null; source?: string | null }>).find((i) => sections[actionItemSection(i.source)])
+    if (next?.id) input.planNextTask = { id: String(next.id), title: next.title ?? 'Следующий шаг плана' }
   } catch { /* skip */ }
 
   // Last pulse week → days since.
@@ -122,7 +128,7 @@ export async function GET(_req: NextRequest) {
   // BI-46 — `weak` alone dropped the worst blocks). A block without data is
   // never a red zone; before the full questionnaire there are none (PO
   // 2026-11-02) — never a v1 recalculation from an incomplete survey.
-  try {
+  if (sections.point_a) try {
     const reds = officialRedBlocks(await getOfficialPointA(sb, user.id))
     if (reds.length > 0) input.redBlocks = reds.map((r) => ({ key: r.key, label: POINT_A_LABELS[r.key] ?? r.label, score: r.score }))
   } catch { /* skip */ }

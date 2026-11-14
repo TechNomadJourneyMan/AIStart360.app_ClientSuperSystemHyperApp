@@ -1,11 +1,12 @@
 /**
  * R2-B — уведомления SLA экспертов (lib/expert-sla/notify.ts) существующими
  * каналами: лента ГИГА / Telegram сотрудников (notifyStaff) — SuperExpert и
- * Admin; исполнителю — его лента и экспертный бот. Одна запись на порог
- * (dedupe_key по задаче), бэклог — одной сводкой.
+ * Admin; исполнителю — его лента и экспертный бот. Каждый вызов возвращает
+ * результат доставки (outbox, п. 6 ревью): сбой ленты, адресатов или записи
+ * исполнителю — `ok: false`, а не «отправлено никому».
  */
 import { describe, expect, it } from 'vitest'
-import { BATCH, createDefaultNotifier, EXPERT_QUEUE_PATH, GIGA_SLA_PATH, type TaskBrief } from '@/lib/expert-sla/notify'
+import { EXPERT_QUEUE_PATH, GIGA_SLA_PATH, createDefaultNotifier, groupKey, type TaskBrief } from '@/lib/expert-sla/notify'
 import { slaDeadlines } from '@/lib/expert-sla/policy'
 import { slaDb } from './_fake'
 
@@ -18,7 +19,7 @@ function brief(id: string, over: Partial<TaskBrief> = {}): TaskBrief {
   }
 }
 
-function setup() {
+function setup(opts: { feedEvent?: string | null; inAppOk?: boolean } = {}) {
   const f = slaDb({
     staff_roles: [
       { user_id: 'se1', role: 'super_expert' },
@@ -44,18 +45,18 @@ function setup() {
   const bot: Array<{ chatId: string; html: string; url: string }> = []
   const notifier = createDefaultNotifier({
     sb: f.sb,
-    notifyStaff: async (n) => { staff.push(n as unknown as Record<string, unknown>) },
-    createNotification: async (n) => { inApp.push(n as unknown as Record<string, unknown>); return true },
+    notifyStaff: async (n) => { staff.push(n as unknown as Record<string, unknown>); return { eventId: opts.feedEvent === undefined ? 'ev-1' : opts.feedEvent } },
+    createNotification: async (n) => { inApp.push(n as unknown as Record<string, unknown>); return opts.inAppOk ?? true },
     sendExpertBot: async (chatId, html, button) => { bot.push({ chatId, html, url: button.url }); return true },
     siteUrl: (p) => `https://portal.test${p}`,
   })
-  return { notifier, staff, inApp, bot }
+  return { f, notifier, staff, inApp, bot }
 }
 
 describe('expert SLA notifier', () => {
   it('24 h escalation: WARNING to SuperExpert + Admin + the assignee, deduped per task; the expert also gets his feed and bot', async () => {
     const { notifier, staff, inApp, bot } = setup()
-    await notifier.threshold('escalated', [brief('t1', { assignee_id: 'e1' })])
+    expect(await notifier.threshold('escalated', [brief('t1', { assignee_id: 'e1' })])).toEqual({ ok: true })
     expect(staff).toHaveLength(1)
     expect(staff[0]).toMatchObject({
       level: 'WARNING', type: 'expert_sla.escalated', dedupeKey: 'expert_sla.escalated:t1', entityId: 't1', link: GIGA_SLA_PATH, skipCooldown: true,
@@ -66,38 +67,48 @@ describe('expert SLA notifier', () => {
     expect(bot).toEqual([expect.objectContaining({ chatId: '777', url: `https://portal.test${EXPERT_QUEUE_PATH}` })])
   })
 
-  it('48 h breach is CRITICAL with its own dedupe key; a task in the queue says «без исполнителя»', async () => {
-    const { notifier, staff, inApp } = setup()
+  it('48 h breach is CRITICAL with its own dedupe key; a summary group gets the batch key', async () => {
+    const { notifier, staff } = setup()
     await notifier.threshold('breached', [brief('t2')])
     expect(staff[0]).toMatchObject({ level: 'CRITICAL', type: 'expert_sla.breached', dedupeKey: 'expert_sla.breached:t2' })
     expect((staff[0].lines as string[])[0]).toContain('без исполнителя')
-    expect(inApp).toEqual([])
+    const many = Array.from({ length: 8 }, (_, i) => brief(`b${i}`, { assignee_id: 'e1' }))
+    expect(groupKey('breached', many)).toBe('expert_sla.breached.batch:b0:8')
   })
 
-  it(`more than ${BATCH} tasks at once (a backlog) → one summary instead of an avalanche`, async () => {
-    const { notifier, staff, inApp } = setup()
-    const tasks = Array.from({ length: BATCH + 3 }, (_, i) => brief(`b${i}`, { assignee_id: 'e1' }))
-    await notifier.threshold('breached', tasks)
-    expect(staff).toHaveLength(1)
-    expect(staff[0].title).toContain(`${BATCH + 3} задач`)
-    expect(staff[0].dedupeKey).toBe(`expert_sla.breached.batch:b0:${BATCH + 3}`)
-    expect(inApp).toHaveLength(1) // one reminder per assignee, not per task
+  it('п. 5: the assignee gets ONE message for all his new tasks', async () => {
+    const { notifier, inApp, bot } = setup()
+    const res = await notifier.assigned('e1', [brief('n1', { assignee_id: 'e1' }), brief('n2', { assignee_id: 'e1' }), brief('n3', { assignee_id: 'e1' })])
+    expect(res).toEqual({ ok: true })
+    expect(inApp).toHaveLength(1)
+    expect(inApp[0]).toMatchObject({ userId: 'e1', title: 'Новые задачи: 3' })
+    expect(bot).toHaveLength(1)
   })
 
-  it('the common queue goes to SuperExperts; a new assignment to the assignee', async () => {
-    const { notifier, staff, inApp } = setup()
+  it('the common queue goes to SuperExperts (Admins when there is none)', async () => {
+    const { notifier, staff } = setup()
     await notifier.queued([brief('q1')])
     expect(staff[0]).toMatchObject({ type: 'expert_sla.queued', dedupeKey: 'expert_sla.queued:q1', audienceUserIds: ['se1'] })
-    await notifier.assigned(brief('n1', { assignee_id: 'e1' }))
-    expect(inApp[0]).toMatchObject({ userId: 'e1', title: 'Новая задача: Обращение n1' })
-    await notifier.queued([])
-    await notifier.threshold('escalated', [])
-    expect(staff).toHaveLength(1)
   })
 
-  it('a failing channel never throws out of the notifier', async () => {
+  it('п. 6: an unreadable audience is a failed delivery, not «sent to nobody»', async () => {
+    const { f, notifier, staff } = setup()
+    f.failing.add('staff_roles')
+    const res = await notifier.threshold('escalated', [brief('x')])
+    expect(res.ok).toBe(false)
+    expect(staff).toEqual([])
+  })
+
+  it('п. 6: the feed event not recorded or the assignee\'s feed not written → ok: false', async () => {
+    expect((await setup({ feedEvent: null }).notifier.threshold('breached', [brief('x')])).ok).toBe(false)
+    expect((await setup({ inAppOk: false }).notifier.threshold('breached', [brief('x', { assignee_id: 'e1' })])).ok).toBe(false)
+    expect((await setup({ inAppOk: false }).notifier.assigned('e1', [brief('x', { assignee_id: 'e1' })])).ok).toBe(false)
+  })
+
+  it('a throwing channel never escapes the notifier', async () => {
     const f = slaDb({})
     const notifier = createDefaultNotifier({ sb: f.sb, notifyStaff: async () => { throw new Error('down') }, createNotification: async () => false })
-    await expect(notifier.threshold('breached', [brief('x')])).resolves.toBeUndefined()
+    await expect(notifier.threshold('breached', [brief('x')])).resolves.toMatchObject({ ok: false, error: 'down' })
+    await expect(notifier.syncFailed('boom', T0)).resolves.toBeUndefined()
   })
 })

@@ -15,6 +15,8 @@ const s = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ redirect: (to: string) => { throw new Error(`redirect ${to}`) } }))
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => s.net!.sb }))
+// R2-A (147): the Point A rows of the home tile are read with the service role (own ids only).
+vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => s.net!.sb }))
 vi.mock('@/lib/request-user', () => ({ getRequestUser: async () => ({ id: USER, email: 'c@example.com' }) }))
 vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: [] }) }))
 vi.mock('@/lib/cms/server', () => ({ visiblePagesFor: async () => [] }))
@@ -60,6 +62,13 @@ describe('/client/home — round trips (W4)', () => {
     expect((await dataOf()).paidLocked).toEqual({ point_a: false, gri_full: false })
     s.sections = { point_a: false, point_b: false, market: false, gri_full: false }
     expect((await dataOf()).paidLocked).toEqual({ point_a: true, gri_full: true })
+  })
+
+  it('R2-A: the GRI index (result of the paid full GRI) is not on the home tile when the section is closed', async () => {
+    s.tables.gri_assessments = [{ user_id: USER, is_current: true, gri_index: 6.4, created_at: '2026-10-01T00:00:00Z' }]
+    expect((await dataOf()).gri).toMatchObject({ index: 6.4 })
+    s.sections = { point_a: true, point_b: true, market: true, gri_full: false }
+    expect((await dataOf()).gri).toBeNull()
   })
 
   it('two round trips; Point A comes from the v4 snapshot', async () => {

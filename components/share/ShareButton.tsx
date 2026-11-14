@@ -95,6 +95,11 @@ export function ShareButton({
       })
       const json = (await res.json()) as { url?: string; token?: string; error?: string }
       if (!res.ok || !json.url) {
+        // R2-A (ревью L-6): a paid section closed for the account → say so, not «не удалось».
+        if (res.status === 402 || json.error === 'upgrade_required') {
+          toast('Раздел в платном доступе — оставьте заявку на доступ на странице раздела')
+          return
+        }
         toast.error(
           json.error === 'forbidden'
             ? 'Недостаточно прав для этой компании'
@@ -176,7 +181,9 @@ export function ShareButton({
         } catch {
           errCode = undefined
         }
-        if (res.status === 404 || errCode === 'no_data') {
+        if (res.status === 402 || errCode === 'upgrade_required') {
+          toast('PDF раздела — в платном доступе: оставьте заявку на доступ на странице раздела')
+        } else if (res.status === 404 || errCode === 'no_data') {
           toast('Отчёт ещё не сформирован — заполните диагностику')
         } else if (res.status === 403 || errCode === 'forbidden') {
           toast.error('Недостаточно прав')

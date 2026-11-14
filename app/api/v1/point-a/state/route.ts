@@ -38,7 +38,10 @@ export async function GET(req: Request): Promise<NextResponse> {
   const access = await resolveFeature(supabase, user.id, 'point_a', { exemptStaff: true })
   if (!access.allowed && !express) return upgradeRequiredResponse('point_a')
   try {
-    const state = await loadPointAState(supabase, createServiceClient(), tenant.tenant.companyId, user.id)
+    // R2-A (147): RLS hides a paid Point A from a Free session — the express view
+    // is read with the service role, for the tenant checked above only.
+    const service = createServiceClient()
+    const state = await loadPointAState(access.allowed ? supabase : service, service, tenant.tenant.companyId, user.id)
     if (!state.snapshot && state.recalculation === 'idle' && state.sources.survey.completed > 0) {
       if (await requestPointARecalc(tenant.tenant.companyId, 'first_view', 0)) state.recalculation = 'queued'
     } else if (state.recalculation === 'queued') {

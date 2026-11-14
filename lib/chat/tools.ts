@@ -302,9 +302,23 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
   },
 ]
 
-/** Tools a caller may use: proposals only for owners / admins. */
-export function toolsFor(canManage: boolean): ChatTool[] {
-  return CHAT_TOOLS.filter((t) => t.kind === 'read' || canManage)
+/**
+ * R2-A (ревью H-2): the read tools that return the data of a paid section. A
+ * section closed for the caller (lib/access/decision.ts) → its tools are not
+ * offered to the model at all.
+ */
+export const PAID_TOOL_SECTION: Readonly<Record<string, 'point_a' | 'point_b' | 'gri_full' | 'market'>> = {
+  get_point_a: 'point_a',
+  explain_block: 'point_a',
+  list_discrepancies: 'point_a',
+  propose_resolve_discrepancy: 'point_a',
+  get_gri: 'gri_full',
+  get_point_b: 'point_b',
+}
+
+/** Tools a caller may use: proposals only for owners / admins; no tools of closed paid sections. */
+export function toolsFor(canManage: boolean, sections?: Readonly<Record<'point_a' | 'point_b' | 'gri_full' | 'market', boolean>>): ChatTool[] {
+  return CHAT_TOOLS.filter((t) => (t.kind === 'read' || canManage) && (!sections || !PAID_TOOL_SECTION[t.name] || sections[PAID_TOOL_SECTION[t.name]]))
 }
 
 export { isBlockKey }

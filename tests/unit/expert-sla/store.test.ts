@@ -19,19 +19,27 @@ function row(id: string, over: Partial<SlaTaskRow> = {}): SlaTaskRow {
 }
 
 describe('visibility', () => {
-  it('an expert sees tasks of his clients and tasks assigned to him — nothing else', () => {
-    const v = { actorId: 'e1', clientIds: ['c1'] }
+  it('п. 1–2: a scoped actor sees tasks of HIS clients only — «assigned to me» of another client gives nothing', () => {
+    const v = { clientIds: ['c1'] }
     expect(visibleTo(v, { client_id: 'c1', assignee_id: null })).toBe(true)
-    expect(visibleTo(v, { client_id: 'c2', assignee_id: 'e1' })).toBe(true)
-    expect(visibleTo(v, { client_id: 'c2', assignee_id: 'e2' })).toBe(false)
+    expect(visibleTo(v, { client_id: 'c2', assignee_id: 'e1' })).toBe(false) // 145 showed it to e1
     expect(visibleTo(v, { client_id: 'c3', assignee_id: null })).toBe(false)
     expect(visibleTo({ all: true }, { client_id: 'c3', assignee_id: null })).toBe(true)
+    expect(visibleTo({ assigneeId: 'ad1' }, { client_id: 'c3', assignee_id: 'ad1' })).toBe(true)
+    expect(visibleTo({ assigneeId: 'ad1' }, { client_id: 'c3', assignee_id: null })).toBe(false)
   })
 
-  it('loadSlaTasks filters again in code (the PostgREST or() is not trusted alone)', async () => {
-    const f = slaDb({ expert_sla_tasks: [row('a', { client_id: 'c1' }), row('b', { client_id: 'c2', assignee_id: 'e2' }), row('c', { client_id: 'c9', assignee_id: 'e1' })] as unknown as Row[] })
-    const ids = (await loadSlaTasks(f.sb, { actorId: 'e1', clientIds: ['c1'] })).map((r) => r.id).sort()
-    expect(ids).toEqual(['a', 'c'])
+  it('loadSlaTasks reads the scope in chunks of ≤ 100 ids (no truncation at 1000, no long URL)', async () => {
+    const clients = Array.from({ length: 1150 }, (_, i) => `c${i}`)
+    const f = slaDb({
+      expert_sla_tasks: [
+        row('a', { client_id: 'c1' }), row('far', { client_id: 'c1149' }),
+        row('b', { client_id: 'c-other', assignee_id: 'e1' }),
+      ] as unknown as Row[],
+    })
+    const ids = (await loadSlaTasks(f.sb, { clientIds: clients })).map((r) => r.id).sort()
+    expect(ids).toEqual(['a', 'far'])
+    expect(Math.max(...f.listSizes)).toBeLessThanOrEqual(100)
   })
 })
 

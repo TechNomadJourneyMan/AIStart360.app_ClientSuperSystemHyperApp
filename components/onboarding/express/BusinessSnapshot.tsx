@@ -109,7 +109,10 @@ export function BusinessSnapshot({ answers, pointA, recommended, chatEnabled = f
                 </li>
               ))}
             </ul>
-            <Link href="/client/point-a" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-primary hover:underline">Открыть Точку А →</Link>
+            {/* R2-A (ревью L-6): the full Point A is paid — say so; the link leads to its paywall with the request. */}
+            <Link href="/client/point-a" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-primary hover:underline">
+              {pointA.locked ? 'Полный разбор Точки А — в платном доступе →' : 'Открыть Точку А →'}
+            </Link>
           </div>
         )}
       </section>

@@ -10,8 +10,8 @@ import { decorate, inView, isSlaView, loadSlaTasks, summarize, type SlaVisibilit
  * GET /api/giga-admin/expert-sla?view=open|attention|breached|queue|mine|closed
  *
  * «SLA экспертов» (R2-B): задачи экспертов с часами реакции (24 ч) и ответа
- * (48 ч). Видимость — скоуп сотрудника (как RLS миграции 145): 'all' — все;
- * «только назначенные» — задачи своих клиентов и назначенные лично ему.
+ * (48 ч). Видимость — скоуп сотрудника (как RLS миграции 146): 'all' — все;
+ * «только назначенные» — задачи своих клиентов.
  * Право — clients.review (Super Admin, Admin, SuperExpert).
  */
 export async function GET(req: NextRequest) {
@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
   if (!isSlaView(view)) return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
 
   const scope = await actorClientScope(actor)
-  const visibility: SlaVisibility = scope.scope === 'all' ? { all: true } : { actorId: actor.id, clientIds: scope.clientIds }
+  // Client scope only (RLS 146): a task «assigned to me» of a client outside the scope is not shown.
+  const visibility: SlaVisibility = scope.scope === 'all' ? { all: true } : { clientIds: scope.clientIds }
   const sb = createServiceClient()
   const now = new Date()
   try {

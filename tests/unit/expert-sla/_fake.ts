@@ -13,6 +13,10 @@ export function slaDb(seed: Record<string, Row[]> = {}, rpc: (fn: string, args: 
   const db: Record<string, Row[]> = { profiles: [], staff_roles: [], user_assignments: [], expert_sla_tasks: [], expert_cases: [], ...seed }
   const writes: Array<{ table: string; op: string; payload: unknown; matched: number }> = []
   const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
+  /** Size of every in() list and of every or() filter — the chunking rule (≤ 100 ids per request). */
+  const listSizes: number[] = []
+  /** Tables whose reads answer with an error (a missing migration, a broken read). */
+  const failing = new Set<string>()
   const keyOf: Record<string, string> = { user_assignments: 'user_id', profiles: 'id', staff_roles: 'user_id' }
 
   const client = {
@@ -33,6 +37,7 @@ export function slaDb(seed: Record<string, Row[]> = {}, rpc: (fn: string, args: 
       let sort: { col: string; asc: boolean } | null = null
       const filters: Array<(r: Row) => boolean> = []
       const run = () => {
+        if (failing.has(table)) return { data: null, error: { code: '42P01', message: `relation "${table}" does not exist` } }
         const rows = (db[table] ??= [])
         const match = (r: Row) => filters.every((f) => f(r))
         if (op === 'insert' || op === 'upsert') {
@@ -71,8 +76,22 @@ export function slaDb(seed: Record<string, Row[]> = {}, rpc: (fn: string, args: 
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
         is: (c: string, v: unknown) => { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return b },
         not: (c: string, o: string, v: unknown) => { filters.push((r) => (o === 'is' && v === null ? r[c] != null : r[c] !== v)); return b },
-        in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b },
-        or: () => b,
+        in: (c: string, vs: unknown[]) => { listSizes.push(vs.length); filters.push((r) => vs.includes(r[c])); return b },
+        lt: (c: string, v: unknown) => { filters.push((r) => r[c] != null && (typeof v === 'number' ? Number(r[c]) < v : String(r[c]) < String(v))); return b },
+        // PostgREST or(): `col.eq.v,col.is.null,col.in.(a,b)` — any of the parts.
+        or: (expr: string) => {
+          const parts = expr.match(/[a-z_]+\.(?:in\.\([^)]*\)|[a-z]+\.[^,]*)/g) ?? []
+          listSizes.push(parts.reduce((n, p) => n + (p.includes('.in.(') ? p.split(',').length : 1), 0))
+          filters.push((r) => parts.some((p) => {
+            const [col, op, ...rest] = p.split('.')
+            const val = rest.join('.')
+            if (op === 'is') return val === 'null' ? r[col] == null : String(r[col]) === val
+            if (op === 'eq') return String(r[col]) === val
+            if (op === 'in') return val.replace(/[()]/g, '').split(',').includes(String(r[col]))
+            return false
+          }))
+          return b
+        },
         order: (col: string, o?: { ascending?: boolean }) => { sort = { col, asc: o?.ascending !== false }; return b },
         limit: (n: number) => { cap = n; return b },
         maybeSingle: () => { single = true; return Promise.resolve(run()) },
@@ -82,7 +101,7 @@ export function slaDb(seed: Record<string, Row[]> = {}, rpc: (fn: string, args: 
       return b
     },
   }
-  return { sb: client as unknown as SupabaseClient, db, writes, rpcCalls }
+  return { sb: client as unknown as SupabaseClient, db, writes, rpcCalls, listSizes, failing }
 }
 
 export const iso = (d: Date) => d.toISOString()

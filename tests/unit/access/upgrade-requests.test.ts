@@ -115,6 +115,43 @@ describe('submitAccessRequest — one open request per client', () => {
     expect((s.db.rows[0].payload as Record<string, unknown>).features).toEqual(['point_a', 'market'])
   })
 
+  it('L-4: two clicks on DIFFERENT sections at the same time — no section is lost (compare-and-swap + retry)', async () => {
+    const svc = fakeService(s.db) as never
+    await lib.submitAccessRequest(svc, { userId: ME, featureKey: 'point_a' })
+    // A concurrent writer adds «market» between our read and our write.
+    s.db.beforeUpdateOnce = (rows) => {
+      const r = rows[0]
+      r.payload = { ...(r.payload as Record<string, unknown>), features: ['point_a', 'market'] }
+      r.updatedAt = '2099-01-01T00:00:00.000'
+    }
+    const res = await lib.submitAccessRequest(svc, { userId: ME, featureKey: 'gri_full' })
+    expect(res.created).toBe(false)
+    expect(s.db.rows).toHaveLength(1)
+    expect((s.db.rows[0].payload as Record<string, unknown>).features).toEqual(['point_a', 'market', 'gri_full'])
+  })
+
+  it('L-4: the request was closed between the read and the write → the section goes into a NEW open request, never into the closed one', async () => {
+    const svc = fakeService(s.db) as never
+    await lib.submitAccessRequest(svc, { userId: ME, featureKey: 'point_a' })
+    s.db.beforeUpdateOnce = (rows) => { rows[0].status = 'approved' }
+    const res = await lib.submitAccessRequest(svc, { userId: ME, featureKey: 'market' })
+    expect(res.created).toBe(true)
+    expect(s.db.rows).toHaveLength(2)
+    expect((s.db.rows[0].payload as Record<string, unknown>).features).toEqual(['point_a'])
+    expect(s.db.rows[1]).toMatchObject({ status: 'new', payload: expect.objectContaining({ features: ['market'] }) })
+  })
+
+  it('L-5: only known sections are accepted by the API (no free text in the staff card)', async () => {
+    expect(lib.isKnownRequestFeature('point_a')).toBe(true)
+    expect(lib.isKnownRequestFeature('/market')).toBe(true)
+    expect(lib.isKnownRequestFeature('pilot')).toBe(true)
+    expect(lib.isKnownRequestFeature('Позвоните мне срочно, я директор')).toBe(false)
+    expect(lib.isKnownRequestFeature(42)).toBe(false)
+    const res = await post({ featureKey: 'Позвоните мне срочно, я директор' })
+    expect(res.status).toBe(400)
+    expect(s.db.rows).toHaveLength(0)
+  })
+
   it('a failed insert is an error, never a silent «sent»', async () => {
     s.db.failInsert = true
     await expect(lib.submitAccessRequest(fakeService(s.db) as never, { userId: ME, featureKey: 'point_a' })).rejects.toThrow()

@@ -24,6 +24,7 @@ vi.mock('@/lib/access/request-access', () => ({
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({}) }))
 vi.mock('@/lib/access/upgrade-requests', () => ({ findOpenAccessRequest: async () => s.open }))
+vi.mock('@/lib/impersonation/server', () => ({ activeImpersonation: async () => null }))
 
 const { default: Paywall } = await import('@/components/access/Paywall')
 const { UpgradeGate } = await import('@/components/access/UpgradeGate')
@@ -70,6 +71,24 @@ describe('Paywall — one component for every paid section', () => {
     expect(out).toMatch(/<button[^>]*disabled=""/)
   })
 
+  it('L-4: an open request for ANOTHER section → «Добавить раздел к заявке» (active), not «Заявка отправлена»', () => {
+    const out = html(React.createElement(Paywall, { feature: 'market', initialRequested: false, initialOpenOther: true }))
+    expect(out).toContain('Добавить раздел к заявке')
+    expect(out).not.toContain('Заявка отправлена')
+    expect(out).not.toMatch(/<button[^>]*disabled=""/)
+    expect(model.requestStateFor('market', { open: true, features: ['point_a'] })).toBe('add')
+    expect(model.requestStateFor('market', { open: true, features: ['point_a', 'market'] })).toBe('sent')
+    expect(model.requestStateFor('market', { open: false, features: [] })).toBe('idle')
+  })
+
+  it('L-6: «от имени» — no request button for staff, an explanation instead of «Не удалось отправить»', async () => {
+    const out = html(React.createElement(Paywall, { feature: 'point_a', impersonating: true }))
+    expect(out).toContain(model.IMPERSONATION_TEXT)
+    expect(out).toMatch(/<button[^>]*disabled=""/)
+    const forbidden = (async () => ({ ok: false, status: 403, json: async () => ({ error: 'impersonation' }) })) as unknown as typeof fetch
+    expect(await model.sendAccessRequest(forbidden, 'point_a')).toBe('impersonation')
+  })
+
   it('unknown request state (no server answer yet) → the button waits instead of double-sending', () => {
     expect(html(React.createElement(Paywall, { feature: 'point_a' }))).toMatch(/<button[^>]*disabled=""/)
   })
@@ -99,10 +118,10 @@ describe('paywall-model', () => {
     expect(await model.sendAccessRequest((async () => { throw new Error('offline') }) as unknown as typeof fetch, 'market')).toBe('error')
   })
 
-  it('readAccessRequest: true / false / unknown', async () => {
+  it('readAccessRequest: open request with its sections / none / unknown', async () => {
     const reply = (status: number, body: unknown) => (async () => ({ ok: status < 400, json: async () => body })) as unknown as typeof fetch
-    expect(await model.readAccessRequest(reply(200, { ok: true, requested: true }))).toBe(true)
-    expect(await model.readAccessRequest(reply(200, { ok: true, requested: false }))).toBe(false)
+    expect(await model.readAccessRequest(reply(200, { ok: true, requested: true, features: ['market'] }))).toEqual({ open: true, features: ['market'] })
+    expect(await model.readAccessRequest(reply(200, { ok: true, requested: false, features: [] }))).toEqual({ open: false, features: [] })
     expect(await model.readAccessRequest(reply(500, { ok: false }))).toBeNull()
     expect(await model.readAccessRequest((async () => { throw new Error('x') }) as unknown as typeof fetch)).toBeNull()
   })
@@ -131,6 +150,13 @@ describe('FeatureGate — the server gate of a paid page', () => {
   it('an open request known on the server → «Заявка отправлена» at once', async () => {
     s.open = { id: 'r1', features: ['market'], payload: {} }
     expect(await render('market')).toContain(model.SENT_TEXT)
+  })
+
+  it('L-4: the open request is for another section → this paywall offers to add the section', async () => {
+    s.open = { id: 'r1', features: ['point_a'], payload: {} }
+    const out = await render('market')
+    expect(out).toContain('Добавить раздел к заявке')
+    expect(out).not.toContain(model.SENT_TEXT)
   })
 
   it('open (Pro / staff / gates off — the decision says so) → the section', async () => {

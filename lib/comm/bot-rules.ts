@@ -36,11 +36,8 @@ export const CASE_TEXT = 'Оформил заявку — эксперт свя�
 export function caseQueuedText(promise: string): string {
   return `Оформил заявку. ${promise}`.trim()
 }
-/** The model's own confirmation + the SLA promise (once; nothing to add without a promise). */
-export function withSlaPromise(reply: string, promise: string | null): string {
-  if (!promise || reply.includes(promise)) return reply
-  return `${reply.trim()} ${promise}`.trim()
-}
+/** The conversation already has an open request (it is reused): no new promise of an answer time. */
+export const CASE_REUSED_TEXT = 'Ваша заявка уже у эксперта — ответ придёт в этот диалог.'
 /** At most this many bot replies per conversation per hour. */
 export const BOT_REPLIES_PER_HOUR = 10
 export const BOT_MIN_DELAY_MS = 2_000

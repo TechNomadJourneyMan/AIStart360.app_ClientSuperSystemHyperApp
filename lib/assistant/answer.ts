@@ -24,6 +24,7 @@ import { sanitizeQualitative } from './mascot/sanitize'
 import { computeCompletion } from './completion'
 import type { AssistantContext, CompletionReport } from './types'
 import { formatGri } from '@/lib/format/gri'
+import { paidLockedPromptNote } from './paid-context'
 
 // ─── Result schema ───────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string
   const weakest = a.weakest_blocks.map((bl) => `${bl.label} ${n(bl.score)}`).join(', ') || '—'
   const progressBlock = formatSurveyProgress(computeCompletion(ctx), locale)
 
-  return `${en ? 'COMPANY DATA SNAPSHOT (curated — no other source).' : 'СНИМОК ДАННЫХ КОМПАНИИ (курированный — другого источника нет).'}
+  return `${paidLockedPromptNote(ctx, locale)}${en ? 'COMPANY DATA SNAPSHOT (curated — no other source).' : 'СНИМОК ДАННЫХ КОМПАНИИ (курированный — другого источника нет).'}
 
 --- ${en ? 'COMPANY' : 'КОМПАНИЯ'} ---
 ${en ? 'Name' : 'Название'}: ${c.name ?? '—'}

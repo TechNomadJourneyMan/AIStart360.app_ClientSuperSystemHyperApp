@@ -6,6 +6,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { mayActOnUser } from '@/lib/api-identity'
 import { logAudit } from '@/lib/audit'
 import { dbError } from '@/lib/api-error'
+import { actionItemSection } from '@/lib/access/decision'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * PATCH /api/v1/action-plan/:id
@@ -38,7 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   patch.updated_at = new Date().toISOString()
 
   const admin = createServiceClient()
-  const { data: item, error: readError } = await admin.from('action_items').select('user_id').eq('id', params.id).maybeSingle()
+  const { data: item, error: readError } = await admin.from('action_items').select('user_id, source').eq('id', params.id).maybeSingle()
   if (readError) return dbError('v1/action-plan/[id]', readError)
   if (!item) return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
 
@@ -46,6 +48,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const isStaff = !isOwner
   if (isStaff && !(await mayActOnUser(sb, user.id, item.user_id as string))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  }
+  // R2-A (ревью M-1): the owner edits a task of a paid section only with that section.
+  if (isOwner) {
+    const upgrade = await gatePaidSection(sb, user.id, actionItemSection((item as { source?: string | null }).source))
+    if (upgrade) return upgrade
   }
 
   const { error } = await admin.from('action_items').update(patch).eq('id', params.id)

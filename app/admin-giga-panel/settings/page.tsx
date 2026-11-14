@@ -25,8 +25,11 @@ interface SettingsResponse {
 // Confirmation copy for switches whose change affects every user.
 const CONFIRM: Partial<Record<SettingKey, (next: boolean) => string>> = {
   access_gates: (on) => on
-    ? 'Бесплатные пользователи потеряют доступ к PDF, AI-чату, бенчмаркам и повторным GRI сверх лимита.'
+    ? 'Бесплатные пользователи потеряют доступ к Точке А, Точке Б, Рынку и полному GRI (вместо них — пейволл с заявкой), а также к PDF, AI-чату и бенчмаркам.'
     : 'Все пользователи получат полный доступ независимо от тарифа.',
+  pilot_self_service: (on) => on
+    ? 'Любой клиент сможет сам включить себе полный доступ на 30 дней (один раз), без менеджера.'
+    : 'Запрос пилота будет создавать заявку на доступ; доступ откроет менеджер.',
   insight_moderation: (on) => on
     ? 'Новые ИИ-инсайты будут попадать клиентам только после проверки.'
     : 'ИИ-инсайты начнут публиковаться клиентам без проверки эксперта.',
@@ -114,7 +117,10 @@ export default function SettingsPage() {
             <SettingRow k="access_gates" meta={meta}>
               <Toggle checked={v.access_gates} disabled={!canEdit || !!saving} onChange={(n) => toggle('access_gates', n)} label={SETTINGS.access_gates.label} />
             </SettingRow>
-            <SettingRow k="gri_free_runs" meta={meta} note={!v.access_gates ? 'Начнёт действовать после включения тарифных ограничений.' : undefined}>
+            <SettingRow k="pilot_self_service" meta={meta}>
+              <Toggle checked={v.pilot_self_service} disabled={!canEdit || !!saving} onChange={(n) => toggle('pilot_self_service', n)} label={SETTINGS.pilot_self_service.label} />
+            </SettingRow>
+            <SettingRow k="gri_free_runs" meta={meta} note={!v.access_gates ? 'Начнёт действовать после включения тарифных ограничений.' : 'Только для Free-аккаунтов, которым полный GRI открыт индивидуально.'}>
               <NumberSetting
                 value={v.gri_free_runs} min={0} max={20} suffix="шт."
                 disabled={!canEdit} saving={saving === 'gri_free_runs'}

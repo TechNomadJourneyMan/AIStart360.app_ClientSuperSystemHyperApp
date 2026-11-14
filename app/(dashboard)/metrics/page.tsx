@@ -5,6 +5,22 @@ import { getRequestUser } from '@/lib/request-user'
 import MetricsPageClient from '@/components/metrics/MetricsPageClient'
 import { loadMetricsPageData } from '@/lib/metrics/page-data'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
+import { getRequestAccess } from '@/lib/access/request-access'
+
+/**
+ * R2-A (ревью H-3): the GRI tab is the full GRI — a paid section. Closed → the
+ * row is not read (the page reads with the service role) and the tab shows the
+ * paywall. A failed decision counts as closed here: the data is read on the server.
+ */
+async function griOpen(userId: string | null): Promise<boolean> {
+  if (!userId) return false
+  try {
+    return (await getRequestAccess(userId)).sections.gri_full
+  } catch (err) {
+    console.error('[metrics] access decision failed — GRI tab closed:', err instanceof Error ? err.message : err)
+    return false
+  }
+}
 
 export const metadata: Metadata = { title: 'Метрики — AIStart360' }
 
@@ -35,7 +51,8 @@ export default async function MetricsPage() {
 
   const userId = supabaseUserId
 
-  const pageData = await loadMetricsPageData(userId)
+  const includeGri = await griOpen(userId)
+  const pageData = await loadMetricsPageData(userId, { includeGri })
 
   return (
     <>
@@ -47,6 +64,7 @@ export default async function MetricsPage() {
         griAssessment={pageData.griAssessment}
         company={pageData.company}
         surveyAnswers={pageData.surveyAnswers}
+        griLocked={!includeGri}
       />
     </>
   )

@@ -28,6 +28,8 @@ interface Task {
   received_at: string; reaction_due_at: string; answer_due_at: string
   first_response_at: string | null; closed_at: string | null; close_reason: string | null
   escalated_at: string | null; breached_at: string | null
+  answered?: boolean | null; escalation_notified_at?: string | null; breach_notified_at?: string | null
+  notify_attempts?: number; notify_error?: string | null
   sourceLabel: string; stage: SlaStage; timer: string
   client: { id: string; name: string }
   assignee: { id: string; name: string } | null
@@ -38,6 +40,9 @@ interface Worker { id: string; name: string; kind: 'expert' | 'super_expert' | '
 
 const STAGE_TONE: Record<SlaStage, Tone> = { breached: 'red', escalated: 'red', due_soon: 'amber', ok: 'neutral', closed: 'green' }
 const KIND_LABEL: Record<Worker['kind'], string> = { expert: 'эксперт', super_expert: 'SuperExpert', admin: 'Admin', super_admin: 'Super Admin' }
+const CLOSE_LABEL: Record<string, string> = {
+  superseded: 'заменена новой версией', stale: 'рекомендации устарели', withdrawn: 'отозвана', failed: 'сбой сборки', gone: 'удалена',
+}
 const VIA_LABEL: Record<string, string> = { source: 'из обращения', client: 'ответственный клиента', auto: 'авто: наименее загружен', manual: 'вручную' }
 
 const selectCls = 'rounded-lg border border-white/[0.08] bg-[#0b1128] px-2 py-1 text-[11px] text-slate-200 focus:border-blue-500/40 focus:outline-none disabled:opacity-50'
@@ -109,11 +114,19 @@ function ExpertSlaInner() {
       render: (t) => {
         const at = new Date(now)
         const stage = slaStage(t, at)
-        const text = t.closed_at ? `ответ ${fmtAgo(t.closed_at)}` : slaTimerLabel(t, at)
+        const text = t.closed_at
+          ? (t.answered === false ? `закрыта без ответа · ${CLOSE_LABEL[t.close_reason ?? ''] ?? t.close_reason ?? ''}` : `ответ ${fmtAgo(t.closed_at)}`)
+          : slaTimerLabel(t, at)
+        const delivery = t.breached_at
+          ? (t.breach_notified_at ? ' · уведомлены' : ' · уведомление ещё не доставлено')
+          : t.escalated_at ? (t.escalation_notified_at ? ' · эскалация отправлена' : ' · эскалация ещё не доставлена') : ''
         return (
           <div className="space-y-0.5">
             <Badge tone={STAGE_TONE[stage]} title={`Ответ до ${fmtDateTime(t.answer_due_at)}`}>{text}</Badge>
-            <p className="text-[10px] text-slate-500">{STAGE_LABELS[stage]}{t.breached_at ? ' · уведомлены' : t.escalated_at ? ' · эскалация отправлена' : ''}</p>
+            <p className="text-[10px] text-slate-500">{stage === 'closed' && t.answered === false ? 'Закрыта без ответа' : STAGE_LABELS[stage]}{delivery}</p>
+            {!!t.notify_attempts && (
+              <p className="text-[10px] text-amber-300" title={t.notify_error ?? undefined}>Не доставлено, попыток: {t.notify_attempts}</p>
+            )}
           </div>
         )
       },

@@ -71,9 +71,10 @@ describe('GET /api/v1/point-a/state for a Free account', () => {
     expect(body.view).toBe('express')
     expect(Object.keys(body.data).sort()).toEqual(['recalculation', 'snapshot'])
     expect(body.data.snapshot.overall).toBe(61)
-    expect(body.data.snapshot.blocks[0]).toEqual({ key: 'finance', title: 'Финансы', score: 64, status: 'ok', coverage: 0.9, weight: 0.2, informational: false, hiddenForClient: false, top_issues: ['Нет учёта маржи'] })
+    // ревью L-2: the count of findings only (the free card shows «1 находка»), never their text
+    expect(body.data.snapshot.blocks[0]).toEqual({ key: 'finance', title: 'Финансы', score: 64, status: 'ok', coverage: 0.9, weight: 0.2, informational: false, hiddenForClient: false, issues_count: 1 })
     const text = JSON.stringify(body)
-    for (const leak of ['secret-check', 'secret-reco', 'expert note', 'history', 'discrepancies', 'benchmarks', 'metrics', 'goals', 'companyId']) expect(text).not.toContain(leak)
+    for (const leak of ['secret-check', 'secret-reco', 'expert note', 'history', 'discrepancies', 'benchmarks', 'metrics', 'goals', 'companyId', 'Нет учёта маржи', 'top_issues']) expect(text).not.toContain(leak)
   })
 
   it('Pro (or gates off) gets the full state, also on the express view', async () => {

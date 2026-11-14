@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSetting } from '@/lib/settings/store'
-import { SOURCE_LABELS, clientPromiseText, isExpertSlaSource } from '@/lib/expert-sla/policy'
+import { SOURCE_LABELS, clientPromiseText, isExpertSlaSource, isExpertWorkSource } from '@/lib/expert-sla/policy'
 
 /**
  * GET /api/v1/expert-sla — открытые задачи эксперта ПО САМОМУ клиенту (R2-B).
@@ -12,7 +12,9 @@ import { SOURCE_LABELS, clientPromiseText, isExpertSlaSource } from '@/lib/exper
  * (client_id = auth.uid()). Наружу — только вид работы, когда поступила и до
  * какого срока ответ; кто исполнитель и пороги эскалации клиенту не нужны.
  * `promise` — честный текст «Эксперт ответит в течение N часов», только когда
- * есть задача в очереди и SLA включено.
+ * SLA включено, таблица задач читается (миграция есть) и у клиента есть
+ * открытая работа ЭКСПЕРТА (не одобрение плана Admin-ом), срок ответа по
+ * которой ещё не прошёл. Просроченной задаче нового обещания не даём.
  */
 export async function GET() {
   const sb = createServerClient()
@@ -38,6 +40,8 @@ export async function GET() {
 
   const rows = ((data ?? []) as Array<{ id: string; source: string; received_at: string; answer_due_at: string; first_response_at: string | null }>)
     .filter((r) => isExpertSlaSource(r.source))
+  const now = Date.now()
+  const promised = rows.some((r) => isExpertWorkSource(r.source) && new Date(r.answer_due_at).getTime() > now)
   return NextResponse.json({
     ok: true,
     data: rows.map((r) => ({
@@ -47,7 +51,8 @@ export async function GET() {
       receivedAt: r.received_at,
       answerDueAt: r.answer_due_at,
       inProgress: !!r.first_response_at,
+      overdue: new Date(r.answer_due_at).getTime() <= now,
     })),
-    promise: rows.length ? clientPromiseText(cfg.answer_hours) : null,
+    promise: promised ? clientPromiseText(cfg.answer_hours) : null,
   })
 }

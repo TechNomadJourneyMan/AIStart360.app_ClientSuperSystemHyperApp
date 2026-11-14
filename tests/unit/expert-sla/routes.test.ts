@@ -39,7 +39,10 @@ vi.mock('@/lib/admin/giga-actor', async () => {
   const { makeRequireGiga } = await import('../_giga-guard')
   return { requireGiga: makeRequireGiga(() => ({ id: s.actorId, kind: 'session', role: s.role as StaffRole, email: 'x@x.io' })) }
 })
-vi.mock('@/lib/admin/actor-scope', () => ({ actorClientScope: async () => s.scope }))
+vi.mock('@/lib/admin/actor-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/admin/actor-scope')>()),
+  actorClientScope: async () => s.scope,
+}))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => s.world!.sb }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: s.serverUser } }) }, from: (t: string) => s.world!.sb.from(t) }),
@@ -115,7 +118,7 @@ describe('GET /api/giga-admin/expert-sla', () => {
     }
   })
 
-  it('admin sees every open task; a SuperExpert with «only assigned» sees his clients and tasks assigned to him', async () => {
+  it('admin sees every open task; a SuperExpert with «only assigned» sees his clients\' tasks only', async () => {
     const { GET } = await import('@/app/api/giga-admin/expert-sla/route')
     const all = await (await GET(req('/api/giga-admin/expert-sla?view=open'))).json()
     expect(all.data.map((t: { id: string }) => t.id).sort()).toEqual([T(1), T(2), T(3), T(4), T(6)])
@@ -124,9 +127,10 @@ describe('GET /api/giga-admin/expert-sla', () => {
     s.role = 'super_expert'
     s.actorId = SE
     s.scope = { scope: 'assigned', clientIds: [C3] }
+    // п. 1–2: a task still «assigned» to him of a client taken from him is not shown (145 showed it).
     s.world!.db.expert_sla_tasks.push(task(7, C1, { assignee_id: SE }))
     const mine = await (await GET(req('/api/giga-admin/expert-sla?view=open'))).json()
-    expect(mine.data.map((t: { id: string }) => t.id).sort()).toEqual([T(3), T(6), T(7)])
+    expect(mine.data.map((t: { id: string }) => t.id).sort()).toEqual([T(3), T(6)])
     expect(mine.scope).toBe('assigned')
   })
 
@@ -139,15 +143,30 @@ describe('GET /api/giga-admin/expert-sla', () => {
 })
 
 describe('PATCH /api/giga-admin/expert-sla/:id', () => {
-  it('admin hands the client to an expert: assignment, audit, notification', async () => {
+  it('admin hands the client to an expert: assignment, audit; the announcement goes through the outbox', async () => {
     const { PATCH } = await import('@/app/api/giga-admin/expert-sla/[id]/route')
     const res = await PATCH(req(`/api/giga-admin/expert-sla/${T(3)}`, { method: 'PATCH', body: { assigneeId: E2 } }), { params: { id: T(3) } })
     expect(res.status).toBe(200)
     expect(s.assigned).toEqual([[C3, E2]])
-    expect(s.world!.db.expert_sla_tasks.find((t) => t.id === T(3))).toMatchObject({ assignee_id: E2, assigned_via: 'manual' })
+    expect(s.world!.db.expert_sla_tasks.find((t) => t.id === T(3))).toMatchObject({ assignee_id: E2, assigned_via: 'manual', assign_notified_at: null })
     expect(s.world!.db.expert_sla_tasks.find((t) => t.id === T(6))!.assignee_id).toBeNull() // plan approval stays with admins
     expect(s.audits).toEqual([expect.objectContaining({ action: 'expert_sla.reassigned', entityId: T(3), targetUserId: C3 })])
-    expect(s.notifiedAssigned).toEqual([T(3)])
+    expect(s.notifiedAssigned).toEqual([]) // the SLA pass announces it (outbox, п. 6)
+  })
+
+  it('п. 1: «Взять себе» needs the CLIENT in the actor\'s scope — being the task\'s assignee is not enough', async () => {
+    const { PATCH } = await import('@/app/api/giga-admin/expert-sla/[id]/route')
+    s.role = 'super_expert'
+    s.actorId = SE
+    s.scope = { scope: 'assigned', clientIds: [] } // the client was taken from him
+    s.world!.db.expert_sla_tasks.push(task(8, C3, { assignee_id: SE, assigned_via: 'client' }))
+    const res = await PATCH(req(`/api/giga-admin/expert-sla/${T(8)}`, { method: 'PATCH', body: { assigneeId: SE } }), { params: { id: T(8) } })
+    expect(res.status).toBe(403)
+    expect(s.assigned).toEqual([])
+    // Nor may he hand that client to anyone else.
+    const other = await PATCH(req(`/api/giga-admin/expert-sla/${T(8)}`, { method: 'PATCH', body: { assigneeId: E1 } }), { params: { id: T(8) } })
+    expect(other.status).toBe(403)
+    expect(s.assigned).toEqual([])
   })
 
   it('refuses: a task outside the SuperExpert\'s scope (403), a non-worker target (400), roles without the rights (403)', async () => {
@@ -172,17 +191,22 @@ describe('PATCH /api/giga-admin/expert-sla/:id', () => {
 })
 
 describe('GET /api/expert/sla-tasks', () => {
-  it('an expert sees tasks assigned to him and tasks of his clients — never another expert\'s', async () => {
+  it('an expert sees tasks of his clients only — a task left «assigned» to him after the client moved is gone', async () => {
     const { GET } = await import('@/app/api/expert/sla-tasks/route')
     s.expertViewer = { id: E1, role: 'expert' }
     s.expertClients = [C1]
     const body = await (await GET()).json()
-    expect(body.data.map((t: { id: string }) => t.id).sort()).toEqual([T(1), T(4)])
+    expect(body.data.map((t: { id: string }) => t.id).sort()).toEqual([T(1)]) // T4 (client C2, assignee E1) — not his client
     expect(body.data[0].timer).toMatch(/^осталось \d+ ч$/)
 
     s.expertViewer = { id: E2, role: 'expert' }
+    s.expertClients = [C2]
+    expect((await (await GET()).json()).data.map((t: { id: string }) => t.id).sort()).toEqual([T(2), T(4)])
     s.expertClients = []
-    expect((await (await GET()).json()).data.map((t: { id: string }) => t.id)).toEqual([T(2)])
+    expect((await (await GET()).json()).data).toEqual([])
+    // A staff Admin in the expert cabinet: the tasks he holds.
+    s.expertViewer = { id: E1, role: 'admin' }
+    expect((await (await GET()).json()).data.map((t: { id: string }) => t.id).sort()).toEqual([T(1), T(4)])
   })
 
   it('not an expert → refused', async () => {
@@ -202,6 +226,26 @@ describe('GET /api/v1/expert-sla (client)', () => {
 
     s.serverUser = { id: 'dddddddd-0000-4000-8000-000000000009' }
     expect(await (await GET()).json()).toMatchObject({ data: [], promise: null })
+  })
+
+  it('п. 10: no promise for plan approval only (Admin decides) or for an overdue task', async () => {
+    const { GET } = await import('@/app/api/v1/expert-sla/route')
+    s.serverUser = { id: C3 } // T3 open expert work, T6 plan approval
+    expect((await (await GET()).json()).promise).toBe('Эксперт ответит в течение 48 часов.')
+    s.world!.db.expert_sla_tasks = s.world!.db.expert_sla_tasks.filter((t) => t.id !== T(3))
+    expect((await (await GET()).json())).toMatchObject({ promise: null, data: [{ id: T(6) }] })
+    const past = new Date(Date.now() - 60 * 3_600_000)
+    s.world!.db.expert_sla_tasks.push(task(9, C3, { received_at: past.toISOString(), ...slaDeadlines(past) }))
+    const overdue = await (await GET()).json()
+    expect(overdue.promise).toBeNull()
+    expect(overdue.data.find((t: { id: string }) => t.id === T(9)).overdue).toBe(true)
+  })
+
+  it('п. 10: the SLA ledger missing (migration not applied / rolled back) → no promise', async () => {
+    const { GET } = await import('@/app/api/v1/expert-sla/route')
+    s.serverUser = { id: C2 }
+    s.world!.failing.add('expert_sla_tasks')
+    expect(await (await GET()).json()).toMatchObject({ data: [], promise: null, unavailable: true })
   })
 
   it('SLA switched off → no promise; signed out → 401', async () => {

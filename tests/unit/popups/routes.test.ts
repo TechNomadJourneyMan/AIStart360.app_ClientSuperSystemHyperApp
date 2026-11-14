@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
   db: null as unknown as ReturnType<typeof import('../comm/_db').commDb>,
 }))
 
+// This file drives access_gates through its fake system_settings table: use the real reader (R2-A).
+vi.unmock('@/lib/settings/system-settings')
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => h.db.sb }))
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: h.sessionUser } }) } }) }))
 vi.mock('@/lib/impersonation/server', () => ({ activeImpersonation: vi.fn(async () => (h.impersonating ? { sid: 's' } : null)) }))

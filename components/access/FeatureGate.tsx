@@ -17,6 +17,7 @@ import { getRequestUser } from '@/lib/request-user'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getRequestAccess } from '@/lib/access/request-access'
 import { findOpenAccessRequest } from '@/lib/access/upgrade-requests'
+import { activeImpersonation } from '@/lib/impersonation/server'
 import type { PaidSection } from '@/lib/access/entitlements'
 import Paywall from './Paywall'
 
@@ -32,11 +33,23 @@ export async function isPaidSectionOpen(feature: PaidSection): Promise<{ open: b
   }
 }
 
-async function requested(userId: string): Promise<boolean | undefined> {
+/** This section in the open request / another section's open request (ревью L-4); undefined → the paywall reads it itself. */
+async function requested(userId: string, feature: PaidSection): Promise<{ mine: boolean; other: boolean } | undefined> {
   try {
-    return !!(await findOpenAccessRequest(createServiceClient(), userId))
+    const open = await findOpenAccessRequest(createServiceClient(), userId)
+    if (!open) return { mine: false, other: false }
+    const mine = open.features.includes(feature)
+    return { mine, other: !mine }
   } catch {
-    return undefined // the paywall reads it itself
+    return undefined
+  }
+}
+
+async function impersonating(userId: string): Promise<boolean> {
+  try {
+    return !!(await activeImpersonation(userId))
+  } catch {
+    return false
   }
 }
 
@@ -52,9 +65,10 @@ export default async function FeatureGate({
 }) {
   const { open, userId } = await isPaidSectionOpen(feature)
   if (open || !userId) return <>{children}</>
+  const [req, imp] = await Promise.all([requested(userId, feature), impersonating(userId)])
   return (
     <main className={wrapperClassName}>
-      <Paywall feature={feature} initialRequested={await requested(userId)} />
+      <Paywall feature={feature} initialRequested={req?.mine} initialOpenOther={req?.other} impersonating={imp} />
     </main>
   )
 }

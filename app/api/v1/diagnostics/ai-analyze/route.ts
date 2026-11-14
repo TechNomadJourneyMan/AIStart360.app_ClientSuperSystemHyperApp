@@ -23,6 +23,7 @@ import { assertAiBudget, isAiBudgetError, aiBudgetExceededResponse } from '@/lib
 import { recordAiCacheHit, setAiActor } from '@/lib/ai/usage'
 import { analyzeWithInputCache, pointAAnalysisInputHash } from '@/lib/point-a/analysis-cache'
 import { withDeadline } from '@/lib/runtime/deadline'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -74,6 +75,9 @@ async function handlePost(req: NextRequest) {
       if (await isRateLimitedKey(caller.id, 'diagnostics-ai-analyze', { max: 6, windowMs: 60_000 })) {
         return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
       }
+      // R2-A (ревью M-3): the paid AI analysis is Точка А — not for a Free caller (staff exempt).
+      const upgrade = await gatePaidSection(sb, caller.id, 'point_a')
+      if (upgrade) return upgrade
     }
 
     // Server-to-server fires (recalculate → ai-analyze) do NOT forward cookies,

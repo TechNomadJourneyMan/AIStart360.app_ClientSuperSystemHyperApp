@@ -15,6 +15,8 @@ export interface FakeRequestsDb {
   /** Make the next lookup of open requests return nothing (a race: both callers saw none). */
   hideOpenOnce: number
   failInsert?: boolean
+  /** Runs once right before the next UPDATE is applied — a concurrent writer. */
+  beforeUpdateOnce?: (rows: Row[]) => void
 }
 
 export function newRequestsDb(): FakeRequestsDb {
@@ -48,8 +50,12 @@ export function fakeService(db: FakeRequestsDb) {
           return { data: null, error: null }
         }
         if (st.op === 'update') {
-          for (const r of source().filter(matches)) Object.assign(r, st.payload as Row)
-          return { data: null, error: null }
+          const hook = db.beforeUpdateOnce
+          db.beforeUpdateOnce = undefined
+          hook?.(source())
+          const hit = source().filter(matches)
+          for (const r of hit) Object.assign(r, st.payload as Row)
+          return { data: hit.map((r) => ({ id: r.id })), error: null }
         }
         let rows = source().filter(matches)
         if (table === 'admin_requests' && st.in.some(([c]) => c === 'status') && db.hideOpenOnce > 0) {

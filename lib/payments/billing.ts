@@ -275,6 +275,17 @@ export async function setPlan(input: SetPlanInput, svc: Svc = createServiceClien
   if (!strict) {
     await recordAdminAction(input.actor, { ...entry, newValue: after }, input.req ?? null)
   }
+  // R2-A (ревью M-3): the account now has paid access — run the paid AI of
+  // Point A / Point B it did not get as Free. Background, never fails the change.
+  if (tenant.profileFound && tenant.userId && res.profile_tier === 'pro') {
+    const userId: string = tenant.userId
+    void import('@/lib/background')
+      .then(({ runInBackground }) => runInBackground('paid-ai-catch-up', async () => {
+        const { catchUpPaidAi } = await import('@/lib/point-a/diagnostic-row')
+        await catchUpPaidAi(userId)
+      }))
+      .catch(() => undefined)
+  }
   return { applied: true, orgId: tenant.orgId, userId: tenant.userId, before, after }
 }
 

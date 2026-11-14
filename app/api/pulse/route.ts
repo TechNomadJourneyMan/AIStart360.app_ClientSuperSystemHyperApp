@@ -6,6 +6,7 @@ import type { CrmDeal } from '@/lib/crm/types'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { fenceUntrusted } from '@/lib/ai/gateway'
 import { getDailyBriefing } from '@/lib/pulse/briefing'
+import { resolveFeature } from '@/lib/access/decision'
 
 export const dynamic = 'force-dynamic'
 
@@ -279,9 +280,13 @@ export async function GET() {
     // ── 2. Fetch platform clients (companies + profiles + diagnostics) ──
     let platformClients: Array<Record<string, unknown>> = []
 
-    const { data: companies } = await sb
-      .from('companies')
-      .select('user_id, name, industry, employee_count')
+    // R2-A: a client's own row is built from their Point A (health, block
+    // scores) — a paid section; without it the row is not built at all.
+    const ownPointAOpen = role !== 'client' || !userId
+      || (await resolveFeature(sb, userId, 'point_a', { exemptStaff: true })).allowed
+    const { data: companies } = ownPointAOpen
+      ? await sb.from('companies').select('user_id, name, industry, employee_count')
+      : { data: null }
 
     if (companies?.length) {
       const companyUserIds = companies.map(c => c.user_id)

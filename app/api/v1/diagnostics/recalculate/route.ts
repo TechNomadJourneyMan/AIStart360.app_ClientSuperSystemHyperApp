@@ -13,7 +13,7 @@ import { getSessionUser, resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
 import { internalBaseUrl } from '@/lib/internal-auth'
-import { fireAiFanOut, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
+import { fireAiFanOut, paidFanOutPaths, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 import { resolveFeature } from '@/lib/access/decision'
 
@@ -143,11 +143,14 @@ export async function POST(req: NextRequest) {
     // Retire the previous current diagnostic(s) of this user and insert the
     // new one (exactly one row stays is_current=true; a failed insert puts the
     // previous row back — lib/point-a/diagnostic-row.ts).
+    // R2-A (ревью M-3): the paid AI only for an owner with the paid sections (no cost for Free,
+    // nothing left «processing» / marked «failed»; it runs after the move to Pro — catchUpPaidAi).
+    const aiPaths = process.env.OPENROUTER_API_KEY && !noCompany ? await paidFanOutPaths(db, user_id) : []
     const stored = await storeCurrentDiagnostic(db, {
       userId: user_id,
       companyId: company?.id ?? null,
       result,
-      aiStatus: process.env.OPENROUTER_API_KEY && !noCompany ? 'processing' : 'none',
+      aiStatus: aiPaths.includes('/api/v1/diagnostics/ai-analyze') ? 'processing' : 'none',
       ...(noCompany ? { preliminary: true } : {}),
     })
     if (!stored.ok) return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
@@ -161,8 +164,8 @@ export async function POST(req: NextRequest) {
     const baseUrl = internalBaseUrl(req)
     if (noCompany) {
       // nothing to analyse: no official score
-    } else if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl) {
-      fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale })
+    } else if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl && aiPaths.length > 0) {
+      fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale, paths: aiPaths })
     } else if (process.env.OPENROUTER_API_KEY && diag?.id) {
       console.error('[recalculate] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
     }

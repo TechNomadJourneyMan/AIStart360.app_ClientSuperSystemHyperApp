@@ -96,8 +96,13 @@ export const PAYWALL_COPY: Record<PaywallFeature, PaywallCopy> = {
 export const PAYMENT_NOTE = 'Онлайн-оплата пока не подключена: доступ открывает менеджер после связи с вами.'
 
 export const REQUEST_LABEL = 'Оставить заявку на доступ'
+/** An open request exists, but for other sections (ревью L-4): this one can be added to it. */
+export const ADD_LABEL = 'Добавить раздел к заявке'
 export const SENT_TEXT = 'Заявка отправлена, с вами свяжутся.'
+export const ADD_HINT = 'Ваша заявка на другие разделы уже у менеджера — этот раздел можно добавить к ней.'
 export const ERROR_TEXT = 'Не удалось отправить заявку. Попробуйте ещё раз.'
+/** «От имени» (ревью L-6): the request is the client's own decision. */
+export const IMPERSONATION_TEXT = 'В режиме «от имени» заявку на доступ оставляет сам клиент.'
 
 export function paywallCopy(feature: string): PaywallCopy {
   return (PAYWALL_COPY as Record<string, PaywallCopy>)[feature] ?? {
@@ -113,10 +118,10 @@ export function isUpgradeRequired(status: number, body: { error?: unknown } | nu
   return status === 402 || body?.error === 'upgrade_required'
 }
 
-export type RequestState = 'idle' | 'checking' | 'sending' | 'sent' | 'error'
+export type RequestState = 'idle' | 'add' | 'checking' | 'sending' | 'sent' | 'error' | 'impersonation'
 
 /** POST /api/v1/upgrade-request. 'sent' also when the request already existed (no duplicate is created). */
-export async function sendAccessRequest(fetchFn: typeof fetch, feature: string): Promise<'sent' | 'error'> {
+export async function sendAccessRequest(fetchFn: typeof fetch, feature: string): Promise<'sent' | 'error' | 'impersonation'> {
   try {
     const res = await fetchFn('/api/v1/upgrade-request', {
       method: 'POST',
@@ -124,20 +129,42 @@ export async function sendAccessRequest(fetchFn: typeof fetch, feature: string):
       credentials: 'include',
       body: JSON.stringify({ featureKey: feature }),
     })
-    return res.ok ? 'sent' : 'error'
+    if (res.ok) return 'sent'
+    if (res.status === 403) {
+      const body = (await res.json().catch(() => null)) as { error?: unknown } | null
+      if (body?.error === 'impersonation') return 'impersonation'
+    }
+    return 'error'
   } catch {
     return 'error'
   }
 }
 
-/** GET /api/v1/upgrade-request — is there an open request of this user already? null when unknown. */
-export async function readAccessRequest(fetchFn: typeof fetch): Promise<boolean | null> {
+export interface OpenRequestInfo {
+  /** An open request of the user exists (any section). */
+  open: boolean
+  /** Sections already in it. */
+  features: string[]
+}
+
+/** GET /api/v1/upgrade-request — the open request of this user, if any. null when unknown. */
+export async function readAccessRequest(fetchFn: typeof fetch): Promise<OpenRequestInfo | null> {
   try {
     const res = await fetchFn('/api/v1/upgrade-request', { credentials: 'include', cache: 'no-store' })
     if (!res.ok) return null
-    const body = (await res.json().catch(() => null)) as { requested?: unknown } | null
-    return typeof body?.requested === 'boolean' ? body.requested : null
+    const body = (await res.json().catch(() => null)) as { requested?: unknown; features?: unknown } | null
+    if (typeof body?.requested !== 'boolean') return null
+    return { open: body.requested, features: Array.isArray(body.features) ? body.features.filter((f): f is string => typeof f === 'string') : [] }
   } catch {
     return null
   }
+}
+
+/**
+ * The paywall's state for `feature` from the open request (ревью L-4): «sent»
+ * only when THIS section is in the request; another section's request → «add».
+ */
+export function requestStateFor(feature: string, info: OpenRequestInfo | null): RequestState {
+  if (!info || !info.open) return 'idle'
+  return info.features.includes(feature) ? 'sent' : 'add'
 }

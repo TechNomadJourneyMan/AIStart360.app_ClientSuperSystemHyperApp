@@ -12,6 +12,46 @@ import {
 import { BillingError, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 import { parseJsonBody } from '@/lib/validation/http'
 import { CheckoutBody } from '@/lib/validation/schemas'
+import { getSetting } from '@/lib/settings/store'
+import { createServiceClient } from '@/lib/supabase-service'
+import { submitAccessRequest } from '@/lib/access/upgrade-requests'
+import { activeImpersonation } from '@/lib/impersonation/server'
+
+/** pilot_self_service (GIGA → Настройки). A read failure is «off»: no self-granted access. */
+async function pilotSelfServiceEnabled(): Promise<boolean> {
+  try {
+    return (await getSetting('pilot_self_service')) === true
+  } catch (err) {
+    console.error('[api/checkout] pilot_self_service unreadable — treated as off:', err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
+/** The pilot as an access request (one open request per client — lib/access/upgrade-requests.ts). */
+async function requestPilotAccess(userId: string): Promise<NextResponse> {
+  if (await activeImpersonation(userId)) {
+    return NextResponse.json(
+      { error: 'В режиме «от имени» заявку на доступ оставляет сам клиент.', code: 'impersonation' },
+      { status: 403 },
+    )
+  }
+  try {
+    const r = await submitAccessRequest(createServiceClient(), { userId, featureKey: 'pilot' })
+    return NextResponse.json(
+      {
+        ok: true,
+        requested: true,
+        duplicate: !r.created,
+        checkoutUrl: null,
+        message: 'Пробный период включает менеджер. Мы получили вашу заявку и свяжемся с вами. Онлайн-оплата пока не подключена.',
+      },
+      { status: 202 },
+    )
+  } catch (err) {
+    console.error('[api/checkout] pilot request not stored:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Не удалось отправить заявку. Попробуйте позже.' }, { status: 503 })
+  }
+}
 
 const VALID_PROVIDERS: AcquiringProviderName[] = [
   'stripe',
@@ -114,6 +154,11 @@ export async function POST(req: NextRequest) {
     // ── Trial: no payment. The billing service writes the trialing
     // subscription AND profiles.tier in one transaction (migration 106). ────
     if (plan.kind === 'trial') {
+      // R2-A (ревью H-1): without the platform setting `pilot_self_service`
+      // (default OFF — PO has not decided on the pilot) a client cannot switch
+      // full access on by themselves: the pilot becomes the same access request
+      // as the paywall button, and a manager opens the access. ON → as before.
+      if (!(await pilotSelfServiceEnabled())) return requestPilotAccess(user.id)
       const trialDays = plan.trialDays ?? 30
       try {
         const current = await getEffectivePlan({ userId: user.id })

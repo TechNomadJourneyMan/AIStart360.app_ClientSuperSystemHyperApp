@@ -95,7 +95,8 @@ export async function GET(req: NextRequest) {
         hasDiagnostic: ctx.pointA.has_diagnostic,
         griIndex: ctx.gri.gri_index,
         topLimit: ctx.gri.top_5_limits[0]?.title ?? null,
-        realismLevel: ctx.pointB.has_goal ? ctx.pointB.realism.level : null,
+        // R2-A: a closed Point B has no realism in the snapshot — null, never the 'locked' marker.
+        realismLevel: ctx.pointB.has_goal && !(ctx.paidLocked ?? []).includes('point_b') ? ctx.pointB.realism.level : null,
       },
       hints,
       settings,

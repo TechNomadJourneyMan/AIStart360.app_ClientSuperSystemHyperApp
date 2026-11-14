@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { dbError } from '@/lib/api-error'
 import { trackUserAction } from '@/lib/events/server'
+import { resolveFeature } from '@/lib/access/decision'
 
 // The 7 GRI section ids — derived from sections.ts so the pulse always tracks
 // the same blocks as the full diagnostic. Used to validate POST bodies.
@@ -70,7 +71,10 @@ export async function GET() {
   const currentWeek = rows.find((r) => r.week_start === weekStart) ?? null
 
   // Baseline: latest current full GRI assessment, for per-block delta comparison.
-  const { data: baselineRow, error: baselineErr } = await sb
+  // R2-A (ревью L-1): the full GRI is a paid section — without it the Pulse
+  // (free) works without the comparison: baseline null, nothing of it read.
+  const griOpen = (await resolveFeature(sb, userId, 'gri_full', { exemptStaff: true })).allowed
+  const { data: baselineRow, error: baselineErr } = !griOpen ? { data: null, error: null } : await sb
     .from('gri_assessments')
     .select('gri_index, section_avgs, created_at')
     .eq('user_id', userId)

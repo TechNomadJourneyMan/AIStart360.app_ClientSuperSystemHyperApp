@@ -102,11 +102,47 @@ export const setAutoApproveClients = (v: boolean, by?: string | null) =>
   setBoolSetting('auto_approve_clients', v, by)
 
 /**
- * 6A: тарифные гейты (полный GRI / AI-чат / PDF / бенчмарки). Default FALSE —
- * fail-safe: пока админ явно не включит (и не применит миграцию 048),
- * существующие пользователи ничего не теряют.
+ * 6A: тарифные гейты (Точка А / Б, Рынок, полный GRI, AI-чат / PDF / бенчмарки).
+ * Default FALSE: пока админ явно не включит, существующие пользователи ничего не теряют.
+ *
+ * R2-A (ревью M-2): «строки нет» → false (как раньше), но ОШИБКА чтения больше
+ * не открывает платные разделы. Раньше при сбое БД (too_many_connections) Free в
+ * эти секунды получал 200 вместо 402. Теперь: последнее успешно прочитанное
+ * значение (не старше 5 минут), иначе — гейты считаются включёнными (fail closed;
+ * персонал проходит гейт по своему праву, lib/access/decision.ts). Ошибка — в лог.
  */
-export const getAccessGatesEnabled = () => getBoolSetting('access_gates', false)
+const ACCESS_GATES_LAST_KNOWN_MS = 5 * 60_000
+let accessGatesLastKnown: { value: boolean; at: number } | null = null
+
+export async function getAccessGatesEnabled(): Promise<boolean> {
+  try {
+    const sb = createServiceClient()
+    const { data, error } = await sb
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'access_gates')
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    const raw = (data as { value?: unknown } | null)?.value
+    const v = typeof raw === 'boolean' ? raw : (raw as { enabled?: unknown } | null | undefined)?.enabled
+    const value = typeof v === 'boolean' ? v : false
+    accessGatesLastKnown = { value, at: Date.now() }
+    return value
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (accessGatesLastKnown && Date.now() - accessGatesLastKnown.at < ACCESS_GATES_LAST_KNOWN_MS) {
+      console.warn('[access_gates] read failed, using the last known value:', accessGatesLastKnown.value, msg)
+      return accessGatesLastKnown.value
+    }
+    console.error('[access_gates] read failed — paid sections stay CLOSED for clients until it can be read (fail closed):', msg)
+    return true
+  }
+}
+
+/** Test hook: forget the last known value of access_gates. */
+export function resetAccessGatesCacheForTests(): void {
+  accessGatesLastKnown = null
+}
 export const setAccessGatesEnabled = (v: boolean, by?: string | null) =>
   setBoolSetting('access_gates', v, by)
 

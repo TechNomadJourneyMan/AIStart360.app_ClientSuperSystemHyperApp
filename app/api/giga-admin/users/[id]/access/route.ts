@@ -152,6 +152,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 
+    // R2-A (ревью M-3): Точка А / Б opened individually → run the paid AI the account did not get as Free.
+    if (patch.feature_flags.point_a === true || patch.feature_flags.point_b === true) {
+      const userId = params.id
+      void import('@/lib/background')
+        .then(({ runInBackground }) => runInBackground('paid-ai-catch-up', async () => {
+          const { catchUpPaidAi } = await import('@/lib/point-a/diagnostic-row')
+          await catchUpPaidAi(userId)
+        }))
+        .catch(() => undefined)
+    }
+
     return NextResponse.json({ ok: true, profile: data[0] })
   } catch (e) {
     console.error('[giga-admin/users/access]', e)

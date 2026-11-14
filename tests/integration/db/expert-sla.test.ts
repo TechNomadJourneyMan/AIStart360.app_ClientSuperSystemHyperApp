@@ -21,6 +21,7 @@ interface TaskRow {
   id: string; source: string; source_id: string; client_id: string; assignee_id: string | null; assigned_via: string | null
   received_at: Date; reaction_due_at: Date; answer_due_at: Date; first_response_at: Date | null; closed_at: Date | null
   close_reason: string | null; escalated_at: Date | null; breached_at: Date | null
+  answered?: boolean | null; assign_notified_at?: Date | null; queue_notified_at?: Date | null
 }
 
 async function clockStart(db: Db, iso = '2000-01-01T00:00:00Z') {
@@ -137,25 +138,31 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       expect(await tasksOf(db, client)).toHaveLength(4)
     }))
 
-  it('a non-worker responsible (CRM manager) or a pending expert → the common queue; the case\'s own expert wins', () =>
+  it('a non-worker responsible (CRM manager) or a pending expert → the common queue; the case\'s own assignee only if he may hold it', () =>
     inRollback(async (db) => {
       await clockStart(db)
       const now = await txNow(db)
       const crm = await seedStaff(db, 'crm_manager')
       const pendingExpert = await seedUser(db, { role: 'expert', status: 'pending_approval' })
       const caseExpert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const admin = await seedStaff(db, 'admin')
       const a = await seedUser(db, { status: 'approved' })
       const b = await seedUser(db, { status: 'approved' })
       const c = await seedUser(db, { status: 'approved' })
+      const d = await seedUser(db, { status: 'approved' })
       await assign(db, a, crm)
       await assign(db, b, pendingExpert)
       await seedCase(db, a)
       await seedCase(db, b)
+      // п. 3: an expert who is not the client's responsible (as a client could write before 146) is not trusted.
       await seedCase(db, c, { assignee: caseExpert })
+      await seedCase(db, d, { assignee: admin }) // staff that sees every client — kept
       await sync(db, now)
       expect((await tasksOf(db, a))[0].assignee_id).toBeNull()
       expect((await tasksOf(db, b))[0].assignee_id).toBeNull()
-      expect((await tasksOf(db, c))[0]).toMatchObject({ assignee_id: caseExpert, assigned_via: 'source' })
+      expect((await tasksOf(db, c))[0]).toMatchObject({ assignee_id: null, assigned_via: null })
+      expect((await tasksOf(db, d))[0]).toMatchObject({ assignee_id: admin, assigned_via: 'source' })
+      expect((await tasksOf(db, d))[0].assign_notified_at).not.toBeNull() // the case flow announced it
     }))
 
   it('thresholds with a substituted clock: 24 h without reaction → escalated once, 48 h without answer → breached once', () =>
@@ -270,21 +277,28 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       expect(tasks.filter((t) => !t.closed_at)).toHaveLength(1)
     }))
 
-  it('a case re-assigned in «Эскалации» moves its open task', () =>
+  it('a case re-assigned in «Эскалации» moves its task only to someone who may hold it', () =>
     inRollback(async (db) => {
       await clockStart(db)
       const t0 = await txNow(db)
       const e1 = await seedUser(db, { role: 'expert', status: 'approved' })
-      const e2 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const stranger = await seedUser(db, { role: 'expert', status: 'approved' })
+      const admin = await seedStaff(db, 'admin')
       const client = await seedUser(db, { status: 'approved' })
+      await assign(db, client, e1)
       const caseId = await seedCase(db, client, { assignee: e1 })
       await sync(db, t0)
-      await db.query(`UPDATE public.expert_cases SET assignee_id = $2 WHERE id = $1`, [caseId, e2])
-      const moved = (await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)
-      expect(moved).toMatchObject([{ r_change: 'reassigned', r_assignee: e2 }])
+      // An expert who is not the client's responsible: the task stays (he could not open the client).
+      await db.query(`UPDATE public.expert_cases SET assignee_id = $2 WHERE id = $1`, [caseId, stranger])
+      expect((await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)).toEqual([])
+      expect((await tasksOf(db, client))[0].assignee_id).toBe(e1)
+      // An admin (sees every client): it follows.
+      await db.query(`UPDATE public.expert_cases SET assignee_id = $2 WHERE id = $1`, [caseId, admin])
+      const moved = (await sync(db, plus(t0, 2))).filter((c) => c.r_client === client)
+      expect(moved).toMatchObject([{ r_change: 'reassigned', r_assignee: admin }])
     }))
 
-  it('RLS: an expert sees his own and his clients\' tasks, a client only his own, staff by scope; nobody writes', () =>
+  it('RLS: an expert sees his clients\' tasks, a client only his own, staff by scope; nobody writes', () =>
     inRollback(async (db) => {
       await clockStart(db)
       const t0 = await txNow(db)
@@ -317,9 +331,9 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       await assign(db, c3, superExpertAssigned)
       expect(await visible(superExpertAssigned)).toEqual([c3])
 
-      // A task assigned to e1 personally (manual re-assignment) is his even before the client is.
+      // п. 1–2 (146): a task «assigned» to e1 of a client that is not his gives him nothing.
       await db.query(`UPDATE public.expert_sla_tasks SET assignee_id = $1 WHERE client_id = $2`, [e1, c2])
-      expect(sorted(await visible(e1))).toEqual(sorted([c1, c2]))
+      expect(await visible(e1)).toEqual([c1])
       // A pending (not approved) expert sees nothing, even his own assigned task.
       await db.query(`UPDATE public.profiles SET status = 'pending_approval' WHERE id = $1`, [e1])
       expect(await visible(e1)).toEqual([])
@@ -346,5 +360,230 @@ describe.skipIf(!dbTestsEnabled)('R2-B: SLA экспертов (145)', () => {
       expect(await check(await seedStaff(db, 'support'))).toBe(false)
       expect(await check(await seedUser(db, { status: 'approved' }))).toBe(false)
       expect(await check(null)).toBe(false)
+    }))
+})
+
+describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (146)', () => {
+  afterAll(closeTestPool)
+
+  const insertCase = (db: Db, uid: string, extra: Record<string, unknown> = {}) => {
+    const cols = ['user_id', 'trigger_type', 'title', ...Object.keys(extra)]
+    const vals = [uid, 'user_requested_help', 'Помогите', ...Object.values(extra)]
+    return asUser(db, uid, () =>
+      db.query(`INSERT INTO public.expert_cases (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, vals))
+  }
+
+  it('п. 3: a client opens a request through PostgREST only with the defaults (no assignee, no reaction, status new)', () =>
+    inRollback(async (db) => {
+      const client = await seedUser(db, { status: 'approved' })
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const other = await seedUser(db, { status: 'approved' })
+      for (const extra of [
+        { assignee_id: expert }, { assigned_to: expert }, { status: 'in_progress' }, { status: 'resolved' },
+        { first_response_at: new Date() }, { sla_due_at: new Date(Date.now() + 1e9) },
+      ]) {
+        expect(await pgErrorCode(insertCase(db, client, extra)), JSON.stringify(Object.keys(extra))).toBe('42501')
+      }
+      expect(await pgErrorCode(asUser(db, client, () =>
+        db.query(`INSERT INTO public.expert_cases (user_id, trigger_type, title) VALUES ($1, 'user_requested_help', 'x')`, [other])))).toBe('42501')
+      await insertCase(db, client) // the defaults: allowed, as before
+      const { rows } = await db.query(`SELECT status, assignee_id FROM public.expert_cases WHERE user_id = $1`, [client])
+      expect(rows).toEqual([{ status: 'new', assignee_id: null }])
+    }))
+
+  it('п. 2: a change of the client\'s responsible moves open tasks and cases at once; the former expert sees nothing', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const e1 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const e2 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const crm = await seedStaff(db, 'crm_manager')
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await assign(db, client, e1)
+      const caseId = await seedCase(db, client, { assignee: e1 })
+      await seedReportInReview(db, company)
+      await sync(db, t0)
+      await db.query(`UPDATE public.expert_sla_tasks SET assign_notified_at = now() WHERE client_id = $1`, [client])
+      expect((await tasksOf(db, client)).map((t) => t.assignee_id)).toEqual([e1, e1])
+
+      const seen = async (uid: string) => asUser(db, uid, async () =>
+        (await db.query(`SELECT id FROM public.expert_sla_tasks WHERE client_id = $1`, [client])).rowCount)
+
+      // GIGA user card / bulk / «Эксперты» / auto — every path writes user_assignments: the trigger follows.
+      await assign(db, client, e2)
+      const moved = await tasksOf(db, client)
+      expect(moved.map((t) => t.assignee_id)).toEqual([e2, e2])
+      expect(moved.every((t) => t.assign_notified_at === null)).toBe(true) // the new assignee will be told
+      expect((await db.query(`SELECT assignee_id FROM public.expert_cases WHERE id = $1`, [caseId])).rows[0].assignee_id).toBe(e2)
+      expect(await seen(e1)).toBe(0)
+      expect(await seen(e2)).toBe(2)
+      // The 24-hour escalation goes to the current assignee.
+      const esc = await claim(db, 'escalated', plus(t0, 25))
+      expect(esc.filter((t) => t.client_id === client).map((t) => t.assignee_id)).toEqual([e2, e2])
+
+      // A responsible who cannot hold expert work (CRM manager) → the queue, SuperExpert is told again.
+      await db.query(`UPDATE public.expert_sla_tasks SET queue_notified_at = now() WHERE client_id = $1`, [client])
+      await assign(db, client, crm)
+      const queued = await tasksOf(db, client)
+      expect(queued.map((t) => [t.assignee_id, t.queue_notified_at])).toEqual([[null, null], [null, null]])
+
+      // Back to an expert, then the assignment removed.
+      await assign(db, client, e1)
+      expect((await tasksOf(db, client)).map((t) => t.assignee_id)).toEqual([e1, e1])
+      await db.query(`DELETE FROM public.user_assignments WHERE user_id = $1`, [client])
+      expect((await tasksOf(db, client)).map((t) => t.assignee_id)).toEqual([null, null])
+    }))
+
+  it('п. 2: a blocked expert loses his tasks on the next pass (realign), they return to the queue', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const e1 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const client = await seedUser(db, { status: 'approved' })
+      await assign(db, client, e1)
+      await seedCase(db, client)
+      await sync(db, t0)
+      expect((await tasksOf(db, client))[0].assignee_id).toBe(e1)
+      await db.query(`UPDATE public.profiles SET status = 'blocked' WHERE id = $1`, [e1])
+      const changes = (await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)
+      expect(changes).toMatchObject([{ r_change: 'unassigned', r_assignee: null }])
+    }))
+
+  it('п. 6: delivery is recorded only on success; a failure counts an attempt; a new assignee resets the mark', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const e1 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const e2 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const client = await seedUser(db, { status: 'approved' })
+      await assign(db, client, e1)
+      await seedCase(db, client)
+      await sync(db, t0)
+      const [task] = await tasksOf(db, client)
+      const mark = (kind: string, ok: boolean, assignee: string | null = null) => asService(db, async () =>
+        (await db.query(`SELECT public.expert_sla_mark_notified($1, $2, $3, $4, $5, $6) AS n`, [[task.id], kind, ok, ok ? null : 'telegram 502', assignee, plus(t0, 25)])).rows[0].n as number)
+      const row = async () => (await db.query(`SELECT * FROM public.expert_sla_tasks WHERE id = $1`, [task.id])).rows[0]
+
+      await claim(db, 'escalated', plus(t0, 25))
+      expect(await mark('escalated', false)).toBe(1)
+      expect(await row()).toMatchObject({ escalation_notified_at: null, notify_attempts: 1, notify_error: 'telegram 502' })
+      expect(await mark('escalated', true)).toBe(1)
+      expect(await row()).toMatchObject({ notify_attempts: 0, notify_error: null })
+      expect((await row()).escalation_notified_at).not.toBeNull()
+
+      expect(await mark('assigned', true, e2)).toBe(0) // the message was for someone else
+      expect(await mark('assigned', true, e1)).toBe(1)
+      expect((await row()).assign_notified_at).not.toBeNull()
+      await assign(db, client, e2)
+      expect((await row()).assign_notified_at).toBeNull()
+      expect(await pgErrorCode(db.query(`SELECT public.expert_sla_mark_notified($1, 'other', true)`, [[task.id]]))).toBe('22023') // last statement
+    }))
+
+  it('п. 6: the breach claim settles a pending escalation delivery (one message for a backlog task)', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      await seedCase(db, client)
+      await sync(db, t0)
+      const [task] = await claim(db, 'breached', plus(t0, 60)).then((r) => r.filter((t) => t.client_id === client))
+      expect(task.escalated_at).not.toBeNull()
+      expect((await db.query(`SELECT escalation_notified_at FROM public.expert_sla_tasks WHERE id = $1`, [task.id])).rows[0].escalation_notified_at).not.toBeNull()
+    }))
+
+  it('п. 7: the clock starts at the watcher\'s first pass, not at the migration', () =>
+    inRollback(async (db) => {
+      await db.query(`DELETE FROM public.system_settings WHERE key = 'expert_sla_clock_start'`)
+      const t0 = await txNow(db)
+      const firstPass = plus(t0, 72) // Inngest synced three days after the migration
+      const client = await seedUser(db, { status: 'approved' })
+      const caseId = await seedCase(db, client)
+      await db.query(`UPDATE public.expert_cases SET created_at = $2 WHERE id = $1`, [caseId, plus(t0, -100)])
+      await sync(db, firstPass)
+      const [task] = await tasksOf(db, client)
+      expect(task.received_at.getTime()).toBe(firstPass.getTime())
+      expect((await claim(db, 'breached', firstPass)).filter((t) => t.client_id === client)).toEqual([])
+      const clock = async () => (await db.query(`SELECT value #>> '{}' AS v FROM public.system_settings WHERE key = 'expert_sla_clock_start'`)).rows[0].v as string
+      const first = await clock()
+      expect(new Date(first).getTime()).toBe(firstPass.getTime())
+      await sync(db, plus(firstPass, 5))
+      expect(await clock()).toBe(first) // written once
+    }))
+
+  it('п. 8: a report replaced without a decision is not an answer; the new version keeps the original clock', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const v1 = await seedReportInReview(db, company)
+      await sync(db, t0)
+      await claim(db, 'escalated', plus(t0, 25))
+      // The agent rebuilt the report: v1 superseded with no expert decision, v2 in review.
+      await db.query(`UPDATE public.report_versions SET status = 'superseded' WHERE id = $1`, [v1])
+      const { rows } = await db.query(
+        `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, created_at)
+         VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h2', 'agent:report', $2) RETURNING id`, [company, plus(t0, 25.5)])
+      await sync(db, plus(t0, 26))
+      const [old, fresh] = await tasksOf(db, client)
+      expect(old).toMatchObject({ source_id: v1, close_reason: 'superseded', answered: false, first_response_at: null })
+      expect(fresh.source_id).toBe(rows[0].id)
+      expect(fresh.closed_at).toBeNull()
+      expect(fresh.received_at.getTime()).toBe(old.received_at.getTime())
+      expect(fresh.answer_due_at.getTime()).toBe(old.answer_due_at.getTime())
+      expect(fresh.escalated_at).not.toBeNull() // already escalated — not again
+      expect((await claim(db, 'escalated', plus(t0, 27))).filter((t) => t.client_id === client)).toEqual([])
+      expect((await claim(db, 'breached', plus(t0, 48.5))).filter((t) => t.client_id === client).map((t) => t.id)).toEqual([fresh.id])
+    }))
+
+  it('п. 8: stale recommendations are not «reviewed»; the regenerated ones inherit the clock; an expert decision is an answer', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const recs = await seedPendingRecs(db, company, 2)
+      await sync(db, t0)
+      await db.query(`UPDATE public.pb_recommendations SET status = 'stale' WHERE id = ANY($1)`, [recs])
+      await sync(db, plus(t0, 10))
+      const [regen] = await seedPendingRecs(db, company, 1)
+      await db.query(`UPDATE public.pb_recommendations SET created_at = $2 WHERE id = $1`, [regen, plus(t0, 10.5)])
+      await sync(db, plus(t0, 11))
+      const [old, fresh] = await tasksOf(db, client)
+      expect(old).toMatchObject({ close_reason: 'stale', answered: false, first_response_at: null })
+      expect(fresh.received_at.getTime()).toBe(old.received_at.getTime())
+
+      // A report published by the expert is an answer: the next version starts its own clock.
+      const v1 = await seedReportInReview(db, company)
+      await sync(db, plus(t0, 12))
+      await db.query(`UPDATE public.report_versions SET status = 'published', published_at = $2 WHERE id = $1`, [v1, plus(t0, 13)])
+      await sync(db, plus(t0, 14))
+      await db.query(
+        `INSERT INTO public.report_versions (company_id, report_type, version, status, title, content, provenance, data_hash, created_by, created_at)
+         VALUES ($1, 'point_a', 2, 'in_review', 'Точка А', '{}'::jsonb, '{}'::jsonb, 'h3', 'agent:report', $2)`, [company, plus(t0, 14.5)])
+      await sync(db, plus(t0, 15))
+      const reports = (await tasksOf(db, client)).filter((t) => t.source === 'report_review')
+      expect(reports[0]).toMatchObject({ answered: true, close_reason: 'published' })
+      expect(reports[1].received_at.getTime()).toBe(plus(t0, 14.5).getTime()) // its own clock
+    }))
+
+  it('п. 8: a predecessor closed without an answer longer ago than the answer window is not inherited', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const recs = await seedPendingRecs(db, company, 1)
+      await sync(db, t0)
+      await db.query(`UPDATE public.pb_recommendations SET status = 'stale' WHERE id = ANY($1)`, [recs])
+      await sync(db, plus(t0, 1))
+      const [regen] = await seedPendingRecs(db, company, 1)
+      const later = plus(t0, 100)
+      await db.query(`UPDATE public.pb_recommendations SET created_at = $2 WHERE id = $1`, [regen, plus(later, -1)])
+      await sync(db, later)
+      const [, fresh] = await tasksOf(db, client)
+      expect(fresh.received_at.getTime()).toBe(plus(later, -1).getTime())
+      expect(fresh.escalated_at).toBeNull()
     }))
 })

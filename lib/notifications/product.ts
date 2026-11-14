@@ -14,6 +14,13 @@ import {
 } from '@/lib/email/templates'
 import { getSiteUrl } from '@/lib/site-url'
 
+import { pointAClosedFor } from '@/lib/access/recipient'
+
+// R2-A (ревью L-6): Точка А is a paid section. For an account without it the
+// notices name no score and lead to the free «Снимок бизнеса» instead of a paywall.
+
+const FREE_SNAPSHOT_URL = '/client/onboarding/snapshot'
+
 /**
  * «Анкета принята». Запись в ленте ставит claimCompletionNotice
  * (lib/survey/completion-notice.ts, одна на пользователя), поэтому здесь —
@@ -23,15 +30,19 @@ export async function notifyQuestionnaireCompleted(
   userId: string,
   input: { name?: string | null; company?: string | null; completedSteps: number; totalSteps: number; completedAt?: Date | string | null },
 ): Promise<NotifyClientResult> {
-  const email = buildQuestionnaireCompletedEmail({ ...input, url: getSiteUrl('/client/point-a') })
+  const closed = await pointAClosedFor(userId)
+  const target = closed ? FREE_SNAPSHOT_URL : '/client/point-a'
+  const email = buildQuestionnaireCompletedEmail({ ...input, url: getSiteUrl(target) })
   return notifyClient({
     userId,
     category: 'gri',
     event: 'questionnaire_completed',
     title: email.content.title,
-    body: 'Спасибо — ответы сохранены, «Точка А» пересчитана. Следующий шаг — GRI-оценка.',
-    ctaUrl: '/client/point-a',
-    ctaLabel: 'Открыть результат',
+    body: closed
+      ? 'Спасибо — ответы сохранены, экспресс-оценка готова. Полный разбор «Точки А» и GRI — в платном доступе.'
+      : 'Спасибо — ответы сохранены, «Точка А» пересчитана. Следующий шаг — GRI-оценка.',
+    ctaUrl: target,
+    ctaLabel: closed ? 'Открыть снимок' : 'Открыть результат',
     // Тот же ключ, что был у письма раньше: уже отправленные письма не повторятся.
     dedupeKey: `questionnaire_completed:${userId}`,
     channels: { inApp: false },
@@ -86,18 +97,21 @@ export async function notifyPointARecalculated(
   userId: string,
   input: { diagnosticId?: string | null; overallScore?: number | null },
 ): Promise<NotifyClientResult> {
+  const closed = await pointAClosedFor(userId)
   const score =
-    typeof input.overallScore === 'number' && Number.isFinite(input.overallScore)
+    !closed && typeof input.overallScore === 'number' && Number.isFinite(input.overallScore)
       ? ` Общий балл: ${Math.round(input.overallScore)}.`
       : ''
   return notifyClient({
     userId,
     category: 'reports',
     event: 'point_a_recalculated',
-    title: '«Точка А» пересчитана',
-    body: `Снимок текущего состояния обновлён по последним ответам анкеты.${score}`,
-    ctaUrl: '/client/point-a',
-    ctaLabel: 'Открыть «Точку А»',
+    title: closed ? 'Экспресс-оценка обновлена' : '«Точка А» пересчитана',
+    body: closed
+      ? 'Снимок бизнеса обновлён по последним ответам анкеты. Подробный разбор «Точки А» — в платном доступе.'
+      : `Снимок текущего состояния обновлён по последним ответам анкеты.${score}`,
+    ctaUrl: closed ? FREE_SNAPSHOT_URL : '/client/point-a',
+    ctaLabel: closed ? 'Открыть снимок' : 'Открыть «Точку А»',
     dedupeKey: input.diagnosticId ? `point_a_recalculated:${input.diagnosticId}` : null,
     metadata: { diagnosticId: input.diagnosticId ?? null },
   })

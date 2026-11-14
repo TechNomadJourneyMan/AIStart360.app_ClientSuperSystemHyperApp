@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { writeWithAttribution } from '@/lib/survey/attribution'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { createServiceClient } from '@/lib/supabase-service'
 
 /**
  * POST /api/v1/diagnostics/point-b/current-revenue
@@ -28,7 +29,9 @@ export async function POST(req: NextRequest) {
   const month = Math.round(year / 12)
 
   // Reuse the diagnostic's company_id for scoping consistency, if present.
-  const { data: diag } = await sb
+  // R2-A (147): only company_id of the caller's own row, read with the service
+  // role — RLS hides a paid Point A row from a Free session.
+  const { data: diag } = await createServiceClient()
     .from('diagnostics')
     .select('company_id')
     .eq('user_id', user.id)

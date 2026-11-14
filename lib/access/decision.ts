@@ -107,3 +107,12 @@ export async function resolveAccess(sb: SupabaseClient, userId: string): Promise
   const staff = anyClosed ? await isStaffSession(sb, userId) : false
   return { gatesEnabled, ent, staff, sections: staff ? decideSections({ gatesEnabled, ent, staff }) : withoutStaff }
 }
+
+/**
+ * R2-A (ревью M-1): a task of the action plan belongs to a paid section by its
+ * source — tasks a Point B plan published → Точка Б; the 90-day plan of the GRI
+ * (and anything else) → полный GRI.
+ */
+export function actionItemSection(source: unknown): 'point_b' | 'gri_full' {
+  return source === 'point_b' ? 'point_b' : 'gri_full'
+}
