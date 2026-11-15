@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateCalcSession } from '@/lib/gri-calculator/calc-session-validate'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // Keep at most this many sessions per user; on insert, older rows beyond the
 // cap are pruned. The GET only reads 20, so a slightly larger cap keeps a
@@ -15,6 +16,9 @@ export async function GET() {
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'gri_full')
+  if (upgrade) return upgrade
   const { data, error } = await sb
     .from('gri_calc_sessions')
     .select('*')
@@ -31,6 +35,9 @@ export async function POST(request: NextRequest) {
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'gri_full')
+  if (upgrade) return upgrade
   let body: unknown
   try {
     body = await request.json()

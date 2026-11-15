@@ -17,6 +17,7 @@ import { apiError } from '@/lib/api-error'
 import { BLOCK_KEYS } from '@/lib/point-a/v4/config'
 import { getMetricById } from '@/lib/metrics/registry'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,9 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return apiError('Неверный запрос', 400)
   if (parsed.data.clientView?.keyMetrics?.some((id) => !getMetricById(id))) return apiError('Неизвестная метрика', 400)

@@ -32,6 +32,12 @@ const spy = vi.hoisted(() => ({
   staff: [] as Array<Record<string, unknown>>,
   client: [] as Array<Record<string, unknown>>,
   whatsapp: [] as Array<{ versionId: string; recipients: string[] | null | undefined; reviewPath?: string | null }>,
+  /** R2-C (M-4): clients for whom Точка А is closed (lib/access/recipient.ts). */
+  pointAClosed: new Set<string>(),
+}))
+vi.mock('@/lib/access/recipient', () => ({
+  pointAClosedFor: async (userId: string) => spy.pointAClosed.has(userId),
+  sectionClosedFor: async (userId: string, section: string) => section === 'point_a' && spy.pointAClosed.has(userId),
 }))
 vi.mock('@/lib/whatsapp/report-review', () => ({
   enqueueReportReviewWhatsApp: async (versionId: string, recipients?: string[] | null, opts?: { reviewPath?: string | null }) => {
@@ -157,6 +163,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
   beforeEach(async () => {
     spy.staff.length = 0
     spy.client.length = 0
+    spy.pointAClosed.clear()
     audits.length = 0
     auditFails = false
     await prisma.$executeRaw`DELETE FROM public.agent_configs WHERE agent_key = 'report'`
@@ -327,6 +334,28 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
     expect(spy.client).toHaveLength(1)
     // The opposite decision after the version was published is refused.
     expect(await decide(v.id, expert, 'changes_requested', { comment: 'Поздно' })).toMatchObject({ ok: false, code: 'wrong_status', decided: 'approve' })
+  })
+
+  it('R2-C (M-4): the expert still publishes for a client without Точка А; the client gets only «Отчёт эксперта готов» leading home', async () => {
+    const s = await seed()
+    await runAgent(s.companyId)
+    const [v] = await versions(s.companyId)
+    const expert = await expertOf(s.owner)
+    // review L-8: a Free member of the company gets the same notice; its link is the
+    // Point A paywall block (#expert) every account with Точка А closed has on its home page
+    const member = await user('client')
+    await prisma.$executeRaw`INSERT INTO public.company_members (company_id, user_id, role, status) VALUES (${s.companyId}, ${member}::uuid, 'member', 'active')`
+    spy.pointAClosed.add(s.owner)
+    spy.pointAClosed.add(member)
+    expect(await decide(v.id, expert, 'approve')).toMatchObject({ ok: true, decision: 'approve' })
+    expect((await versions(s.companyId))[0].status).toBe('published')
+    expect(spy.client).toHaveLength(2)
+    for (const uid of [s.owner, member]) {
+      const n = spy.client.find((c) => c.userId === uid)!
+      expect(n).toMatchObject({ title: 'Отчёт эксперта готов', link: '/client/home#expert', metadata: { report_version_id: v.id, paid_locked: true } })
+      expect(String(n.body)).toContain('платный доступ')
+      expect(String(n.link)).not.toMatch(/\/r\/v\//)
+    }
   })
 
   it('re-checks the person on every decision: approval, role, the 2FA rule on Telegram', async () => {

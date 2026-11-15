@@ -53,8 +53,9 @@ export function pointAStatus(snapshot: { overall: number | null; blocks: readonl
 }
 
 /** A block of a preliminary assessment in words — findings, never a score. */
-export function blockFindingsText(b: { top_issues?: readonly string[]; coverage?: number }): string {
-  const n = b.top_issues?.length ?? 0 // at most 3 (engine)
+export function blockFindingsText(b: { top_issues?: readonly string[]; issues_count?: number; coverage?: number }): string {
+  // `issues_count`: the free express view carries the count only (R2-A, ревью L-2).
+  const n = b.issues_count ?? b.top_issues?.length ?? 0 // at most 3 (engine)
   if (n > 0) return n === 1 ? '1 находка' : `${n} находки`
   return (b.coverage ?? 0) >= 0.4 ? 'замечаний нет' : 'данных не хватает'
 }

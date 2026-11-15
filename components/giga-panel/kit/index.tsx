@@ -443,7 +443,7 @@ export function Drawer({ open, onClose, title, children, width = 'max-w-xl' }: {
  * Confirmation for critical operations. With `requireText` the user must type
  * the given word (e.g. «УДАЛИТЬ») before the action unlocks.
  */
-export function ConfirmDialog({ open, onClose, onConfirm, title, text, confirmLabel = 'Подтвердить', tone = 'danger', requireText, loading, children }: {
+export function ConfirmDialog({ open, onClose, onConfirm, title, text, confirmLabel = 'Подтвердить', tone = 'danger', requireText, loading, disabled, children }: {
   open: boolean
   onClose: () => void
   onConfirm: () => void
@@ -453,6 +453,8 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, text, confirmLa
   tone?: 'danger' | 'primary' | 'warning'
   requireText?: string
   loading?: boolean
+  /** The form inside is not complete — the action stays locked (the form says why). */
+  disabled?: boolean
   children?: ReactNode
 }) {
   const [typed, setTyped] = useState('')
@@ -466,7 +468,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, text, confirmLa
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={loading}>Отмена</Button>
-          <Button variant={tone} onClick={onConfirm} loading={loading} disabled={locked}>{confirmLabel}</Button>
+          <Button variant={tone} onClick={onConfirm} loading={loading} disabled={locked || !!disabled}>{confirmLabel}</Button>
         </>
       }
     >

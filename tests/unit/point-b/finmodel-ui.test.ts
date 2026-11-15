@@ -248,7 +248,7 @@ describe('«Финмодель»: the form', () => {
     await ctl.load()
     expect(ctl.getSnapshot().phase).toBe('locked')
     const html = formHtml(ctl.getSnapshot())
-    expect(html).toContain('Точка Б — на тарифе Pro')
+    expect(html).toContain('Точка Б — в платном доступе')
     expect(html).not.toContain('<input')
     expect(formHtml(INITIAL_FINMODEL_SNAPSHOT)).toContain('aria-busy="true"')
     // a 402 on save locks too

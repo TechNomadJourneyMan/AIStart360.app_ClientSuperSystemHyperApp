@@ -29,7 +29,11 @@ const VERCEL_SCHEDULE = [
 ]
 
 /** Added on Railway, after Vercel: the hourly backup watchdog (R-011, lib/ops/backup-freshness.ts). */
-const RAILWAY_ADDED = [{ path: '/api/cron/backup-freshness', schedule: '7 * * * *' }]
+const RAILWAY_ADDED = [
+  { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
+  // Expert SLA (R2-B): the portal's scheduler runs it, Inngest Cloud does not call the portal on Railway.
+  { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
+]
 /** What one process for everything schedules: the Vercel schedule plus the Railway additions. */
 const PORTAL_SCHEDULE = [...VERCEL_SCHEDULE, ...RAILWAY_ADDED]
 
@@ -47,6 +51,7 @@ describe('CRON_JOBS', () => {
       { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
       { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },
       { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
+      { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
     ]
     expect([...CRON_JOBS].sort(byPath)).toEqual(expected.sort(byPath))
   })

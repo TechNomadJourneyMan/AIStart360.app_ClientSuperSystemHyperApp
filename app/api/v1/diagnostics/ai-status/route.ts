@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { readAiAnalysis } from '@/lib/point-a/ai-analysis'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/diagnostics/ai-status?diagnostic_id=xxx
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
   // owner (was anonymous + leaked raw DB error strings).
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const { data, error } = await sb
     .from('diagnostics')

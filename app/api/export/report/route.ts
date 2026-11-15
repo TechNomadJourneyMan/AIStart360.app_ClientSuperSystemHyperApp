@@ -54,6 +54,7 @@ import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { loadAttribution, type AttributionSourceRow, type ProfilesReader } from '@/lib/survey/attribution-read'
 import { surveyPrintModel } from '@/lib/survey/answers-view'
 import { hasOfficialBlockScores, loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
+import { gatePaidSection } from '@/lib/access/gate'
 
 type ReportType = 'gri' | 'point-a' | 'point-b' | 'survey'
 const VALID_TYPES = new Set<ReportType>(['gri', 'point-a', 'point-b', 'survey'])
@@ -456,6 +457,14 @@ export async function GET(req: NextRequest) {
   } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Round 2 (R2-A): the PDF of a paid section (Точка А / Б, полный GRI) is that
+  // section's data — 402 like its API (staff exempt). The questionnaire stays free.
+  const paid = ({ 'point-a': 'point_a', 'point-b': 'point_b', gri: 'gri_full' } as const)[type as 'point-a' | 'point-b' | 'gri']
+  if (paid) {
+    const upgrade = await gatePaidSection(sb, user.id, paid)
+    if (upgrade) return upgrade
   }
 
   const requestedCompanyId = req.nextUrl.searchParams.get('companyId')

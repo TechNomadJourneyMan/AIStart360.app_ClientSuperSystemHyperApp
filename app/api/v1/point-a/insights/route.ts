@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { profanityResponse } from '@/lib/moderation/http'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -47,6 +48,9 @@ export async function GET(req: NextRequest) {
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) return unauthorized()
   const userId = userData.user.id
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'point_a')
+  if (upgrade) return upgrade
 
   const parsedQuery = getQuerySchema.safeParse({
     limit: req.nextUrl.searchParams.get('limit') ?? undefined,
@@ -146,6 +150,9 @@ export async function POST(req: NextRequest) {
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) return unauthorized()
   const userId = userData.user.id
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'point_a')
+  if (upgrade) return upgrade
 
   const rawBody = await req.json().catch(() => null)
   const parsed = postBodySchema.safeParse(rawBody)

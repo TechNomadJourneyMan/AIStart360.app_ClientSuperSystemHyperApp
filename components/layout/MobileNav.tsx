@@ -66,6 +66,8 @@ const PREMIUM_FEATURE_LABELS: Record<string, string> = {
   '/metrics':  'Метрики',
   '/market':   'Рынок',
   '/point-b':  'Точка Б',
+  '/point-a':  'Точка А',
+  '/gri':      'Полный GRI',
 }
 
 export function MobileNav() {
@@ -119,13 +121,18 @@ export function MobileNav() {
     if (!user?.id || !premiumItem || upgradeLoading) return
     setUpgradeLoading(true)
     try {
-      await fetch('/api/v1/upgrade-request', {
+      const res = await fetch('/api/v1/upgrade-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, featureKey: premiumItem }),
+        body: JSON.stringify({ featureKey: premiumItem }),
       })
-      setUpgradeSubmitted(prev => new Set(prev).add(premiumItem!))
-      setTimeout(() => setPremiumItem(null), 1500)
+      // «Отправлено» only when the request was really stored (one open request per user — a repeat is OK too).
+      if (res.ok) {
+        setUpgradeSubmitted(prev => new Set(prev).add(premiumItem!))
+        setTimeout(() => setPremiumItem(null), 1500)
+      }
+    } catch {
+      /* stays «not sent» — the button can be pressed again */
     } finally {
       setUpgradeLoading(false)
     }

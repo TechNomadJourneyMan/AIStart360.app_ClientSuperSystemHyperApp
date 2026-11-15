@@ -91,8 +91,64 @@ export async function storeCurrentDiagnostic(
 export const FAN_OUT_TIMEOUT_MS = 150_000
 
 const FAN_OUT_PATHS = ['/api/v1/diagnostics/ai-analyze', '/api/v1/diagnostics/point-b/ai-generate'] as const
+export type FanOutPath = (typeof FAN_OUT_PATHS)[number]
 
-type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string }
+/**
+ * `paths` (R2-A, ревью M-3): only the calls of the paid sections the OWNER has —
+ * the AI analysis is Точка А, the strategic bridge is Точка Б. Default: both.
+ */
+export type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[] }
+
+/**
+ * R2-A (ревью M-3): the paid AI calls the owner of a diagnostic is entitled to
+ * (lib/access/decision.ts for the owner, not the session: the calls are made
+ * for — and billed to — the owner). A Free account gets none: no paid model
+ * calls, nothing marked «failed». Any failure → none (fail closed; cost-safe).
+ */
+export async function paidFanOutPaths(sb: SupabaseClient, ownerId: string): Promise<FanOutPath[]> {
+  try {
+    const { resolveFeature } = await import('@/lib/access/decision')
+    const [a, b] = await Promise.all([resolveFeature(sb, ownerId, 'point_a'), resolveFeature(sb, ownerId, 'point_b')])
+    return [...(a.allowed ? [FAN_OUT_PATHS[0]] : []), ...(b.allowed ? [FAN_OUT_PATHS[1]] : [])]
+  } catch (err) {
+    console.error('[point-a] paid AI access unknown — no paid calls:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+/**
+ * R2-A (ревью M-3): after the account got paid access (billing → Pro, or a
+ * section opened individually), run the AI the Free account did not get: the
+ * analysis of the current diagnostic (only when the official Point A is
+ * scored) and the Point B bridge. Never throws; returns the paths fired.
+ */
+export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpts) => void; sb?: SupabaseClient; baseUrl?: string | null } = {}): Promise<FanOutPath[]> {
+  try {
+    if (!process.env.OPENROUTER_API_KEY && !deps.fire) return []
+    const sb = deps.sb ?? (await import('@/lib/supabase-service')).createServiceClient()
+    const baseUrl = deps.baseUrl !== undefined ? deps.baseUrl : (await import('@/lib/internal-auth')).internalBaseUrl({})
+    if (!baseUrl) return []
+    const allowed = await paidFanOutPaths(sb, userId)
+    if (allowed.length === 0) return []
+    const { data: diag } = await sb.from('diagnostics').select('id, ai_status').eq('user_id', userId).eq('is_current', true).maybeSingle()
+    const row = diag as { id?: string; ai_status?: string | null } | null
+    if (!row?.id) return []
+    const { getOfficialPointA } = await import('./official')
+    const official = await getOfficialPointA(sb, userId).catch(() => null)
+    if (official?.state !== 'scored') return []
+    // The analysis only when it has not run yet (or failed); never twice in parallel.
+    const paths = allowed.filter((p) => p !== FAN_OUT_PATHS[0] || (row.ai_status !== 'processing' && row.ai_status !== 'completed'))
+    if (paths.length === 0) return []
+    if (paths.includes(FAN_OUT_PATHS[0])) {
+      await sb.from('diagnostics').update({ ai_status: 'processing' }).eq('id', row.id).eq('user_id', userId)
+    }
+    ;(deps.fire ?? fireAiFanOut)({ baseUrl, diagnosticId: String(row.id), userId, locale: 'ru', paths })
+    return paths
+  } catch (err) {
+    console.error('[point-a] paid AI catch-up failed:', err instanceof Error ? err.message : err)
+    return []
+  }
+}
 
 export interface FanOutDeps {
   fetchImpl?: typeof fetch
@@ -143,7 +199,7 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   const markFailed = deps.markFailed ?? ((path: string, o: FanOutOpts) => markFanOutFailed(path, o))
   const log = deps.log ?? ((line: string) => console.error(line))
   const timeoutMs = deps.timeoutMs ?? fanOutTimeoutMs()
-  for (const path of FAN_OUT_PATHS) {
+  for (const path of opts.paths ?? FAN_OUT_PATHS) {
     const work = (async () => {
       let reason: string | null = null
       try {

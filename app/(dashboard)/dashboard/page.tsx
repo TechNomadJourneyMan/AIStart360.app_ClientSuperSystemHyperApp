@@ -41,6 +41,8 @@ import { quarterLabel } from '@/lib/format/period'
 import { plural } from '@/lib/crm/digest'
 import { ShareButton } from '@/components/share/ShareButton'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { getRequestAccess } from '@/lib/access/request-access'
+import { freeNextStep } from '@/lib/client-shell/free-step'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -356,6 +358,14 @@ export default async function DashboardPage() {
       const { diag, orgName, companyId, surveyStepsDone, docsCount } = await clientDataP
 
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
+      // R2-A (ревью L-6): «Поделиться» / «PDF» of Point A only with the paid section
+      // (the API answers 402 — no error toasts for a Free client).
+      // R2-C (Q4): the same decision says whether the wizard leads to the full GRI or the free mini-GRI.
+      const sections = await getRequestAccess(user.id).then((a) => a.sections, () => null)
+      const pointAOpen = sections?.point_a ?? false
+      const griOpen = sections?.gri_full ?? false
+      // R2-C (verify): the free step of a closed GRI — «Снимок бизнеса» only while the express survey mode is on.
+      const freeStep = freeNextStep()
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.
@@ -389,7 +399,7 @@ export default async function DashboardPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-                {pointA && companyId && (
+                {pointA && companyId && pointAOpen && (
                   <ShareButton type="point_a" companyId={companyId} />
                 )}
                 <OnboardingStatusBadges />
@@ -404,7 +414,7 @@ export default async function DashboardPage() {
 
             {/* «AI · Карта роста» (shows the synced goals) + the GRI next step.
                 The snapshot column is not repeated: the goals are above. */}
-            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot />
+            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} hideSnapshot griLocked={!griOpen} freeStep={freeStep} />
 
             {pointA || (surveyStepsDone === 0 && docsCount === 0) ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
@@ -419,6 +429,8 @@ export default async function DashboardPage() {
                 surveyStepsDone={surveyStepsDone}
                 docsCount={docsCount}
                 hasDiagnostic={false}
+                griLocked={!griOpen}
+                freeStep={freeStep}
               />
             )}
           </section>

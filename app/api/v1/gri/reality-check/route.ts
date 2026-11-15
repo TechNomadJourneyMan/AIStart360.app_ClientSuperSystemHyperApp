@@ -6,6 +6,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { computeRealityCheck } from '@/lib/gri/reality-check'
 import { loadPointAQuality } from '@/lib/point-a/blocks-without-data'
 import { isRateLimited } from '@/lib/rate-limit'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/gri/reality-check — «GRI Reality Check» (идея №30).
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
     data: { user },
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, user.id, 'gri_full')
+  if (upgrade) return upgrade
 
   if (await isRateLimited(req, 'gri:reality-check', { max: 20, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })

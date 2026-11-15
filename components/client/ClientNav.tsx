@@ -173,6 +173,12 @@ export function ClientNav({ items, panel, email }: ClientNavProps) {
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden>{item.icon}</span>
                     {item.label}
+                    {item.locked && (
+                      <>
+                        <span className="material-symbols-outlined text-[14px] text-on-surface-variant/70" aria-hidden>lock</span>
+                        <span className="sr-only">, платный доступ</span>
+                      </>
+                    )}
                     {badge > 0 && (
                       <>
                         <span aria-hidden className="rounded-full bg-primary px-1.5 text-[10px] font-bold leading-4 text-on-primary tabular-nums">

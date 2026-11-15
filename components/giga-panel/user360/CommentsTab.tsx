@@ -6,6 +6,7 @@ import { Send, Trash2 } from 'lucide-react'
 import { GROUP_LABEL, GROUP_ORDER, groupOf, targetLabel, targetsByGroup, type TargetGroup } from '@/lib/comment-targets'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, GigaApiError, Panel, Skeleton, fmtDateTime, gigaFetch, inputClass, useGigaQuery } from '../kit'
 import { useStaff } from '../StaffContext'
+import { commentComposerHint, commentSentToast, commentsEmptyHint } from './free-client-copy'
 
 /**
  * Комментарии экспертов клиенту: лента по блокам кабинета + форма нового
@@ -28,7 +29,9 @@ const COMPOSER_GROUPS: TargetGroup[] = ['point-a', 'gri', 'pulse', 'dashboard']
 
 export function CommentsTab({ userId, canReview }: { userId: string; canReview: boolean }) {
   const { me, can } = useStaff()
-  const { data, error, loading, reload } = useGigaQuery<{ data: Comment[] }>(`/api/giga-admin/users/${userId}/comments`)
+  // R2-C (verify H-1): clientPaidLocked — Точка А closed for the client (he gets a notice without the text).
+  const { data, error, loading, reload } = useGigaQuery<{ data: Comment[]; clientPaidLocked?: boolean }>(`/api/giga-admin/users/${userId}/comments`)
+  const locked = data?.clientPaidLocked === true
   const [draft, setDraft] = useState<CommentDraft>({ text: '', targetId: null })
   const [busy, setBusy] = useState(false)
   const [toDelete, setToDelete] = useState<Comment | null>(null)
@@ -48,7 +51,7 @@ export function CommentsTab({ userId, canReview }: { userId: string; canReview: 
     try {
       await gigaFetch(`/api/giga-admin/users/${userId}/comments`, { method: 'POST', json: buildCommentPayload(draft) })
       setDraft((d) => ({ ...d, text: '' }))
-      toast.success('Комментарий отправлен клиенту')
+      toast.success(commentSentToast(locked))
       reload()
     } catch (e) {
       toast.error(e instanceof GigaApiError ? e.message : 'Не удалось отправить')
@@ -72,7 +75,7 @@ export function CommentsTab({ userId, canReview }: { userId: string; canReview: 
   return (
     <div className="space-y-4">
       {canReview && (
-        <Panel title="Новый комментарий клиенту" description="Клиент увидит комментарий в кабинете рядом с выбранным блоком и получит уведомление.">
+        <Panel title="Новый комментарий клиенту" description={commentComposerHint(locked)}>
           <div className="space-y-2">
             <select
               value={draft.targetId ?? ''}
@@ -108,7 +111,7 @@ export function CommentsTab({ userId, canReview }: { userId: string; canReview: 
       <ErrorState error={error} onRetry={reload} />
       {loading && !data && <Skeleton className="h-32" />}
       {data && !data.data.length && (
-        <Panel><EmptyState title="Комментариев пока нет" text={canReview ? 'Первый комментарий клиент увидит у себя в кабинете.' : 'Эксперты ещё не оставляли комментариев этому клиенту.'} /></Panel>
+        <Panel><EmptyState title="Комментариев пока нет" text={canReview ? commentsEmptyHint(locked) : 'Эксперты ещё не оставляли комментариев этому клиенту.'} /></Panel>
       )}
 
       {grouped.map(({ group, items }) => (

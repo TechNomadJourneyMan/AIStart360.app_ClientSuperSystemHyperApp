@@ -45,6 +45,8 @@ export async function GET(req: NextRequest) {
       overdueClients: crm.clientsAtRisk,
       criticalBlockLabel: ctx.pointA.has_diagnostic ? criticalBlock?.label ?? null : null,
       griTopLimit: ctx.gri.top_5_limits[0]?.title ?? null,
+      // R2-A: the snapshot left out closed paid sections; the full GRI closed → the honest «request access».
+      diagnosticLocked: (ctx.paidLocked ?? []).includes('gri_full'),
     })
 
     return NextResponse.json({ ok: true, action })

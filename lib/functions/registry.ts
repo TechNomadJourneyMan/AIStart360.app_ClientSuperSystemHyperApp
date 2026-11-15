@@ -56,6 +56,8 @@ const ALL: readonly InngestFunction.Like[] = [
   pbMonthlyCheckpoint,
   // Point B invites created outside the working hours: email / Telegram in the next window (*/15, ≤ 10 per step).
   pbInviteExternal,
+  // Expert SLA (R2-B, lib/expert-sla) is NOT here: it runs from the portal's own scheduler
+  // (/api/cron/expert-sla, lib/cron/schedule.ts) — Inngest Cloud does not call the portal on Railway.
 ]
 
 /**

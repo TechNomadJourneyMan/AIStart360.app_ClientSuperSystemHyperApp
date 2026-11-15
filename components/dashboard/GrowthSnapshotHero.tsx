@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
+import { freeNextStep, type FreeNextStep } from '@/lib/client-shell/free-step'
 import { getGriAssessmentEnvelope, getOnboardingStatus } from '@/hooks/useOnboardingStatus'
 import Link from 'next/link'
 import {
@@ -92,7 +93,15 @@ function progressColor(p: number): string {
  * цели» in <PointADashboardSummary/>): the left «Точка А · Снимок» column is
  * not rendered, so there is ONE goals block on the page.
  */
-export default function GrowthSnapshotHero({ visibleSections, hideSnapshot = false }: { visibleSections?: string[]; hideSnapshot?: boolean } = {}) {
+/**
+ * R2-C (product review L-9): `griLocked` — the full GRI is closed for the account
+ * (the server decision of /dashboard). Then «Следующий шаг» is the free step —
+ * the same single call as FirstRunWizard (lib/client-shell/free-step.ts: «Снимок
+ * бизнеса» while the express survey mode is on, else the questionnaire) — not
+ * /gri's paywall.
+ */
+export default function GrowthSnapshotHero({ visibleSections, hideSnapshot = false, griLocked = false, freeStep }: { visibleSections?: string[]; hideSnapshot?: boolean; griLocked?: boolean; freeStep?: FreeNextStep } = {}) {
+  const free = freeStep ?? freeNextStep()
   // Cabinet sections switched off in GIGA-CRM hide their CTAs here too.
   // The server page passes the list so nothing flashes before the fetch.
   const fetchedSections = usePlatformSections().sections
@@ -772,7 +781,32 @@ export default function GrowthSnapshotHero({ visibleSections, hideSnapshot = fal
               completed the test). Hidden entirely when the GRI section is
               switched off in GIGA-CRM. One brand-orange CTA; secondary actions
               live as plain ghost links below. */}
-          {griOn && (
+          {griOn && griLocked && (
+          <div
+            className="relative rounded-2xl border bg-surface-container-low p-4"
+            style={{ borderColor: 'rgba(232,122,53,0.35)' }}
+            data-next-step={free.kind}
+          >
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] mb-1" style={{ color: '#e87a35' }}>
+              {free.eyebrow}
+            </p>
+            <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-2 tracking-tight">
+              {free.headline}
+            </h2>
+            <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
+              {free.lead}
+            </p>
+            <Link
+              href={free.href}
+              className="w-full inline-flex items-center justify-center gap-2 text-white font-bold text-base rounded-xl py-3.5 transition-all focus:ring-2 hover:brightness-110"
+              style={{ background: 'linear-gradient(90deg, #e87a35, #dc524b)', boxShadow: '0 0 30px -10px rgba(232,122,53,0.55)' }}
+            >
+              <span className="material-symbols-outlined text-lg">{free.icon}</span>
+              {free.cta}
+            </Link>
+          </div>
+          )}
+          {griOn && !griLocked && (
           <div
             className="relative rounded-2xl border bg-surface-container-low p-4"
             style={{ borderColor: 'rgba(232,122,53,0.35)' }}

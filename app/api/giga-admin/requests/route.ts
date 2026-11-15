@@ -9,6 +9,7 @@ import { maskEmail } from '@/lib/admin/mask'
 import { scopedClientIds } from '@/lib/admin/client-scope'
 import { parseJsonBody } from '@/lib/validation/http'
 import { GigaAdminRequestBody } from '@/lib/validation/schemas'
+import { ACCESS_REQUEST_SOURCES, isTariffAccessRequest } from '@/lib/access/upgrade-requests'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -57,11 +58,15 @@ export async function GET(req: NextRequest) {
     const requests: Array<Record<string, unknown>> = []
     const seenUserIds = new Set<string>()
 
+    const seenRequestIds = new Set<string>()
     if (!arError && adminRows) {
       for (const r of adminRows) {
         const payload = (r.payload ?? {}) as Record<string, string>
         const uid = payload.userId
-        if (uid) seenUserIds.add(uid)
+        // A request for paid access is not a registration: the client's own
+        // registration row (or profile) must still be listed.
+        if (uid && !isTariffAccessRequest(r)) seenUserIds.add(uid)
+        if (r.id) seenRequestIds.add(String(r.id))
         if (!inScope(mapStatus(r.status), uid)) continue
         requests.push({
           id: r.id,
@@ -79,6 +84,46 @@ export async function GET(req: NextRequest) {
           source: r.source ?? null,
         })
       }
+    }
+
+    // 2b. R2-A: requests for paid access (paywall / the old «Pro» window), read
+    //     with the real columns of the Prisma-owned table ("createdAt",
+    //     "rejectionReason"). Listed even when the read above fails. Category
+    //     'access' → tab «Доступы»; the tariff itself is set in User 360 → Биллинг.
+    const { data: tariffRows, error: tariffError } = await sb
+      .from('admin_requests')
+      .select('id, type, status, priority, source, payload, rejectionReason, createdAt')
+      .eq('type', 'access')
+      .in('source', [...ACCESS_REQUEST_SOURCES])
+      .order('createdAt', { ascending: false })
+      .limit(500)
+    if (tariffError) console.error('[giga-admin/requests] paid-access requests read failed:', tariffError.message)
+    for (const r of (tariffRows ?? []) as Array<Record<string, unknown>>) {
+      if (seenRequestIds.has(String(r.id))) continue
+      const payload = (r.payload ?? {}) as Record<string, unknown>
+      const uid = typeof payload.userId === 'string' ? payload.userId : undefined
+      const status = mapStatus(String(r.status ?? ''))
+      if (!inScope(status, uid)) continue
+      const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+      requests.push({
+        id: r.id,
+        category: 'access',
+        status,
+        userName: str(payload.name) ?? 'Неизвестный',
+        userEmail: email(str(payload.email)),
+        subject: str(payload.subject) ?? `Заявка на доступ #${String(r.id ?? '').slice(-6)}`,
+        description: str(payload.description) ?? '',
+        createdAt: r.createdAt,
+        company: str(payload.company),
+        rejectionReason: str(r.rejectionReason),
+        priority: str(r.priority) ?? 'medium',
+        assignedAdmin: null,
+        source: str(r.source) ?? null,
+        // R2-C (verify L-3): «Назначить Pro» checks the client scope of the actor
+        // (as User 360 → Биллинг); a pending request of a client outside it is
+        // still listed (intake queue), but the button is inactive with the reason.
+        assignable: !allowed || (!!uid && allowed.includes(uid)),
+      })
     }
 
     // 3. Add profiles not yet in admin_requests (orphaned registrations)

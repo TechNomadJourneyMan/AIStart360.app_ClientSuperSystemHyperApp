@@ -54,7 +54,7 @@ vi.mock('@/lib/settings/store', async () => {
 vi.mock('@/lib/settings/system-settings', () => ({ getAccessGatesEnabled: async () => n.gates }))
 vi.mock('@/lib/access/server', async () => {
   const { entitlementsFor } = await import('@/lib/access/entitlements')
-  return { readEntitlements: async () => entitlementsFor(n.tier) }
+  return { readEntitlements: async () => entitlementsFor(n.tier), readOwnEntitlements: async () => ({ ent: entitlementsFor(n.tier), overrides: {} }), readCompanyRights: async () => null }
 })
 vi.mock('@/lib/impersonation/server', () => ({ activeImpersonation: async () => (n.impersonating ? { sid: 's', uid: 'x' } : null) }))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))

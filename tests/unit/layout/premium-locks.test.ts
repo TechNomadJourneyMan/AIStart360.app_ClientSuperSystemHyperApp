@@ -5,13 +5,14 @@ import { describe, expect, it } from 'vitest'
 import { isSectionLocked, premiumSectionOf, type AccessMe } from '@/hooks/useEntitlements'
 
 const access = (over: Partial<AccessMe> = {}): AccessMe => ({
-  gatesEnabled: true, tier: 'free', pdf_export: false, ai_chat: false, benchmarks: false, point_b: false, griRunsUsed: 0, canRunFullGri: false, ...over,
+  gatesEnabled: true, tier: 'free', pdf_export: false, ai_chat: false, benchmarks: false, point_b: false,
+  point_a: false, market: false, gri_full: false, staff: false, griRunsUsed: 0, canRunFullGri: false, ...over,
 })
 
 describe('R-030 isSectionLocked', () => {
   it('gates off (the default; the hook reports tier «free») → no locks at all', () => {
     const off = access({ gatesEnabled: false, tier: 'free' })
-    for (const href of ['/metrics', '/market', '/point-b', '/point-b/plan']) expect(isSectionLocked(href, 'client', off)).toBe(false)
+    for (const href of ['/metrics', '/market', '/point-a', '/point-b', '/point-b/plan', '/gri']) expect(isSectionLocked(href, 'client', off)).toBe(false)
   })
 
   it('gates on: Точка Б follows the point_b entitlement', () => {
@@ -20,9 +21,21 @@ describe('R-030 isSectionLocked', () => {
     expect(isSectionLocked('/point-b', 'client', access({ point_b: true }))).toBe(false)
   })
 
-  it('gates on: Метрики / Рынок follow the tier', () => {
+  it('gates on: Метрики follow the tier (no right of their own)', () => {
     expect(isSectionLocked('/metrics', 'client', access({ tier: 'free' }))).toBe(true)
-    expect(isSectionLocked('/market', 'client', access({ tier: 'pro' }))).toBe(false)
+    expect(isSectionLocked('/metrics', 'client', access({ tier: 'pro' }))).toBe(false)
+  })
+
+  it('Round 2: Точка А / Рынок / полный GRI follow the server decision of their section', () => {
+    expect(isSectionLocked('/point-a', 'client', access({ point_a: false }))).toBe(true)
+    expect(isSectionLocked('/point-a/insights', 'client', access({ point_a: false }))).toBe(true)
+    expect(isSectionLocked('/point-a', 'client', access({ point_a: true }))).toBe(false)
+    expect(isSectionLocked('/market', 'client', access({ market: false, tier: 'pro' }))).toBe(true)
+    expect(isSectionLocked('/market/analysis', 'client', access({ market: true }))).toBe(false)
+    expect(isSectionLocked('/gri', 'client', access({ gri_full: false }))).toBe(true)
+    expect(isSectionLocked('/gri', 'client', access({ gri_full: true }))).toBe(false)
+    // staff of the session (a client profile with a staff_roles row) are never locked
+    expect(isSectionLocked('/point-a', 'client', access({ staff: true }))).toBe(false)
   })
 
   it('staff are never locked; other sections are never locked', () => {

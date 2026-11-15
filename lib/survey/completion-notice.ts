@@ -16,6 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { pointAClosedFor } from '@/lib/access/recipient'
 
 export const SURVEY_COMPLETED_EVENT = 'survey_completed'
 export const SURVEY_NOTICE_CATEGORY = 'survey'
@@ -44,8 +45,18 @@ export function shouldAnnounceCompletion(opts: {
 }
 
 /** Текст записи в клиентской ленте уведомлений. */
-export function buildClientNotice(input: SurveyNoticeInput): { title: string; body: string; link: string } {
+export function buildClientNotice(input: SurveyNoticeInput, opts: { pointALocked?: boolean } = {}): { title: string; body: string; link: string } {
   const full = input.completedSteps >= input.totalSteps
+  // R2-A (ревью L-6): without the paid Точка А — the free «Снимок бизнеса», not a paywall.
+  if (opts.pointALocked) {
+    return {
+      title: full ? 'Анкета заполнена полностью' : 'Анкета отправлена',
+      body: full
+        ? `Все ${input.totalSteps} шагов заполнены. Экспресс-оценка готова; полный разбор «Точки А» и GRI — в платном доступе.`
+        : `Заполнено ${input.completedSteps} из ${input.totalSteps} шагов. Незаполненные шаги можно дополнить в любой момент — точность оценки вырастет.`,
+      link: '/client/onboarding/snapshot',
+    }
+  }
   return {
     title: full ? 'Анкета заполнена полностью' : 'Анкета отправлена',
     body: full
@@ -66,6 +77,8 @@ export async function claimCompletionNotice(
   userId: string,
   input: SurveyNoticeInput,
 ): Promise<boolean> {
+  // R2-A: decided before the marker lookup, so nothing awaits between the lookup and the insert.
+  const pointALocked = await pointAClosedFor(userId)
   try {
     const { data: existing, error: selErr } = await service
       .from('app_notifications')
@@ -81,7 +94,7 @@ export async function claimCompletionNotice(
     }
     if (existing && existing.length > 0) return false
 
-    const notice = buildClientNotice(input)
+    const notice = buildClientNotice(input, { pointALocked })
     const { error: insErr } = await service.from('app_notifications').insert({
       user_id: userId,
       category: SURVEY_NOTICE_CATEGORY,

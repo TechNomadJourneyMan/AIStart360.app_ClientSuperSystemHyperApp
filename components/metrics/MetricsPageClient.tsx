@@ -16,6 +16,7 @@ import type {
   GriAssessmentRow,
   CompanyRow,
 } from '@/lib/metrics/page-data'
+import Paywall from '@/components/access/Paywall'
 
 // ─── Section meta (icon + ru label) ───────────────────────────────────────────
 const SECTION_META: Record<SectionId, { label: string; icon: string }> = {
@@ -504,6 +505,8 @@ export interface MetricsPageClientProps {
   griAssessment: GriAssessmentRow | null
   company: CompanyRow | null
   surveyAnswers: Record<string, unknown>
+  /** R2-A: the full GRI is closed for the account — the GRI tab is the paywall, the page opens on «Цели роста». */
+  griLocked?: boolean
 }
 
 export default function MetricsPageClient({
@@ -511,9 +514,10 @@ export default function MetricsPageClient({
   griAssessment,
   company,
   surveyAnswers,
+  griLocked = false,
 }: MetricsPageClientProps) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'goals' | 'kpi' | 'gri' | 'biz'>('gri')
+  const [activeTab, setActiveTab] = useState<'goals' | 'kpi' | 'gri' | 'biz'>(griLocked ? 'goals' : 'gri')
   const [modal, setModal] = useState<ModalProps | null>(null)
 
   // ── Realtime: invalidate (refresh) on changes to any of these tables ──
@@ -756,7 +760,9 @@ export default function MetricsPageClient({
       {/* ══ TAB: GRI ══ */}
       {activeTab === 'gri' && (
         <div className="space-y-5">
-          {!griAssessment ? (
+          {griLocked ? (
+            <Paywall feature="gri_full" variant="compact" />
+          ) : !griAssessment ? (
             <EmptyState
               icon="insights"
               title="Тест GRI ещё не пройден"

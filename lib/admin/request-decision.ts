@@ -50,6 +50,12 @@ export async function decideRequest(
     if (res.reason === 'invalid_transition') {
       return { ok: false, httpStatus: 409, error: 'Для текущего статуса аккаунта это решение не применяется', userId: res.userId }
     }
+    if (res.reason === 'already_decided') {
+      return { ok: false, httpStatus: 409, error: 'Заявка уже решена (например, коллега назначил тариф) — обновите список', userId: res.userId }
+    }
+    if (res.reason === 'assign_plan_required') {
+      return { ok: false, httpStatus: 409, error: 'Заявка на платный доступ одобряется назначением тарифа: «Назначить Pro» (или User 360 → Биллинг). Отклонить можно с причиной.', userId: res.userId }
+    }
     return { ok: false, httpStatus: 404, error: 'Профиль пользователя не найден — статус не изменён', userId: res.userId }
   }
   return { ok: true, status: res.status, userId: res.userId }

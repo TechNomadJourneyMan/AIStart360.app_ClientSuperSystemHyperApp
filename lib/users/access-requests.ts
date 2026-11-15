@@ -13,12 +13,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { canManageTarget, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
+import { isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
 export type AccessDecisionResult =
   | { ok: true; status: 'approved' | 'rejected' | 'archived'; userId: string }
-  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition'; userId: string }
+  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided'; userId: string }
 
 /**
  * Valid transitions of profiles.status for a decision on a request (R-007),
@@ -73,14 +74,26 @@ export async function decideAccessRequest(
   let userId: string | null = null
   const { data: arRow } = await sb
     .from('admin_requests')
-    .select('userId, payload')
+    .select('userId, payload, type, source')
     .eq('id', args.requestId)
     .maybeSingle()
 
+  // R2-A: a request for PAID access (paywall / the old «Pro» window) is not a
+  // registration. Deciding on it never changes profiles.status (approving it
+  // must not admit a client still waiting for approval) and sends no «client
+  // approved» notices.
+  // R2-C (M-5, PO): such a request is approved only by assigning the plan —
+  // «Назначить Pro» (POST /api/giga-admin/requests/:id/assign-pro) or User 360 →
+  // Биллинг; both close it as approved and notify the client
+  // (lib/access/paid-access-grant.ts). A bare «approve» here (single, bulk, bot)
+  // would close it with nothing opened — it is refused. Reject (with a reason)
+  // and archive stay.
+  let paidAccess = false
   if (arRow) {
-    const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null }
+    const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null; type?: string | null; source?: string | null }
     const payload = row.payload ?? {}
     userId = row.userId ?? (typeof payload.userId === 'string' ? payload.userId : null)
+    paidAccess = isTariffAccessRequest(row)
   }
 
   // Orphaned registration: the request id is the profile UUID.
@@ -101,6 +114,37 @@ export async function decideAccessRequest(
   if ((targetIsStaff && role !== 'super_admin') || !canManageTarget(role, { staffRole: target.staffRole, profileRole: target.role })) {
     return { ok: false, reason: 'forbidden', userId }
   }
+  if (paidAccess && args.action === 'approve') return { ok: false, reason: 'assign_plan_required', userId }
+  if (paidAccess) {
+    // R2-C (review L-4): only an OPEN request changes. A request decided meanwhile
+    // (e.g. a colleague pressed «Назначить Pro») is not overwritten from a stale list.
+    const { data: changed, error: arErr } = await sb
+      .from('admin_requests')
+      .update({
+        status: requestStatus,
+        ...(args.action === 'reject' && args.reason ? { rejectionReason: args.reason } : {}),
+        updatedAt: new Date().toISOString(),
+      })
+      .eq('id', args.requestId)
+      .in('status', [...OPEN_REQUEST_STATUSES])
+      .select('id')
+    if (arErr) throw new Error(`access-requests: paid-access request not updated (${arErr.message})`)
+    if (!Array.isArray(changed) || changed.length === 0) return { ok: false, reason: 'already_decided', userId }
+    try {
+      await logAudit({
+        entityType: 'request',
+        entityId: args.requestId,
+        action: 'request.status_changed',
+        performedBy: args.actor.id,
+        diff: { action: args.action, status: requestStatus, userId, kind: 'paid_access', actorKind: args.actor.kind, ...(args.reason ? { reason: args.reason } : {}) },
+        ipAddress: args.ipAddress,
+      })
+    } catch (auditErr) {
+      console.error('[access-requests] audit failed:', auditErr)
+    }
+    return { ok: true, status: requestStatus, userId }
+  }
+
   let alreadyDone = false
   if (args.action === 'approve' || args.action === 'reject') {
     const next = args.action === 'approve' ? 'approved' : 'rejected'

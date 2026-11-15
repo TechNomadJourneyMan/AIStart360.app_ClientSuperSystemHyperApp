@@ -12,6 +12,7 @@
  */
 import type { AuditEntry } from '@/lib/admin/audit'
 import { revokeSharesOfAssignee } from '@/lib/share/tokens'
+import { isAssignableResponsible } from '@/lib/expert-sla/assign'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { sendSurveyReminderEmail } from '@/lib/email'
@@ -175,10 +176,11 @@ export async function setClientAssignment(args: {
 }): Promise<AssignmentResult> {
   const sb = createServiceClient()
   if (args.assigneeId) {
-    // Ответственным может быть только сотрудник: иначе клиента «назначат» на
-    // другого клиента, и задача уйдёт в никуда.
-    const { data: staff } = await sb.from('staff_roles').select('user_id').eq('user_id', args.assigneeId).maybeSingle()
-    if (!staff) return { ok: false, code: 'not_staff', status: 400, error: 'Ответственным может быть только сотрудник' }
+    // Ответственным может быть только сотрудник или одобренный эксперт (R2-B):
+    // иначе клиента «назначат» на другого клиента, и задача уйдёт в никуда.
+    if (!(await isAssignableResponsible(sb, args.assigneeId))) {
+      return { ok: false, code: 'not_staff', status: 400, error: 'Ответственным может быть только сотрудник или эксперт' }
+    }
   }
 
   const { data: before } = await sb.from('user_assignments').select('assignee_id').eq('user_id', args.userId).maybeSingle()

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { forbidTarget } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
+import { usersWithClosedSection } from '@/lib/access/owner-access'
 import { reviewBlockLabel } from '@/lib/expert-review/blocks'
 import {
   REVIEW_COLUMNS,
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const sb = createServiceClient()
   try {
-    const [draft, comments, publishedRes] = await Promise.all([
+    const [draft, comments, publishedRes, closed] = await Promise.all([
       findDraftReview(sb, params.id),
       listDraftComments(sb, params.id),
       sb
@@ -50,6 +51,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         .eq('status', 'published')
         .order('published_at', { ascending: false })
         .limit(50),
+      // R2-C (verify H-1): Точка А closed → the publication sends only a notice without content.
+      usersWithClosedSection([params.id], 'point_a'),
     ])
     const published = (publishedRes.data as ReviewRow[] | null) ?? []
 
@@ -69,6 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const names = await authorNames(sb, [...comments.map((c) => c.author_id), ...published.map((r) => r.author_id)])
     return NextResponse.json({
       ok: true,
+      clientPaidLocked: closed.has(params.id),
       data: {
         draft,
         comments: comments.map((c) => ({

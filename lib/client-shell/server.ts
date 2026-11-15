@@ -14,7 +14,7 @@ import type { User } from '@supabase/supabase-js'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getRequestUserFacts } from '@/lib/platform/facts'
-import { buildClientNav, type ClientNavItem } from './nav'
+import { buildClientNav, type ClientNavItem, type ClientNavKey } from './nav'
 import { expertCabinetLink, staffPanelLink, type CabinetLink, type PanelLink, type ViewerRoles } from './staff-links'
 
 export interface ClientShellData {
@@ -84,10 +84,13 @@ export async function loadExpertCabinetLink(user: Pick<User, 'id'> | null): Prom
   return roles ? expertCabinetLink(roles) : null
 }
 
-/** Menu items for the account, minus the sections hidden in GIGA-CRM. */
-export function clientShellData(account: ClientShellAccount, hiddenPaths: readonly string[]): ClientShellData {
+/**
+ * Menu items for the account, minus the sections hidden in GIGA-CRM; paid
+ * sections closed for it (`lockedKeys`, Round 2) carry a lock.
+ */
+export function clientShellData(account: ClientShellAccount, hiddenPaths: readonly string[], lockedKeys: readonly ClientNavKey[] = []): ClientShellData {
   return {
-    items: buildClientNav({ approved: account.approved, hiddenPaths, profileRole: account.profileRole, unreadMessages: account.unreadMessages }),
+    items: buildClientNav({ approved: account.approved, hiddenPaths, profileRole: account.profileRole, unreadMessages: account.unreadMessages, lockedKeys }),
     panel: account.panel,
     email: account.email,
   }

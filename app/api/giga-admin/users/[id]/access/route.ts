@@ -9,6 +9,7 @@ import { setPlan } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
 import { trackEvent } from '@/lib/events/track'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 /**
  * PATCH /api/giga-admin/users/:id/access — тариф и per-user фича-флаги (Фаза 6C).
- * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks?, point_b? } }
+ * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks?, point_b?, point_a?, market? } }
  *
  * tier больше не пишется в profiles напрямую: смену тарифа делает billing-сервис
  * (lib/payments/billing.ts, миграция 106) — subscriptions + profiles.tier одной
@@ -93,6 +94,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         req,
         meta: { via: 'access' },
       })
+      // R2-C (product review M-2): a paid plan closes the open access requests and notifies once.
+      if (result?.applied) {
+        await completePaidAccessGrant({ userId: params.id, actor, before: result.before, after: result.after, via: 'access', ipAddress: req.headers.get('x-forwarded-for') ?? undefined })
+      }
       // Product event: subject = the user, actor = staff (source 'admin' → not the user's own activity).
       const fromTier = result?.before?.accessTier
       const toTier = result?.after?.accessTier
@@ -151,6 +156,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
+
+    // R2-A (ревью M-3): Точка А / Б opened individually → run the paid AI the account did not get as Free.
+    if (patch.feature_flags.point_a === true || patch.feature_flags.point_b === true) {
+      const userId = params.id
+      void import('@/lib/background')
+        .then(({ runInBackground }) => runInBackground('paid-ai-catch-up', async () => {
+          const { catchUpPaidAi } = await import('@/lib/point-a/diagnostic-row')
+          await catchUpPaidAi(userId)
+        }))
+        .catch(() => undefined)
+    }
 
     return NextResponse.json({ ok: true, profile: data[0] })
   } catch (e) {

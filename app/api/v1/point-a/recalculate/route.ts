@@ -11,6 +11,7 @@ import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError } from '@/lib/api-error'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,6 +21,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
   const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: 'manage' })
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   if (await isRateLimitedKey(user.id, 'point-a-recalculate', { max: 6, windowMs: 60_000 })) {

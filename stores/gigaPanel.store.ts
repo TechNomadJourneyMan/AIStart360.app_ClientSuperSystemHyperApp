@@ -50,6 +50,8 @@ export interface GigaRequest {
   company?: string
   rejectionReason?: string
   source?: string | null
+  /** R2-C: a request for paid access whose client is inside the actor's scope («Назначить Pro» possible). */
+  assignable?: boolean
   surveyData?: {
     answers: Record<string, unknown>
     company: Record<string, unknown> | null

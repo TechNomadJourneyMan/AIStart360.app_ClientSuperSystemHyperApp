@@ -19,7 +19,10 @@ const state = vi.hoisted(() => ({
   emails: [] as Array<{ to: string; input: Record<string, unknown> }>,
   notifications: [] as Array<Record<string, unknown>>,
   audit: [] as Array<{ action: string; metadata?: Record<string, unknown> }>,
+  /** R2-C (review F1): Точка А closed for the client. */
+  pointAClosed: false,
 }))
+vi.mock('@/lib/access/recipient', () => ({ pointAClosedFor: async () => state.pointAClosed }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
   const { makeRequireGiga } = await import('../_giga-guard')
@@ -65,6 +68,7 @@ beforeEach(() => {
   state.emails = []
   state.notifications = []
   state.audit = []
+  state.pointAClosed = false
   state.db = makeFakeDb({
     profiles: [
       { id: ME, full_name: 'Анна Эксперт', email: 'anna@staff.io' },
@@ -107,6 +111,20 @@ describe('publish expert review', () => {
     expect(state.notifications[0]).toMatchObject({ userId: UID, title: 'Эксперт подготовил разбор', link: '/client/home#expert' })
     expect(state.audit.map((a) => a.action)).toEqual(['expert.review_published'])
     expect(state.audit[0].metadata).toMatchObject({ comments: 3, aiComments: 1 })
+  })
+
+  it('R2-C (ревью F1): клиенту с закрытой Точкой А — без названия, числа и блоков; ссылка на пейволл главной', async () => {
+    state.pointAClosed = true
+    const res = await publish({ expectedCount: 3 })
+    expect(res.status).toBe(200)
+    expect(state.emails).toHaveLength(1)
+    expect(state.emails[0].input).toMatchObject({ paidLocked: true })
+    expect(state.notifications).toHaveLength(1)
+    const n = state.notifications[0]
+    expect(n).toMatchObject({ title: 'Эксперт подготовил разбор', body: 'Эксперт подготовил разбор вашей Точки А — он доступен в платном доступе.', link: '/client/home#expert' })
+    expect(JSON.stringify(n)).not.toMatch(/комментари|Команда|Точка А:|сентября/)
+    // the expert still publishes
+    expect(rows().find((c) => c.id === 'c1')!.status).toBe('published')
   })
 
   it('повторная публикация ничего не шлёт', async () => {

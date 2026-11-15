@@ -9,6 +9,7 @@ import { parseDocument } from '@/lib/documents/parse'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { knownScores } from '@/lib/gri-calculator/assessment-seed'
 import { maskDocumentText } from '@/lib/documents/pii-mask'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // Round 2 (R2-A): gri_full is a paid section — 402 upgrade_required for an account without it (staff exempt).
+    const upgrade = await gatePaidSection(sb, user.id, 'gri_full')
+    if (upgrade) return upgrade
     if (await isRateLimitedKey(user.id, 'gri-ai-financial', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }

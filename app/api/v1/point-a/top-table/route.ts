@@ -38,6 +38,7 @@ import type {
   TopTableRowKey,
 } from '@/types/point-a-dashboard'
 import { safeErrorMessage } from '@/lib/api-error'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const ALLOWED_PERIODS: TopTablePeriod[] = ['day', 'week', 'month', 'quarter', 'year']
 
@@ -108,6 +109,9 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser()
 
   if (authError || !user) return unauthorized()
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const search = req.nextUrl.searchParams
   const period = parsePeriod(search.get('period'))

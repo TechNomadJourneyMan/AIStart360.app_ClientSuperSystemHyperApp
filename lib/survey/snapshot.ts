@@ -133,15 +133,58 @@ export interface SnapshotPointA {
     assessment?: 'full' | 'preliminary'
     overall: number | null
     confidence: number | null
-    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean; top_issues?: readonly string[] }>
+    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean; top_issues?: readonly string[]; issues_count?: number }>
     uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
   } | null
+  /** R2-A: the free express view of a paid Point A (the full page is in paid access). */
+  locked?: boolean
 }
 
 /** The slice of GET /api/v1/point-a/state the snapshot reads. */
 export interface PointAStateSlice {
   snapshot?: (NonNullable<SnapshotPointA['snapshot']> & { createdAt: string }) | null
   recalculation?: string
+}
+
+/**
+ * Round 2 (R2-A): the express view of Point A — exactly the fields the free
+ * «Снимок бизнеса» shows (the express assessment stays free), nothing of the
+ * paid Point A page (history, discrepancies, goals, benchmarks, metrics,
+ * checks, recommendations, expert notes). GET /api/v1/point-a/state?view=express
+ * answers this for an account without the paid section.
+ */
+export function expressPointASlice(state: {
+  snapshot: {
+    createdAt: string
+    assessment?: 'full' | 'preliminary'
+    overall: number | null
+    confidence: number | null
+    blocks: ReadonlyArray<{ key: string; title: string; score: number | null; status: string; coverage?: number; weight?: number; informational?: boolean; hiddenForClient?: boolean; top_issues?: readonly string[] }>
+    uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
+  } | null
+  recalculation?: string
+}): PointAStateSlice {
+  const snap = state.snapshot
+  return {
+    recalculation: state.recalculation,
+    snapshot: snap
+      ? {
+          createdAt: snap.createdAt,
+          assessment: snap.assessment,
+          overall: snap.overall,
+          confidence: snap.confidence,
+          // Ревью L-2: no findings (top_issues) and no score of a block hidden
+          // for the client — the snapshot screen shows neither. A hidden block
+          // keeps only what the survey-block recommendation needs (status,
+          // coverage, weight), so the recommended blocks stay the same.
+          // (the free card shows only HOW MANY findings a block has — the count stays, the text does not)
+          blocks: snap.blocks.map((b) => (b.hiddenForClient
+            ? { key: b.key, title: b.title, score: null, status: b.status, coverage: b.coverage, weight: b.weight, informational: b.informational, hiddenForClient: true }
+            : { key: b.key, title: b.title, score: b.score, status: b.status, coverage: b.coverage, weight: b.weight, informational: b.informational, hiddenForClient: b.hiddenForClient, issues_count: b.top_issues?.length ?? 0 })),
+          uploadChecklist: snap.uploadChecklist?.map((u) => ({ block: u.block, gain: u.gain })),
+        }
+      : null,
+  }
 }
 
 /** A snapshot this much older than «Готово» is the previous one (clock skew allowance). */

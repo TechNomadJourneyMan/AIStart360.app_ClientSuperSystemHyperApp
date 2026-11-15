@@ -13,6 +13,7 @@ import {
 } from '@/lib/point-a/benchmarks'
 import { safeErrorMessage } from '@/lib/api-error'
 import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const BLOCK_KEYS: BenchmarkBlockKey[] = [
   'finance',
@@ -144,6 +145,9 @@ export async function GET(req: NextRequest) {
 
     let comparison: ComparisonPayload | null = null
     if (userId) {
+      // Round 2 (R2-A): the comparison is the caller's Point A — a paid section (402, staff exempt).
+      const upgrade = await gatePaidSection(supabase, userId, 'point_a')
+      if (upgrade) return upgrade
       const { data: diagnostic, error } = await supabase
         .from('diagnostics')
         .select('*')

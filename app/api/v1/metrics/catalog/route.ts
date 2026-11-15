@@ -42,6 +42,7 @@ import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError, safeErrorMessage } from '@/lib/api-error'
 import { isLowerBetter } from '@/components/metrics/catalog-model'
 import { currentMetricRows } from '@/lib/metrics/company-metrics'
+import { resolveFeature } from '@/lib/access/decision'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 /** History rows read per request (newest first) — enough for the previous value of every metric. */
@@ -408,7 +409,8 @@ export async function GET(req: NextRequest) {
 
         // 3b. GRI overlay — the 7 gri.* blocks are scored by the GRI assessment
         // (section_avgs), not by survey/document resolution.
-        if (bases.some((i) => i.namespace === 'gri' && i.value === null)) {
+        // R2-A (ревью L-1): the block scores of the full GRI only with that paid section (staff exempt).
+        if (bases.some((i) => i.namespace === 'gri' && i.value === null) && (await resolveFeature(supabase, user.id, 'gri_full', { exemptStaff: true })).allowed) {
           const ownerId = company?.user_id ?? null
           const griQuery = supabase.from('gri_assessments').select('section_avgs, created_at')
           const scoped = ownerId ? griQuery.eq('user_id', ownerId) : griQuery.eq('company_id', companyId)

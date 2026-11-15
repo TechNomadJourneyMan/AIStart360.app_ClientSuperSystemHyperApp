@@ -26,6 +26,8 @@ export function Sidebar() {
 
   const PREMIUM_FEATURE_LABELS: Record<string, string> = {
     '/metrics': 'Метрики',
+    '/point-a': 'Точка А',
+    '/gri':     'Полный GRI',
     '/market':  'Рынок',
     '/point-b': 'Точка Б',
   }

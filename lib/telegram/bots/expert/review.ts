@@ -30,6 +30,7 @@ import type { ReportReviewPackage, ReportReviewRecipient } from '@/lib/reports/r
 import { DECIDE_ERRORS, REVIEW_COMMENT_MIN, decideReportReview, listInReviewVersions, reviewVersionHead, type DecideOutcome } from '@/lib/reports/review-flow'
 import { REPORT_TYPE_LABELS } from '@/lib/reports/expert-list'
 import { versionStamp } from '@/lib/reports/version-stamp'
+import { companiesWithClosedSection, REPORT_SECTION } from '@/lib/access/owner-access'
 import { signCallback } from '../callback'
 import type { BotContext, Entry, StepEntry } from '../dispatcher'
 import { callApi, sendDocument, type InlineButton, type ReplyMarkup } from '../registry'
@@ -114,13 +115,18 @@ async function clearButtons(ctx: Ctx, cardMessageId?: number | null): Promise<vo
   await callApi('expert', 'editMessageReplyMarkup', { chat_id: ctx.chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }, ctx.deps.fetchImpl)
 }
 
-function outcomeText(res: DecideOutcome, label: string): string {
+/**
+ * `clientPaidLocked` (R2-C, M-4): Точка А is closed for the client — after the
+ * publication he gets only the notice that the report is ready.
+ */
+export function outcomeText(res: DecideOutcome, label: string, clientPaidLocked = false): string {
   if (res.ok) {
     const v = res.version
     const stamp = versionStamp(v.version, v.created_at)
     if (res.decision === 'approve') {
-      return res.already
-        ? `ℹ️ «${esc(label)}» (${stamp}) уже опубликован клиенту — повторное подтверждение ничего не меняет.`
+      if (res.already) return `ℹ️ «${esc(label)}» (${stamp}) уже опубликован клиенту — повторное подтверждение ничего не меняет.`
+      return clientPaidLocked
+        ? `✅ Опубликовано: «${esc(label)}», ${stamp}. Клиент на бесплатном тарифе получил только уведомление о готовности — сам отчёт входит в платный доступ (Точка А).`
         : `✅ Опубликовано клиенту: «${esc(label)}», ${stamp}. Клиент получил уведомление.`
     }
     if (res.already) return `ℹ️ Правки по «${esc(label)}» (${stamp}) уже запрошены.`
@@ -154,7 +160,11 @@ async function decide(ctx: Ctx, versionId: string, decision: 'approve' | 'change
   })
   if (res.ok || res.code === 'wrong_status') await clearButtons(ctx, cardMessageId)
   await ctx.toast(res.ok ? (decision === 'approve' ? 'Опубликовано' : 'Правки отправлены') : 'Не выполнено')
-  await ctx.reply(outcomeText(res, label))
+  // R2-C (M-4): a true text for a client on the free tariff (unknown → the usual text).
+  const locked = res.ok && res.decision === 'approve' && !res.already
+    ? (await companiesWithClosedSection([res.version.company_id], REPORT_SECTION)).has(res.version.company_id)
+    : false
+  await ctx.reply(outcomeText(res, label, locked))
 }
 
 const scopeOf = (ctx: Ctx) => scopeFor(ctx.principal.userId, ctx.principal.clientScope ?? 'assigned')

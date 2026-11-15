@@ -12,6 +12,7 @@ import { getSiteUrl } from '@/lib/site-url'
 import { isAdminNotificationType } from '@/lib/settings/registry'
 import { getSetting } from '@/lib/settings/store'
 import { notifyClient, type NotifyCategory } from '@/lib/notifications/notify'
+import { pointAClosedFor } from '@/lib/access/recipient'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -462,11 +463,39 @@ export async function notifyAdmins(
  * email/Telegram по настройкам категории пользователя. Категория и ссылка
  * выводятся из типа события (clientCategory / clientCta). Никогда не бросает.
  */
+/**
+ * R2-C (review F1 / H-1): the expert's comments are part of Точка А (decision of
+ * the PO, M-4). A client with Точка А closed gets NO text of the comment (no
+ * preview, no block): a neutral notice and a link to the home page, where the
+ * anchor #expert is the paywall block with the access request
+ * (components/user-dashboard/UserHome.tsx). A failed decision → closed.
+ */
+const PAID_EXPERT_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['expert_comment', 'expert_comment_edited'])
+export const LOCKED_EXPERT_COMMENT = {
+  title: 'Новый комментарий эксперта',
+  body: 'Эксперт оставил комментарий к вашей Точке А — он доступен в платном доступе.',
+  ctaLabel: 'Подробнее',
+  ctaUrl: '/client/home#expert',
+} as const
+
 export async function notifyUser(
   userId: string,
   type: NotificationType,
   data: Record<string, unknown>,
 ): Promise<void> {
+  if (PAID_EXPERT_TYPES.has(type) && (await pointAClosedFor(userId))) {
+    await notifyClient({
+      userId,
+      category: clientCategory(type),
+      event: type,
+      title: LOCKED_EXPERT_COMMENT.title,
+      body: LOCKED_EXPERT_COMMENT.body,
+      ctaUrl: LOCKED_EXPERT_COMMENT.ctaUrl,
+      ctaLabel: LOCKED_EXPERT_COMMENT.ctaLabel,
+      metadata: { paid_locked: true },
+    })
+    return
+  }
   await enrichUserDisplay(data, userId)
   const { title, body } = buildEmailBody({ type, userId, data })
   const cta = clientCta(type)

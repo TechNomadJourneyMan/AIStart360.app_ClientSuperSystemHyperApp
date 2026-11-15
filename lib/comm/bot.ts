@@ -40,9 +40,10 @@ import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
 import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
 import { computeSlaDueAt, getSlaHours } from '@/lib/admin/escalations'
+import { clientPromiseText } from '@/lib/expert-sla/policy'
 import {
-  asksIfHuman, BOT_NAME, BOT_REPLIES_PER_HOUR, BotDecisionSchema, botDelayMs, buildBotPrompt, CASE_TEXT, clipReply,
-  ensureBotDisclosure, HANDOFF_REASON_LABELS, HANDOFF_TEXT, isComplaint, overHourlyCap, wantsCase, wantsHuman,
+  asksIfHuman, BOT_NAME, BOT_REPLIES_PER_HOUR, BotDecisionSchema, botDelayMs, buildBotPrompt, CASE_REUSED_TEXT, CASE_TEXT, caseQueuedText,
+  clipReply, ensureBotDisclosure, HANDOFF_REASON_LABELS, HANDOFF_TEXT, isComplaint, overHourlyCap, wantsCase, wantsHuman,
   type BotDecision, type BotJob, type HandoffReason, type KbHit,
 } from './bot-rules'
 import { loadReplyDeadline, replyDueAt, type ReplyDeadlineConfig } from './deadline'
@@ -54,6 +55,7 @@ import { previewOf } from './state'
 import { findThreadById, loadRecipient, updateThread } from './store'
 import type { CommTransports } from './transports'
 import { MESSAGE_COLUMNS, type CommChannel, type CommMessageRow, type CommThreadRow } from './types'
+import { resolveFeature } from '@/lib/access/decision'
 
 export type { BotJob } from './bot-rules'
 
@@ -78,6 +80,12 @@ export interface BotDeps {
   notifyInbound?: (n: InboundNotice) => Promise<void>
   deadline?: () => Promise<ReplyDeadlineConfig>
   slaDueAt?: (now: Date) => Promise<string | null>
+  /**
+   * «Эксперт ответит в течение N часов.» for a NEW request that is really queued (expert SLA, R2-B);
+   * null — SLA off, the SLA ledger missing (migration 145 not applied / rolled back) or unreadable →
+   * no promise. Default: the setting expert_sla + a read of expert_sla_tasks.
+   */
+  slaPromise?: () => Promise<string | null>
 }
 
 export interface HandoffNotice {
@@ -206,7 +214,15 @@ export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise
         : 'Анкета: ещё не начата')
     const modeFact = surveyModeFact(statuses.get(userId), progress.is_complete)
     if (modeFact) facts.push(modeFact)
-    if (c?.id) {
+    // R2-A (ревью L-3): Точка А is a paid section — for a client without it the
+    // bot (free «Сообщения») does not name the score or the weak blocks.
+    const pointAOpen = c?.id ? await resolveFeature(sb, userId, 'point_a').then((d) => d.allowed, () => false) : false
+    if (c?.id && !pointAOpen) {
+      const { data: has } = await sb.from('point_a_snapshots').select('id').eq('company_id', c.id).limit(1).maybeSingle()
+      facts.push(has
+        ? 'Точка А: рассчитана; балл и разбор — в платном доступе (заявка на доступ — на странице «Точка А»). Не называй баллы и слабые разделы.'
+        : 'Точка А: ещё не рассчитана (нужна заполненная анкета)')
+    } else if (c?.id) {
       const { data: snap } = await sb
         .from('point_a_snapshots')
         .select('overall, stage, created_at, blocks')
@@ -245,6 +261,14 @@ export async function createCommCase(
   sb: SupabaseClient,
   input: { thread: CommThreadRow; title: string; summary: string; userMessage: string; slaDueAt: string | null },
 ): Promise<string | null> {
+  return (await createCommCaseDetailed(sb, input))?.id ?? null
+}
+
+/** createCommCase that also says whether the open request of the conversation was reused. */
+export async function createCommCaseDetailed(
+  sb: SupabaseClient,
+  input: { thread: CommThreadRow; title: string; summary: string; userMessage: string; slaDueAt: string | null },
+): Promise<{ id: string; reused: boolean } | null> {
   const { thread } = input
   const existing = await sb
     .from('expert_cases')
@@ -254,7 +278,7 @@ export async function createCommCase(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (!existing.error && (existing.data as { id?: string } | null)?.id) return (existing.data as { id: string }).id
+  if (!existing.error && (existing.data as { id?: string } | null)?.id) return { id: (existing.data as { id: string }).id, reused: true }
 
   let assignee = thread.assignee_id
   if (!assignee) {
@@ -285,7 +309,8 @@ export async function createCommCase(
     console.error('[comm/bot] case insert failed', res.error.code ?? '', res.error.message?.slice(0, 160))
     return null
   }
-  return (res.data as { id?: string } | null)?.id ?? null
+  const id = (res.data as { id?: string } | null)?.id
+  return id ? { id, reused: false } : null
 }
 
 // ─── Defaults (network) ─────────────────────────────────────────────────────
@@ -327,6 +352,20 @@ async function defaultNotifyHandoff(n: HandoffNotice): Promise<void> {
     audiencePermission: n.thread.assignee_id ? 'inbox.view' : 'inbox.manage',
     skipCooldown: true,
   })
+}
+
+async function defaultSlaPromise(sb: SupabaseClient): Promise<string | null> {
+  try {
+    const { getSetting } = await import('@/lib/settings/store')
+    const cfg = await getSetting('expert_sla')
+    if (!cfg?.enabled) return null
+    // The ledger must exist (145 applied, not rolled back): otherwise no clock runs.
+    const probe = await sb.from('expert_sla_tasks').select('id').limit(1)
+    if (probe.error) return null
+    return clientPromiseText(cfg.answer_hours)
+  } catch {
+    return null
+  }
 }
 
 async function defaultSlaDueAt(now: Date): Promise<string | null> {
@@ -423,18 +462,9 @@ async function handoff(
   const { thread, message } = l
   const now = deps.now ?? new Date()
 
-  // 1. Tell the user (unless the channel just failed).
-  if (send) {
-    const base = h.kind === 'case' ? (h.reply?.trim() ? clipReply(h.reply) : CASE_TEXT) : HANDOFF_TEXT
-    const body = ensureBotDisclosure(base, h.firstReply)
-    await send({ userId: thread.user_id, channel: message.channel, body, replyToId: message.id }).catch((err: unknown) => {
-      console.error('[comm/bot] handoff reply failed', err instanceof Error ? err.message.slice(0, 120) : err)
-    })
-  }
-
-  // 2. The request.
+  // 1. The request — first, so the reply promises an answer time only for a request that exists (R2-B).
   const userName = await userNameOf(sb, thread.user_id)
-  const caseId = await createCommCase(sb, {
+  const made = await createCommCaseDetailed(sb, {
     thread,
     title: h.kind === 'case' ? `Заявка из диалога: ${userName}` : `Нужен эксперт в диалоге: ${userName}`,
     summary: `${HANDOFF_REASON_LABELS[h.reason]}. ${h.summary ? previewOf(h.summary) : ''}`.trim(),
@@ -444,6 +474,23 @@ async function handoff(
     console.error('[comm/bot] case failed', err instanceof Error ? err.message.slice(0, 120) : err)
     return null
   })
+  const caseId = made?.id ?? null
+
+  // 2. Tell the user (unless the channel just failed). The answer-time promise only for a NEW
+  //    request with a running SLA; the reused open request gets a neutral text (no new promise).
+  if (send) {
+    const promise = h.kind === 'case' && made && !made.reused
+      ? await (deps.slaPromise ?? (() => defaultSlaPromise(sb)))().catch(() => null)
+      : null
+    const base = h.kind !== 'case' ? HANDOFF_TEXT
+      : made?.reused ? CASE_REUSED_TEXT
+      : promise ? caseQueuedText(promise)
+      : h.reply?.trim() ? clipReply(h.reply) : CASE_TEXT
+    const body = ensureBotDisclosure(base, h.firstReply)
+    await send({ userId: thread.user_id, channel: message.channel, body, replyToId: message.id }).catch((err: unknown) => {
+      console.error('[comm/bot] handoff reply failed', err instanceof Error ? err.message.slice(0, 120) : err)
+    })
+  }
 
   // 3. The conversation waits for a person (the 30-minute rule takes over).
   const cfg = await (deps.deadline ?? loadReplyDeadline)().catch(() => ({ minutes: 30, window: null }))

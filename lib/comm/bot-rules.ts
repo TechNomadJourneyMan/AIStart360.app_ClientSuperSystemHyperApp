@@ -32,6 +32,12 @@ export const BOT_NAME = 'Бот AIStart360'
 export const BOT_INTRO = 'Здравствуйте! Это бот AIStart360.'
 export const HANDOFF_TEXT = 'Позову эксперта — он ответит, как только освободится.'
 export const CASE_TEXT = 'Оформил заявку — эксперт свяжется с вами, как только освободится.'
+/** The request is in the expert queue with an SLA (R2-B): «Оформил заявку. Эксперт ответит в течение 48 часов.» */
+export function caseQueuedText(promise: string): string {
+  return `Оформил заявку. ${promise}`.trim()
+}
+/** The conversation already has an open request (it is reused): no new promise of an answer time. */
+export const CASE_REUSED_TEXT = 'Ваша заявка уже у эксперта — ответ придёт в этот диалог.'
 /** At most this many bot replies per conversation per hour. */
 export const BOT_REPLIES_PER_HOUR = 10
 export const BOT_MIN_DELAY_MS = 2_000

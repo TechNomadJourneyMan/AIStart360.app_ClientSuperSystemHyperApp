@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { profanityResponse } from '@/lib/moderation/http'
+import { gatePaidSection } from '@/lib/access/gate'
 
 const ALLOWED_STATUS = [
   'pending_ai',
@@ -63,6 +64,9 @@ export async function PATCH(
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) return unauthorized()
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const rawBody = await req.json().catch(() => null)
   const parsed = patchBodySchema.safeParse(rawBody)
@@ -181,6 +185,9 @@ export async function DELETE(
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) return unauthorized()
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userData.user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const { error: deleteErr } = await sb
     .from('point_a_insights')

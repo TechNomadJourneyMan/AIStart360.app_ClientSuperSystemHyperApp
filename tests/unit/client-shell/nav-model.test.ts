@@ -18,8 +18,9 @@ const keys = (items: { key: string }[]) => items.map((i) => i.key)
 describe('buildClientNav', () => {
   it('an approved client gets every section, in order, on the existing routes', () => {
     const items = buildClientNav({ approved: true, hiddenPaths: [] })
-    expect(keys(items)).toEqual(['home', 'dashboard', 'point_a', 'point_b', 'survey', 'gri', 'messages', 'documents'])
-    expect(items.map((i) => i.label)).toEqual(['Главная', 'Дашборд', 'Точка А', 'Точка Б', 'Анкета', 'GRI', 'Сообщения', 'Документы'])
+    expect(keys(items)).toEqual(['home', 'dashboard', 'point_a', 'point_b', 'survey', 'gri', 'market', 'messages', 'documents'])
+    expect(items.map((i) => i.label)).toEqual(['Главная', 'Дашборд', 'Точка А', 'Точка Б', 'Анкета', 'GRI', 'Рынок', 'Сообщения', 'Документы'])
+    expect(items.find((i) => i.key === 'market')?.href).toBe('/market')
     expect(items.find((i) => i.key === 'point_a')?.href).toBe('/client/point-a')
     expect(items.find((i) => i.key === 'point_b')?.href).toBe('/client/point-b')
   })
@@ -32,6 +33,7 @@ describe('buildClientNav', () => {
       '/client/point-b': 'app/client/point-b/page.tsx',
       '/client/onboarding': 'app/client/onboarding/page.tsx',
       '/gri': 'app/(dashboard)/gri/page.tsx',
+      '/market': 'app/(dashboard)/market/page.tsx',
       '/client/messages': 'app/client/messages/page.tsx',
       '/client/onboarding/documents': 'app/client/onboarding/documents/page.tsx',
     }
@@ -47,7 +49,9 @@ describe('buildClientNav', () => {
 
   it('drops sections switched off in GIGA-CRM (hiddenPaths of platform_sections)', () => {
     const items = buildClientNav({ approved: true, hiddenPaths: ['/point-b', '/client/point-b', '/gri', '/client/onboarding/documents'] })
-    expect(keys(items)).toEqual(['home', 'dashboard', 'point_a', 'survey', 'messages'])
+    expect(keys(items)).toEqual(['home', 'dashboard', 'point_a', 'survey', 'market', 'messages'])
+    // the platform section «market» (migration 074, path /market) switched off → no item
+    expect(keys(buildClientNav({ approved: true, hiddenPaths: ['/market'] }))).not.toContain('market')
   })
 
   it('an expert account does not get links middleware would bounce to /expert', () => {

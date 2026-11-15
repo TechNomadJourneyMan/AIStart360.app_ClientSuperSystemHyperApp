@@ -63,7 +63,15 @@ function toNumericOrNull(v: unknown): number | null {
   return null
 }
 
-export async function loadMetricsPageData(userId: string | null): Promise<MetricsPageData> {
+/** Columns the page shows (never `select=*` — R2-A ревью H-3: no action plan, no top-5 in the RSC payload). */
+export const GRI_PAGE_COLUMNS = 'id,user_id,company_id,scores,section_avgs,gri_index,completed_sections,is_current,created_at'
+
+/**
+ * `opts.includeGri` (R2-A, ревью H-3): the full GRI is a paid section — without
+ * it gri_assessments is not read at all and the GRI tab shows the paywall.
+ */
+export async function loadMetricsPageData(userId: string | null, opts: { includeGri?: boolean } = {}): Promise<MetricsPageData> {
+  const includeGri = opts.includeGri ?? true
   const out: MetricsPageData = {
     userId,
     griAssessment: null,
@@ -81,10 +89,12 @@ export async function loadMetricsPageData(userId: string | null): Promise<Metric
 
   try {
     const [griRes, companyRes, surveyRes] = await Promise.all([
-      fetch(
-        `${supabaseUrl}/rest/v1/gri_assessments?user_id=eq.${userId}&is_current=eq.true&select=*&limit=1`,
-        { headers, cache: 'no-store' },
-      ),
+      includeGri
+        ? fetch(
+            `${supabaseUrl}/rest/v1/gri_assessments?user_id=eq.${encodeURIComponent(userId)}&is_current=eq.true&select=${GRI_PAGE_COLUMNS}&limit=1`,
+            { headers, cache: 'no-store' },
+          )
+        : Promise.resolve(null),
       fetch(
         `${supabaseUrl}/rest/v1/companies?user_id=eq.${userId}&select=id,user_id,name,target_revenue_12m_kzt,target_revenue_3y_kzt&limit=1`,
         { headers, cache: 'no-store' },
@@ -95,7 +105,7 @@ export async function loadMetricsPageData(userId: string | null): Promise<Metric
       ),
     ])
 
-    if (griRes.ok) {
+    if (griRes?.ok) {
       const rows = (await griRes.json()) as GriAssessmentRow[]
       out.griAssessment = Array.isArray(rows) && rows[0] ? rows[0] : null
     }

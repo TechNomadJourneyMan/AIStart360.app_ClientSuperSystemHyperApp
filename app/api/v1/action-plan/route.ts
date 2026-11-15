@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { mayActOnUser } from '@/lib/api-identity'
+import { actionItemSection, resolveAccess } from '@/lib/access/decision'
+import { upgradeRequiredResponse } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/action-plan[?userId=<id>]
@@ -34,6 +36,17 @@ export async function GET(req: NextRequest) {
     targetId = param
   }
 
+  // R2-A (ревью M-1): the client's own board — GRI 90-day tasks only with the
+  // full GRI, Point B tasks only with Точка Б (paid sections; staff exempt).
+  // Staff reading a client (?userId, mayActOnUser above) — as before.
+  let sections = { point_b: true, gri_full: true }
+  if (targetId === user.id) {
+    const access = await resolveAccess(sb, user.id)
+    sections = { point_b: access.sections.point_b, gri_full: access.sections.gri_full }
+    if (!sections.point_b && !sections.gri_full) return upgradeRequiredResponse('point_b')
+  }
+  const visible = (i: unknown) => sections[actionItemSection((i as { source?: string | null }).source)]
+
   const admin = createServiceClient()
   const fetchItems = async () =>
     (await admin.from('action_items').select('*').eq('user_id', targetId).order('priority', { ascending: true }).order('created_at', { ascending: true })).data ?? []
@@ -42,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   // Tasks published by a Point B plan (source 'point_b') are not the client's own 90-day plan:
   // they must not stop the plan from being generated from the GRI assessment.
-  if (items.every((i) => (i as { source?: string | null }).source === 'point_b')) {
+  if (sections.gri_full && items.every((i) => (i as { source?: string | null }).source === 'point_b')) {
     const { data: gri } = await admin
       .from('gri_assessments')
       .select('id, action_plan_90d, top_5_limits')
@@ -80,5 +93,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, data: items })
+  return NextResponse.json({ ok: true, data: items.filter(visible) })
 }

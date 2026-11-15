@@ -13,8 +13,9 @@ import { getSessionUser, resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
 import { internalBaseUrl } from '@/lib/internal-auth'
-import { fireAiFanOut, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
+import { fireAiFanOut, paidFanOutPaths, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
+import { resolveFeature } from '@/lib/access/decision'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -46,6 +47,14 @@ export async function POST(req: NextRequest) {
     if (await isRateLimitedKey(user_id, 'diagnostics-recalculate', { max: 10, windowMs: 60_000 })) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
+
+    // Round 2 (R2-A): the recalculation itself stays free — the questionnaire
+    // and the express assessment («Снимок бизнеса») trigger it. Point A is a
+    // paid section, so for a caller without it the answer carries no Point A
+    // numbers (no caller reads them; the snapshot screen reads the express view).
+    const pointAOpen = caller ? (await resolveFeature(sb, caller.id, 'point_a', { exemptStaff: true })).allowed : false
+    const redact = <T extends Record<string, unknown>>(data: T): T | { scored: unknown; assessment?: unknown } =>
+      pointAOpen ? data : { scored: data.scored, ...(data.assessment !== undefined ? { assessment: data.assessment } : {}) }
 
     // The caller's portal locale lives in this request's cookie. Server-to-server
     // fires below do NOT forward cookies, so we pass it explicitly in their bodies.
@@ -109,7 +118,7 @@ export async function POST(req: NextRequest) {
           notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore }),
         )
         notifyAdmins('diagnostic_recalculated', { overallScore, stage: scored ? snap.written.stage ?? null : null, diagnosticId: snap.diagnosticId }, user_id)
-        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: scored ? snap.written : null, assessment: snap.assessment, scored, snapshot_id: snap.snapshotId, engine: snap.engine } })
+        return NextResponse.json({ ok: true, data: redact({ diagnostic: snap.diagnostic, point_a: scored ? snap.written : null, assessment: snap.assessment, scored, snapshot_id: snap.snapshotId, engine: snap.engine }) })
       }
     }
 
@@ -134,11 +143,14 @@ export async function POST(req: NextRequest) {
     // Retire the previous current diagnostic(s) of this user and insert the
     // new one (exactly one row stays is_current=true; a failed insert puts the
     // previous row back — lib/point-a/diagnostic-row.ts).
+    // R2-A (ревью M-3): the paid AI only for an owner with the paid sections (no cost for Free,
+    // nothing left «processing» / marked «failed»; it runs after the move to Pro — catchUpPaidAi).
+    const aiPaths = process.env.OPENROUTER_API_KEY && !noCompany ? await paidFanOutPaths(db, user_id) : []
     const stored = await storeCurrentDiagnostic(db, {
       userId: user_id,
       companyId: company?.id ?? null,
       result,
-      aiStatus: process.env.OPENROUTER_API_KEY && !noCompany ? 'processing' : 'none',
+      aiStatus: aiPaths.includes('/api/v1/diagnostics/ai-analyze') ? 'processing' : 'none',
       ...(noCompany ? { preliminary: true } : {}),
     })
     if (!stored.ok) return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
@@ -152,8 +164,8 @@ export async function POST(req: NextRequest) {
     const baseUrl = internalBaseUrl(req)
     if (noCompany) {
       // nothing to analyse: no official score
-    } else if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl) {
-      fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale })
+    } else if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl && aiPaths.length > 0) {
+      fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale, paths: aiPaths })
     } else if (process.env.OPENROUTER_API_KEY && diag?.id) {
       console.error('[recalculate] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
     }
@@ -176,7 +188,7 @@ export async function POST(req: NextRequest) {
       diagnosticId: diag?.id,
     }, user_id)
 
-    return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: noCompany ? null : result, scored: !noCompany } })
+    return NextResponse.json({ ok: true, data: redact({ diagnostic: diag, point_a: noCompany ? null : result, scored: !noCompany }) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }

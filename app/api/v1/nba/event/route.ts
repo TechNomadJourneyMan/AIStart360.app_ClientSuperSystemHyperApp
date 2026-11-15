@@ -8,6 +8,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { trackUserAction } from '@/lib/events/server'
 import { NBA_EVENT_NAMES, nbaEventMetadata } from '@/lib/nba/events'
+import { actionItemSection, resolveFeature } from '@/lib/access/decision'
 
 /**
  * POST /api/v1/nba/event  { key, event } → { ok }
@@ -55,11 +56,16 @@ export async function POST(req: NextRequest) {
   if (event === 'done' && key.startsWith('plan_task:')) {
     const taskId = key.slice('plan_task:'.length)
     try {
-      await sb
-        .from('action_items')
-        .update({ status: 'done', completed_at: new Date().toISOString() })
-        .eq('id', taskId)
-        .eq('user_id', user.id)
+      // R2-A: a task of a closed paid section (GRI plan / Point B) is not changed from here.
+      const { data: own } = await sb.from('action_items').select('source').eq('id', taskId).eq('user_id', user.id).maybeSingle()
+      const open = own ? (await resolveFeature(sb, user.id, actionItemSection((own as { source?: string | null }).source), { exemptStaff: true })).allowed : false
+      if (open) {
+        await sb
+          .from('action_items')
+          .update({ status: 'done', completed_at: new Date().toISOString() })
+          .eq('id', taskId)
+          .eq('user_id', user.id)
+      }
     } catch { /* action_items may not have completed_at until migration 049 — status still set */ }
   }
 

@@ -15,6 +15,7 @@ import {
   type AnswerRecord,
 } from '@/lib/market-analysis/persist'
 import { dbError, safeErrorMessage } from '@/lib/api-error'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // =============================================================================
 // GET /api/v1/market-analysis
@@ -28,6 +29,9 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+  // Round 2 (R2-A): market is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'market')
+  if (upgrade) return upgrade
 
   let answers: AnswerRecord[]
   try {
@@ -112,6 +116,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+  // Round 2 (R2-A): market is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, userId, 'market')
+  if (upgrade) return upgrade
 
   // Staff (admin / expert / manager / analyst / super_admin) edits are saved with
   // source 'expert' so the checklist can surface them as expert-authored insights.

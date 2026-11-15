@@ -13,6 +13,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { apiError, dbError } from '@/lib/api-error'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { recordAiCacheHit } from '@/lib/ai/usage'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * POST /api/v1/point-a/narrative
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
   if (authErr || !user) {
     return apiError('Требуется вход в систему', 401)
   }
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   // Throttle this paid Sonnet narrative generation per user (audit 2026-07-02).
   if (await isRateLimitedKey(user.id, 'point-a-narrative', { max: 6, windowMs: 60_000 })) {

@@ -10,6 +10,7 @@ import { REPORT_TYPES, type ReportType } from '@/lib/reports/types'
 import { listReportVersions } from '@/lib/reports/versions'
 import { versionStamp } from '@/lib/reports/version-stamp'
 import { ExpertReviewQueue, type ExpertReviewItem } from '@/components/expert/ExpertReviewQueue'
+import { companiesWithClosedSection, REPORT_SECTION } from '@/lib/access/owner-access'
 
 export const metadata: Metadata = { title: 'Отчёты · Expert Portal' }
 
@@ -26,10 +27,15 @@ export const metadata: Metadata = { title: 'Отчёты · Expert Portal' }
 
 async function loadReviewQueue(): Promise<{ ok: true; items: ExpertReviewItem[] } | { ok: false }> {
   try {
-    const rows = await listReportVersions({ status: 'in_review', limit: 100 })
+    const rows = (await listReportVersions({ status: 'in_review', limit: 100 })).filter((v) => v.status === 'in_review')
+    // R2-C (M-4): the report is part of Точка А. A client without it (Free) sees
+    // only the notice «Отчёт эксперта готов» — the card says so before the expert
+    // publishes. ONE batch decision for the owners of all companies of the queue
+    // (review F8); a failed read → unknown → no note (review L-7).
+    const locked = await companiesWithClosedSection(rows.map((v) => v.company_id), REPORT_SECTION)
     return {
       ok: true,
-      items: rows.filter((v) => v.status === 'in_review').map((v) => ({
+      items: rows.map((v) => ({
         id: v.id,
         company_id: v.company_id,
         company_name: v.company_name,
@@ -37,6 +43,7 @@ async function loadReviewQueue(): Promise<{ ok: true; items: ExpertReviewItem[] 
         stamp: versionStamp(v.version, v.created_at),
         findings: v.findings,
         recommendations: v.recommendations,
+        clientPaidLocked: locked.has(v.company_id),
       })),
     }
   } catch {

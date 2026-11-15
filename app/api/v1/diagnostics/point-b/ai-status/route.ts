@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/diagnostics/point-b/ai-status?diagnostic_id=xxx
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+  // Round 2 (R2-A): point_b is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, user.id, 'point_b')
+  if (upgrade) return upgrade
 
   // Resolve the diagnostic: passed id (scoped to this user) or the current one.
   let diagnosticId = req.nextUrl.searchParams.get('diagnostic_id')

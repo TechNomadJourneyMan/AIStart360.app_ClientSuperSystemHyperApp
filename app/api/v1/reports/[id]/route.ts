@@ -10,11 +10,17 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { apiError, dbError, safeErrorMessage } from '@/lib/api-error'
 import { publishedReportForCaller } from '@/lib/reports/client-access'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
+    // R2-C (M-4): the expert's report is part of Точка А — 402 before any read (staff pass).
+    if (user) {
+      const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+      if (upgrade) return upgrade
+    }
     const found = await publishedReportForCaller(supabase, user?.id ?? null, params.id)
     if (!found.ok) {
       if (found.error === 'db') return dbError('api/v1/reports/:id', found.dbError, 'Не удалось загрузить отчёт')

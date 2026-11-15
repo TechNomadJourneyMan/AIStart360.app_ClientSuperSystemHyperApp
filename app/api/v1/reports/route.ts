@@ -5,6 +5,7 @@
 // caller's own session client, so RLS decides visibility (tenants see only
 // status 'published'), and the query asks for 'published' explicitly as well.
 // Returns summaries; the full frozen snapshot is GET /api/v1/reports/:id.
+// R2-C (M-4): the report is part of Точка А — closed section → 402 upgrade_required.
 
 export const dynamic = 'force-dynamic'
 
@@ -13,12 +14,18 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError, dbError, safeErrorMessage } from '@/lib/api-error'
 import { CLIENT_REPORT_COLUMNS, summarize, toClientReport } from '@/lib/reports/client-access'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export async function GET(req: NextRequest) {
   try {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
+    // R2-C (M-4): the expert's report is part of Точка А — 402 before any read (staff pass).
+    if (user) {
+      const upgrade = await gatePaidSection(supabase, user.id, 'point_a')
+      if (upgrade) return upgrade
+    }
 
     const resolved = await resolveTenantWith(supabase, user?.id ?? null, { companyId, access: 'read' })
     if (!resolved.ok) {

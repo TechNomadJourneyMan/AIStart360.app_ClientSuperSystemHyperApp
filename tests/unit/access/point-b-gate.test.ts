@@ -22,11 +22,18 @@ const s = vi.hoisted(() => ({
 vi.mock('@/lib/settings/system-settings', () => ({ getAccessGatesEnabled: async () => s.gates }))
 vi.mock('@/lib/access/server', async () => {
   const ent = await import('@/lib/access/entitlements')
-  return { readEntitlements: async () => ent.entitlementsFor(s.tier, s.flags) }
+  // R2-C (ревью L-11): the decision reads the own rights first, the company only on the refusal path.
+  return { readEntitlements: async () => ent.entitlementsFor(s.tier, s.flags), readOwnEntitlements: async () => ({ ent: ent.entitlementsFor(s.tier, s.flags), overrides: ent.normalizeOverrides(s.flags) }), readCompanyRights: async () => null }
 })
 vi.mock('@/lib/api-identity', async () => {
   const real = await vi.importActual<typeof import('@/lib/api-identity')>('@/lib/api-identity')
-  return { ...real, getSessionUser: async () => s.user, getSessionRole: async () => s.role }
+  return {
+    ...real,
+    getSessionUser: async () => s.user,
+    getSessionRole: async () => s.role,
+    // Round 2: staff exemption is decided by the migration-140 rule (getSessionStaff).
+    getSessionStaff: async () => (real.isStaffRole(s.role) ? { id: s.user?.id ?? '', role: s.role } : null),
+  }
 })
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: s.user } }) } }),
@@ -82,7 +89,7 @@ describe('gateFeature(point_b)', () => {
     expect(res?.status).toBe(402)
     const body = await res!.json()
     expect(body).toMatchObject({ ok: false, error: 'upgrade_required', feature: 'point_b' })
-    expect(body.message).toBe('Точка Б доступна на тарифе Pro вместе с полным GRI и Точкой А.')
+    expect(body.message).toBe('Точка Б доступна на платном тарифе вместе с полным GRI и Точкой А.')
   })
 
   it('passes when gates are disabled (the default)', async () => {
@@ -186,10 +193,11 @@ describe('page logic', () => {
     expect(await access.sendUpgradeRequest((async () => { throw new Error('offline') }) as unknown as typeof fetch)).toBe('error')
   })
 
-  it('the paywall explains the tariff and offers «Узнать о Pro», with no client data', () => {
+  it('the paywall (Round 2: the one Paywall) explains the section and offers «Оставить заявку на доступ», with no client data', () => {
     const html = renderToStaticMarkup(React.createElement(PointBPaywall))
-    expect(html).toContain('Точка Б доступна на тарифе Pro вместе с полным GRI и Точкой А.')
-    expect(html).toContain('Узнать о Pro')
-    expect(html).toContain('aria-labelledby="pb-paywall-title"')
+    expect(html).toContain('Точка Б — в платном доступе')
+    expect(html).toContain('Оставить заявку на доступ')
+    expect(html).toContain('Онлайн-оплата пока не подключена')
+    expect(html).toContain('data-paywall="point_b"')
   })
 })

@@ -17,6 +17,7 @@ import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { loadPointAOverview } from '@/lib/point-a/overview'
 import { apiError, safeErrorMessage } from '@/lib/api-error'
 import type { PointAOverviewResponse } from '@/types/point-a-overview'
+import { gatePaidSection } from '@/lib/access/gate'
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,6 +32,9 @@ export async function GET(req: NextRequest) {
       }
       return apiError(tenantErrorMessage(resolved.error), resolved.status)
     }
+    // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required (staff exempt).
+    const upgrade = user ? await gatePaidSection(supabase, user.id, 'point_a') : null
+    if (upgrade) return upgrade
 
     // CRM / market counts are owner-only under RLS: read them (head counts
     // only) with the service role, now that the caller is authorised.

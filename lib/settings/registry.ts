@@ -63,12 +63,19 @@ export const SETTINGS = {
   },
   access_gates: {
     group: 'registration', label: 'Тарифные ограничения (Free / Pro)',
-    help: 'Включает ограничения бесплатного тарифа: полный GRI, AI-чат, PDF, бенчмарки.',
+    help: 'Включает ограничения бесплатного тарифа: Точка А, Точка Б, Рынок и полный GRI — только платным (вместо них пейволл с заявкой на доступ), а также AI-чат, PDF, бенчмарки.',
+    schema: z.boolean(), default: false, critical: true,
+  },
+  // R2-A (ревью H-1): самостоятельный пилот через /api/checkout {planKey:'pilot'}. Решения PO
+  // по пилоту нет — по умолчанию ВЫКЛ: запрос пилота становится заявкой на доступ.
+  pilot_self_service: {
+    group: 'registration', label: 'Самостоятельный пилот (30 дней)',
+    help: 'Вкл — клиент сам включает пилот (полный доступ на 30 дней) кнопкой «Пилот». Выкл — запрос пилота создаёт заявку на доступ в «Заявки → Доступы», доступ открывает менеджер.',
     schema: z.boolean(), default: false, critical: true,
   },
   gri_free_runs: {
     group: 'registration', label: 'Прохождений GRI на тарифе Free',
-    help: 'Сколько полных GRI доступно бесплатно, когда тарифные ограничения включены.',
+    help: 'Полный GRI на Free закрыт (решение 2026-11). Лимит действует только для Free-аккаунта, которому полный GRI открыт индивидуально (доступ в User 360).',
     schema: z.number().int().min(0).max(20), default: 1, critical: false,
   },
   insight_moderation: {
@@ -174,7 +181,21 @@ export const SETTINGS = {
       medium: z.number().int().min(1).max(720),
       low: z.number().int().min(1).max(720),
     }),
-    default: { critical: 2, high: 4, medium: 24, low: 72 },
+    // Решение PO 2026-11-14: ни один приоритет не ждёт реакции дольше 24 ч (было low 72 ч — противоречило SLA экспертов).
+    default: { critical: 2, high: 4, medium: 24, low: 24 },
+    critical: false,
+  },
+  // R2-B (решение PO): эксперт реагирует за 24 ч, отвечает клиенту за 48 ч (lib/expert-sla, миграция 145).
+  expert_sla: {
+    group: 'notifications', label: 'SLA экспертов',
+    help: 'Задача эксперта (обращение клиента, отчёт на проверке, план Точки Б на одобрении; рекомендации Точки Б под SLA не ставятся): нет реакции за «часов на реакцию» — эскалация SuperExpert и Admin; нет ответа за «часов на ответ» — просрочка SLA и повторное уведомление. «Назначать автоматически» — задача клиента без ответственного уходит наименее загруженному эксперту; выключено — в общую очередь SuperExpert.',
+    schema: z.object({
+      enabled: z.boolean(),
+      reaction_hours: z.number().int().min(1).max(168),
+      answer_hours: z.number().int().min(1).max(720),
+      auto_assign: z.boolean(),
+    }).refine((v) => v.answer_hours >= v.reaction_hours, 'Срок ответа не может быть короче срока реакции'),
+    default: { enabled: true, reaction_hours: 24, answer_hours: 48, auto_assign: true },
     critical: false,
   },
   admin_notifications: {

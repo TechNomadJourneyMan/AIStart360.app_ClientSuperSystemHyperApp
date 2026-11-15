@@ -12,10 +12,15 @@
 import { z } from 'zod'
 import { revokeSharesOfAssignee, revokeSharesOfCreator } from '@/lib/share/tokens'
 import { createServiceClient } from '@/lib/supabase-service'
+import { isAssignableResponsible } from '@/lib/expert-sla/assign'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { canManageTarget, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
 import { BULK_ACTIONS, BULK_MAX, type BulkAction } from './bulk-users-shared'
 import type { GigaActor } from '@/lib/admin/giga-actor'
+import { BillingError, setPlan } from '@/lib/payments/billing'
+import { completePaidAccessGrant } from '@/lib/access/paid-access-grant'
+import { runInBackground } from '@/lib/background'
+import { CATCH_UP_CONCURRENCY, catchUpPaidAiBatch } from '@/lib/point-a/catch-up-batch'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { remindSurveyBatch } from '@/lib/admin/survey-reminders'
 import { scopedClientIds, NOT_ASSIGNED_ERROR } from '@/lib/admin/client-scope'
@@ -55,11 +60,10 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
   return out
 }
 
-/** Проверка до чтения данных: ответственным может быть только сотрудник. */
+/** Проверка до чтения данных: ответственным может быть только сотрудник или одобренный эксперт (R2-B). */
 export async function validateAssignee(assigneeId: string | null | undefined): Promise<string | null> {
   if (!assigneeId) return null
-  const { data } = await createServiceClient().from('staff_roles').select('user_id').eq('user_id', assigneeId).maybeSingle()
-  return data ? null : 'Ответственным может быть только сотрудник'
+  return (await isAssignableResponsible(createServiceClient(), assigneeId)) ? null : 'Ответственным может быть только сотрудник или эксперт'
 }
 
 async function loadTargets(ids: string[]): Promise<Map<string, Target>> {
@@ -86,6 +90,17 @@ export function targetGuard(actor: Pick<GigaActor, 'id' | 'role'>, action: BulkA
   if ((action === 'block' || action === 'archive' || action === 'reject') && t.id === actor.id) return 'Нельзя применить к своему аккаунту'
   if ((action === 'block' || action === 'archive') && t.staffRole === 'super_admin') return 'Нельзя применить к Super Admin'
   return null
+}
+
+/** A plan error in the bulk report — in Russian (verify Н-4). */
+function billingErrorText(err: BillingError): string {
+  switch (err.code) {
+    case 'not_found': return 'Профиль не найден — тариф не изменён'
+    case 'audit_unavailable': return 'Журнал действий недоступен — тариф не изменён'
+    case 'migration_106_required': return 'Миграция 106 не применена — тариф не изменён'
+    case 'invalid': return 'Неверные данные тарифа'
+    default: return 'Тариф не изменён'
+  }
 }
 
 export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?: Request | null): Promise<BulkItemResult[]> {
@@ -127,6 +142,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
     return ids.map((id) => results.get(id) ?? { id, ok: false, error: 'Не обработан' })
   }
 
+  /** Clients whose plan became paid in this run (the AI catch-up batch). */
+  const paidNow: string[] = []
   const one = async (id: string): Promise<BulkItemResult> => {
     const t = targets.get(id) as Target
     try {
@@ -149,8 +166,15 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
         }
         case 'set_tier': {
           if (t.tier === input.tier) return { id, ok: true, error: null, skipped: true }
-          const { data, error } = await sb.from('profiles').update({ tier: input.tier }).eq('id', id).select('id')
-          if (error || !data?.length) return { id, ok: false, error: 'Тариф не изменён' }
+          // R2-C (product review M-2): the plan goes through the ONE writer — billing
+          // (subscriptions + profiles.tier together, journal first, the paid AI catch-up)
+          // — and a paid plan closes the client's open access requests and notifies
+          // him once, exactly like User 360 → Биллинг.
+          // R2-C verify: no per-client AI catch-up here — ONE bounded batch after the loop.
+          const plan = await setPlan({ userId: id, tier: input.tier as 'free' | 'pro', periodEnd: null, source: 'admin', actor, req, meta: { via: 'bulk' }, catchUpAi: false })
+          if (!plan.applied) return { id, ok: false, error: 'Тариф не изменён' }
+          if (plan.after?.accessTier === 'pro') paidNow.push(id)
+          await completePaidAccessGrant({ userId: id, actor, before: plan.before, after: plan.after, via: 'bulk' })
           await audit(id, 'user.access_changed', { oldValue: { tier: t.tier }, newValue: { tier: input.tier } })
           return { id, ok: true, error: null }
         }
@@ -189,12 +213,16 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
         }
       }
     } catch (err) {
-      return { id, ok: false, error: err instanceof Error ? err.message : 'Ошибка' }
+      return { id, ok: false, error: err instanceof BillingError ? billingErrorText(err) : err instanceof Error ? err.message : 'Ошибка' }
     }
     return { id, ok: false, error: 'Неизвестное действие' }
   }
 
   const done = await pool(allowed, 5, one)
   for (const r of done) results.set(r.id, r)
+  // R2-C verify: the paid AI of the clients that got Pro — in the background, at most
+  // CATCH_UP_CONCURRENCY clients at a time (rule of the project, 504 incident 2026-10-15);
+  // the answer does not wait for it.
+  if (paidNow.length) void runInBackground('paid-ai-catch-up-bulk', () => catchUpPaidAiBatch(paidNow, { concurrency: CATCH_UP_CONCURRENCY }))
   return ids.map((id) => results.get(id) ?? { id, ok: false, error: 'Не обработан' })
 }

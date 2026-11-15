@@ -29,6 +29,25 @@ import type {
 } from './types'
 import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 import { getOfficialPointA, officialDiagnosticRow, type OfficialPointA } from '@/lib/point-a/official'
+import { resolveAccess } from '@/lib/access/decision'
+import { ALL_SECTIONS_CLOSED, scrubAssistantContext, type SectionAccess } from './paid-context'
+
+/**
+ * R2-A (ревью H-2): which paid sections the snapshot may carry. Default — the
+ * decision for `userId` (lib/access/decision.ts: switch, tariff, override, staff
+ * of the session); a failure → all closed (the snapshot feeds LLM prompts and
+ * answers — fail closed). Staff-facing callers that look at a client
+ * (GIGA quality, escalation to an expert) pass ALL_SECTIONS_OPEN.
+ */
+async function sectionsFor(userId: string, sb: SupabaseClient, given?: SectionAccess): Promise<SectionAccess> {
+  if (given) return given
+  try {
+    return (await resolveAccess(sb, userId)).sections
+  } catch (err) {
+    console.error('[assistant/context] access decision failed — paid sections left out:', err instanceof Error ? err.message : err)
+    return ALL_SECTIONS_CLOSED
+  }
+}
 
 // ─── Point A reconstruction (mirrors point-b/route.ts diagToPointA) ─────────
 
@@ -115,7 +134,9 @@ function toAssistantBlocks(pointA: PointA, noData: ReadonlySet<string>): Assista
 export async function buildAssistantContext(
   userId: string,
   sb: SupabaseClient,
+  opts: { sections?: SectionAccess } = {},
 ): Promise<AssistantContext> {
+  const sectionsP = sectionsFor(userId, sb, opts.sections)
   // 1. Latest diagnostic (Point A). RLS scopes the row; we also filter by user.
   const { data: diag } = await sb
     .from('diagnostics')
@@ -280,7 +301,7 @@ export async function buildAssistantContext(
     top_5_limits: griTop5.slice(0, 5),
   }
 
-  return {
+  const full: AssistantContext = {
     userId,
     diagnosticId,
     generatedAt: new Date().toISOString(),
@@ -300,4 +321,6 @@ export async function buildAssistantContext(
     metrics: { revenue: currentRevenueYear, revenue_year: revenueYear },
     llm_analysis: null,
   }
+  // R2-A: the data of closed paid sections never leaves this function.
+  return scrubAssistantContext(full, await sectionsP)
 }

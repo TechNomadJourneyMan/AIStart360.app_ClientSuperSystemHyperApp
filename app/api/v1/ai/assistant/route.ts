@@ -28,6 +28,7 @@ import { retrieveCompanyChunks } from '@/lib/ai/retrieval'
 import { runChatTurn, type ChatSurface } from '@/lib/chat/engine'
 import { toolsFor, type ActionPreview, type PendingKind } from '@/lib/chat/tools'
 import { saveChatTurn } from '@/lib/chat/turn-store'
+import { resolveAccess } from '@/lib/access/decision'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -93,6 +94,8 @@ export async function POST(req: Request): Promise<Response> {
   if (gated) return gated
   const budget = await guardAiBudget(user.id, 'unified_chat')
   if (budget) return budget
+  // R2-A (ревью H-2): tools of a closed paid section are not offered to the model (staff exempt).
+  const sections = (await resolveAccess(sb, user.id)).sections
 
   const { companyId, canManage } = tenant.tenant
   const { message, surface, focus } = parsed.data
@@ -122,7 +125,7 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const result = await runChatTurn({
           llm: (o) => chatWithTools({ ...o, feature: 'unified_chat', label: 'AI-чат', userId: user.id, companyId }),
-          tools: toolsFor(canManage),
+          tools: toolsFor(canManage, sections),
           surface,
           focus: focus ?? {},
           history,

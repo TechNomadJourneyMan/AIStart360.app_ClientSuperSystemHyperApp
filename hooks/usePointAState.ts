@@ -25,10 +25,17 @@ async function json<T>(res: Response): Promise<T> {
 /** The caller has no company (staff, or a client before the questionnaire). */
 export interface NoCompany { noCompany: { staff: boolean } }
 
-type StateResponse = PointAPageState | NoCompany
+/** Round 2 (R2-A): Point A is a paid section and the account has no access (API 402 upgrade_required). */
+export interface Locked { locked: true }
+
+type StateResponse = PointAPageState | NoCompany | Locked
 
 function isNoCompany(d: StateResponse | undefined): d is NoCompany {
   return !!d && 'noCompany' in d
+}
+
+function isLocked(d: StateResponse | undefined): d is Locked {
+  return !!d && 'locked' in d
 }
 
 export function usePointAState(opts: { enabled?: boolean } = {}) {
@@ -38,16 +45,18 @@ export function usePointAState(opts: { enabled?: boolean } = {}) {
     queryFn: async (): Promise<StateResponse> => {
       const res = await fetch('/api/v1/point-a/state', { cache: 'no-store' })
       const body = await res.json().catch(() => null)
+      // The paywall instead of an error with «Повторить» (no retries, no polling).
+      if (res.status === 402 || body?.error === 'upgrade_required') return { locked: true }
       if (res.ok && body?.ok && body.noCompany) return { noCompany: { staff: Boolean(body.noCompany.staff) } }
       if (!res.ok || !body?.ok) throw new Error(body?.error ?? 'Ошибка запроса')
       return body.data as PointAPageState
     },
     staleTime: 10_000,
     // Poll only a company whose recalculation is under way (no company → never).
-    refetchInterval: (q) => (!q.state.data || isNoCompany(q.state.data) ? false : q.state.data.recalculation !== 'idle' ? 5_000 : 60_000),
+    refetchInterval: (q) => (!q.state.data || isNoCompany(q.state.data) || isLocked(q.state.data) ? false : q.state.data.recalculation !== 'idle' ? 5_000 : 60_000),
   })
   const raw = query.data
-  const state: PointAPageState | undefined = raw && !isNoCompany(raw) ? (raw as PointAPageState) : undefined
+  const state: PointAPageState | undefined = raw && !isNoCompany(raw) && !isLocked(raw) ? (raw as PointAPageState) : undefined
   const companyId = state?.companyId ?? null
   const bindings = useMemo<RealtimeSyncBinding[]>(
     () => companyId
@@ -62,6 +71,8 @@ export function usePointAState(opts: { enabled?: boolean } = {}) {
   return {
     data: state,
     noCompany: isNoCompany(raw) ? raw.noCompany : null,
+    /** Point A is closed for this account (paid section) — draw the paywall. */
+    locked: isLocked(raw),
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,

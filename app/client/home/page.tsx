@@ -12,14 +12,20 @@ import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
 import { snapshotIsPreliminary, snapshotIsPrimary } from '@/lib/user-dashboard/point-a-hint'
 import { ReportReadyCard, pickPublishedReport } from '@/components/reports/ReportReadyCard'
 import { officialPointA, officialScore, type OfficialSnapshotRow } from '@/lib/point-a/official'
+import { getRequestAccess } from '@/lib/access/request-access'
+import { createServiceClient } from '@/lib/supabase-service'
 
 export const metadata = { title: 'Мой профиль — AIStart360' }
 
 // User Assessment Dashboard — the page a client lands on after the survey:
 // what they told us (survey), what we measured (GRI), where to go next.
-// All reads go through the session client, so RLS scopes them to the caller.
+// Reads go through the session client, so RLS scopes them to the caller —
+// except the Point A rows (R2-A, migration 147: RLS hides a paid section from a
+// Free session): the express-level score of the home tile is read with the
+// service role, for the caller's own company / user id only.
 export default async function ClientHomePage({ searchParams }: { searchParams?: { unavailable?: string } }) {
   const sb = createServerClient()
+  const own = createServiceClient()
   // Verified user, shared with the client layout (one Auth round trip per render).
   const user = await getRequestUser()
   if (!user) redirect('/login?from=/client/home')
@@ -32,27 +38,36 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
   const snapshotP = companyIdP.then(async (companyId) => {
     if (companyId == null) return null
     // `blocks`: a block without data → «Первичная · по быстрым данным» (survey Ф5).
-    const snapshotRes = await sb.from('point_a_snapshots').select('engine, config_version, overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    const snapshotRes = await own.from('point_a_snapshots').select('engine, config_version, overall, stage, created_at, blocks, v4').eq('company_id', String(companyId)).order('created_at', { ascending: false }).limit(1).maybeSingle()
     return snapshotRes.error ? null : (snapshotRes.data as { engine?: unknown; config_version?: unknown; overall: unknown; stage: string | null; created_at: string; blocks?: unknown; v4?: unknown } | null)
   })
   // R-025: the latest report version an expert published («Ваш отчёт готов»), read
-  // next to the snapshot (same wave). RLS shows a tenant only published versions;
-  // the query asks for them explicitly too. A failed read only hides the card.
+  // next to the snapshot (same wave). Only published versions are asked for. A
+  // failed read only hides the card. R2-C (M-4): the report is part of Точка А and
+  // migration 148 hides report_versions from a Free session — the card's metadata
+  // (id, version, title, dates; no content) is read with the service role for the
+  // caller's OWN company; a closed Точка А turns the card into «Отчёт эксперта
+  // готов» with the paywall (no «Открыть», PDF or link).
   const reportP = companyIdP.then(async (companyId) => {
     if (companyId == null) return null
-    const res = await sb.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
+    const res = await own.from('report_versions').select('id, version, title, status, published_at, created_at').eq('company_id', String(companyId)).eq('status', 'published').order('published_at', { ascending: false }).limit(1)
     return res.error ? null : pickPublishedReport(res.data as Array<Record<string, unknown>> | null)
   }).catch(() => null)
-  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report] = await Promise.all([
+  // Round 2 (R2-A): which paid sections are closed (one server decision). R2-C (review F7):
+  // a failed decision → closed (fail closed, as lib/access/recipient.ts) — the page never
+  // offers «Открыть» / PDF of the report that the API would refuse anyway.
+  const accessP = getRequestAccess(user.id).then((a) => ({ point_a: !a.sections.point_a, gri_full: !a.sections.gri_full })).catch(() => ({ point_a: true, gri_full: true }))
+  const [profileRes, answersRes, diagnosticsRes, griRes, docsRes, sectionsRes, pages, snapshot, report, paidLocked] = await Promise.all([
     sb.from('profiles').select('full_name, email, status, created_at').eq('id', user.id).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', user.id),
-    sb.from('diagnostics').select('overall_score, health_index, stage, calculated_at').eq('user_id', user.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1).maybeSingle(),
+    own.from('diagnostics').select('overall_score, health_index, stage, calculated_at').eq('user_id', user.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1).maybeSingle(),
     sb.from('gri_assessments').select('gri_index, created_at').eq('user_id', user.id).eq('is_current', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
     sb.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
     visibleSectionsFor(user.id),
     visiblePagesFor(user.id),
     snapshotP,
     reportP,
+    accessP,
   ])
 
   const rows = (answersRes.data ?? []).filter((r) => isWizardVisibleKey(String(r.question_key)))
@@ -95,7 +110,8 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
           calculatedAt: diagnosticsRes.data.calculated_at ?? null,
         }
       : null,
-    gri: griRes.data ? { index: Number(griRes.data.gri_index), assessedAt: griRes.data.created_at } : null,
+    // R2-A: the index is the result of the full GRI — a paid section; closed → no number on the home tile.
+    gri: griRes.data && !paidLocked.gri_full ? { index: Number(griRes.data.gri_index), assessedAt: griRes.data.created_at } : null,
     documentsCount: docsRes.count ?? 0,
     // Cards of «Что дальше» follow the sections configured in GIGA-CRM.
     sections: sectionsRes.sections
@@ -105,13 +121,14 @@ export default async function ClientHomePage({ searchParams }: { searchParams?: 
       ? pages.filter((p) => p.show_in_nav).slice(0, 6).map((p) => ({ slug: p.slug, title: p.title, summary: p.summary, icon: p.icon }))
       : [],
     unavailableSection: typeof searchParams?.unavailable === 'string' ? searchParams.unavailable.slice(0, 40) : null,
+    paidLocked,
   }
 
   if (!report) return <UserHome data={data} />
   return (
     <>
       <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6 sm:pt-8">
-        <ReportReadyCard report={report} />
+        <ReportReadyCard report={report} locked={paidLocked.point_a} />
       </div>
       <UserHome data={data} />
     </>

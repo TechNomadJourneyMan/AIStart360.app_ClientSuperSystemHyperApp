@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
 import { withReadableAiAnalysis } from '@/lib/point-a/ai-analysis'
 import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
+import { gatePaidSection } from '@/lib/access/gate'
 
 // GET /api/v1/diagnostics/current
 // The user is taken from the authenticated session — never from the query —
@@ -14,6 +15,9 @@ export async function GET(_req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
+  const upgrade = await gatePaidSection(sb, user.id, 'point_a')
+  if (upgrade) return upgrade
 
   const { data, error } = await sb
     .from('diagnostics')

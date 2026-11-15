@@ -6,11 +6,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The scenarios below walk the daily schedule minute by minute (04:00, 05:00, ...). The hourly backup
-// watchdog (R-011, '7 * * * *') would land in every one of those hours, so it is left out here; its
-// place in the schedule is pinned by tests/unit/cron/schedule.test.ts.
+// watchdog (R-011, '7 * * * *') would land in every one of those hours and the expert SLA pass
+// ('*/5 * * * *') in every fifth minute, so both are left out here; their place in the schedule is
+// pinned by tests/unit/cron/schedule.test.ts (and tests/unit/expert-sla/cron-route.test.ts).
 vi.mock('@/lib/cron/schedule', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/cron/schedule')>()
-  const jobs = real.CRON_JOBS.filter((job) => job.path !== '/api/cron/backup-freshness')
+  const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla']
+  const jobs = real.CRON_JOBS.filter((job) => !frequent.includes(job.path))
   return {
     ...real,
     CRON_JOBS: jobs,
