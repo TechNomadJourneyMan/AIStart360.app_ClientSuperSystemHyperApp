@@ -81,6 +81,7 @@ export async function announceAiReviewNow(deps: AiReviewNowDeps): Promise<AiRevi
     if (!cfg.enabled) return { opened: false, notified: null }
 
     const { data: diag, error: dErr } = await sb.from('diagnostics').select('user_id').eq('id', diagnosticId).maybeSingle()
+    if (dErr) console.error('[expert-sla/immediate] diagnostics read failed:', dErr.message?.slice(0, 120))
     if (dErr || !diag) return { opened: false, notified: null, error: dErr ? `diagnostics: ${dErr.message?.slice(0, 120)}` : undefined }
     const clientId = String((diag as { user_id: string }).user_id)
     const claimQueue = !(await autoAssignPossible(sb, clientId, cfg))
@@ -89,7 +90,11 @@ export async function announceAiReviewNow(deps: AiReviewNowDeps): Promise<AiRevi
       p_diagnostic: diagnosticId, p_now: at, p_reaction_hours: cfg.reaction_hours, p_answer_hours: cfg.answer_hours,
       p_limit: 1, p_claim: true, p_claim_queue: claimQueue,
     })
-    if (opened.error) return { opened: false, notified: null, error: `expert_sla_open_ai_review: ${opened.error.message?.slice(0, 200)}` }
+    if (opened.error) {
+      // Logged: on staging 2026-11-15 a grant error here was silent and the expert never got the task.
+      console.error('[expert-sla/immediate] expert_sla_open_ai_review failed:', opened.error.code ?? '', opened.error.message?.slice(0, 200))
+      return { opened: false, notified: null, error: `expert_sla_open_ai_review: ${opened.error.message?.slice(0, 200)}` }
+    }
     const row = ((opened.data ?? []) as SyncRow[]).find((r) => r.r_change === 'new')
     if (!row) return { opened: false, notified: null }
 

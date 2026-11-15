@@ -212,6 +212,11 @@ COMMENT ON FUNCTION public.expert_sla_realign(uuid, timestamptz) IS
 -- announces the new task itself right away — assign_notified_at / queue_notified_at
 -- are set at insert so the outbox of the pass never sends it twice; on a failed
 -- delivery the caller clears the mark and counts the attempt (the pass retries).
+-- SECURITY DEFINER (here and in expert_sla_plan_prep): both check that the client still exists in
+-- auth.users before opening a task (the FK of expert_sla_tasks would otherwise abort the whole
+-- statement). On real Supabase the service_role cannot SELECT auth.users, so as INVOKER the call
+-- failed with 42501 — and expert_sla_sync calls this function, so the whole SLA pass failed
+-- (found on staging 2026-11-15). Executable by service_role only (grants below), search_path pinned.
 CREATE OR REPLACE FUNCTION public.expert_sla_open_ai_review(
   p_diagnostic     UUID        DEFAULT NULL,
   p_now            TIMESTAMPTZ DEFAULT now(),
@@ -222,7 +227,7 @@ CREATE OR REPLACE FUNCTION public.expert_sla_open_ai_review(
   p_claim_queue    BOOLEAN     DEFAULT false
 )
 RETURNS TABLE (r_task UUID, r_change TEXT, r_source TEXT, r_client UUID, r_assignee UUID, r_via TEXT)
-LANGUAGE plpgsql SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_now    TIMESTAMPTZ := coalesce(p_now, now());
   v_react  INT := greatest(1, least(coalesce(p_reaction_hours, 24), 720));
@@ -310,7 +315,7 @@ CREATE OR REPLACE FUNCTION public.expert_sla_plan_prep(
   p_limit          INT         DEFAULT 200
 )
 RETURNS TABLE (r_task UUID, r_change TEXT, r_source TEXT, r_client UUID, r_assignee UUID, r_via TEXT)
-LANGUAGE plpgsql SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_now    TIMESTAMPTZ := coalesce(p_now, now());
   v_react  INT := greatest(1, least(coalesce(p_reaction_hours, 24), 720));

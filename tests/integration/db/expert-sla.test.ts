@@ -1065,4 +1065,21 @@ describe.skipIf(!dbTestsEnabled)('R3-SLA: ИИ-разбор Точки А и п�
       const back = (await sync(db, plus(t0, 2))).filter((c) => c.r_client === client)
       expect(back.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['pa_ai_review:new'])
     }))
+
+  it('real Supabase grants: service_role cannot read auth.users — the pass and both 152 functions still work (staging 2026-11-15)', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const diag = await seedAnalysis(db, client, company, { generatedAt: t0 })
+      // As on real Supabase: no SELECT on auth.users for service_role (nor through PUBLIC).
+      await db.query('REVOKE ALL ON auth.users FROM service_role')
+      await db.query('REVOKE ALL ON auth.users FROM PUBLIC')
+      const opened = await openAiReview(db, diag, t0, false, false)
+      expect(opened.map((r) => `${r.r_source}:${r.r_change}`)).toEqual(['pa_ai_review:new'])
+      await expect(planPrep(db, t0, [{ company, client }])).resolves.toBeDefined()
+      await expect(sync(db, plus(t0, 1))).resolves.toBeDefined()
+    }))
 })
+
