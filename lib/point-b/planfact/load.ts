@@ -24,8 +24,8 @@ import { summarizeVersion } from './diff'
 import { addPeriods, lastFinishedPeriod, periodOf } from './kpis'
 import { planKpis } from './planned'
 import { daysSince, goalProgress } from './progress'
-import { isMissingTable, listCheckpoints, monthValues } from './store'
-import type { Checkpoint, PlanFactState, VersionSummary } from './types'
+import { isMissingTable, listCheckpoints, loadMonthlyFacts, MAX_MONTHS_BACK, monthValues, type MonthlyFactRow } from './store'
+import { PLAN_KPIS, type Checkpoint, type PlanFactState, type PlanKpi, type ReconciliationMonth, type VersionSummary } from './types'
 
 const VERSIONS_SHOWN = 10
 
@@ -88,17 +88,20 @@ export async function loadPlanFactState(sb: SupabaseClient, input: PlanFactLoadI
   const recPeriod = lastFinishedPeriod(now)
   const months = Array.from({ length: FACT_MONTHS }, (_, i) => addPeriods(curPeriod, i - FACT_MONTHS + 1))
 
-  const [checkpoints, actuals, goals, names] = await Promise.all([
+  const [checkpoints, actuals, goals, names, monthRows] = await Promise.all([
     published ? quietly('checkpoints', () => listCheckpoints(sb, published.id), [] as Checkpoint[]) : Promise.resolve([] as Checkpoint[]),
     published ? quietly('facts', () => loadActuals(sb, companyId, months), { byPeriod: {}, monthly: [] }) : Promise.resolve({ byPeriod: {}, monthly: [] }),
     published ? quietly('goal starts', () => withStarts(sb, companyId, published.goals?.items ?? []), published.goals?.items ?? []) : Promise.resolve([] as PlanGoalItem[]),
     quietly('approvers', () => approverNames(sb, [...new Set(visible.map((v) => v.approved_by).filter((x): x is string => !!x))]), new Map<string, string>()),
+    // Every month the «Факт за месяц» form may correct (R3-PB check N4): the current one and up to 24 back.
+    published ? quietly('month facts', () => loadMonthlyFacts(sb, companyId, { since: addPeriods(curPeriod, -MAX_MONTHS_BACK) }), [] as MonthlyFactRow[]) : Promise.resolve([] as MonthlyFactRow[]),
   ])
 
   const current = currentCheckpoint(checkpoints)
   const trend = [...checkpoints].reverse().find((c) => c.forecast.trendMonthlyPct !== null)?.forecast.trendMonthlyPct ?? input.trendMonthlyPct ?? null
   const computedAt = checkpoints.reduce<string | null>((m, c) => (!m || c.computedAt > m ? c.computedAt : m), null)
-  const recValues = monthValues(actuals.monthly, recPeriod)
+  const recValues = monthValues(monthRows.length ? monthRows : actuals.monthly, recPeriod)
+  const formMonths = published ? reconciliationMonths(monthRows, curPeriod) : []
   const planStart = published ? (published.approved_at ?? published.created_at) : null
 
   return {
@@ -106,7 +109,13 @@ export async function loadPlanFactState(sb: SupabaseClient, input: PlanFactLoadI
     current,
     progress: published ? goalProgress({ goals, facts: goalFacts(actuals.byPeriod), revenueTrendMonthlyPct: trend, planStart, now }) : [],
     kpis: published ? planKpis(published) : [],
-    reconciliation: { period: recPeriod, done: Object.keys(recValues).length > 0, values: recValues },
+    reconciliation: {
+      period: recPeriod,
+      done: Object.keys(recValues).length > 0,
+      values: recValues,
+      byExpert: formMonths.find((m) => m.period === recPeriod)?.byExpert ?? [],
+      months: formMonths,
+    },
     computedAt,
     staleDays: daysSince(computedAt, now),
     versions: visible.map((v) => {
@@ -118,3 +127,15 @@ export async function loadPlanFactState(sb: SupabaseClient, input: PlanFactLoadI
     }),
   }
 }
+
+/** The months of the form, newest first: the current month and MAX_MONTHS_BACK back, each with its values and expert KPIs. */
+export function reconciliationMonths(rows: MonthlyFactRow[], curPeriod: string): ReconciliationMonth[] {
+  const out: ReconciliationMonth[] = []
+  for (let i = 0; i <= MAX_MONTHS_BACK; i++) {
+    const period = addPeriods(curPeriod, -i)
+    const byExpert = [...new Set(rows.filter((r) => r.period === period && r.entered_role === 'expert' && (PLAN_KPIS as readonly string[]).includes(r.metric)).map((r) => r.metric as PlanKpi))]
+    out.push({ period, values: monthValues(rows, period), byExpert })
+  }
+  return out
+}
+

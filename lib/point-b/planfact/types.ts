@@ -123,6 +123,9 @@ export interface VersionDiff {
   unchanged: boolean
 }
 
+/** A month of the «Факт за месяц» form: its stored values and the KPIs an expert entered. */
+export interface ReconciliationMonth { period: string; values: KpiValues; byExpert: PlanKpi[] }
+
 /** The plan-fact part of GET /api/v1/point-b/state (and of the staff view). */
 export interface PlanFactState {
   /** Newest month LAST, at most 12. */
@@ -132,8 +135,12 @@ export interface PlanFactState {
   progress: GoalProgress[]
   /** The KPIs of the approved plan — what the «Факт за месяц» form asks. */
   kpis: PlanKpi[]
-  /** The month the form proposes (the last finished one) and whether it is filled. */
-  reconciliation: { period: string; done: boolean; values: KpiValues }
+  /**
+   * The month the form proposes (the last finished one), whether it is filled, its values and which of them an expert
+   * entered (the owner does not change those — R3-PB check N2). `months`: every month the form may correct — the current
+   * one and up to 24 back, newest first (check N4).
+   */
+  reconciliation: { period: string; done: boolean; values: KpiValues; byExpert?: PlanKpi[]; months?: ReconciliationMonth[] }
   /** When the forecast was last calculated; null = never. */
   computedAt: string | null
   /** Days since `computedAt` (the «обновлено N дней назад» badge). */

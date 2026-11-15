@@ -133,7 +133,17 @@ export async function paidFanOutPaths(sb: SupabaseClient, ownerId: string): Prom
  * analysis of the current diagnostic (only when the official Point A is
  * scored) and the Point B bridge. Never throws; returns the paths fired.
  */
-export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpts) => void; sb?: SupabaseClient; baseUrl?: string | null; hypotheses?: (userId: string) => Promise<unknown> } = {}): Promise<FanOutPath[]> {
+export async function catchUpPaidAi(userId: string, deps: {
+  fire?: (o: FanOutOpts) => void
+  sb?: SupabaseClient
+  baseUrl?: string | null
+  hypotheses?: (userId: string) => Promise<unknown>
+  /**
+   * R3-VERIFY N1: the caller's tracker of this client's background work (catchUpPaidAiAwaited
+   * holds the pool slot until it settles). Omitted (one client: billing, GIGA one by one) — detached.
+   */
+  track?: (work: Promise<unknown>) => void
+} = {}): Promise<FanOutPath[]> {
   try {
     if (!process.env.OPENROUTER_API_KEY && !deps.fire) return []
     const sb = deps.sb ?? (await import('@/lib/supabase-service')).createServiceClient()
@@ -149,9 +159,19 @@ export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpt
     if (official?.state !== 'scored') return []
     // Ревью R3-PA L2: the AI hypotheses of the blocks without data the Free account did not get
     // (the latest snapshot; budget-guarded inside). In the background, never fails the catch-up.
+    // R3-VERIFY N1: in a batch (bulk «→ Pro») they belong to the client's pool slot — the caller's
+    // tracker waits for them — so at most 2 clients generate at once (rule after the 504 of 2026-10-15).
     if (allowed.includes(FAN_OUT_PATHS[0])) {
       const hypotheses = deps.hypotheses ?? (async (u: string) => (await import('./snapshot')).catchUpHypotheses(u))
-      void runInBackground('point-a-hypotheses-catch-up', async () => { await hypotheses(userId) })
+      const run = async () => {
+        try {
+          await hypotheses(userId)
+        } catch (err) {
+          console.error('[point-a] hypotheses catch-up failed:', err instanceof Error ? err.message : err)
+        }
+      }
+      if (deps.track) deps.track(run())
+      else void runInBackground('point-a-hypotheses-catch-up', run)
     }
     // The analysis only when it has not run yet (or failed); never twice in parallel —
     // ревью R3-PA M1: one atomic claim (lib/point-a/ai-claim.ts), no cooldown for a first run.

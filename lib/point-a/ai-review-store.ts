@@ -18,9 +18,13 @@
  *
  * A confirmed analysis is changed only by confirming again (the new corrections
  * get the confirming expert's name and time) — never silently under another
- * expert's name. The row was regenerated meanwhile → 409 (reload).
+ * expert's name. The row was regenerated meanwhile → 409 (reload): a new row,
+ * or a new text in the same row (the version the panel opened — R3-VERIFY N3 —
+ * checked on read and, by ai_generated_at, atomically in the UPDATE).
  */
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { stableStringify } from './analysis-cache'
 import {
   AI_VIEW_COLUMNS, aiAnalysisView, analysisContent, pruneEdits, readExpertEdits,
   type AiAnalysisContent, type AiExpertEdits, type PointAAiAnalysisView,
@@ -53,6 +57,26 @@ export interface AiReviewData {
   reviewable: boolean
   /** The expert task (open, or the last one of this analysis). */
   task: AiReviewTaskView | null
+  /**
+   * R3-VERIFY N3: the version of the AI text the panel shows (generation time + hash of the
+   * text). The panel sends it back with «Сохранить» / «Подтвердить»: a text regenerated in
+   * the same row meanwhile → 409, the expert never confirms a text he has not seen.
+   * Always set by loadAiReview (optional only for hand-built views).
+   */
+  version?: string | null
+}
+
+/** `ai_generated_at` as the database row has it (PostgREST: a string; node-pg: a Date). */
+function generatedAtOf(row: Record<string, unknown>): string | null {
+  const v = row.ai_generated_at
+  if (v instanceof Date) return v.toISOString()
+  return typeof v === 'string' && v ? v : null
+}
+
+/** The version of the AI text of a row: «<ai_generated_at>#<hash of ai_analysis>». */
+export function aiReviewVersion(row: Record<string, unknown>): string {
+  const hash = createHash('sha256').update(stableStringify(row.ai_analysis ?? null)).digest('hex').slice(0, 16)
+  return `${generatedAtOf(row) ?? ''}#${hash}`
 }
 
 const ROW_COLUMNS = `${AI_VIEW_COLUMNS}, user_id, is_current`
@@ -99,7 +123,7 @@ async function taskOf(sb: Sb, diagnosticId: string, now: Date): Promise<AiReview
 /** The review card of a client: the analysis (as the client sees it and as the AI wrote it), the corrections, the task. */
 export async function loadAiReview(sb: Sb, clientId: string, now: Date = new Date()): Promise<AiReviewData> {
   const row = await currentRow(sb, clientId)
-  if (!row) return { diagnosticId: null, view: null, ai: null, edits: null, reviewable: false, task: null }
+  if (!row) return { diagnosticId: null, view: null, ai: null, edits: null, reviewable: false, task: null, version: null }
   const view = aiAnalysisView(row)
   const ai = analysisContent(storedAnalysis(row.ai_analysis))
   const diagnosticId = String(row.id)
@@ -110,6 +134,7 @@ export async function loadAiReview(sb: Sb, clientId: string, now: Date = new Dat
     edits: readExpertEdits(row.ai_expert_edits),
     reviewable: !!ai && (row.ai_status === 'completed' || row.ai_status === 'failed'),
     task: await taskOf(sb, diagnosticId, now),
+    version: aiReviewVersion(row),
   }
 }
 
@@ -127,6 +152,8 @@ export async function saveAiReview(sb: Sb, input: {
   edits: AiExpertEdits | null
   confirm: boolean
   actor: { id: string; name: string }
+  /** The version the expert opened (AiReviewData.version); omitted by an older panel — then only the row / status checks. */
+  version?: string | null
   now?: Date
 }): Promise<SaveAiReviewResult> {
   const now = input.now ?? new Date()
@@ -141,6 +168,10 @@ export async function saveAiReview(sb: Sb, input: {
   if (!ai || (row.ai_status !== 'completed' && row.ai_status !== 'failed')) {
     return { ok: false, status: 409, error: 'Проверять нечего — разбора ИИ нет' }
   }
+  // R3-VERIFY N3: the text was regenerated in this very row after the expert opened it.
+  if (input.version && input.version !== aiReviewVersion(row)) {
+    return { ok: false, status: 409, error: 'Разбор обновился — откройте проверку заново' }
+  }
   if (row.ai_reviewed_at && !input.confirm) {
     return { ok: false, status: 409, error: 'Разбор уже подтверждён — сохраните правки кнопкой «Подтвердить»' }
   }
@@ -151,6 +182,9 @@ export async function saveAiReview(sb: Sb, input: {
   // Optimistic: the very row the expert opened, unchanged status / generation.
   let q = sb.from('diagnostics').update(patch).eq('id', input.diagnosticId).eq('user_id', input.clientId).eq('is_current', true)
   if (typeof row.ai_status === 'string') q = q.eq('ai_status', row.ai_status)
+  // …and the same generation, atomically: a regeneration between this read and the write changes it.
+  const generatedAt = generatedAtOf(row)
+  q = generatedAt ? q.eq('ai_generated_at', generatedAt) : q.is('ai_generated_at', null)
   const { data: written, error: wErr } = await q.select('id')
   if (wErr) return { ok: false, status: 500, error: 'Не удалось сохранить проверку' }
   if (!(written as unknown[] | null)?.length) return { ok: false, status: 409, error: 'Разбор обновился — откройте проверку заново' }

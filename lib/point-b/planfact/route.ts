@@ -16,6 +16,7 @@ import { ProfanityError } from '@/lib/moderation/profanity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getSetting } from '@/lib/settings/store'
 import { loadPlanBundle } from '../plan/store'
+import { lastFinishedPeriod, periodOf } from './kpis'
 import { loadPlanFactState } from './load'
 import { planKpis } from './planned'
 import { recomputeCompany, type RecomputeOutcome } from './recompute'
@@ -98,11 +99,18 @@ export async function staffPlanFactView(sb: SupabaseClient, input: { companyId: 
 export async function saveFactsAndRefresh(
   sb: SupabaseClient,
   input: { companyId: string; userId: string; body: MonthlyFactsInput; enteredBy: string | null; role: 'owner' | 'expert'; now: Date },
-): Promise<{ period: string; saved: string[]; cleared: string[]; checkpoint: RecomputeOutcome }> {
+): Promise<{ period: string; saved: string[]; cleared: string[]; unchanged: string[]; checkpoint: RecomputeOutcome }> {
   const bundle = await loadPlanBundle(sb, input.companyId)
   if (!bundle.published) throw new PlanFactError('no_plan', NO_PLAN_TEXT)
   const valid = validateMonthlyFacts(input.body, { kpis: planKpis(bundle.published), now: input.now })
   const r = await saveMonthlyFacts(sb, { ...valid, companyId: input.companyId, enteredBy: input.enteredBy, role: input.role })
-  const checkpoint = await recomputeCompany(sb, { companyId: input.companyId, userId: input.userId, now: input.now, mode: 'checkpoint', force: true, tolerances: await tolerances() })
-  return { period: valid.period, saved: r.saved, cleared: r.cleared, checkpoint }
+  // An older month (R3-PB check N4: the form corrects any of the last 24 months) recalculates ITS checkpoint too, when it
+  // has one — a month before the plan gets no new checkpoint.
+  const extraPeriods: string[] = []
+  if (valid.period !== lastFinishedPeriod(input.now) && valid.period !== periodOf(input.now)) {
+    const { data, error } = await sb.from('pb_checkpoints').select('period').eq('version_id', bundle.published.id).eq('period', valid.period).limit(1)
+    if (!error && ((data ?? []) as unknown[]).length) extraPeriods.push(valid.period)
+  }
+  const checkpoint = await recomputeCompany(sb, { companyId: input.companyId, userId: input.userId, now: input.now, mode: 'checkpoint', force: true, tolerances: await tolerances(), extraPeriods })
+  return { period: valid.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, checkpoint }
 }

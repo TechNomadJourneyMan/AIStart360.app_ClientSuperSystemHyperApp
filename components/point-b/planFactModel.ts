@@ -111,6 +111,8 @@ function parseVersion(v: unknown): VersionSummary | null {
   }
 }
 
+const kpiList = (v: unknown): PlanKpi[] => (Array.isArray(v) ? v.filter((k): k is PlanKpi => (PLAN_KPIS as readonly unknown[]).includes(k)) : [])
+
 export function parsePlanFact(v: unknown): PlanFactState | null {
   if (!isObj(v)) return null
   const checkpoints = (Array.isArray(v.checkpoints) ? v.checkpoints : []).map(parseCheckpoint).filter((c): c is Checkpoint => !!c)
@@ -125,6 +127,16 @@ export function parsePlanFact(v: unknown): PlanFactState | null {
       period: typeof rec.period === 'string' && PERIOD_RE.test(rec.period) ? rec.period : '',
       done: rec.done === true,
       values: kpiValues(rec.values),
+      // R3-PB check N2 / N4 (an older server sends neither): the expert's KPIs of the month, the months the form corrects.
+      ...(Array.isArray(rec.byExpert) ? { byExpert: kpiList(rec.byExpert) } : {}),
+      ...(Array.isArray(rec.months)
+        ? {
+            months: rec.months
+              .filter(isObj)
+              .filter((m) => typeof m.period === 'string' && PERIOD_RE.test(m.period))
+              .map((m) => ({ period: m.period as string, values: kpiValues(m.values), byExpert: kpiList(m.byExpert) })),
+          }
+        : {}),
     },
     computedAt: str(v.computedAt),
     staleDays: finite(v.staleDays) ? v.staleDays : null,

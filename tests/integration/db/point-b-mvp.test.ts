@@ -361,5 +361,110 @@ describe.skipIf(!dbTestsEnabled)('Точка Б end to end on the real schema (R
       // a company of another owner is never read for this user
       await expect(loadPointBReport(w.svc, w.client, { now, companyId: w.otherCompany })).rejects.toMatchObject({ name: 'PointBCompanyError' })
     }), 60_000)
+
+  /** An approved plan of the world with the KPIs revenue, leads, conversion (the funnel) — for the «Факт за месяц» cases. */
+  async function approvedPlan(db: Db, w: World, now: Date) {
+    const author = { id: w.admin, name: 'Админ Главный', kind: 'admin' as const }
+    const built = await buildQuickDraft(w.svc, { companyId: w.company, userId: w.client, author, now, ai: false })
+    await reviewGoal(w.svc, { companyId: w.company, metricKey: REVENUE, periodLabel: '12m', action: 'verify', reviewer: { id: w.admin, name: 'Админ Главный' } })
+    const submitted = await submitPlanVersion(w.svc, { companyId: w.company, userId: w.client, version: built.version, actor: author })
+    await approvePlanVersion(w.svc, { companyId: w.company, userId: w.client, version: submitted, actor: author })
+    const rows = async (period: string) => Object.fromEntries((await db.query(
+      `SELECT metric, value::float8 AS value, entered_role, entered_by::text AS entered_by FROM public.pb_monthly_facts WHERE company_id = $1 AND period = $2 AND source = 'monthly_reconciliation'`,
+      [w.company, period],
+    )).rows.map((r) => [r.metric, { value: r.value, role: r.entered_role, by: r.entered_by }]))
+    return { version: built.version, rows }
+  }
+
+  it('R3-PB check N2 (a): the owner adds and edits HIS KPIs of a month an expert also filled; the expert\'s KPI stays the expert\'s', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const now = new Date()
+      const { rows } = await approvedPlan(db, w, now)
+      const P = lastFinishedPeriod(now)
+      const save = (values: Record<string, number | null>, role: 'owner' | 'expert') =>
+        saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: P, values }, enteredBy: role === 'owner' ? w.client : w.admin, role, now })
+
+      // the admin (role «expert» in the record) enters the revenue of the month
+      await save({ revenue: 7_000_000 }, 'expert')
+      // the owner adds the leads — not blocked by the expert's revenue
+      const added = await save({ leads: 300 }, 'owner')
+      expect(added).toMatchObject({ saved: ['leads'], cleared: [], unchanged: [] })
+      // an older form that sends the whole month: the unchanged revenue is skipped, the leads are corrected
+      const resent = await save({ revenue: 7_000_000, leads: 320 }, 'owner')
+      expect(resent).toMatchObject({ saved: ['leads'], unchanged: ['revenue'] })
+      expect(await rows(P)).toEqual({
+        revenue: { value: 7_000_000, role: 'expert', by: w.admin },
+        leads: { value: 320, role: 'owner', by: w.client },
+      })
+      // changing or clearing the expert's revenue stays refused, with the field
+      await expect(save({ revenue: 1_000_000, leads: 330 }, 'owner')).rejects.toMatchObject({ code: 'invalid', field: 'revenue' })
+      await expect(save({ revenue: null }, 'owner')).rejects.toMatchObject({ code: 'invalid', field: 'revenue' })
+      expect((await rows(P)).leads.value).toBe(320) // the refused save wrote nothing
+      // the owner may clear his own KPI
+      expect(await save({ leads: null }, 'owner')).toMatchObject({ cleared: ['leads'] })
+
+      // the client's form knows which KPI is the expert's (read-only there)
+      const state = await loadPointBState(w.svc, w.client, { now })
+      expect(state.planFact!.reconciliation).toMatchObject({ period: P, byExpert: ['revenue'], values: { revenue: 7_000_000 } })
+    }), 60_000)
+
+  it('R3-PB check N2 (b): a staff save re-labels only the KPIs it really changed; the checkpoint of the month follows', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const now = new Date()
+      const { version, rows } = await approvedPlan(db, w, now)
+      const P = lastFinishedPeriod(now)
+      const save = (values: Record<string, number | null>, role: 'owner' | 'expert') =>
+        saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: P, values }, enteredBy: role === 'owner' ? w.client : w.admin, role, now })
+
+      await save({ revenue: 5_000_000, leads: 300, conversion: 12 }, 'owner')
+      // the staff form sends the whole prefilled month with one change (the worst case): only the leads become the expert's
+      const staff = await save({ revenue: 5_000_000, leads: 310, conversion: 12 }, 'expert')
+      expect(staff).toMatchObject({ saved: ['leads'], unchanged: ['revenue', 'conversion'] })
+      expect(await rows(P)).toEqual({
+        revenue: { value: 5_000_000, role: 'owner', by: w.client },
+        leads: { value: 310, role: 'expert', by: w.admin },
+        conversion: { value: 12, role: 'owner', by: w.client },
+      })
+      // the owner keeps editing his revenue and conversion; the leads are the expert's now
+      expect(await save({ revenue: 5_200_000, conversion: 13 }, 'owner')).toMatchObject({ saved: ['revenue', 'conversion'] })
+      await expect(save({ leads: 300 }, 'owner')).rejects.toMatchObject({ field: 'leads' })
+      // the checkpoint of the month has the latest facts
+      const cp = (await db.query(`SELECT actual FROM public.pb_checkpoints WHERE version_id = $1 AND period = $2`, [version.id, P])).rows[0].actual as { values: Record<string, number> }
+      expect(cp.values).toMatchObject({ revenue: 5_200_000, leads: 310, conversion: 13 })
+    }), 60_000)
+
+  it('R3-PB check N4: the owner corrects an OLDER reconciled month through «Факт за месяц»; its checkpoint follows; the form offers 25 months', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const now = new Date()
+      const { version, rows } = await approvedPlan(db, w, now)
+      const Q = addPeriods(lastFinishedPeriod(now), -2)
+      // the owner reconciled Q back then; the checkpoint of Q exists
+      await saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: Q, values: { revenue: 4_000_000 } }, enteredBy: w.client, role: 'owner', now })
+      await recomputeCompany(w.svc, { companyId: w.company, userId: w.client, now, force: true, mode: 'checkpoint', extraPeriods: [Q] })
+      // «Финмодель» sends him to the plan-fact form …
+      await expect(saveRevenueHistory(w.svc, { companyId: w.company, enteredBy: w.client, role: 'owner', months: [{ period: Q, revenue: 4_500_000 }] }))
+        .rejects.toMatchObject({ field: 'months[0].revenue' })
+      // … where Q is one of the months he may correct
+      const state = await loadPointBState(w.svc, w.client, { now })
+      const months = state.planFact!.reconciliation.months!
+      expect(months).toHaveLength(25)
+      expect(months[0].period).toBe(addPeriods(lastFinishedPeriod(now), 1))
+      expect(months.find((m) => m.period === Q)).toEqual({ period: Q, values: { revenue: 4_000_000 }, byExpert: [] })
+      // the correction: saved, the checkpoint of Q recalculated at once
+      const fixed = await saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: Q, values: { revenue: 4_500_000 } }, enteredBy: w.client, role: 'owner', now })
+      expect(fixed).toMatchObject({ period: Q, saved: ['revenue'] })
+      expect((await rows(Q)).revenue).toEqual({ value: 4_500_000, role: 'owner', by: w.client })
+      const cp = (await db.query(`SELECT (actual->'values'->>'revenue')::float8 AS revenue FROM public.pb_checkpoints WHERE version_id = $1 AND period = $2`, [version.id, Q])).rows[0]
+      expect(cp.revenue).toBe(4_500_000)
+      // older than 24 months is refused; a month before the plan gets no new checkpoint
+      await expect(saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: addPeriods(lastFinishedPeriod(now), -25), values: { revenue: 1 } }, enteredBy: w.client, role: 'owner', now }))
+        .rejects.toMatchObject({ code: 'invalid', field: 'period' })
+      const R = addPeriods(lastFinishedPeriod(now), -5)
+      await saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: R, values: { revenue: 3_000_000 } }, enteredBy: w.client, role: 'owner', now })
+      expect(Number((await db.query(`SELECT count(*) AS n FROM public.pb_checkpoints WHERE version_id = $1 AND period = $2`, [version.id, R])).rows[0].n)).toBe(0)
+    }), 60_000)
 })
 

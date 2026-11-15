@@ -232,7 +232,8 @@ export function AiReviewPanel({ apiUrl, canEdit }: { apiUrl: string; canEdit: bo
         method: kind === 'save' ? 'PUT' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diagnosticId: data.diagnosticId, edits: Object.keys(edits).length ? edits : null }),
+        // version: the text this panel shows — a text regenerated meanwhile is refused (409), never confirmed unseen.
+        body: JSON.stringify({ diagnosticId: data.diagnosticId, edits: Object.keys(edits).length ? edits : null, version: data.version ?? null }),
       })
       const body = await res.json().catch(() => null) as { ok?: boolean; data?: AiReviewData; error?: string } | null
       if (!res.ok || !body?.ok || !body.data) throw new Error(body?.error ?? 'Не удалось сохранить')

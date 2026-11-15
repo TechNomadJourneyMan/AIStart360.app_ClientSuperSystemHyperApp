@@ -7,7 +7,8 @@
  * together. Here the clients go through a pool of at most `concurrency` (2 —
  * the rule of the project for background work after the 504 incident of
  * 2026-10-15), and a client's slot is held until ITS AI calls have settled
- * (each call keeps its own timeout, fanOutTimeoutMs). The caller runs the batch
+ * (each call keeps its own timeout, fanOutTimeoutMs) — and its AI hypotheses
+ * catch-up (R3-VERIFY N1: they used to run detached, all clients at once). The caller runs the batch
  * in the background (runInBackground): the HTTP answer never waits for it.
  */
 import { trackBackground } from '@/lib/background'
@@ -28,7 +29,8 @@ export async function catchUpPaidAiAwaited(
     try { trackBackground(w) } catch { /* untracked */ }
   }
   try {
-    await (deps.catchUp ?? catchUpPaidAi)(userId, { fire: (o) => (deps.fanOut ?? fireAiFanOut)(o, { track }) })
+    // The analysis fan-out AND the hypotheses catch-up (R3-VERIFY N1) are this client's work: the slot waits for both.
+    await (deps.catchUp ?? catchUpPaidAi)(userId, { fire: (o) => (deps.fanOut ?? fireAiFanOut)(o, { track }), track })
   } catch (err) {
     console.error('[point-a] paid AI catch-up failed:', err instanceof Error ? err.message : err)
   }

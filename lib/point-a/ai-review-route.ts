@@ -8,8 +8,9 @@
  * The caller authorises; the handlers read / write with the service role.
  *
  *   GET   → { ok, data: AiReviewData }
- *   PUT   { diagnosticId, edits } — save the corrections (the SLA reaction)
- *   POST  { diagnosticId, edits? } — confirm («Проверено экспертом», the SLA answer)
+ *   PUT   { diagnosticId, edits, version } — save the corrections (the SLA reaction)
+ *   POST  { diagnosticId, edits?, version } — confirm («Проверено экспертом», the SLA answer)
+ *   version — what the panel opened; a text regenerated meanwhile → 409 (R3-VERIFY N3)
  * Every write is in the admin journal (recordAdminAction — the journal logAudit writes to,
  * with the actor's role): point_a.ai_review.edited / point_a.ai_review.confirmed.
  */
@@ -27,6 +28,8 @@ export const AI_REVIEW_AUDIT = { edited: 'point_a.ai_review.edited', confirmed: 
 export const AiReviewBodySchema = z.object({
   diagnosticId: z.string().uuid(),
   edits: AiExpertEditsSchema.nullable().optional(),
+  /** R3-VERIFY N3: the version of the AI text the panel opened (AiReviewData.version). */
+  version: z.string().max(200).nullable().optional(),
 }).strict()
 
 export async function aiReviewGet(sb: SupabaseClient, clientId: string): Promise<NextResponse> {
@@ -53,7 +56,7 @@ export async function aiReviewWrite(req: Request, sb: SupabaseClient, input: {
     if (profane) return profane
   }
   const name = await displayNameOf(sb, input.actor.id)
-  const res = await saveAiReview(sb, { clientId: input.clientId, diagnosticId, edits, confirm: input.confirm, actor: { id: input.actor.id, name } })
+  const res = await saveAiReview(sb, { clientId: input.clientId, diagnosticId, edits, confirm: input.confirm, actor: { id: input.actor.id, name }, version: parsed.data.version ?? null })
   if (!res.ok) return NextResponse.json({ ok: false, error: res.error }, { status: res.status })
 
   await recordAdminAction(input.actor, {
