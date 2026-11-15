@@ -20,6 +20,7 @@ import {
   orderedRecs, pendingText, recRows, recsMode, reviewedBadge, type PointBRecsState,
 } from '../recsModel'
 import { SectionError, SectionSkeleton } from './OverviewTab'
+import PlanPrepNotice from '../PlanPrepNotice'
 
 export const REC_WHY_TEXT = 'Рекомендация опирается на данные ниже. Числа в ней взяты из расчёта вашего плана, а эксперт проверил выводы.'
 
@@ -130,5 +131,14 @@ export default function RecommendationsTab({ snap, onRetry }: { snap: PointBStat
   const mode = recsMode(snap)
   if (mode === 'loading') return <SectionSkeleton label="Загружаем рекомендации" />
   if (mode === 'error') return <SectionError message={snap.error ?? 'Нет данных'} onRetry={onRetry} />
+  // R3: no plan and nothing verified or waiting — the honest state of the plan instead of an empty promise.
+  if (mode === 'none' && snap.plan.status !== 'published' && snap.plan.prep) {
+    return (
+      <div className="space-y-4">
+        <HonestNote />
+        <PlanPrepNotice prep={snap.plan.prep} area="recs" />
+      </div>
+    )
+  }
   return <RecommendationsView recs={snap.recommendations ?? EMPTY_RECS} />
 }

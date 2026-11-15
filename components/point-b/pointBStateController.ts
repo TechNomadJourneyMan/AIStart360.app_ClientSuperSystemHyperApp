@@ -49,7 +49,11 @@ export class PointBStateController {
   private listeners = new Set<() => void>()
   private seq = 0
 
-  constructor(private readonly fetchFn: typeof fetch) {}
+  /**
+   * `url`: the client page reads its own state; the staff tabs (GIGA, the expert portal — R3, M3) read the SAME state of
+   * a client from their routes, so staff see exactly the calculation the client sees.
+   */
+  constructor(private readonly fetchFn: typeof fetch, private readonly opts: { url?: string } = {}) {}
 
   subscribe = (l: () => void): (() => void) => { this.listeners.add(l); return () => { this.listeners.delete(l) } }
   getSnapshot = (): PointBStateSnapshot => this.snap
@@ -64,7 +68,7 @@ export class PointBStateController {
     // A reload keeps what is on the screen; only the first load shows the skeleton.
     if (!this.snap.result) this.set({ phase: 'loading', error: null })
     try {
-      const res = await this.fetchFn('/api/v1/point-b/state', { cache: 'no-store' })
+      const res = await this.fetchFn(this.opts.url ?? '/api/v1/point-b/state', { cache: 'no-store' })
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null
       if (my !== this.seq) return
       if (isUpgradeRequired(res.status, body)) {

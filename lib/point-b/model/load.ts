@@ -17,6 +17,7 @@ import { companyOfUser } from '../plan/flow'
 import { goalsSnapshotFrom, loadLatestReviews, snapshotGoals } from '../plan/goals'
 import { loadPlanBundle, type PlanBundle } from '../plan/store'
 import type { PlanGoalsSnapshot } from '../plan/types'
+import { planPrepState } from '../plan/waiting'
 import { loadStrategyState } from '../strategy/load'
 import { listActiveInvites } from '../invites/store'
 import type { InviteView } from '../invites/types'
@@ -188,6 +189,11 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
       strategy,
+      prep: planPrepState({
+        published: !!published,
+        open: bundle.open ? { status: bundle.open.status, createdAt: bundle.open.created_at, submittedAt: bundle.open.submitted_at } : null,
+        result,
+      }),
     },
     recommendations: clientView(recs),
     invites,

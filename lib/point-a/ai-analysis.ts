@@ -16,8 +16,12 @@
 import type { AIAnalysis } from '@/types/onboarding'
 import type { PointANarrative } from './narrative'
 
-/** Keys the AIAnalysis writer owns; everything else in ai_analysis belongs to someone else. */
-const ANALYSIS_KEYS = new Set(['executive_summary', 'blocks', 'strategic_priorities', 'growth_roadmap', 'industry_context', 'model_used', 'generated_at'])
+/**
+ * Keys the AIAnalysis writer owns; everything else in ai_analysis belongs to someone else.
+ * `partial` (R3-PA): the parts a partial analysis is missing — owned too, so a
+ * later complete analysis drops it instead of carrying it as a «foreign» key.
+ */
+const ANALYSIS_KEYS = new Set(['executive_summary', 'blocks', 'strategic_priorities', 'growth_roadmap', 'industry_context', 'model_used', 'generated_at', 'partial'])
 /** Keys of a narrative stored in ai_analysis before 091 — never carried into a new analysis. */
 const NARRATIVE_KEYS = new Set(['strengths_text', 'weaknesses_text', 'risks_text', 'opportunities_text', 'next_steps'])
 

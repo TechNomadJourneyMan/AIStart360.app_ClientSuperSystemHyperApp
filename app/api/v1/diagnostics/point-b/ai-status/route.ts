@@ -6,9 +6,8 @@ import { gatePaidSection } from '@/lib/access/gate'
 
 /**
  * GET /api/v1/diagnostics/point-b/ai-status?diagnostic_id=xxx
- * Returns the Point B AI processing status + strategy for the session user's
- * current diagnostic. Session-scoped (never a user_id param) so one user can't
- * poll another's plan. Used by the client dashboard for polling.
+ * The Point B AI status of the session user's diagnostic. R3 (S3): the AI strategy is a staff draft — the client
+ * always gets { ai_status: 'none', ai_strategy: null } (the route stays for the old polling code).
  */
 export async function GET(req: NextRequest) {
   const sb = createServerClient()
@@ -20,43 +19,8 @@ export async function GET(req: NextRequest) {
   const upgrade = await gatePaidSection(sb, user.id, 'point_b')
   if (upgrade) return upgrade
 
-  // Resolve the diagnostic: passed id (scoped to this user) or the current one.
-  let diagnosticId = req.nextUrl.searchParams.get('diagnostic_id')
-  if (!diagnosticId) {
-    const { data: diag } = await sb
-      .from('diagnostics')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('is_current', true)
-      .maybeSingle()
-    diagnosticId = (diag?.id as string | undefined) ?? null
-  } else {
-    // Confirm the passed diagnostic belongs to the session user.
-    const { data: owned } = await sb
-      .from('diagnostics')
-      .select('id')
-      .eq('id', diagnosticId)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (!owned) diagnosticId = null
-  }
-
-  if (!diagnosticId) {
-    return NextResponse.json({ ok: true, data: { ai_status: 'none', ai_strategy: null } })
-  }
-
-  const { data } = await sb
-    .from('point_b_analysis')
-    .select('ai_status, ai_strategy')
-    .eq('diagnostic_id', diagnosticId)
-    .eq('is_current', true)
-    .maybeSingle()
-
-  return NextResponse.json({
-    ok: true,
-    data: {
-      ai_status: data?.ai_status ?? 'none',
-      ai_strategy: data?.ai_strategy ?? null,
-    },
-  })
+  // R3 (S3, решение PO): the AI strategy of Точка Б is a draft for staff — the client never sees it. The poll of
+  // the old «Подробности» view always hears «нет ИИ-стратегии»; nothing is read.
+  void req
+  return NextResponse.json({ ok: true, data: { ai_status: 'none', ai_strategy: null } })
 }

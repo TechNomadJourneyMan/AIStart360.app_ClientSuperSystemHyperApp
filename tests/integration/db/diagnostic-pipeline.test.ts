@@ -214,6 +214,30 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
     if (users.length) await prisma.$executeRaw`DELETE FROM auth.users WHERE id = ANY(${users}::uuid[])`
   })
 
+  // R3-PA (B2): the Point A recalculation after a data change enqueues the
+  // orchestrator with input.trigger 'event' (lib/point-a/snapshot.ts →
+  // startDiagnosticPipeline). The schema took only manual|agent|schedule, so
+  // every such task died with INVALID_INPUT (29 dead on the staging copy).
+  it('an automatic Point A recalculation (input.trigger «event») opens a session instead of dying with INVALID_INPUT', async () => {
+    const { companyId } = await seedCompany({ answers: LEGACY_WEAK })
+    const { startDiagnosticPipeline, pipelineTriggerOf } = await import('@/lib/point-a/diagnostic-row')
+    startDiagnosticPipeline({ companyId, diagnosticId: randomUUID(), requestedBy: 'system:point-a', trigger: pipelineTriggerOf('event'), reason: 'пересчёт Точки А после изменения данных' })
+    let task: { id: string; status: string; trigger: string } | undefined
+    await vi.waitFor(async () => {
+      ;[task] = await prisma.$queryRaw<Array<{ id: string; status: string; trigger: string }>>`
+        SELECT id::text AS id, status, trigger FROM public.agent_tasks WHERE company_id = ${companyId} AND agent_key = 'diagnostic_orchestrator'`
+      expect(task).toBeTruthy()
+    })
+    expect(task!.trigger).toBe('event')
+    await executeTaskById(task!.id)
+    const [after] = await prisma.$queryRaw<Array<{ status: string; last_error: string | null }>>`
+      SELECT status, last_error FROM public.agent_tasks WHERE id = ${task!.id}::uuid`
+    expect(after.last_error ?? '').not.toMatch(/неверные входные данные/)
+    expect(after.status).toBe('succeeded')
+    const [s] = await sessions(companyId)
+    expect(s.trigger).toBe('event')
+  })
+
   it('runs every stage in order and finalises the session with evidence-backed findings', async () => {
     const { companyId } = await seedCompany({ answers: LEGACY_WEAK })
     // Two sources disagree on revenue (survey vs document) and one impossible value.

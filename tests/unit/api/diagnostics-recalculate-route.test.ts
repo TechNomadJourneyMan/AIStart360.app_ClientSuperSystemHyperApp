@@ -1,13 +1,11 @@
 /**
  * POST /api/v1/diagnostics/recalculate
- *   • retires the previous current diagnostic and inserts the new one with the
- *     service role (the session client cannot UPDATE diagnostics under RLS, so
- *     every recalculation used to add another is_current=true row; a staff
- *     insert for a client was rejected by diagnostics_insert_own);
- *   • a failed read of the document/manual metric inputs is a 500 that keeps
- *     the current diagnostic, not a survey-only score;
- *   • a failed insert puts the previous current row back;
- *   • the pipeline task is attributed to the caller, not the client.
+ *   • a company recalculates ONLY through the snapshot path; a snapshot that
+ *     wrote nothing is an honest answer, never a direct v1 row WITH a score
+ *     (R3-PA, B4 / R-070 — the old fallback scored an incomplete survey);
+ *   • without a company the row is stored with the service role (the session
+ *     client cannot UPDATE diagnostics under RLS) and WITHOUT a score;
+ *   • a failed insert puts the previous current row back.
  * The session double models RLS on diagnostics: no UPDATE, INSERT own rows only.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -91,7 +89,6 @@ const snap = vi.hoisted(() => ({ result: { status: 'skipped', reason: 'not_migra
 vi.mock('@/lib/point-a/snapshot', () => ({ buildPointASnapshot: async (...args: unknown[]) => { snap.calls.push(args); if (snap.throws) throw new Error('boom'); return snap.result } }))
 
 const { POST } = await import('@/app/api/v1/diagnostics/recalculate/route')
-const { verifyInternalToken, INTERNAL_TOKEN_HEADER } = await import('@/lib/internal-auth')
 
 const post = (body: Row = {}) => POST(new NextRequest('http://localhost/api/v1/diagnostics/recalculate', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -132,34 +129,59 @@ describe('POST /api/v1/diagnostics/recalculate', () => {
     expect(current().map((r) => r.id)).toEqual(['diag-old'])
   })
 
-  it('a repeated recalculation leaves exactly one current diagnostic', async () => {
+  // R3-PA (B4, R-070): the snapshot wrote nothing → no direct v1 calculation for a company.
+  it('a company whose snapshot wrote nothing gets an honest answer and NO v1 row with a score', async () => {
+    process.env.OPENROUTER_API_KEY = 'k'
+    const fetchMock = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      for (const [reason, status] of [['no_answers', 422], ['not_migrated', 503], ['no_owner', 422], ['busy', 409]] as const) {
+        snap.result = { status: 'skipped', reason }
+        const res = await post()
+        expect(res.status, reason).toBe(status)
+        const body = await res.json()
+        expect(body, reason).toMatchObject({ ok: false, reason })
+        expect(body.error, reason).toMatch(/[а-яё]/i)
+      }
+      // the current row stays, nothing scored was written, no paid call, no notification
+      expect(h.tables.diagnostics.map((r) => r.id)).toEqual(['diag-old'])
+      expect(current().map((r) => r.id)).toEqual(['diag-old'])
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(h.notified).toEqual([])
+      expect(h.enqueued).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('an unchanged snapshot is a success without a new row', async () => {
+    snap.result = { status: 'unchanged', snapshotId: 's0' }
+    const res = await post()
+    expect(res.status).toBe(200)
+    expect((await res.json()).data).toEqual({ unchanged: true, snapshot_id: 's0' })
+    expect(h.tables.diagnostics).toHaveLength(1)
+  })
+
+  it('without a company a repeated recalculation leaves exactly one current diagnostic', async () => {
+    h.tables.companies = []
     expect((await post()).status).toBe(200)
     expect((await post()).status).toBe(200)
     expect(current().map((r) => r.id)).toEqual(['diag-2'])
     expect(h.tables.diagnostics.find((r) => r.id === 'diag-old')?.is_current).toBe(false)
   })
 
-  it('staff can recalculate for a client; the task is attributed to the staff member', async () => {
+  it('staff can recalculate for a client: the client\'s company goes through the snapshot path', async () => {
     h.user = { id: 'staff-1' }
     h.role = 'expert'
+    snap.result = { status: 'written', snapshotId: 's1', diagnosticId: 'diag-v4', diagnostic: { id: 'diag-v4' }, engine: 'v4', assessment: 'full', scored: true, written: { overall_score: 61, stage: 'early' }, v4: {}, changes: [] }
     const res = await post({ user_id: 'client-1' })
     await Promise.all(h.pending)
     expect(res.status).toBe(200)
-    expect(current()).toHaveLength(1)
-    expect(current()[0]).toMatchObject({ user_id: 'client-1', company_id: 'co-1' })
-    expect(h.enqueued).toHaveLength(1)
-    expect(h.enqueued[0].requestedBy).toBe('user:staff-1')
+    expect(snap.calls[0][0]).toBe('co-1')
   })
 
-  it('a failed read of the metric inputs is a 500 and the current diagnostic stays', async () => {
-    h.failRead = 'metrics'
-    const res = await post()
-    expect(res.status).toBe(500)
-    expect(current().map((r) => r.id)).toEqual(['diag-old'])
-    expect(h.tables.diagnostics).toHaveLength(1)
-  })
-
-  it('a failed insert puts the previous current row back', async () => {
+  it('without a company: a failed insert puts the previous current row back', async () => {
+    h.tables.companies = []
     h.failInsert = true
     const res = await post()
     expect(res.status).toBe(500)
@@ -170,49 +192,6 @@ describe('POST /api/v1/diagnostics/recalculate', () => {
     h.failRead = 'companies'
     expect((await post()).status).toBe(500)
     expect(current().map((r) => r.id)).toEqual(['diag-old'])
-  })
-
-  it('AI fan-out: configured base URL (not the request Host) and tokens bound to path, user and diagnostic', async () => {
-    process.env.OPENROUTER_API_KEY = 'k'
-    process.env.INTERNAL_TOKEN_SECRET = 'test-internal-secret'
-    process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.kz'
-    const sent: Array<{ url: string; headers: Record<string, string> }> = []
-    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { headers: Record<string, string> }) => { sent.push({ url, headers: init.headers }); return new Response('{}') }))
-    try {
-      const res = await POST(new NextRequest('http://evil.host/api/v1/diagnostics/recalculate', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
-      }))
-      expect(res.status).toBe(200)
-      const diagId = current()[0].id as string
-      expect(sent.map((s) => s.url)).toEqual([
-        'https://app.example.kz/api/v1/diagnostics/ai-analyze',
-        'https://app.example.kz/api/v1/diagnostics/point-b/ai-generate',
-      ])
-      const token = sent[0].headers[INTERNAL_TOKEN_HEADER]
-      expect(verifyInternalToken(token, { path: '/api/v1/diagnostics/ai-analyze', userId: 'client-1', diagnosticId: diagId })).toBe(true)
-      expect(verifyInternalToken(token, { path: '/api/v1/diagnostics/ai-analyze', userId: 'client-1', diagnosticId: 'other-diag' })).toBe(false)
-      expect(verifyInternalToken(token, { path: '/api/v1/diagnostics/point-b/ai-generate', userId: 'client-1', diagnosticId: diagId })).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-      delete process.env.NEXT_PUBLIC_APP_URL
-      delete process.env.INTERNAL_TOKEN_SECRET
-    }
-  })
-
-  it('no trusted base URL in production → no fan-out (the token never goes to the request Host)', async () => {
-    process.env.OPENROUTER_API_KEY = 'k'
-    process.env.INTERNAL_TOKEN_SECRET = 'test-internal-secret'
-    vi.stubEnv('NODE_ENV', 'production')
-    const fetchMock = vi.fn(async () => new Response('{}'))
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      expect((await post()).status).toBe(200)
-      expect(fetchMock).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllGlobals()
-      vi.unstubAllEnvs()
-      delete process.env.INTERNAL_TOKEN_SECRET
-    }
   })
 
   // I2 (R-033): no official score → no number anywhere.

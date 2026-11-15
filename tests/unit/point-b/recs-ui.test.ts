@@ -25,7 +25,7 @@ const { default: NextStepCard } = await import('@/components/point-b/NextStepCar
 
 const flat = (html: string) => html.replace(/&#x27;|&quot;/g, '"').replace(/[  ]/g, ' ')
 const result = fixtureModelResult('level2')
-const PLAN: PointBPlanState = { status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким' }
+const PLAN: PointBPlanState = { status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким', prep: { kind: 'published', missing: [], since: null } }
 const snapOf = (over: Partial<PointBStateSnapshot> = {}): PointBStateSnapshot => ({ phase: 'ready', error: null, result, plan: PLAN, ...over })
 const recsHtml = (snap: PointBStateSnapshot) => flat(renderToStaticMarkup(React.createElement(RecommendationsTab, { snap })))
 
@@ -211,7 +211,7 @@ describe('«Обзор»', () => {
 
 describe('tabs and state', () => {
   it('tab order includes Рекомендации', () => {
-    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'План-факт и история', 'Что если', 'Финмодель', 'Подробности'])
+    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'План-факт и история', 'Что если', 'Финмодель'])
     expect(isTabKey('recs')).toBe(true)
   })
 

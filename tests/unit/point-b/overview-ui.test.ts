@@ -10,8 +10,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { fixtureModelResult, fixturePointB, POINT_B_FIXTURE_VARIANTS } from '@/lib/point-b/fixtures'
 import type { ModelResult, ScenarioResult } from '@/lib/point-b/model/types'
 import {
-  VERDICT_VIEW, chartData, comparisonRows, corridorGeometry, linePath, monthsRange, moneyRange, nearestPoint, nextTab,
-  parsePointBState, scenarioCards, scenariosMode, verdictView, type CorridorChartData, type PointBPlanState,
+  POINT_B_TABS, VERDICT_VIEW, chartData, comparisonRows, corridorGeometry, isTabKey, linePath, monthsRange, moneyRange, nearestPoint, nextTab,
+  overviewActions, parsePointBState, scenarioCards, scenariosMode, verdictView, type CorridorChartData, type PointBPlanState,
 } from '@/components/point-b/overviewModel'
 import { PointBStateController, type PointBStateSnapshot } from '@/components/point-b/pointBStateController'
 
@@ -23,8 +23,8 @@ const { default: PointBTabs } = await import('@/components/point-b/tabs/PointBTa
 const { default: CorridorChart } = await import('@/components/point-b/CorridorChart')
 const { default: PointBView } = await import('@/components/point-b/PointBView')
 
-const NO_PLAN: PointBPlanState = { status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null }
-const published = (result: ModelResult): PointBPlanState => ({ status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким' })
+const NO_PLAN: PointBPlanState = { status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, prep: null }
+const published = (result: ModelResult): PointBPlanState => ({ status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким', prep: { kind: 'published', missing: [], since: null } })
 const snapOf = (result: ModelResult, plan: PointBPlanState): PointBStateSnapshot => ({ phase: 'ready', error: null, result, plan })
 const flat = (html: string) => html.replace(/&#x27;|&quot;/g, '"').replace(/[  ]/g, ' ')
 
@@ -85,11 +85,13 @@ describe('overviewModel', () => {
     expect(nextTab('recs', 'ArrowRight')).toBe('history')
     expect(nextTab('history', 'ArrowRight')).toBe('whatif')
     expect(nextTab('whatif', 'ArrowRight')).toBe('finmodel')
-    expect(nextTab('finmodel', 'ArrowRight')).toBe('details')
-    expect(nextTab('details', 'ArrowRight')).toBe('overview')
-    expect(nextTab('overview', 'ArrowLeft')).toBe('details')
+    // R3 (M3): «Подробности» (the old V2 calculation) is not a client tab any more
+    expect(nextTab('finmodel', 'ArrowRight')).toBe('overview')
+    expect(nextTab('overview', 'ArrowLeft')).toBe('finmodel')
     expect(nextTab('scenarios', 'Home')).toBe('overview')
-    expect(nextTab('scenarios', 'End')).toBe('details')
+    expect(nextTab('scenarios', 'End')).toBe('finmodel')
+    expect(isTabKey('details')).toBe(false)
+    expect(POINT_B_TABS.map((t) => t.label)).not.toContain('Подробности')
     expect(nextTab('scenarios', 'a')).toBeNull()
   })
 })
@@ -100,7 +102,8 @@ describe('«Обзор»', () => {
     expect(html).toContain('Отстаём от цели')
     for (const label of ['Сейчас', 'Цель', 'При текущем ходе', 'Разрыв']) expect(html).toContain(label)
     expect(html).toContain('Автоматический расчёт, не проверен экспертом')
-    expect(html).toContain('Что делать: смотреть сценарии')
+    // B2 (R3): without an approved plan there are no scenarios — the button would lead into an empty tab
+    expect(html).not.toContain('Что делать: смотреть сценарии')
     // No approved plan → no scenarios on the page → no corridor chart, an honest hint instead.
     expect(html).not.toContain('<svg')
     expect(html).toContain('Траектория по сценариям появится после того, как эксперт одобрит план')
@@ -157,7 +160,29 @@ describe('«Обзор»', () => {
     expect(html).toContain('role="alert"')
     expect(html).toContain('Нет связи с сервером.')
     expect(html).toContain('Повторить')
-    expect(html).toContain('«Подробности»')
+    expect(html).not.toContain('«Подробности»')
+  })
+
+  it('R3 (B2): «Что делать: смотреть сценарии» only with the scenarios of an approved plan', () => {
+    const full = fixtureModelResult('full')
+    expect(overviewActions(full, NO_PLAN)).toEqual({ scenarios: false, revenueMonths: false })
+    expect(overviewActions(full, published(full)).scenarios).toBe(true)
+    const html = flat(renderToStaticMarkup(React.createElement(OverviewView, { result: full, plan: published(full) })))
+    expect(html).toContain('Что делать: смотреть сценарии')
+  })
+
+  it('R3 (M2): without 12 months of revenue the verdict «нельзя сказать» offers the table «Выручка по месяцам»', () => {
+    const full = fixtureModelResult('full')
+    const noHistory: ModelResult = {
+      ...full,
+      verdict: { key: 'no_data', headline: 'Пока нельзя сказать, успеваете ли вы', reason: 'Для прогноза при текущем ходе нужна история выручки по месяцам' },
+      forecast: { atCurrentPace: { low: null, base: null, high: null }, trendMonthlyPct: null, basis: 'insufficient' },
+    }
+    expect(overviewActions(noHistory, NO_PLAN)).toEqual({ scenarios: false, revenueMonths: true })
+    const html = flat(renderToStaticMarkup(React.createElement(OverviewView, { result: noHistory, plan: NO_PLAN })))
+    expect(html).toContain('Внести выручку по месяцам')
+    // level 0 (no goal or base) — the months alone give no verdict: nothing offered
+    expect(overviewActions({ ...noHistory, level: 0 }, NO_PLAN).revenueMonths).toBe(false)
   })
 })
 
@@ -222,15 +247,25 @@ describe('CorridorChart', () => {
 })
 
 describe('«Сценарии»', () => {
-  it('without scenarios shows «Эксперт готовит сценарии» and what the owner can add', () => {
+  it('R3: without scenarios says honestly where the plan stands (never «Эксперт готовит», never «ничего не требуется»)', () => {
     const r = fixtureModelResult('stale-base')
-    for (const plan of [NO_PLAN, { ...NO_PLAN, status: 'preparing' as const }]) {
+    const cases: Array<[PointBPlanState, string]> = [
+      [NO_PLAN, 'Сценариев пока нет'],
+      [{ ...NO_PLAN, status: 'preparing', prep: { kind: 'in_work', missing: [], since: null } }, 'План готовит команда AIStart360'],
+      [{ ...NO_PLAN, status: 'preparing', prep: { kind: 'waiting', missing: [], since: null } }, 'Данных для плана достаточно'],
+    ]
+    for (const [plan, text] of cases) {
       const html = flat(renderToStaticMarkup(React.createElement(ScenariosTab, { snap: snapOf(r, plan) })))
-      expect(html).toContain('Эксперт готовит сценарии')
+      expect(html).toContain(text)
+      expect(html).not.toContain('Эксперт готовит')
+      expect(html).not.toContain('ничего не требуется')
       expect(html).toContain('Заявки в месяц')
       expect(html).toContain('Заполнить в анкете')
       expect(html).not.toContain('Сравнение сценариев')
     }
+    const needs = flat(renderToStaticMarkup(React.createElement(ScenariosTab, { snap: snapOf(r, { ...NO_PLAN, prep: { kind: 'needs_data', missing: [{ key: 'goal', label: 'Цель по выручке', actions: ['survey'] }], since: null } }) })))
+    expect(needs).toContain('Для плана нужны данные')
+    expect(needs).toContain('Цель по выручке')
     // an approved version without scenarios says so instead of «готовит»
     const html = flat(renderToStaticMarkup(React.createElement(ScenariosTab, { snap: snapOf(r, { ...NO_PLAN, status: 'published', version: 3 }) })))
     expect(html).toContain('В одобренном плане сценариев нет')
@@ -284,12 +319,14 @@ describe('«Сценарии»', () => {
 })
 
 describe('tab shell', () => {
-  const panels = { overview: React.createElement('p', null, 'ОБЗОР'), scenarios: React.createElement('p', null, 'СЦЕНАРИИ'), strategy: React.createElement('p', null, 'СТРАТЕГИЯ'), roadmap: React.createElement('p', null, 'КАРТА'), recs: React.createElement('p', null, 'РЕКОМЕНДАЦИИ'), history: React.createElement('p', null, 'ИСТОРИЯ'), whatif: React.createElement('p', null, 'ЧТОЕСЛИ'), finmodel: React.createElement('p', null, 'ФИНМОДЕЛЬ'), details: React.createElement('p', null, 'ПОДРОБНОСТИ') }
+  const panels = { overview: React.createElement('p', null, 'ОБЗОР'), scenarios: React.createElement('p', null, 'СЦЕНАРИИ'), strategy: React.createElement('p', null, 'СТРАТЕГИЯ'), roadmap: React.createElement('p', null, 'КАРТА'), recs: React.createElement('p', null, 'РЕКОМЕНДАЦИИ'), history: React.createElement('p', null, 'ИСТОРИЯ'), whatif: React.createElement('p', null, 'ЧТОЕСЛИ'), finmodel: React.createElement('p', null, 'ФИНМОДЕЛЬ') }
 
   it('is an accessible tablist: roles, aria-selected, roving tabindex, panel linked to its tab', () => {
     const html = renderToStaticMarkup(React.createElement(PointBTabs, { panels }))
     expect(html).toContain('role="tablist"')
-    expect(html.match(/role="tab"/g)).toHaveLength(9)
+    // R3 (M3): eight tabs — «Подробности» (V2) is hidden for the client
+    expect(html.match(/role="tab"/g)).toHaveLength(8)
+    expect(html).not.toContain('Подробности</button>')
     expect(html).toContain('Стратегия</button>')
     expect(html).toContain('Дорожная карта</button>')
     expect(html).toContain('Рекомендации</button>')
@@ -297,24 +334,20 @@ describe('tab shell', () => {
     expect(html).toContain('Финмодель</button>')
     expect(html).toMatch(/aria-selected="true"[^>]*>Обзор|Обзор<\/button>/)
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
-    expect(html.match(/tabindex="-1"/g)).toHaveLength(8)
+    expect(html.match(/tabindex="-1"/g)).toHaveLength(7)
     expect(html).toContain('role="tabpanel"')
     expect(html).toContain('ОБЗОР')
-    // only the opened tab is mounted: «Подробности» does not load until it is opened
-    expect(html).not.toContain('ПОДРОБНОСТИ')
+    // only the opened tab is mounted
     expect(html).not.toContain('СЦЕНАРИИ')
     expect(html).not.toContain('ФИНМОДЕЛЬ')
     // the strip scrolls sideways on a phone
     expect(html).toContain('overflow-x-auto')
   })
 
-  it('«Подробности» renders the legacy view untouched', () => {
-    const legacy = React.createElement(PointBView, { pointB: fixturePointB('full'), previewMode: true })
-    const alone = renderToStaticMarkup(legacy)
-    const inTab = renderToStaticMarkup(React.createElement(PointBTabs, { initialTab: 'details', panels: { ...panels, details: legacy } }))
+  it('R3 (M3): the old V2 view still renders on its own (kept until the PO removes it), but is no client panel', () => {
+    const alone = renderToStaticMarkup(React.createElement(PointBView, { pointB: fixturePointB('full'), previewMode: true }))
     expect(alone).toContain('Куда вы идёте')
-    expect(inTab).toContain(alone)
-    expect(inTab).toMatch(/<div role="tabpanel"[^>]*id="[^"]*-panel-details"/)
+    expect(renderToStaticMarkup(React.createElement(PointBTabs, { panels }))).not.toMatch(/-panel-details"/)
   })
 })
 

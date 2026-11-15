@@ -22,6 +22,14 @@ import type { UploadItem, V4Block } from './engine'
 import { BLOCK_LIBRARY, BLOCK_KEYS, overallAllowed, type BlockKey } from './config'
 import { loadBlockConfig } from './store'
 import { DEFAULT_KEY_METRICS, MAX_KEY_METRICS, keyMetricCatalog, loadMetricViews, type MetricView } from './metric-views'
+import { toGri } from '@/lib/format/gri'
+import { AI_VIEW_COLUMNS, AI_VIEW_COLUMNS_PRE150, aiAnalysisView, type PointAAiAnalysisView } from '@/lib/point-a/ai-review'
+import { isMissingColumn } from '@/lib/point-a/ai-columns'
+import { isDocumentAbandoned } from '@/lib/documents/status-view'
+import { loadResolvedInputs } from '@/lib/point-a/resolved-inputs'
+import type { PointAResolvedInputs } from '@/lib/point-a-engine'
+import { calculatePointAV4 } from './engine'
+import { pointAScorePath, type ScorePath } from './score-path'
 
 export interface PointASnapshotView {
   id: string
@@ -72,8 +80,14 @@ export interface PointAState {
     candidates: Array<{ value: number; unit: string; sourceKind: string; sourceRef: string; note?: string }>
   }>
   goals: GoalWithEvaluation[]
-  gri: { index100: number | null; assessedAt: string | null }
-  benchmarks: { industry: string; stage: string; source: string; overall: number; blocks: Array<{ key: BlockKey; title: string; benchmark: number; score: number | null; rating: string | null }> } | null
+  /** GRI on its ONE scale 0–10 (lib/format/gri.ts, R-036); null = no assessment. */
+  gri: { index: number | null; assessedAt: string | null }
+  benchmarks: {
+    industry: string; stage: string; source: string; overall: number
+    blocks: Array<{ key: BlockKey; title: string; benchmark: number; score: number | null; rating: string | null }>
+    /** The thresholds / reference values are approved by an expert (R3-PA: not yet — the card says so). */
+    approved: boolean
+  } | null
   sources: {
     survey: {
       percent: number; completed: number; total: number
@@ -82,7 +96,8 @@ export interface PointAState {
       /** The latest change of an answer (ISO), or null. */
       lastChangedAt: string | null
     }
-    documents: { parsed: number; processing: number; failed: number }
+    /** `stale`: queued / processing for more than a day — not «в работе», shown as «не обработан» (R3-PA). */
+    documents: { parsed: number; processing: number; failed: number; stale: number }
     metrics: number
   }
   recalculation: 'idle' | 'queued' | 'running'
@@ -102,7 +117,17 @@ export interface PointAState {
   viewerIsOwner: boolean
   /** Who answered each question behind a Point A check and when (only answers with a recorded author). */
   answerAttribution: Record<string, AnswerAttribution>
+  /**
+   * The AI analysis of the current diagnostic (R3-PA): a draft until an expert
+   * checks it. Null: no official score (no analysis is made), or no diagnostic.
+   */
+  aiAnalysis: PointAAiAnalysisView | null
+  /** «Минимум для Точки А» = the rule of the official score: what is left before it (null: no blocks). */
+  scorePath: ScorePath | null
 }
+
+/** R3-PA: the reference values of the industries are not approved by an expert yet (R-072 / R-174). */
+export const BENCHMARKS_EXPERT_APPROVED = false
 
 function missing(e: { code?: string } | null | undefined): boolean {
   return !!e && (e.code === '42P01' || e.code === 'PGRST205')
@@ -176,7 +201,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     return { ownerId: row?.user_id ?? null, industry: row?.industry ?? null }
   })
   const cfgP = companyP.then(({ industry }) => loadBlockConfig(client, companyId, industry))
-  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead] = await Promise.all([
+  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead, aiRow, resolved] = await Promise.all([
     companyP,
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
@@ -189,7 +214,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
       return (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},and(user_id.eq.${ownerId},company_id.is.null)`) : griQuery.eq('company_id', companyId))
         .order('created_at', { ascending: false }).limit(1)
     }),
-    client.from('documents').select('parse_status').eq('company_id', companyId),
+    client.from('documents').select('parse_status, updated_at, uploaded_at').eq('company_id', companyId),
     client.from('metrics').select('metric_key').eq('company_id', companyId).not('metric_value', 'is', null),
     service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
     client.from('point_a_comments').select('id, target_kind, target_key, body, author_name, author_role, created_at').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }).limit(100),
@@ -209,6 +234,16 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     cfgP,
     // A failed config fails the page above; then the key metrics are not read at all.
     cfgP.then((c) => keyMetricsOf(client, companyId, c), () => null),
+    // The AI analysis of the owner's current diagnostic (R3-PA). A failed read hides the block, not the page.
+    companyP.then(({ ownerId }) => (ownerId ? loadAiRow(client, ownerId) : null)).catch((err) => {
+      console.error('[point-a/state] AI analysis not loaded', err instanceof Error ? err.message : err)
+      return null
+    }),
+    // The engine inputs from documents / metrics — «Минимум для Точки А» runs the engine on them.
+    loadResolvedInputs(client, companyId).catch((err): PointAResolvedInputs => {
+      console.error('[point-a/state] resolved inputs not loaded', err instanceof Error ? err.message : err)
+      return {}
+    }),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
@@ -240,7 +275,9 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
       }
     : null
 
-  const docRows = (docs.error ? [] : docs.data ?? []) as Array<{ parse_status: string | null }>
+  const docRows = (docs.error ? [] : docs.data ?? []) as Array<{ parse_status: string | null; updated_at?: string | null; uploaded_at?: string | null }>
+  const now = Date.now()
+  const staleDoc = (d: (typeof docRows)[number]) => isDocumentAbandoned(d, now)
   // Before migration 117 there are no comments / reviewer names.
   const comments: PointAComment[] = ((commentRows.error ? [] : commentRows.data ?? []) as Array<Record<string, unknown>>).map((c) => ({
     id: String(c.id),
@@ -285,16 +322,17 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     goals,
     gri: (() => {
       const g = ((gri.error ? [] : gri.data ?? []) as Array<{ gri_index: unknown; created_at: string }>)[0]
-      const v = num(g?.gri_index)
-      return { index100: v === null ? null : Math.round(v * 10), assessedAt: g?.created_at ?? null }
+      // The canonical 0–10 scale (R-036): never «× 10», never «из 100».
+      return { index: toGri(g?.gri_index), assessedAt: g?.created_at ?? null }
     })(),
-    benchmarks,
+    benchmarks: benchmarks ? { ...benchmarks, approved: BENCHMARKS_EXPERT_APPROVED } : null,
     sources: {
       survey: { percent: progress.percent, completed: progress.completed, total: progress.total_steps, authors, lastChangedAt: lastAnswerChange(survey.attribution) },
       documents: {
         parsed: docRows.filter((d) => d.parse_status === 'parsed' || d.parse_status === 'completed').length,
-        processing: docRows.filter((d) => d.parse_status === 'queued' || d.parse_status === 'pending' || d.parse_status === 'processing' || d.parse_status === 'needs_ocr').length,
+        processing: docRows.filter((d) => (d.parse_status === 'queued' || d.parse_status === 'pending' || d.parse_status === 'processing' || d.parse_status === 'needs_ocr') && !staleDoc(d)).length,
         failed: docRows.filter((d) => d.parse_status === 'failed' || d.parse_status === 'error' || d.parse_status === 'rejected').length,
+        stale: docRows.filter(staleDoc).length,
       },
       // distinct metrics, not rows (a metric may have several periods / sources)
       metrics: new Set(((metricRows.error ? [] : metricRows.data ?? []) as Array<{ metric_key: string }>).map((r) => r.metric_key)).size,
@@ -314,5 +352,45 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     review,
     viewerIsOwner: viewerId !== null && ownerId !== null && ownerId === viewerId,
     answerAttribution: Object.fromEntries(POINT_A_QUESTION_KEYS.filter((k) => survey.attribution[k]?.updatedByRole).map((k) => [k, survey.attribution[k]])),
+    // No official score → no analysis is made (and an old one is not shown).
+    aiAnalysis: snapshot && snapshot.assessment === 'full' && snapshot.overall !== null ? aiAnalysisView(aiRow) : null,
+    scorePath: scorePathOf(surveyRows, resolved, cfg.blocks, snapshot),
+  }
+}
+
+/** The owner's current diagnostic, AI columns (before migration 150: without the review / diagnosis columns). */
+async function loadAiRow(client: SupabaseClient, ownerId: string): Promise<Record<string, unknown> | null> {
+  const read = (cols: string) => client.from('diagnostics').select(cols).eq('user_id', ownerId).eq('is_current', true).maybeSingle()
+  let res = await read(AI_VIEW_COLUMNS)
+  if (res.error && isMissingColumn(res.error)) res = await read(AI_VIEW_COLUMNS_PRE150)
+  if (res.error) throw new Error(`diagnostics read failed (${res.error.code ?? 'unknown'})`)
+  return (res.data as Record<string, unknown> | null) ?? null
+}
+
+/**
+ * «Минимум для Точки А» (R3-PA, П5): the engine on the CURRENT answers and
+ * inputs, as if the questionnaire were sent (a toggle on a saved step counts
+ * then), against the rule of the official score. A block an expert scored by
+ * a confirmed hypothesis keeps its score (from the latest snapshot).
+ */
+function scorePathOf(
+  rows: ReadonlyArray<{ question_key: string; answer: unknown }>,
+  resolved: PointAResolvedInputs,
+  blocks: Parameters<typeof calculatePointAV4>[0]['blocks'],
+  snapshot: PointASnapshotView | null,
+): ScorePath | null {
+  if (!blocks.length) return null
+  try {
+    const answers: Record<string, unknown> = {}
+    for (const r of rows) {
+      const a = r.answer as { value?: unknown } | null
+      answers[r.question_key] = a && typeof a === 'object' && 'value' in a ? a.value : a
+    }
+    const fresh = calculatePointAV4({ answers, resolved, blocks, surveyComplete: true }).blocks
+    const inferred = new Map((snapshot?.blocks ?? []).filter((b) => b.basis === 'inferred' && typeof b.score === 'number').map((b) => [b.key, b.score]))
+    return pointAScorePath(fresh.map((b) => (inferred.has(b.key) ? { ...b, score: inferred.get(b.key) ?? null } : b)), { surveySent: snapshot?.assessment === 'full' })
+  } catch (err) {
+    console.error('[point-a/state] score path not computed', err instanceof Error ? err.message : err)
+    return null
   }
 }

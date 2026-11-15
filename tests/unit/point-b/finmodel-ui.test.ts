@@ -30,8 +30,8 @@ const { default: CashChart } = await import('@/components/point-b/CashChart')
 const { default: DataGapBanner } = await import('@/components/point-b/DataGapBanner')
 
 const flat = (html: string) => html.replace(/&#x27;|&quot;/g, '"').replace(/[  ]/g, ' ')
-const NO_PLAN: PointBPlanState = { status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null }
-const published = (result: ModelResult): PointBPlanState => ({ status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким' })
+const NO_PLAN: PointBPlanState = { status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, prep: null }
+const published = (result: ModelResult): PointBPlanState => ({ status: 'published', version: 2, selectedScenario: 'moderate', scenarios: result.scenarios, approvedAt: '2026-10-14T10:00:00.000Z', authorName: 'Анна Ким', prep: { kind: 'published', missing: [], since: null } })
 
 // ── a fetch double ──────────────────────────────────────────────────────
 

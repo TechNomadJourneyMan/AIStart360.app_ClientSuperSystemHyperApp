@@ -144,6 +144,12 @@ export interface SnapshotPointA {
 export interface PointAStateSlice {
   snapshot?: (NonNullable<SnapshotPointA['snapshot']> & { createdAt: string }) | null
   recalculation?: string
+  /**
+   * R3-PA: «Минимум для Точки А» — what is left before the score (the
+   * questionnaire's review step reads it for every account). Counts and block
+   * titles only: the per-item texts stay on the paid page.
+   */
+  scorePath?: import('@/lib/point-a/v4/score-path').ScorePath | null
 }
 
 /**
@@ -163,10 +169,13 @@ export function expressPointASlice(state: {
     uploadChecklist?: ReadonlyArray<{ block: string; gain: number }>
   } | null
   recalculation?: string
+  scorePath?: import('@/lib/point-a/v4/score-path').ScorePath | null
 }): PointAStateSlice {
   const snap = state.snapshot
+  const path = state.scorePath
   return {
     recalculation: state.recalculation,
+    scorePath: path ? { ...path, toFill: path.toFill.map((b) => ({ ...b, needs: [] })) } : null,
     snapshot: snap
       ? {
           createdAt: snap.createdAt,

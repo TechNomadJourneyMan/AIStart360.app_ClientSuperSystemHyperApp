@@ -9,7 +9,9 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { usePointAState, useRecalculatePointA, type PointAPageState } from '@/hooks/usePointAState'
+import { usePointAState, useRecalculatePointA, useRetryAiAnalysis, type PointAPageState } from '@/hooks/usePointAState'
+import { AiAnalysisCard } from './AiAnalysisCard'
+import { ScorePathCard } from './ScorePathCard'
 import { PointAHeader } from './PointAHeader'
 import { AttentionPanel } from './AttentionPanel'
 import { OverviewSection } from './OverviewSection'
@@ -62,6 +64,7 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
   const { isLoading, error, refetch } = live
   const state = preview ?? live.data
   const recalc = useRecalculatePointA()
+  const retryAi = useRetryAiAnalysis()
   const [customize, setCustomize] = useState(false)
   useScrollToHash(!preview && !!state && !isLoading)
 
@@ -107,6 +110,14 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
     })
 
   const preliminary = state.snapshot?.assessment === 'preliminary'
+  const isStaff = state.role === 'staff'
+  const runRetryAi = (diagnosticId: string) =>
+    preview
+      ? toast.info('Предпросмотр: повтор отключён')
+      : retryAi.mutate(diagnosticId, {
+          onSuccess: () => toast.success('Разбор ИИ перезапущен — обычно 1–2 минуты'),
+          onError: (e) => toast.error(e instanceof Error ? e.message : 'Не удалось перезапустить разбор'),
+        })
 
   return (
     <AnswerEditorProvider enabled={preview ? !!previewAnswers : state.viewerIsOwner} onSaved={() => void refetch()} previewAnswers={previewAnswers} attribution={state.answerAttribution ?? {}}>
@@ -126,12 +137,26 @@ export default function PointAV4Page({ preview, previewDetails, previewAnswers }
         </section>
       ) : (
         <>
+          {/* R3-PA (П5): while there is no score — the rule and what is left before it. */}
+          {state.scorePath && (preliminary || state.snapshot.overall === null) && (
+            <ScorePathCard path={state.scorePath} viewerIsOwner={state.viewerIsOwner} />
+          )}
           <KeyMetricsStrip state={state} readonly={!!preview} />
           <ExpertNotes state={state} />
           {/* R-025: the report an expert published — PDF and the link to the version (#reports). */}
           {!preview && <PublishedReports companyId={state.companyId} compact />}
           <AttentionPanel state={state} readonly={!!preview} />
           <OverviewSection snapshot={state.snapshot} />
+          {/* R3-PA (П1б): the paid AI analysis — a draft until an expert checks it. */}
+          {state.aiAnalysis && (
+            <AiAnalysisCard
+              ai={state.aiAnalysis}
+              canRetry={state.viewerIsOwner || isStaff}
+              onRetry={() => runRetryAi(state.aiAnalysis!.diagnosticId)}
+              retrying={retryAi.isPending}
+              showDiagnosis={isStaff}
+            />
+          )}
           <BlocksSection state={state} customize={customize} previewDetails={previewDetails} />
           <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div className="space-y-4">

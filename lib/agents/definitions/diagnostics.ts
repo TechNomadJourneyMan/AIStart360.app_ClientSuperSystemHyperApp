@@ -117,7 +117,10 @@ function isTransient(code: string): boolean {
 
 const orchestratorInput = z.object({
   action: z.enum(['start', 'finalize']).optional(),
-  trigger: z.enum(['manual', 'agent', 'schedule']).optional(),
+  // The same values as session.open / diagnostic_sessions.trigger. 'event': the
+  // Point A recalculation after a data change (lib/point-a/snapshot.ts) — it
+  // was missing, so every automatic run died with INVALID_INPUT (R3-PA, B2).
+  trigger: z.enum(['manual', 'event', 'schedule', 'agent']).optional(),
   reason: z.string().max(200).optional(),
   event: z.object({
     id: z.number().optional(),

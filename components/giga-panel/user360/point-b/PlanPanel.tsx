@@ -8,7 +8,7 @@
  * planController.ts; this file only draws the snapshot.
  */
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import { CheckCircle2, FilePlus2, Save, Send, Undo2 } from 'lucide-react'
+import { CheckCircle2, FilePlus2, Save, Send, Sparkles, Undo2 } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Modal, Panel, Skeleton, cx, fmtDateTime, inputClass } from '../../kit'
 import type { PlanVersionRow } from '@/lib/point-b/plan/types'
 import { EXCEPTION_REASON_MIN } from '@/lib/point-b/plan/status'
@@ -97,6 +97,8 @@ export interface PlanPanelViewProps {
   onNotes: (v: string) => void
   onReason: (v: string) => void
   onCreate: () => void
+  /** R3 (M1): «Собрать черновик плана» — shown to Admin / Super Admin only (canApprove). */
+  onQuickDraft?: () => void
   onSave: () => void
   onSubmit: () => void
   onAskApprove: (v: PlanVersionRow) => void
@@ -140,10 +142,27 @@ export function PlanPanelView(p: PlanPanelViewProps) {
     <Panel
       title="План Точки Б"
       description="Версия плана видна клиенту только после одобрения Admin или Super Admin. Одобренная версия не меняется — любое изменение это новая версия."
-      actions={plan && !open ? (
-        <Button size="sm" variant="primary" icon={<FilePlus2 size={12} />} loading={snap.busy === 'create'} onClick={p.onCreate}>
-          {plan.versions.length ? 'Новая версия' : 'Создать черновик'}
-        </Button>
+      actions={plan && (!open || draft) ? (
+        <div className="flex flex-wrap gap-2">
+          {plan.canApprove && p.onQuickDraft && (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Sparkles size={12} />}
+              loading={snap.busy === 'quick'}
+              disabled={busy}
+              title="Сценарии модели, темп «умеренный», стратегия из правил с формулировками ИИ и рекомендации на проверку. Ничего не публикуется."
+              onClick={p.onQuickDraft}
+            >
+              {draft ? 'Дополнить черновик' : 'Собрать черновик плана'}
+            </Button>
+          )}
+          {!open && (
+            <Button size="sm" icon={<FilePlus2 size={12} />} loading={snap.busy === 'create'} disabled={busy} onClick={p.onCreate}>
+              {plan.versions.length ? 'Новая версия' : 'Создать черновик'}
+            </Button>
+          )}
+        </div>
       ) : undefined}
     >
       {snap.phase === 'loading' && <Skeleton className="h-24" />}
@@ -205,7 +224,7 @@ export function PlanPanelView(p: PlanPanelViewProps) {
           {plan.versions.length === 0 && !draft ? (
             <EmptyState
               title="Плана ещё нет"
-              text="Создайте черновик, проверьте цели клиента и отправьте версию на одобрение — до этого клиент видит только предварительный расчёт."
+              text="Соберите черновик плана в один клик (или создайте пустой), проверьте цель клиента и стратегию, отправьте версию на одобрение — до этого клиент видит только предварительный расчёт. Одобрить можно только версию с рассчитанными сценариями и выбранным темпом."
             />
           ) : (
             <ul className="space-y-2" aria-label="Версии плана">
@@ -316,6 +335,7 @@ export function PlanPanel({ ctl, snap, children }: { ctl: PlanController; snap: 
       onNotes={setNotes}
       onReason={setReason}
       onCreate={() => void ctl.createDraft()}
+      onQuickDraft={() => void ctl.quickDraft()}
       onSave={() => draft && void ctl.saveDraft(draft.id, { expertNotes: notes, changeReason: reason })}
       onSubmit={() => draft && void ctl.submitDraft(draft.id, { expertNotes: notes, changeReason: reason })}
       onAskApprove={setApproveTarget}

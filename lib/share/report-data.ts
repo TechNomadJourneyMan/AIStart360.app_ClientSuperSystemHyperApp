@@ -10,12 +10,11 @@
  * intentionally bypass RLS.
  */
 
-import type { PointBV2 } from '@/lib/point-b/engine'
 import { diagToPointA } from '@/lib/point-b/adapters'
-import { loadPointBInputs } from '@/lib/point-b/inputs'
-import { computePointB } from '@/lib/point-b/compute'
+import { loadPointBReport, type PointBReport } from '@/lib/point-b/report'
 import { createServiceClient } from '@/lib/supabase-service'
-import type { PointA, AIAnalysis } from '@/types/onboarding'
+import type { PointA } from '@/types/onboarding'
+import { aiAnalysisNote, aiAnalysisView } from '@/lib/point-a/ai-review'
 import { OFFICIAL_SNAPSHOT_COLUMNS, hasOfficialBlockScores, officialDiagnosticRow, officialPointA, type OfficialSnapshotRow } from '@/lib/point-a/official'
 
 const blockKeysAll = ['finance', 'sales', 'operations', 'marketing', 'strategy']
@@ -217,6 +216,8 @@ export interface PointAView {
   }>
   growthRoadmap: Array<{ horizon: string; actions: string[] }>
   quickWins: PointA['quick_wins']
+  /** R3-PA: «Черновик ИИ — эксперт проверит» / «Проверено экспертом: …» — null when there is no AI text. */
+  aiNote: string | null
 }
 
 export async function loadPointAView(
@@ -238,7 +239,9 @@ export async function loadPointAView(
   const pointA = diagToPointA(diag)
   const noData = new Set(hasOfficialBlockScores(official) ? official.blocksWithoutData : blockKeysAll)
   const scored = official.state === 'scored'
-  const ai = diag.ai_analysis as AIAnalysis | null
+  // R3-PA: the AI text with the expert's corrections, labelled as a draft until an expert checks it.
+  const aiView = aiAnalysisView(rawDiag as Record<string, unknown>)
+  const ai = aiView?.analysis ?? null
 
   const blockOrder: Array<keyof PointA['blocks']> = [
     'finance',
@@ -293,6 +296,7 @@ export async function loadPointAView(
     strategicPriorities,
     growthRoadmap,
     quickWins: pointA.quick_wins,
+    aiNote: ai ? aiAnalysisNote(aiView) : null,
   }
 }
 
@@ -300,29 +304,12 @@ export async function loadPointAView(
 
 export async function loadPointBView(
   subject: ReportSubject,
-): Promise<PointBV2 | null> {
-  // The same inputs and computation as the client's own page (lib/point-b):
-  // revenue from the metrics registry (with its period), the Point A snapshot, goals.
+): Promise<PointBReport | null> {
+  // R3 (M3): the share link shows the SAME calculation as the client's page — the model and the APPROVED plan
+  // version (lib/point-b/report.ts), never the old V2 engine, never a draft, never the staff-only AI strategy.
   // Service role: the share link has no session; the token already authorised ONE company.
-  const sb = createServiceClient()
-  const inputs = await loadPointBInputs(sb, subject.userId, { companyId: subject.companyId })
-  const pointB = computePointB(inputs)
-  if (!pointB || !inputs.diagnostic) return null
-
-  // Overlay any persisted AI strategy bridge (point_b_analysis.ai_strategy).
-  const { data: pb } = await sb
-    .from('point_b_analysis')
-    .select('ai_strategy, ai_status')
-    .eq('diagnostic_id', String(inputs.diagnostic.id))
-    .eq('is_current', true)
-    .maybeSingle()
-  const row = pb as { ai_strategy?: unknown; ai_status?: string } | null
-  if (row?.ai_status === 'completed' && row.ai_strategy) {
-    pointB.ai_strategy = row.ai_strategy as Record<string, unknown>
-    pointB.ai_status = 'completed'
-  }
-
-  return pointB
+  const report = await loadPointBReport(createServiceClient(), subject.userId)
+  return report.level === 0 && report.plan.status !== 'published' ? null : report
 }
 
 // ─── Survey ─────────────────────────────────────────────────────────────────

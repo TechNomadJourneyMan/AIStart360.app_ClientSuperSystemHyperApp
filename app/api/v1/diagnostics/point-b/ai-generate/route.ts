@@ -10,8 +10,7 @@ import { analyzePointBStrategy } from '@/lib/ai/point-b-analyzer'
 import { loadPointBInputs } from '@/lib/point-b/inputs'
 import { computePointB } from '@/lib/point-b/compute'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
-import { hasValidInternalToken } from '@/lib/internal-auth'
-import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
+import { getSessionStaff, getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { gateFeature } from '@/lib/access/gate'
@@ -20,21 +19,29 @@ import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
- * Internal endpoint: runs the Point B AI strategic-bridge analysis on a
- * diagnostic and persists it onto point_b_analysis (ai_strategy + ai_status).
- * Called asynchronously after rule-based recalculation completes (AUTO trigger).
+ * Runs the Point B AI strategic-bridge analysis on a diagnostic and persists it onto point_b_analysis
+ * (ai_strategy + ai_status).
  *
- * Body: { diagnostic_id?, user_id? } — falls back to the session user when omitted.
+ * R3 (S3, решение PO): the AI strategy of Точка Б is a DRAFT FOR STAFF only — the client never runs it and never
+ * sees it. Only a staff session acting on a client it may manage (mayActOnUser: staff / active expert, second
+ * factor passed, client scope) gets here, with `user_id` of that client in the body. The client's own call, a call
+ * without `user_id` and the old internal fan-out token (the recalculation no longer fires it) → 403 staff_only;
+ * nothing is read and no model is called.
+ *
+ * Body: { user_id, diagnostic_id? }.
  *
  * HONEST DEGRADE: if the recomputed Point B has insufficient data, we set
  * ai_status='none' and return ok WITHOUT calling the LLM (never fabricate a plan).
  */
+const STAFF_ONLY_TEXT = 'ИИ-черновик стратегии Точки Б готовит команда AIStart360 — клиенту он не показывается'
+
+const staffOnly = () => NextResponse.json({ ok: false, code: 'staff_only', error: STAFF_ONLY_TEXT }, { status: 403 })
 
 async function handlePost(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>))
     let diagnosticId = (body.diagnostic_id as string | undefined) ?? undefined
-    let userId = (body.user_id as string | undefined) ?? undefined
+    const userId = (body.user_id as string | undefined) ?? undefined
 
     // Locale: server-to-server fires (recalculate) pass it in the body since
     // cookies aren't forwarded; manual UI invocation falls back to the cookie.
@@ -44,43 +51,24 @@ async function handlePost(req: NextRequest) {
 
     const sb = createServerClient()
 
-    // SECURITY (audit 2026-07-02): this runs a paid Point B AI generation. When
-    // `user_id` is supplied it's a server-to-server fire from recalculate — trust
-    // only a signed internal token (or a session that owns it). When omitted it's
-    // a manual UI call — resolve from the session. Then throttle per user.
-    // The internal token must be bound to exactly this user and diagnostic
-    // (lib/internal-auth v2), so a token minted for another call is refused.
-    const internal = userId ? hasValidInternalToken(req, { userId, diagnosticId }) : false
-    // Staff acting for a client (not the client's own tariff) are not gated.
-    let staffOnBehalf = false
-    if (userId) {
-      if (!internal) {
-        const caller = await getSessionUser(sb)
-        if (!caller) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
-        if (!(await mayActOnUser(sb, caller.id, userId))) {
-          return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-        }
-        staffOnBehalf = caller.id !== userId
-      }
-    } else {
-      const caller = await getSessionUser(sb)
-      if (!caller) {
-        return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
-      }
-      userId = caller.id
-    }
+    // SECURITY (audit 2026-07-02) + R3 (S3): a paid generation that only staff may start — a session of
+    // staff acting on THIS client (mayActOnUser). No internal token (the fan-out no longer fires it), no self-call.
+    const caller = await getSessionUser(sb)
+    if (!caller) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    if (!userId || userId === caller.id) return staffOnly()
+    // Staff of this session (migration 140 rule + the second factor), and the client inside its scope.
+    if (!(await getSessionStaff(sb, caller.id))) return staffOnly()
+    if (!(await mayActOnUser(sb, caller.id, userId))) return staffOnly()
+    // The CLIENT's Point B must be open (Pro / override / gates off): a staff draft for a closed section is not made.
+    // Read with the service client: a session cannot read another user's tier.
+    const closed = await gateFeature(createServiceClient(), userId, 'point_b', { exemptStaff: true })
+    if (closed) return closed
 
-    // Tariff gate (Pro), for the user whose plan is generated. Read with the service client:
-    // the internal fan-out has no session, and a session cannot read another user's tier.
-    if (!staffOnBehalf) {
-      const upgrade = await gateFeature(createServiceClient(), userId, 'point_b', { exemptStaff: true })
-      if (upgrade) return upgrade
-    }
-
-    if (!internal && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {
+    if (await isRateLimitedKey(caller.id, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
-    const overBudget = await guardAiBudget(userId, 'point_b_strategy')
+    // The staff member's AI budget is spent (the client is not billed for a staff draft).
+    const overBudget = await guardAiBudget(caller.id, 'point_b_strategy')
     if (overBudget) return overBudget
 
     // 1–5. Inputs (the diagnostic — the given one or the current one —, the Point A v4

@@ -4,20 +4,23 @@
  * components/point-b/tabs/StrategyTab.tsx — the «Стратегия» tab (plan Ф5 Task 5, spec §11, §15): strategy cards
  * with the progress of their tasks, expandable into initiatives (impact and effort, KPI, due date, delay risk) and
  * tasks (owner, due date, status from the action plan), and the impact × effort matrix. Shows the tree of the
- * APPROVED plan version only (the server never sends a draft); without it — «Эксперт готовит стратегию».
+ * APPROVED plan version only (the server never sends a draft); without it — the honest state of the plan (R3).
  *
  * Progress is computed by the server on read from the live statuses of the action plan; a node without tasks says
  * «нет задач», never 0 %. Expanding is native <details> (keyboard and screen-reader friendly, works without JS).
  * Project tokens only — the PO will replace the design.
  */
 import { useMemo } from 'react'
+import { ActionPlanBoard } from '@/components/action-plan/ActionPlanBoard'
 import { CARD, CARD_TITLE, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
+import PlanPrepNotice from '../PlanPrepNotice'
+import type { PlanPrepState } from '../planPrep'
 import MatrixChart from '../MatrixChart'
 import { DASH } from '../overviewModel'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
-  ACTION_PLAN_LINK_TEXT, ACTION_PLAN_TAB, buildCards, countsLine, fmtDay, kpiText, ratingText, strategyCounts, strategyMode, todayIso,
+  ACTION_PLAN_ANCHOR, ACTION_PLAN_LINK_TEXT, ACTION_PLAN_TAB, buildCards, countsLine, fmtDay, kpiText, ratingText, strategyCounts, strategyMode, todayIso,
   type InitiativeView, type PointBStrategyState, type ProgressView, type StrategyCardView, type TaskView,
 } from '../strategyModel'
 import { SectionError, SectionSkeleton } from './OverviewTab'
@@ -82,13 +85,17 @@ function Rating({ label, value }: { label: 'Влияние' | 'Усилие'; va
   )
 }
 
-/** The action plan lives in the «Подробности» tab of this page, so the link switches to it. */
+/** The action plan is at the bottom of the «Стратегия» tab: the link switches to it and scrolls there. */
 export function ActionPlanLink() {
   const go = useGoToTab()
   return (
     <button
       type="button"
-      onClick={() => go(ACTION_PLAN_TAB)}
+      onClick={() => {
+        go(ACTION_PLAN_TAB)
+        // The panel may be mounted by this very click: scroll once it is drawn.
+        setTimeout(() => document.getElementById(ACTION_PLAN_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+      }}
       className="inline-flex min-h-[36px] items-center gap-1 rounded-lg px-1 text-xs font-medium text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
     >
       {ACTION_PLAN_LINK_TEXT}
@@ -208,15 +215,16 @@ function StrategyCard({ s, open }: { s: StrategyCardView; open: boolean }) {
   )
 }
 
-export function StrategyPreparing() {
+export function StrategyPreparing({ prep = null, area = 'strategy' }: { prep?: PlanPrepState | null; area?: 'strategy' | 'roadmap' }) {
+  if (prep) return <PlanPrepNotice prep={prep} area={area} />
   return (
     <section aria-labelledby="pb-str-prep" className={CARD}>
       <div className="flex items-start gap-3">
-        <Icon name="hourglass_top" className="mt-0.5 text-2xl text-secondary" />
+        <Icon name="info" className="mt-0.5 text-2xl text-secondary" />
         <div className="min-w-0">
-          <h2 id="pb-str-prep" className="font-headline text-lg font-bold text-on-surface">Эксперт готовит стратегию</h2>
+          <h2 id="pb-str-prep" className="font-headline text-lg font-bold text-on-surface">Стратегии пока нет</h2>
           <p className="mt-1 text-sm text-on-surface-variant">
-            Стратегии, инициативы и задачи появятся здесь после того, как эксперт соберёт их и одобрит план. Задачи сразу попадут в ваш план действий.
+            Стратегии, инициативы и задачи появятся здесь после одобрения плана. Задачи сразу попадут в ваш план действий.
           </p>
         </div>
       </div>
@@ -231,7 +239,7 @@ export function StrategyEmpty() {
         <Icon name="info" className="mt-0.5 text-2xl text-secondary" />
         <div className="min-w-0">
           <h2 id="pb-str-empty" className="font-headline text-lg font-bold text-on-surface">В плане пока нет стратегии</h2>
-          <p className="mt-1 text-sm text-on-surface-variant">Эксперт добавит её в следующей версии плана. Пока ориентир — вкладка «Сценарии».</p>
+          <p className="mt-1 text-sm text-on-surface-variant">Стратегия появится в следующей версии плана. Пока ориентир — вкладка «Сценарии».</p>
         </div>
       </div>
     </section>
@@ -261,11 +269,29 @@ export function StrategyView({ strategy, today, planVersion = null }: { strategy
   )
 }
 
+/** The client's action plan (its tasks, the approved plan's among them): the status of each task is changed here. */
+export function ActionPlanSection() {
+  return (
+    <section id={ACTION_PLAN_ANCHOR} aria-labelledby="pb-action-plan-title" className={cn(CARD, 'scroll-mt-4')}>
+      <h3 id="pb-action-plan-title" className="font-headline text-base font-bold text-on-surface">План действий</h3>
+      <p className="mt-0.5 text-xs text-on-surface-variant">Задачи одобренного плана и другие ваши задачи. Отмечайте статус по мере работы — прогресс стратегии считается от него.</p>
+      <div className="mt-3"><ActionPlanBoard /></div>
+    </section>
+  )
+}
+
 export default function StrategyTab({ snap, onRetry }: { snap: PointBStateSnapshot; onRetry?: () => void }) {
   const today = useMemo(() => todayIso(), [])
   const mode = strategyMode(snap)
   if (mode === 'loading') return <SectionSkeleton label="Загружаем стратегию" />
   if (mode === 'error') return <SectionError message={snap.error ?? 'Нет данных'} onRetry={onRetry} />
-  if (mode === 'ready' && snap.strategy) return <StrategyView strategy={snap.strategy} today={today} planVersion={snap.plan.version} />
-  return mode === 'empty' ? <StrategyEmpty /> : <StrategyPreparing />
+  const body = mode === 'ready' && snap.strategy
+    ? <StrategyView strategy={snap.strategy} today={today} planVersion={snap.plan.version} />
+    : mode === 'empty' ? <StrategyEmpty /> : <StrategyPreparing prep={snap.plan.prep} />
+  return (
+    <div className="space-y-4">
+      {body}
+      <ActionPlanSection />
+    </div>
+  )
 }

@@ -210,7 +210,7 @@ export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise
     facts.push(progress.is_complete
       ? 'Анкета: заполнена полностью'
       : progress.completed > 0
-        ? `Анкета: начато ${progress.completed} из ${progress.total_steps} шагов, глубина ${progress.percent}%, минимум для Точки А ${progress.minimum.answered} из ${progress.minimum.total}`
+        ? `Анкета: начато ${progress.completed} из ${progress.total_steps} шагов, глубина ${progress.percent}%, ключевые вопросы Точки А ${progress.minimum.answered} из ${progress.minimum.total}`
         : 'Анкета: ещё не начата')
     const modeFact = surveyModeFact(statuses.get(userId), progress.is_complete)
     if (modeFact) facts.push(modeFact)

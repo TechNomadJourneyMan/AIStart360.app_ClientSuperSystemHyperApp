@@ -130,7 +130,15 @@ interface ChatOptions {
    * ('length' = cut at maxTokens) when it sent one. lib/ai/structured.ts uses
    * it to give a cut answer a bigger budget; the return value stays the text.
    */
-  onFinish?: (info: { finishReason?: string }) => void
+  onFinish?: (info: { finishReason?: string; model?: string }) => void
+  /**
+   * Called once when the call returns null without an answer (R3-PA: the
+   * reason is written to diagnostics.ai_error): 'no_route' (no model
+   * configured), 'budget' (platform / provider budget spent), 'timeout',
+   * 'http_<status>', 'error' (network / other), 'no_answer' (an empty text).
+   * A short code only — never the provider body.
+   */
+  onFailure?: (info: { reason: string; model: string | null }) => void
 }
 
 /**
@@ -197,11 +205,15 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   })
   const tier = chatTierOf(opts)
   const resolved = await resolveCandidates('chat', { tier, model: opts.model ?? null, fallbackModel })
-  if (!resolved.ok) return null
+  if (!resolved.ok) {
+    opts.onFailure?.({ reason: 'no_route', model: null })
+    return null
+  }
 
   const left = await platformBudgetLeft()
   if (left !== null && left <= 0) {
     console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? opts.feature} skipped`)
+    opts.onFailure?.({ reason: 'budget', model: null })
     return null
   }
 
@@ -259,10 +271,12 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   if (!run.ok) {
     if (!run.failure) {
       console.warn(`[openrouter] ${run.refusal ?? 'provider budget spent'} — ${label} skipped`)
+      opts.onFailure?.({ reason: 'budget', model: null })
       return null
     }
     const target = run.target ?? resolved.candidates[0]
     await recordAiUsage({ feature: opts.feature, model: target.model, ok: false, latencyMs: Date.now() - started, userId: opts.userId })
+    opts.onFailure?.({ reason: failureReason(run.failure), model: target?.model ?? null })
     return null
   }
   const { result: res, target } = run
@@ -299,8 +313,16 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     ok: Boolean(res.text),
     userId: opts.userId,
   })
-  opts.onFinish?.({ finishReason: res.finishReason })
+  opts.onFinish?.({ finishReason: res.finishReason, model: res.model ?? target.model })
+  if (!res.text) opts.onFailure?.({ reason: 'no_answer', model: res.model ?? target.model })
   return res.text || null
+}
+
+/** A short code of a failed call (onFailure): timeout / http_<status> / error. */
+function failureReason(f: ClientFailure): string {
+  if (f.code === 'TIMEOUT') return 'timeout'
+  if (f.status !== null && f.status !== undefined) return `http_${f.status}`
+  return 'error'
 }
 
 /** Chat tier of a feature call: complexity, else a known explicit model's tier, else the estimate. */
@@ -420,6 +442,10 @@ export async function embedWithOpenRouter(
  */
 export function extractJson<T = unknown>(text: string): T | null {
   if (!text) return null
+  // A reasoning model (Qwen3 on the light tier) may put its thinking before the
+  // answer: «<think>…{ draft }…</think>{ answer }». The braces of the draft
+  // made the answer unparseable — the thinking is dropped first.
+  text = stripThinking(text)
   const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
   const raw = fenced ? fenced[1].trim() : text
   const first = raw.indexOf('{')
@@ -430,4 +456,13 @@ export function extractJson<T = unknown>(text: string): T | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Drop a leading «<think>…</think>» block of a reasoning model. An unclosed one
+ * (the answer was cut while thinking) leaves nothing to parse.
+ */
+export function stripThinking(text: string): string {
+  const t = text.replace(/^\s*<think>[\s\S]*?<\/think>\s*/i, '')
+  return /^\s*<think>/i.test(t) ? '' : t
 }

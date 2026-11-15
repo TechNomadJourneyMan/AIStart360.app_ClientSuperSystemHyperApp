@@ -35,7 +35,7 @@ import { loadGoals } from '@/lib/goals/store'
 import { evaluateGoals } from '@/lib/goals/current'
 import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
-import type { FanOutPath } from './diagnostic-row'
+import { pipelineTriggerOf, type FanOutPath } from './diagnostic-row'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
 
@@ -129,34 +129,62 @@ const defaultDeps: SnapshotDeps = {
       return { release: async () => undefined }
     }
   },
-  afterWrite: (o) => {
-    // Registered with waitUntil: on Vercel un-awaited work after the response is dropped.
-    void runInBackground('point-a-after-write', async () => {
-      const [{ emitPlatformEventSafely }, { fireAiFanOut, startDiagnosticPipeline }, { internalBaseUrl }] = await Promise.all([
-        import('@/lib/events/platform'),
-        import('./diagnostic-row'),
-        import('@/lib/internal-auth'),
-      ])
-      // No official score (preliminary, or v4 without an overall): no number in events.
-      const overall = o.preliminary || o.noScore ? null : o.written.overall_score
-      emitPlatformEventSafely({
-        name: 'POINT_A_UPDATED', companyId: o.companyId, subjectType: 'diagnostic', subjectId: o.diagnosticId, actor: 'system',
-        payload: { engine: o.engine, overall, preliminary: o.preliminary, trigger: o.trigger, changes: o.changes.slice(0, 10).map((c) => c.text) },
-        dedupeKey: `point_a_updated:${o.snapshotId ?? o.diagnosticId}`,
-      })
-      const baseUrl = internalBaseUrl({})
-      // The AI analysis and hypotheses wait for the full questionnaire: a
-      // preliminary assessment shows no numbers, and it keeps Point A cheap.
-      // No official score (v4 without an overall) → no paid analysis / Point B
-      // of a score that does not exist (I2, R-033); hypotheses still run.
-      // R2-A (ревью M-3): only the paid calls the owner has — a Free account gets none (no cost, nothing «failed»).
-      const paths = o.paidPaths ?? undefined
-      if (!o.preliminary && !o.noScore && process.env.OPENROUTER_API_KEY && baseUrl && (!paths || paths.length > 0)) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale, paths })
-      if (!o.fromPipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
-      void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
-      if (!o.preliminary && o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
+  afterWrite: (o) => runAfterWrite(o),
+}
+
+export type AfterWriteInput = Parameters<SnapshotDeps['afterWrite']>[0]
+
+const ANALYZE_PATH: FanOutPath = '/api/v1/diagnostics/ai-analyze'
+
+/**
+ * What runs after a written Point A (pure; R3-PA):
+ *  • fanOut — the paid AI analysis: the official score exists, the AI is
+ *    configured, the owner has a paid path (R2-A M-3);
+ *  • hypotheses — AI estimates of the blocks without data: after the full
+ *    questionnaire, and ONLY when the owner's Точка А is open (B3: a Free
+ *    owner spent the AI budget on hypotheses he never sees). `paidPaths`
+ *    omitted (hand-built deps in tests) = open;
+ *  • pipeline — the diagnostic pipeline, with the trigger the orchestrator
+ *    accepts (B2: 'event' / 'schedule' / 'manual'); never from the pipeline itself.
+ */
+export function afterWritePlan(o: Pick<AfterWriteInput, 'preliminary' | 'noScore' | 'paidPaths' | 'snapshotId' | 'fromPipeline' | 'trigger'>, env: { aiConfigured: boolean; baseUrl: string | null }) {
+  const paths = o.paidPaths
+  const pointAOpen = !paths || paths.includes(ANALYZE_PATH)
+  return {
+    fanOut: !o.preliminary && !o.noScore && env.aiConfigured && !!env.baseUrl && (!paths || paths.length > 0),
+    hypotheses: !o.preliminary && !!o.snapshotId && env.aiConfigured && pointAOpen,
+    pipeline: o.fromPipeline ? null : { trigger: pipelineTriggerOf(o.trigger) },
+  }
+}
+
+/** The default afterWrite: events, the paid AI fan-out, the pipeline and the hypotheses — in the background. */
+export function runAfterWrite(o: AfterWriteInput): Promise<void> {
+  // Registered with waitUntil: on Vercel un-awaited work after the response is dropped.
+  return runInBackground('point-a-after-write', async () => {
+    const [{ emitPlatformEventSafely }, { fireAiFanOut, startDiagnosticPipeline }, { internalBaseUrl }] = await Promise.all([
+      import('@/lib/events/platform'),
+      import('./diagnostic-row'),
+      import('@/lib/internal-auth'),
+    ])
+    // No official score (preliminary, or v4 without an overall): no number in events.
+    const overall = o.preliminary || o.noScore ? null : o.written.overall_score
+    emitPlatformEventSafely({
+      name: 'POINT_A_UPDATED', companyId: o.companyId, subjectType: 'diagnostic', subjectId: o.diagnosticId, actor: 'system',
+      payload: { engine: o.engine, overall, preliminary: o.preliminary, trigger: o.trigger, changes: o.changes.slice(0, 10).map((c) => c.text) },
+      dedupeKey: `point_a_updated:${o.snapshotId ?? o.diagnosticId}`,
     })
-  },
+    const baseUrl = internalBaseUrl({})
+    // The AI analysis and hypotheses wait for the full questionnaire: a
+    // preliminary assessment shows no numbers, and it keeps Point A cheap.
+    // No official score (v4 without an overall) → no paid analysis / Point B
+    // of a score that does not exist (I2, R-033); hypotheses still run.
+    // R2-A (ревью M-3): only the paid calls the owner has — a Free account gets none (no cost, nothing «failed»).
+    const plan = afterWritePlan(o, { aiConfigured: Boolean(process.env.OPENROUTER_API_KEY), baseUrl })
+    if (plan.fanOut && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale, paths: o.paidPaths ?? undefined })
+    if (plan.pipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: plan.pipeline.trigger, reason: 'пересчёт Точки А после изменения данных' })
+    void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
+    if (plan.hypotheses && o.snapshotId) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
+  })
 }
 
 /** AI hypotheses of the blocks without data, written into the snapshot (budget-guarded). */
@@ -170,10 +198,16 @@ async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: st
     if (isAiBudgetError(err)) return
     throw err
   }
+  const need = blocksNeedingHypothesis(blocks).length
   const { blocks: withHyp, generated } = await generateHypotheses(blocks, { industry, userId: ownerId })
-  if (!generated) return
+  // Ids and counts only (B3: 34 of 34 hypotheses failed and nothing said why — the model's
+  // reason is in ai_usage / the structured-call log lines «[point-a:hypothesis] …»).
+  if (!generated) {
+    console.error(`[point-a/snapshot] hypotheses: none of ${need} generated for snapshot ${snapshotId}`)
+    return
+  }
   const { error } = await createServiceClient().from('point_a_snapshots').update({ blocks: withHyp }).eq('id', snapshotId)
-  if (error) console.error('[point-a/snapshot] hypotheses not stored', error.code ?? '', error.message ?? '')
+  if (error) console.error('[point-a/snapshot] hypotheses not stored', snapshotId, error.code ?? '', error.message ?? '')
 }
 
 /** Expert decisions on AI hypotheses (migration 117); none before it. */

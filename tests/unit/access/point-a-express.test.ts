@@ -23,11 +23,17 @@ const STATE = {
   history: [{ id: 'h1', createdAt: '2026-11-01', overall: 50, confidence: 0.5, changes: [] }],
   discrepancies: [{ id: 'd1' }],
   goals: [{ id: 'g1' }],
-  gri: { index100: 70, assessedAt: null },
-  benchmarks: { industry: 'retail', stage: 'growth', source: 'x', overall: 60, blocks: [] },
-  sources: { survey: { percent: 100, completed: 30, total: 30, authors: {}, lastChangedAt: null }, documents: { parsed: 0, processing: 0, failed: 0 }, metrics: 1 },
+  gri: { index: 7, assessedAt: null },
+  benchmarks: { industry: 'retail', stage: 'growth', source: 'x', overall: 60, blocks: [], approved: false },
+  sources: { survey: { percent: 100, completed: 30, total: 30, authors: {}, lastChangedAt: null }, documents: { parsed: 0, processing: 0, failed: 0, stale: 0 }, metrics: 1 },
   recalculation: 'idle',
   comments: [{ id: 'c1', body: 'expert note' }],
+  // R3-PA: the paid AI analysis never reaches the express view; «Минимум для Точки А» does (counts only).
+  aiAnalysis: { diagnosticId: 'd-1', status: 'completed', analysis: { executive_summary: 'ai-secret-summary' } },
+  scorePath: {
+    rule: { minWeightShare: 0.6, requiredTitles: ['Финансы', 'Продажи'] }, surveySent: true, dataEnough: false, weightShare: 0.4, hasRequired: false,
+    toFill: [{ key: 'sales', title: 'Продажи', items: 2, needs: ['secret-need-text'], required: true }], itemsLeft: 2, reachable: true,
+  },
 }
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u-1' } } }) }, rpc: async () => ({ data: false }) }) }))
@@ -70,12 +76,13 @@ describe('GET /api/v1/point-a/state for a Free account', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.view).toBe('express')
-    expect(Object.keys(body.data).sort()).toEqual(['recalculation', 'snapshot'])
+    expect(Object.keys(body.data).sort()).toEqual(['recalculation', 'scorePath', 'snapshot'])
+    expect(body.data.scorePath).toMatchObject({ itemsLeft: 2, toFill: [{ key: 'sales', items: 2, needs: [] }] })
     expect(body.data.snapshot.overall).toBe(61)
     // ревью L-2: the count of findings only (the free card shows «1 находка»), never their text
     expect(body.data.snapshot.blocks[0]).toEqual({ key: 'finance', title: 'Финансы', score: 64, status: 'ok', coverage: 0.9, weight: 0.2, informational: false, hiddenForClient: false, issues_count: 1 })
     const text = JSON.stringify(body)
-    for (const leak of ['secret-check', 'secret-reco', 'expert note', 'history', 'discrepancies', 'benchmarks', 'metrics', 'goals', 'companyId', 'Нет учёта маржи', 'top_issues']) expect(text).not.toContain(leak)
+    for (const leak of ['secret-check', 'secret-reco', 'expert note', 'history', 'discrepancies', 'benchmarks', 'metrics', 'goals', 'companyId', 'Нет учёта маржи', 'top_issues', 'aiAnalysis', 'ai-secret-summary', 'secret-need-text']) expect(text).not.toContain(leak)
   })
 
   it('Pro (or gates off) gets the full state, also on the express view', async () => {
@@ -91,7 +98,7 @@ describe('GET /api/v1/point-a/state for a Free account', () => {
 
 describe('expressPointASlice (pure) and the snapshot screen', () => {
   it('keeps the fields of the free snapshot card only', () => {
-    expect(expressPointASlice({ snapshot: null, recalculation: 'queued' })).toEqual({ snapshot: null, recalculation: 'queued' })
+    expect(expressPointASlice({ snapshot: null, recalculation: 'queued' })).toEqual({ snapshot: null, recalculation: 'queued', scorePath: null })
     const slice = expressPointASlice(STATE as never)
     expect(slice.snapshot?.uploadChecklist).toEqual([{ block: 'finance', gain: 5 }])
   })

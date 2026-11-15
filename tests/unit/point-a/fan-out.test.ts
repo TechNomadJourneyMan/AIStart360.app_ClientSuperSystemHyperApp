@@ -41,9 +41,9 @@ describe('BE-13 fireAiFanOut', () => {
     expect(FAN_OUT_TIMEOUT_MS).toBeLessThanOrEqual(180_000)
   })
 
-  it('tracks both calls as background work and sends each with an abort signal', async () => {
+  it('tracks the calls as background work and sends each with an abort signal', async () => {
     const t = deps(async () => new Response('{"ok":true}', { status: 200 }))
-    fireAiFanOut(opts, t.d)
+    fireAiFanOut({ ...opts, paths: [AI, PB] }, t.d)
     expect(t.tracked).toHaveLength(2)
     await Promise.all(t.tracked)
     expect(t.fetchImpl).toHaveBeenCalledTimes(2)
@@ -63,7 +63,7 @@ describe('BE-13 fireAiFanOut', () => {
       if (path === PB) throw new DOMException('timed out', 'TimeoutError')
       throw new TypeError('fetch failed')
     })
-    fireAiFanOut(opts, t.d)
+    fireAiFanOut({ ...opts, paths: [AI, PB] }, t.d)
     await Promise.all(t.tracked)
     expect(t.failed.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
       { path: AI, reason: 'TypeError' },
@@ -75,5 +75,12 @@ describe('BE-13 fireAiFanOut', () => {
     const t = deps(async () => { throw new TypeError('fetch failed') })
     fireAiFanOut(opts, { ...t.d, markFailed: async () => { throw new Error('db down') } })
     await expect(Promise.all(t.tracked)).resolves.toBeDefined()
+  })
+
+  it('R3 (S3): by default only the Point A analysis — the Point B AI strategy is a staff draft, never the client fan-out', async () => {
+    const t = deps(async () => new Response('{"ok":true}', { status: 200 }))
+    fireAiFanOut(opts, t.d)
+    await Promise.all(t.tracked)
+    expect(t.fetchImpl.mock.calls.map((c) => new URL(String(c[0])).pathname)).toEqual([AI])
   })
 })

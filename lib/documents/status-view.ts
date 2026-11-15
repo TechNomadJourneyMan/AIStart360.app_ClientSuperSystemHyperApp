@@ -88,6 +88,12 @@ export interface DocumentStatusView {
   inFlight: boolean
   /** Queued longer than the server's stale threshold without starting. */
   stalled: boolean
+  /**
+   * R3-PA: «in the queue / processing» for more than ABANDONED_AFTER_HOURS — the
+   * pipeline will not finish it (documents from April–May still said
+   * «обрабатывается»). Shown as «Не обработан — загрузите заново», not polled.
+   */
+  abandoned: boolean
   /** POST …/process is allowed (not rejected, not running). */
   canReprocess: boolean
   /** parsed_data.warnings */
@@ -117,6 +123,10 @@ export const PIPELINE_STEPS: readonly ClientProcessingStage[] = ['validated', 'p
 /** Same threshold as lib/documents/repository.ts STALE_MINUTES (the reaper requeues after it). */
 export const STALE_QUEUE_MINUTES = 30
 
+/** After this long without progress a queued / processing document is not «в работе» any more. */
+export const ABANDONED_AFTER_HOURS = 24
+export const ABANDONED_LABEL = 'Не обработан — загрузите заново'
+
 export const NEEDS_OCR_LABEL = 'Скан без текстового слоя — распознавание недоступно'
 export const EMPTY_RESULT_LABEL = 'Прочитан, данных не найдено'
 export const DUPLICATE_MESSAGE = 'Такой файл уже загружен'
@@ -141,6 +151,18 @@ function asStage(value: unknown): ClientProcessingStage | null {
 
 export function isDocumentInFlight(doc: Pick<ClientDocument, 'parse_status'>): boolean {
   return IN_FLIGHT_STATUSES.has(String(doc.parse_status ?? ''))
+}
+
+/**
+ * Queued / processing (or the older «pending») with no change for more than
+ * ABANDONED_AFTER_HOURS (updated_at, else uploaded_at / created_at). Without
+ * any time it is not judged (never invented). Data is not touched.
+ */
+export function isDocumentAbandoned(doc: { parse_status?: string | null; updated_at?: string | null; uploaded_at?: string | null; created_at?: string | null }, now: number = Date.now()): boolean {
+  const status = String(doc.parse_status ?? '')
+  if (status !== 'queued' && status !== 'processing' && status !== 'pending') return false
+  const idle = minutesSince(doc.updated_at ?? doc.uploaded_at ?? doc.created_at ?? null, now)
+  return idle !== null && idle > ABANDONED_AFTER_HOURS * 60
 }
 
 export function isDocumentRejected(doc: Pick<ClientDocument, 'parse_status' | 'security_status'>): boolean {
@@ -213,6 +235,7 @@ export function documentStatusView(doc: ClientDocument, now: number = Date.now()
     stageLabel: stage ? STAGE_LABELS[stage] : null,
     inFlight: false,
     stalled: false,
+    abandoned: false,
     canReprocess: false,
     emptyReasonCode: null as string | null,
     ...stats,
@@ -231,6 +254,20 @@ export function documentStatusView(doc: ClientDocument, now: number = Date.now()
   }
 
   const status = String(doc.parse_status ?? '')
+  if (isDocumentAbandoned(doc, now)) {
+    const since = doc.updated_at ?? doc.uploaded_at ?? null
+    const date = since ? new Date(since).toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty' }) : null
+    return {
+      ...base,
+      label: ABANDONED_LABEL,
+      short: 'Не обработан',
+      tone: 'warning',
+      icon: 'report',
+      detail: `Обработка не завершилась${date ? ` (файл в очереди с ${date})` : ''}. Загрузите файл заново или запустите обработку — данные из него пока не учтены.`,
+      canReprocess: true,
+      abandoned: true,
+    }
+  }
   switch (status) {
     case 'queued': {
       const idle = minutesSince(doc.updated_at ?? doc.uploaded_at, now)

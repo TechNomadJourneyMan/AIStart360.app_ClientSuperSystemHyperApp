@@ -27,6 +27,7 @@ const s = vi.hoisted(() => ({
   breakPlanTables: false,
   /** Migration 129 not applied: pb_recommendations / pb_invites answer «relation does not exist». */
   break129: false,
+  limited: false,
 }))
 
 /** The same DB; with `breakPlanTables` the plan tables answer «relation does not exist» (migration 125 not applied). */
@@ -54,6 +55,9 @@ vi.mock('@/lib/access/gate', () => ({
   },
 }))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))
+vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
+// No model is reachable in the unit tests: the AI parts answer «no key» and the draft is built by the rules.
+vi.mock('@/lib/ai/gateway', async (orig) => ({ ...(await orig<typeof import('@/lib/ai/gateway')>()), hasLlmKey: () => false }))
 vi.mock('@/lib/admin/audit', () => ({
   recordAdminAction: async (_actor: unknown, entry: { action: string; entityId?: string | null; metadata?: Record<string, unknown>; oldValue?: unknown; newValue?: unknown }) => { s.audits.push(entry); return true },
 }))
@@ -72,6 +76,10 @@ vi.mock('@/lib/admin/giga-actor', async () => {
 
 const scenariosRoute = await import('@/app/api/giga-admin/users/[id]/point-b/plan/versions/[versionId]/scenarios/route')
 const stateRoute = await import('@/app/api/v1/point-b/state/route')
+const quickRoute = await import('@/app/api/giga-admin/users/[id]/point-b/plan/quick-draft/route')
+const { QUICK_DRAFT_REASON_FIRST, QUICK_DRAFT_IN_REVIEW, QUICK_DRAFT_NO_DATA } = await import('@/lib/point-b/plan/quick-draft')
+const { WORDING_WARNING_TEXT } = await import('@/lib/point-b/strategy/ai-wording')
+const { validateStrategy } = await import('@/lib/point-b/strategy/validate')
 const { loadModelForCompany } = await import('@/lib/point-b/model/load')
 
 const body = (method: string, b?: unknown) =>
@@ -144,6 +152,7 @@ beforeEach(() => {
   s.audits.length = 0
   s.breakPlanTables = false
   s.break129 = false
+  s.limited = false
   as('admin')
 })
 afterEach(() => { vi.useRealTimers() })
@@ -356,14 +365,19 @@ describe('GET /api/v1/point-b/state', () => {
     expect(d.overview.result.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000 })
     // the goal is the owner's draft: the overview says so
     expect(d.overview.result.warnings.some((w: string) => /не проверена экспертом/.test(w))).toBe(true)
-    expect(d.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
+    // R3: nobody works on the plan yet, but the data carries one — the client WAITS for the team (no «эксперт готовит»).
+    expect(d.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null, prep: { kind: 'waiting', missing: [], since: null } })
   })
 
   it('state: client sees scenarios only from the approved version (draft and in_review never leak)', async () => {
     // (a) only a draft with scenarios
     withPlan([versionRow({ scenarios: [fakeScenario('DRAFT-MARK')], selected_scenario: 'moderate', expert_notes: 'DRAFT-NOTES' })])
     let r = await state()
-    expect(r.body.data.plan).toEqual({ status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
+    expect(r.body.data.plan).toEqual({
+      status: 'preparing', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null,
+      // R3: a draft is open — the team works on the plan
+      prep: { kind: 'in_work', missing: [], since: versions()[0].created_at },
+    })
     expect(JSON.stringify(r.body)).not.toContain('DRAFT-MARK')
 
     // (b) a version in review
@@ -371,6 +385,7 @@ describe('GET /api/v1/point-b/state', () => {
     r = await state()
     expect(r.body.data.plan.scenarios).toEqual([])
     expect(r.body.data.plan.status).toBe('preparing')
+    expect(r.body.data.plan.prep.kind).toBe('in_review')
     expect(JSON.stringify(r.body)).not.toContain('DRAFT-MARK')
 
     // (c) an approved version and, above it, a newer draft: the client sees the approved one only
@@ -386,6 +401,7 @@ describe('GET /api/v1/point-b/state', () => {
       scenarios: [fakeScenario('APPROVED-MARK')],
       // an approved version with the stored default `{}` has an empty strategy (not «none»)
       strategy: { items: [], milestones: [], progress: {}, matrix: { points: [], unrated: 0 } },
+      prep: { kind: 'published', missing: [], since: null },
     })
     expect(JSON.stringify(r.body)).not.toContain('DRAFT2-MARK')
 
@@ -419,7 +435,10 @@ describe('GET /api/v1/point-b/state', () => {
     expect(r.status).toBe(200)
     expect(r.body.data.overview.result).toMatchObject({ level: 0, kind: 'none', scenarios: [] })
     expect(r.body.data.overview.result.missing.map((m: { key: string }) => m.key)).toEqual(['goal', 'revenue_base'])
-    expect(r.body.data.plan).toEqual({ status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
+    expect(r.body.data.plan).toMatchObject({ status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, strategy: null })
+    // R3: the client is told what the plan needs and where to add it
+    expect(r.body.data.plan.prep).toMatchObject({ kind: 'needs_data', since: null })
+    expect(r.body.data.plan.prep.missing.map((m: { key: string }) => m.key)).toEqual(['goal', 'revenue_base'])
   })
 
   it('state: a company without a goal is level 0 and asks for the goal; with a goal but no funnel it is the growth model', async () => {
@@ -708,3 +727,78 @@ describe('loadModelForCompany', () => {
     expect(inputs.template).toBe('default')
   })
 })
+
+describe('POST …/plan/quick-draft — «Собрать черновик плана» (R3, M1)', () => {
+  const quick = async (b: unknown = {}, user = CLIENT) => json(await quickRoute.POST(body('POST', b), { params: { id: user } }))
+
+  it('Admin gets a draft in one click: the scenarios of the model, the pace «умеренный», «Первая версия плана», a rule strategy and pending recommendations — nothing is approved', async () => {
+    const r = await quick()
+    expect(r.status, JSON.stringify(r.body)).toBe(201)
+    expect(r.body.data).toMatchObject({ created: true, level: 1, scenarios: 3, selectedScenario: 'moderate' })
+    const v = versions()[0]
+    expect(v).toMatchObject({ status: 'draft', version: 1, change_reason: QUICK_DRAFT_REASON_FIRST, selected_scenario: 'moderate', author_kind: 'admin' })
+    expect((v.scenarios as Array<{ key: string }>).map((x) => x.key)).toEqual(['cautious', 'moderate', 'aggressive'])
+    const checked = validateStrategy(v.strategy)
+    expect(checked.ok).toBe(true)
+    if (!checked.ok) return
+    const tasks = checked.strategy.items.filter((n) => n.kind === 'task')
+    expect(tasks.length).toBeGreaterThanOrEqual(3)
+    expect(tasks.length).toBeLessThanOrEqual(7)
+    // the limiting factor of the funnel comes first and says so
+    const first = checked.strategy.items.find((n) => n.kind === 'strategy')!
+    expect(first.impact).toBe(5)
+    expect(first.description).toMatch(/Ограничивающий фактор/)
+    // recommendations of the rules wait for the check; the AI is not connected → a warning, the rules still work
+    expect(db().pb_recommendations.length).toBeGreaterThanOrEqual(1)
+    expect(db().pb_recommendations.every((x) => x.status === 'pending_review' && x.version_id === v.id)).toBe(true)
+    expect(r.body.data.warnings).toContain(WORDING_WARNING_TEXT.no_api_key)
+    // nothing published, the client sees nothing of it
+    expect(db().pb_plans[0].published_version_id).toBeNull()
+    const st = await state()
+    expect(st.body.data.plan).toMatchObject({ status: 'preparing', scenarios: [], prep: { kind: 'in_work' } })
+    expect(s.audits.map((a) => a.action)).toEqual(['point_b.plan.quick_draft'])
+    expect(s.audits[0].metadata).toMatchObject({ version: 1, created: true, scenarios: 3, recommendations: { created: db().pb_recommendations.length } })
+  })
+
+  it('only Admin / Super Admin (PO): a super_expert (or staff without clients.review) gets 403 and nothing is written', async () => {
+    for (const role of ['super_expert', 'support'] as const) {
+      as(role)
+      const r = await quick()
+      expect(r.status).toBe(403)
+    }
+    expect(versions()).toHaveLength(0)
+    expect(db().pb_recommendations).toHaveLength(0)
+  })
+
+  it('without the data a plan needs: 409 with what is missing, nothing written (no invented plan)', async () => {
+    s.h = seed({ goal: false })
+    const r = await quick()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe(QUICK_DRAFT_NO_DATA)
+    expect(r.body.reasons.join(' ')).toMatch(/Цель по годовой выручке/)
+    expect(db().pb_plans).toHaveLength(0)
+    expect(versions()).toHaveLength(0)
+  })
+
+  it('an open draft is completed (the staff strategy kept), a version in review refuses; the limit answers 429', async () => {
+    draft() // an empty draft of the staff: no scenarios, no strategy
+    versions()[0].strategy = { items: [], milestones: [] }
+    const r = await quick({ ai: false })
+    expect(r.status).toBe(200)
+    expect(r.body.data).toMatchObject({ created: false, scenarios: 3, selectedScenario: 'moderate' })
+    expect(versions()).toHaveLength(1)
+    expect(r.body.data.strategy.filled).toBe(true)
+    // a second click: the strategy the draft now has is never overwritten
+    const again = await quick({ ai: false })
+    expect(again.body.data.strategy.filled).toBe(false)
+
+    versions()[0].status = 'in_review'
+    const refused = await quick({ ai: false })
+    expect(refused.status).toBe(409)
+    expect(refused.body.error).toBe(QUICK_DRAFT_IN_REVIEW)
+
+    s.limited = true
+    expect((await quick({ ai: false })).status).toBe(429)
+  })
+})
+

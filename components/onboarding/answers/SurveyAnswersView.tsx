@@ -1,5 +1,6 @@
 'use client'
 
+import { POINT_A_KEY_QUESTIONS_LABEL } from '@/lib/survey/point-a-minimum'
 import { useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import AnswerEditorModal, { type AnswerEditorTarget } from '@/components/onboarding/AnswerEditorModal'
@@ -100,7 +101,7 @@ export function SurveyAnswersView(props: SurveyAnswersViewProps) {
               Отвечено {summary.answered} из {summary.total} · глубина {summary.depth} %
             </p>
             <p className="mt-1 text-xs text-on-surface-variant print:text-black/70">
-              Минимум для Точки А: <b className="text-on-surface print:text-black">{summary.minimum.answered} из {summary.minimum.total}</b>
+              {POINT_A_KEY_QUESTIONS_LABEL}: <b className="text-on-surface print:text-black">{summary.minimum.answered} из {summary.minimum.total}</b>
               {summary.unknown > 0 && <> · «Не знаю»: {summary.unknown}</>}
               {summary.approx > 0 && <> · примерно: {summary.approx}</>}
             </p>

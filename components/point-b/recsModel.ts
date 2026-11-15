@@ -111,7 +111,7 @@ export function parseRecsFromBody(body: unknown): PointBRecsFields {
 // ── Labels ──────────────────────────────────────────────────────────────
 
 export const RECS_HONEST_TEXT = 'Рекомендации ИИ показываются только после проверки экспертом'
-export const RECS_EMPTY_PREPARING = 'Эксперт готовит рекомендации'
+export const RECS_EMPTY_PREPARING = 'Рекомендации на проверке'
 export const RECS_EMPTY_NONE = 'Пока нет проверенных рекомендаций'
 export const STALE_LABEL = 'Требует обновления'
 export const INSIGHT_BADGE = 'Подсказка платформы · не проверена экспертом'

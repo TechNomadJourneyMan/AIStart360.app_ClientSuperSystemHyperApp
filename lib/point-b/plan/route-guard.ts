@@ -38,6 +38,7 @@ export const PLAN_AUDIT = {
   scenarioSelected: 'point_b.scenario.selected',
   strategySaved: 'point_b.strategy.saved',
   tasksSyncFailed: 'point_b.tasks.sync_failed',
+  quickDraft: 'point_b.plan.quick_draft',
 } as const
 
 /** Shown to the approver when the version is published but its tasks did not reach the client's action plan. */

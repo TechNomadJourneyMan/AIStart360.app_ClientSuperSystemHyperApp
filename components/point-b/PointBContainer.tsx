@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { isTabKey, type PointBTabKey } from './overviewModel'
 import PlanWorkflowSection from './PlanWorkflowSection'
-import PointBDetails from './PointBDetails'
 import PointBPaywall from './PointBPaywall'
 import FinmodelTab from './tabs/FinmodelTab'
 import OverviewTab from './tabs/OverviewTab'
@@ -26,8 +25,8 @@ import { usePointBState } from './usePointBState'
  *   «Рекомендации» — recommendations verified by an expert (who, when, for what), the count of those still checked;
  *   «План-факт и история» — plan · fact · forecast by month with the verdict, goal progress, «Факт за месяц», versions (Ф6b);
  *   «Что если»    — six calculators on the owner's own data (a calculation, not a recommendation, never changes the plan);
- *   «Финмодель»   — the money of the business (level 2): inputs, hints, origin badges;
- *   «Подробности» — the previous page as it was ({@link PointBDetails}), loaded on first open.
+ *   «Финмодель»   — the money of the business (level 2) and the revenue by month (R3, M2): inputs, hints, origin badges.
+ * R3 (M3, решение PO): «Подробности» (the old V2 calculation) is not shown to the client any more — one calculation.
  * A failure of the state request stays inside the first two tabs.
  *
  * Mounted on all client-facing Point B surfaces so behaviour is identical no matter which
@@ -51,7 +50,7 @@ export default function PointBContainer() {
   return (
     <div className="space-y-4">
       {/* The expert's plan: status banner and goal corrections that wait for the owner's answer. */}
-      <PlanWorkflowSection />
+      <PlanWorkflowSection prep={snap.phase === 'ready' ? snap.plan.prep : null} />
       <PointBTabs
         // A deep link remounts the strip once, on the asked tab.
         key={deepTab ?? 'overview'}
@@ -70,7 +69,6 @@ export default function PointBContainer() {
           whatif: <WhatIfTab state={snap} />,
           // A saved finmodel recalculates the overview and the scenarios from the new money.
           finmodel: <FinmodelTab onSaved={() => void ctl.load()} />,
-          details: <PointBDetails />,
         }}
       />
     </div>

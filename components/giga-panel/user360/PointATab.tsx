@@ -6,6 +6,7 @@ import { BadgeCheck, ChevronDown, ChevronRight, MessageSquarePlus, Pencil, Refre
 import type { PointAComment, PointAState } from '@/lib/point-a/v4/state'
 import type { V4Block } from '@/lib/point-a/v4/engine'
 import { CHECK_LABELS } from '@/lib/point-a/v4/check-labels'
+import { formatGri } from '@/lib/format/gri'
 import {
   Badge, Button, EmptyState, ErrorState, GigaApiError, Panel, Skeleton, StatTile, cx, fmtDate, fmtDateTime, gigaFetch, inputClass, useGigaQuery, type Tone,
 } from '../kit'
@@ -152,7 +153,7 @@ function ExpertPointA({ userId, canReview }: { userId: string; canReview: boolea
             <StatTile label="Балл" value={snap.overall == null ? '—' : `${round(snap.overall)}/100`} hint={snap.stage ? `стадия: ${STAGE[snap.stage] ?? snap.stage}` : undefined} tone="green" />
             <StatTile label="Достоверность" value={pct(snap.confidence)} hint="насколько балл опирается на факты" tone="blue" />
             <StatTile label="Покрытие данными" value={pct(snap.coverage)} hint={`анкета ${s.sources.survey.percent}% · документов ${s.sources.documents.parsed}`} tone="violet" />
-            <StatTile label="GRI" value={s.gri.index100 == null ? '—' : String(s.gri.index100)} hint={s.gri.assessedAt ? fmtDate(s.gri.assessedAt) : 'тест не пройден'} tone="amber" />
+            <StatTile label="GRI" value={formatGri(s.gri.index, { empty: '—', scale: true })} hint={s.gri.assessedAt ? fmtDate(s.gri.assessedAt) : 'тест не пройден'} tone="amber" />
           </div>
         )}
       </Panel>

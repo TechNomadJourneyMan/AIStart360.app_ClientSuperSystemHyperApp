@@ -218,3 +218,30 @@ describe('helpers', () => {
     expect(documentSize({ size_bytes: null, file_size: 20 })).toBe(20)
   })
 })
+
+// R3-PA (N11): 28 documents «в очереди» since April–May were «обрабатываются»
+// for months. After a day without progress the client sees the truth and what
+// to do; the row (and its data) is not touched.
+describe('a document stuck for more than a day (R3-PA)', () => {
+  it('queued since April → «Не обработан — загрузите заново», not in flight (no polling), may be started again', async () => {
+    const { ABANDONED_LABEL, isDocumentAbandoned } = await import('@/lib/documents/status-view')
+    const april = doc({ uploaded_at: '2026-04-10T08:00:00Z', updated_at: '2026-04-10T08:00:00Z' })
+    const v = documentStatusView(april, NOW)
+    expect(v).toMatchObject({ label: ABANDONED_LABEL, short: 'Не обработан', tone: 'warning', inFlight: false, stalled: false, abandoned: true, canReprocess: true })
+    expect(v.detail).toContain('10.04.2026')
+    expect(v.detail).toContain('Загрузите файл заново')
+    expect(isDocumentAbandoned(april, NOW)).toBe(true)
+    // the row itself is untouched
+    expect(april.parse_status).toBe('queued')
+  })
+
+  it('«processing» for days is the same; within a day it is still in work', async () => {
+    const { isDocumentAbandoned } = await import('@/lib/documents/status-view')
+    expect(documentStatusView(doc({ parse_status: 'processing', processing_stage: 'parsing', updated_at: '2026-10-04T12:00:00Z' }), NOW).abandoned).toBe(true)
+    const fresh = documentStatusView(doc({ parse_status: 'processing', processing_stage: 'parsing', updated_at: '2026-10-06T00:00:00Z' }), NOW)
+    expect(fresh).toMatchObject({ abandoned: false, inFlight: true })
+    expect(isDocumentAbandoned({ parse_status: 'parsed', updated_at: '2026-01-01T00:00:00Z' }, NOW)).toBe(false)
+    // no time at all → not judged
+    expect(isDocumentAbandoned({ parse_status: 'queued' }, NOW)).toBe(false)
+  })
+})

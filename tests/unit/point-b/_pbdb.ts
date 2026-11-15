@@ -212,3 +212,23 @@ export function pbDb(seed: Record<string, Row[]> = {}) {
   }
   return { sb: client as unknown as SupabaseClient, db, writes }
 }
+
+/** R3 (решение PO): the approval needs the scenarios of the model and a chosen pace. */
+export const CALCULATED_SCENARIOS = [
+  { key: 'cautious', label: 'Осторожный' },
+  { key: 'moderate', label: 'Умеренный' },
+  { key: 'aggressive', label: 'Ускоренный' },
+]
+
+/**
+ * Marks the open versions (draft / in review) without scenarios as calculated with the pace «умеренный» — what the
+ * staff do before an approval («Рассчитать сценарии» + the pace, or «Собрать черновик плана»).
+ */
+export function markCalculated(db: Record<string, Row[]>, versionId?: string): void {
+  for (const v of db.pb_plan_versions ?? []) {
+    if (versionId ? v.id !== versionId : !['draft', 'in_review'].includes(String(v.status))) continue
+    if (Array.isArray(v.scenarios) && v.scenarios.length) continue
+    v.scenarios = structuredClone(CALCULATED_SCENARIOS)
+    v.selected_scenario = 'moderate'
+  }
+}

@@ -212,20 +212,32 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
   },
   {
     name: 'get_point_b',
-    description: 'Точка Б: целевое состояние, разрыв по выручке, требуемый темп, реалистичность цели и план по горизонтам.',
+    description: 'Точка Б: автоматический расчёт (разрыв до цели, прогноз при текущем ходе, вердикт, чего не хватает) и одобренный план (темп, сценарии, стратегия, проверенные рекомендации).',
     kind: 'read',
     input: z.object({}).strict(),
     async run(_a, t) {
-      // diagnostics has no created_at (the old order failed → always «not calculated»).
-      const { data: diags } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
-      const diag = (diags ?? [])[0] as { id: string } | undefined
-      if (!diag) return { status: 'not_calculated' }
-      const { data } = await t.sb.from('point_b_analysis').select('roadmap, calculated_at').eq('diagnostic_id', diag.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
-      const r = ((data ?? [])[0] as { roadmap?: Record<string, unknown> } | undefined)?.roadmap
-      // Point B is readable by the diagnostic's owner and staff only (RLS 029):
-      // for other members say so instead of «not calculated».
-      if (!r) return { status: t.ownerId && t.ownerId !== t.userId ? 'no_access' : 'not_calculated' }
-      return { gap: r.gap, realism: r.realism, target_overall: r.target_overall_score, horizons: r.horizons, levers: r.levers }
+      // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan version
+      // (lib/point-b/report.ts), never the old V2 snapshot of point_b_analysis and never a draft.
+      const owner = t.ownerId ?? t.userId
+      const [{ createServiceClient }, { companyOfUser }, { loadPointBReport, pointBReportText }] = await Promise.all([
+        import('@/lib/supabase-service'), import('@/lib/point-b/plan/flow'), import('@/lib/point-b/report'),
+      ])
+      // Service role: the tenant (company) was authorised by the route; the plan tables are not readable by a member.
+      const sb = createServiceClient()
+      const company = await companyOfUser(sb, owner)
+      // Point B lives on the owner's (first) company: another company of the same owner has none of its own yet.
+      if (!company || company.id !== t.companyId) return { status: 'not_calculated' }
+      const report = await loadPointBReport(sb, owner, { now: t.now })
+      return {
+        summary: pointBReportText(report),
+        level: report.level,
+        verdict: report.verdict,
+        gap: report.gap,
+        forecast: report.forecast,
+        missing: report.missing,
+        plan: report.plan,
+        recommendations: report.recommendations,
+      }
     },
   },
   {

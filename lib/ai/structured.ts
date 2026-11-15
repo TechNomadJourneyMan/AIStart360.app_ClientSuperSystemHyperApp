@@ -51,6 +51,21 @@ interface GenerateObjectOptions<T> {
   timeoutMs?: number
   /** Tag used in log lines so failures are traceable to a caller. */
   label?: string
+  /**
+   * Called once when the call is over (R3-PA: diagnostics.ai_error / ai_model):
+   * ok, or why the LAST attempt failed — 'schema' (JSON that fails the schema),
+   * 'cut' (cut at the token limit), 'not_json', or the call's own reason
+   * (timeout / http_<n> / no_route / budget / no_answer / error, lib/ai/openrouter.ts),
+   * 'no_key' — and the model that answered last.
+   */
+  onDiagnostics?: (d: StructuredDiagnostics) => void
+}
+
+export interface StructuredDiagnostics {
+  ok: boolean
+  failure: string | null
+  model: string | null
+  attempts: number
 }
 
 /** Ceiling of the output budget a cut structured answer is retried with. */
@@ -84,8 +99,16 @@ export async function generateObjectViaOpenRouter<T>(
 ): Promise<T | null> {
   const label = opts.label ?? 'structured'
   const privacySensitive = label.startsWith('omnichannel:')
+  let lastFailure: string | null = null
+  let lastModel: string | null = null
+  let attempts = 0
+  const report = (ok: boolean) => {
+    try { opts.onDiagnostics?.({ ok, failure: ok ? null : lastFailure ?? 'error', model: lastModel, attempts }) } catch { /* a reporter never breaks the call */ }
+  }
   if (!hasOpenRouterKey()) {
     console.warn(`[${label}] No OPENROUTER_API_KEY — skipping AI generation`)
+    lastFailure = 'no_key'
+    report(false)
     return null
   }
 
@@ -130,6 +153,8 @@ export async function generateObjectViaOpenRouter<T>(
     const user = `${opts.user}${retryInstruction}${inBandSchema}`
 
     let finishReason: string | undefined
+    let callFailure: string | null = null
+    attempts += 1
     const raw = await chatWithOpenRouter({
       feature: opts.feature,
       userId: opts.userId,
@@ -144,9 +169,13 @@ export async function generateObjectViaOpenRouter<T>(
       privacySensitive,
       timeoutMs: opts.timeoutMs,
       label,
-      onFinish: (info) => { finishReason = info.finishReason },
+      onFinish: (info) => { finishReason = info.finishReason; if (info.model) lastModel = info.model },
+      onFailure: (info) => { callFailure = info.reason; if (info.model) lastModel = info.model },
     })
-    if (!raw) continue
+    if (!raw) {
+      lastFailure = callFailure ?? 'no_answer'
+      continue
+    }
 
     const parsed = extractJson(raw)
     if (parsed == null) {
@@ -156,9 +185,11 @@ export async function generateObjectViaOpenRouter<T>(
           : `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length}); tail="${raw.slice(-160).replace(/\n/g, ' ')}"`,
       )
       escalate(attempt)
+      const cut = wasCut(raw, finishReason)
+      lastFailure = cut ? 'cut' : 'not_json'
       // A cut answer is cut again with the same budget: give the retry more
       // room (never less than asked, at most MAX_STRUCTURED_TOKENS).
-      if (attempt < 1 && wasCut(raw, finishReason)) {
+      if (attempt < 1 && cut) {
         maxTokens = Math.max(maxTokens, Math.min(maxTokens * 2, MAX_STRUCTURED_TOKENS))
         console.warn(`[${label}] attempt ${attempt + 1}: answer cut at the token limit, retrying with maxTokens=${maxTokens}`)
       }
@@ -186,11 +217,14 @@ export async function generateObjectViaOpenRouter<T>(
         `[${label}] attempt ${attempt + 1}: schema validation failed:`,
         JSON.stringify(result.error.issues.slice(0, 4)),
       )
+      lastFailure = 'schema'
       escalate(attempt)
       continue
     }
+    report(true)
     return result.data
   }
+  report(false)
   return null
 }
 

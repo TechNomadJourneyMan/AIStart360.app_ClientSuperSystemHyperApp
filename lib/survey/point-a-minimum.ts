@@ -23,6 +23,14 @@ import { isAnswerFilled } from './answer-filled'
 
 export type StepOf = (key: string) => number | null
 
+/**
+ * R3-PA (N7, R-071): this counter is the KEY QUESTIONS of Point A, not the rule
+ * of the score — closing them did not give a score (the rule also needs ≥ 60 %
+ * of the blocks' weight and «Финансы» or «Продажи», lib/point-a/v4/score-path.ts).
+ * «Минимум для Точки А» now names that rule (the Point A page, the review step).
+ */
+export const POINT_A_KEY_QUESTIONS_LABEL = 'Ключевые вопросы Точки А'
+
 export interface MinimumCheck {
   block: string
   check: string

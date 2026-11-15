@@ -37,10 +37,11 @@ beforeEach(() => {
 })
 
 describe('paidFanOutPaths — decided for the OWNER', () => {
-  it('Free → no paid call; Pro → both; Point A only → the analysis only', async () => {
+  it('Free → no paid call; Pro → the analysis only (R3, S3: the Point B AI strategy is a staff draft); Point A only → the analysis', async () => {
     expect(await row.paidFanOutPaths({} as never, 'owner')).toEqual([])
     s.sections = { point_a: true, point_b: true }
-    expect(await row.paidFanOutPaths({} as never, 'owner')).toEqual([ANALYZE, POINT_B])
+    expect(await row.paidFanOutPaths({} as never, 'owner')).toEqual([ANALYZE])
+    expect(await row.paidFanOutPaths({} as never, 'owner')).not.toContain(POINT_B)
     s.sections = { point_a: true, point_b: false }
     expect(await row.paidFanOutPaths({} as never, 'owner')).toEqual([ANALYZE])
   })
@@ -90,7 +91,7 @@ describe('the Point A snapshot for a Free owner', () => {
     }
   })
 
-  it('Pro: «processing» and both paid calls, as before', async () => {
+  it('Pro: «processing» and the paid analysis (never the Point B AI strategy — R3, S3)', async () => {
     const prev = process.env.OPENROUTER_API_KEY
     process.env.OPENROUTER_API_KEY = 'k'
     s.sections = { point_a: true, point_b: true }
@@ -98,7 +99,7 @@ describe('the Point A snapshot for a Free owner', () => {
       const { deps, after, store } = setup()
       await buildPointASnapshot('co', { trigger: 'event' }, deps)
       expect(store.mock.calls[0][1]).toMatchObject({ aiStatus: 'processing' })
-      expect(after).toHaveBeenCalledWith(expect.objectContaining({ paidPaths: [ANALYZE, POINT_B] }))
+      expect(after).toHaveBeenCalledWith(expect.objectContaining({ paidPaths: [ANALYZE] }))
     } finally {
       process.env.OPENROUTER_API_KEY = prev
     }
@@ -125,14 +126,14 @@ describe('catchUpPaidAi — after the move to Pro', () => {
     return sb
   }
 
-  it('Pro now: the analysis that did not run (ai_status none) and the Point B bridge are fired', async () => {
+  it('Pro now: the analysis that did not run (ai_status none) is fired — not the Point B AI strategy (R3, S3)', async () => {
     s.sections = { point_a: true, point_b: true }
     const sb = fakeSb({ id: 'd-1', ai_status: 'none' })
     const fire = vi.fn()
     const fired = await row.catchUpPaidAi('owner', { sb: sb as never, baseUrl: 'https://app.test', fire })
-    expect(fired).toEqual([ANALYZE, POINT_B])
+    expect(fired).toEqual([ANALYZE])
     expect(sb.updates).toEqual([{ ai_status: 'processing' }])
-    expect(fire).toHaveBeenCalledWith(expect.objectContaining({ diagnosticId: 'd-1', userId: 'owner', paths: [ANALYZE, POINT_B] }))
+    expect(fire).toHaveBeenCalledWith(expect.objectContaining({ diagnosticId: 'd-1', userId: 'owner', paths: [ANALYZE] }))
   })
 
   it('still Free / no scored Point A / analysis already done → nothing (or only the missing part)', async () => {
@@ -142,15 +143,21 @@ describe('catchUpPaidAi — after the move to Pro', () => {
     s.official = { state: 'preliminary' }
     expect(await row.catchUpPaidAi('owner', { sb: fakeSb({ id: 'd-1', ai_status: 'none' }) as never, baseUrl: 'https://app.test', fire })).toEqual([])
     s.official = { state: 'scored' }
-    expect(await row.catchUpPaidAi('owner', { sb: fakeSb({ id: 'd-1', ai_status: 'completed' }) as never, baseUrl: 'https://app.test', fire })).toEqual([POINT_B])
-    expect(fire).toHaveBeenCalledTimes(1)
+    // the analysis is done: nothing is left to run (the Point B AI strategy is a staff draft — R3, S3)
+    expect(await row.catchUpPaidAi('owner', { sb: fakeSb({ id: 'd-1', ai_status: 'completed' }) as never, baseUrl: 'https://app.test', fire })).toEqual([])
+    expect(fire).not.toHaveBeenCalled()
   })
 
   it('billing runs the catch-up when the plan gives Pro; opening Точка А / Б individually too', async () => {
     const { readFileSync } = await import('node:fs')
     expect(readFileSync('lib/payments/billing.ts', 'utf8')).toMatch(/res\.profile_tier === 'pro'[\s\S]{0,400}catchUpPaidAi\(userId\)/)
     expect(readFileSync('app/api/giga-admin/users/[id]/access/route.ts', 'utf8')).toMatch(/point_a === true \|\| patch\.feature_flags\.point_b === true[\s\S]{0,400}catchUpPaidAi\(userId\)/)
-    // the recalculation route decides the paid calls for the owner too
-    expect(readFileSync('app/api/v1/diagnostics/recalculate/route.ts', 'utf8')).toContain('paidFanOutPaths(db, user_id)')
+    // R3-PA (B4): the recalculation route has no fan-out of its own any more — a
+    // company goes only through the snapshot, which decides the paid calls for
+    // the OWNER (deps.paidAi → paidFanOutPaths); without a company there is no AI.
+    const recalc = readFileSync('app/api/v1/diagnostics/recalculate/route.ts', 'utf8')
+    expect(recalc).not.toContain('fireAiFanOut')
+    expect(recalc).toContain('buildPointASnapshot(')
+    expect(readFileSync('lib/point-a/snapshot.ts', 'utf8')).toContain("paidAi: async (service, ownerId) => (await import('./diagnostic-row')).paidFanOutPaths(service, ownerId)")
   })
 })

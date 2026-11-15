@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server'
 import type { StaffRole } from '@/lib/admin/rbac'
 import { loadTaskStatuses, syncPlanTasks, taskRowOf } from '@/lib/point-b/strategy/tasks'
 import type { PlanStrategy, StrategyNode } from '@/lib/point-b/strategy/types'
-import { pbDb } from './_pbdb'
+import { CALCULATED_SCENARIOS, pbDb } from './_pbdb'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
 const CLIENT = 'cccccccc-0000-4000-8000-000000000001'
@@ -291,7 +291,9 @@ function seedInReview(strategy: unknown, over: { id?: string; version?: number; 
     h.db.pb_plans.push({ id: 'plan-1', company_id: COMPANY, user_id: CLIENT, current_version_id: null, published_version_id: null, settings: {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' })
   }
   h.db.pb_plan_versions.push({
-    id: over.id ?? VERSION, plan_id: 'plan-1', version: over.version ?? 1, status: 'in_review', base_snapshot_id: null, goals: goalsSnap, assumptions: {}, scenarios: [], selected_scenario: null,
+    id: over.id ?? VERSION, plan_id: 'plan-1', version: over.version ?? 1, status: 'in_review', base_snapshot_id: null, goals: goalsSnap, assumptions: {},
+    // R3: the approval needs calculated scenarios and a chosen pace.
+    scenarios: structuredClone(CALCULATED_SCENARIOS), selected_scenario: 'moderate',
     strategy, risks: [], expert_notes: null, change_reason: 'Первый план', author_id: EXPERT, author_name: 'Алия Эксперт', author_kind: 'expert',
     submitted_at: '2026-10-09T00:00:00Z', approved_by: null, approved_at: null, approval_exception: null, rejected_by: null, rejected_at: null, rejected_reason: null, created_at: '2026-10-09T00:00:00Z',
   })

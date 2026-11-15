@@ -107,10 +107,12 @@ export async function GET(_req: NextRequest) {
       console.error('[point-b] persist failed (non-fatal):', persistErr)
     }
 
-    // Overlay the persisted AI bridge onto the live recompute (engine emits
-    // null/'none'; the persisted row may hold a completed strategy).
-    pointB.ai_strategy = aiStrategy
-    pointB.ai_status = aiStatus
+    // R3 (S3, решение PO): the persisted AI bridge is a draft for STAFF — this route answers the client (the session
+    // user's own Point B), so the AI strategy never goes out: the columns stay as they are for the staff tools.
+    void aiStrategy
+    void aiStatus
+    pointB.ai_strategy = null
+    pointB.ai_status = 'none'
 
     // Goals on any metric (lib/goals): the gap А→Б, pace and realism of each.
     if (companyId) {

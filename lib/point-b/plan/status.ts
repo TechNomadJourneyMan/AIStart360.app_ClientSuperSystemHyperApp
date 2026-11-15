@@ -40,6 +40,19 @@ export const REASON_NO_PRIMARY_GOAL = 'Не задана главная цель
 export const REASON_PRIMARY_NOT_VERIFIED = 'Главная цель не проверена экспертом'
 export const REASON_NO_CHANGE_REASON = 'Не указана причина изменений'
 export const REASON_EXCEPTION_TOO_SHORT = `Причина исключения должна быть не короче ${EXCEPTION_REASON_MIN} символов`
+/** R3 (решение PO): план без рассчитанных сценариев и выбранного темпа не публикуется — исключением это не обходится. */
+export const REASON_NO_SCENARIOS = 'Сценарии не рассчитаны — рассчитайте их в черновике'
+export const REASON_NO_PACE = 'Не выбран темп плана — выберите один из рассчитанных сценариев'
+
+const SCENARIO_KEYS: readonly string[] = ['cautious', 'moderate', 'aggressive']
+
+/** The keys of the scenarios stored in a version (ScenarioResult objects with a known key). */
+export function calculatedScenarioKeys(scenarios: unknown): string[] {
+  if (!Array.isArray(scenarios)) return []
+  return scenarios
+    .map((s) => (s && typeof s === 'object' ? (s as { key?: unknown }).key : null))
+    .filter((k): k is string => typeof k === 'string' && SCENARIO_KEYS.includes(k))
+}
 
 const PASSING: readonly GoalReviewStatus[] = ['verified', 'agreed']
 
@@ -52,13 +65,14 @@ export function validExceptionReason(reason: string | null | undefined): string 
 /**
  * Conditions of in_review → approved (spec §6):
  *  - the primary goal is set and verified / agreed by the owner;
- *  - the version states why it changes (changeReason).
+ *  - the version states why it changes (changeReason);
+ *  - R3 (PO): the scenarios of the model are calculated and the pace is chosen among them.
  * An Admin may approve with an exception when the GOAL condition fails: the
  * exception reason (≥ 10 characters) is stored on the version and in the audit.
- * A missing change reason cannot be waived by an exception.
+ * A missing change reason, scenarios or pace cannot be waived by an exception.
  */
 export function checkApprovalConditions(
-  v: { goals: PlanGoalsSnapshot; changeReason: string | null },
+  v: { goals: PlanGoalsSnapshot; changeReason: string | null; scenarios: unknown; selectedScenario: string | null },
   opts: { exceptionReason?: string | null } = {},
 ): ApprovalCheck {
   const reasons: string[] = []
@@ -82,6 +96,10 @@ export function checkApprovalConditions(
   }
 
   if (!v.changeReason || !v.changeReason.trim()) reasons.push(REASON_NO_CHANGE_REASON)
+
+  const keys = calculatedScenarioKeys(v.scenarios)
+  if (!keys.length) reasons.push(REASON_NO_SCENARIOS)
+  else if (!v.selectedScenario || !keys.includes(v.selectedScenario)) reasons.push(REASON_NO_PACE)
 
   return reasons.length ? { ok: false, reasons } : { ok: true, exception }
 }

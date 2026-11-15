@@ -94,8 +94,14 @@ const FAN_OUT_PATHS = ['/api/v1/diagnostics/ai-analyze', '/api/v1/diagnostics/po
 export type FanOutPath = (typeof FAN_OUT_PATHS)[number]
 
 /**
+ * R3 (S3, решение PO): the AI strategy of Точка Б is a draft for STAFF only — the client's fan-out never runs it
+ * (the route itself serves staff only, app/api/v1/diagnostics/point-b/ai-generate). Only the Point A analysis.
+ */
+export const CLIENT_FAN_OUT_PATHS: readonly FanOutPath[] = [FAN_OUT_PATHS[0]]
+
+/**
  * `paths` (R2-A, ревью M-3): only the calls of the paid sections the OWNER has —
- * the AI analysis is Точка А, the strategic bridge is Точка Б. Default: both.
+ * the AI analysis is Точка А. Default: {@link CLIENT_FAN_OUT_PATHS}.
  */
 export type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[] }
 
@@ -104,12 +110,13 @@ export type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string
  * (lib/access/decision.ts for the owner, not the session: the calls are made
  * for — and billed to — the owner). A Free account gets none: no paid model
  * calls, nothing marked «failed». Any failure → none (fail closed; cost-safe).
+ * R3 (S3): never the Point B strategy — it is a staff draft, not the client's AI.
  */
 export async function paidFanOutPaths(sb: SupabaseClient, ownerId: string): Promise<FanOutPath[]> {
   try {
     const { resolveFeature } = await import('@/lib/access/decision')
-    const [a, b] = await Promise.all([resolveFeature(sb, ownerId, 'point_a'), resolveFeature(sb, ownerId, 'point_b')])
-    return [...(a.allowed ? [FAN_OUT_PATHS[0]] : []), ...(b.allowed ? [FAN_OUT_PATHS[1]] : [])]
+    const a = await resolveFeature(sb, ownerId, 'point_a')
+    return a.allowed ? [...CLIENT_FAN_OUT_PATHS] : []
   } catch (err) {
     console.error('[point-a] paid AI access unknown — no paid calls:', err instanceof Error ? err.message : err)
     return []
@@ -165,14 +172,21 @@ export interface FanOutDeps {
  * the client polls it forever. Only a row still 'processing' is changed: a route that finished in
  * the meantime ('completed' / 'failed' / 'none') keeps its own answer.
  */
-async function markFanOutFailed(path: string, opts: FanOutOpts): Promise<void> {
+async function markFanOutFailed(path: string, opts: FanOutOpts, reason = 'error'): Promise<void> {
   const { createServiceClient } = await import('@/lib/supabase-service')
   const db = createServiceClient()
-  const { error } = path === FAN_OUT_PATHS[0]
-    ? await db.from('diagnostics').update({ ai_status: 'failed' })
+  if (path === FAN_OUT_PATHS[0]) {
+    // R3-PA (migration 150): the reason the call never answered — «fanout:TimeoutError», «fanout:http_504».
+    const write = (payload: Record<string, unknown>) => db.from('diagnostics').update(payload)
       .eq('id', opts.diagnosticId).eq('user_id', opts.userId).eq('ai_status', 'processing')
-    : await db.from('point_b_analysis').update({ ai_status: 'failed' })
-      .eq('diagnostic_id', opts.diagnosticId).eq('is_current', true).eq('ai_status', 'processing')
+    let { error } = await write({ ai_status: 'failed', ai_error: `fanout:${reason}`.slice(0, 500) })
+    const { isMissingColumn } = await import('./ai-columns')
+    if (error && isMissingColumn(error)) ({ error } = await write({ ai_status: 'failed' }))
+    if (error) throw new Error(error.code ?? 'update failed')
+    return
+  }
+  const { error } = await db.from('point_b_analysis').update({ ai_status: 'failed' })
+    .eq('diagnostic_id', opts.diagnosticId).eq('is_current', true).eq('ai_status', 'processing')
   if (error) throw new Error(error.code ?? 'update failed')
 }
 
@@ -196,10 +210,10 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   const doFetch = deps.fetchImpl ?? fetch
   // Tracking is best effort: it must never make the caller (a recalculation) fail.
   const track = deps.track ?? ((work: Promise<unknown>) => { try { trackBackground(work) } catch { /* untracked */ } })
-  const markFailed = deps.markFailed ?? ((path: string, o: FanOutOpts) => markFanOutFailed(path, o))
+  const markFailed = deps.markFailed ?? ((path: string, o: FanOutOpts, reason: string) => markFanOutFailed(path, o, reason))
   const log = deps.log ?? ((line: string) => console.error(line))
   const timeoutMs = deps.timeoutMs ?? fanOutTimeoutMs()
-  for (const path of opts.paths ?? FAN_OUT_PATHS) {
+  for (const path of opts.paths ?? CLIENT_FAN_OUT_PATHS) {
     const work = (async () => {
       let reason: string | null = null
       try {
@@ -228,8 +242,24 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   }
 }
 
+/**
+ * How a pipeline run was started — the values of the orchestrator's input
+ * (lib/agents/definitions/diagnostics.ts orchestratorInput.trigger), of
+ * agent_tasks.trigger and of diagnostic_sessions.trigger alike. R3-PA (B2): the
+ * snapshot passed 'event', which the orchestrator's schema refused
+ * (INVALID_INPUT) — every automatic recalculation left a dead task.
+ */
+export type PipelineTrigger = 'manual' | 'event' | 'schedule'
+
+/** The pipeline trigger of a Point A recalculation (lib/point-a/snapshot.ts SnapshotTrigger). */
+export function pipelineTriggerOf(trigger: string): PipelineTrigger {
+  if (trigger === 'manual' || trigger === 'expert') return 'manual'
+  if (trigger === 'schedule') return 'schedule'
+  return 'event'
+}
+
 /** The diagnostic pipeline (metrics → quality → benchmarks → hypotheses → recommendations), never blocking. */
-export function startDiagnosticPipeline(opts: { companyId: string; diagnosticId: string; requestedBy: string; trigger: 'manual' | 'event'; reason: string }): void {
+export function startDiagnosticPipeline(opts: { companyId: string; diagnosticId: string; requestedBy: string; trigger: PipelineTrigger; reason: string }): void {
   void runInBackground('diagnostic-orchestrator', async () => {
     try {
       const { enqueueAgentTask } = await import('@/lib/agents/queue')

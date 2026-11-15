@@ -64,12 +64,40 @@ export interface HypothesisDeps {
   now?: () => Date
 }
 
+/**
+ * R3-PA (B3): what the light tier (Qwen) answers is brought to the schema
+ * before it is judged — a score as a string («45») or a fraction (45.6) and a
+ * rationale longer than 600 characters failed the schema, and the retry went
+ * one tier up for a formatting slip. Out-of-range scores are clamped, the
+ * rationale is cut at a sentence / word boundary. Anything else is left as is
+ * (the schema still decides).
+ */
+export function normalizeHypothesisCandidate(v: unknown): unknown {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return v
+  const o = { ...(v as Record<string, unknown>) }
+  // A string with no digit («много») is not a score of 0: the schema refuses it.
+  const digits = typeof o.score === 'string' ? o.score.replace(',', '.').replace(/[^\d.-]/g, '') : null
+  const n = digits === null ? o.score : /\d/.test(digits) ? Number(digits) : o.score
+  if (typeof n === 'number' && Number.isFinite(n)) o.score = Math.max(0, Math.min(100, Math.round(n)))
+  if (typeof o.rationale === 'string') {
+    let r = o.rationale.replace(/\s+/g, ' ').trim()
+    if (r.length > 600) {
+      const cut = r.slice(0, 600)
+      const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+      r = end >= 200 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' ') > 300 ? cut.lastIndexOf(' ') : 599).trimEnd()}…`
+    }
+    o.rationale = r
+  }
+  return o
+}
+
 export const defaultHypothesisDeps: HypothesisDeps = {
   generate: async ({ system, user, userId }) => {
     const { generateObjectViaOpenRouter } = await import('@/lib/ai/structured')
     return generateObjectViaOpenRouter({
       feature: 'point_a_hypothesis', userId, system, user, schema: HypothesisSchema,
       complexity: 'low', maxTokens: 500, temperature: 0.2, timeoutMs: 30_000, label: 'point-a:hypothesis',
+      normalizeCandidate: normalizeHypothesisCandidate,
     })
   },
 }

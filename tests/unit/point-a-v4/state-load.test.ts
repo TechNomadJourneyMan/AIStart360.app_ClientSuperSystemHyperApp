@@ -43,8 +43,9 @@ describe('loadPointAState (W4)', () => {
     expect(state.snapshot?.id).toBe('snap-2')
     expect(state.history.map((h) => h.id)).toEqual(['snap-2', 'snap-1'])
     expect(state.review).toEqual({ status: 'earlier', by: 'Алия', at: '2026-10-02T00:00:00Z' })
-    expect(state.gri).toEqual({ index100: 64, assessedAt: '2026-09-01T00:00:00Z' })
-    expect(state.sources.documents).toEqual({ parsed: 1, processing: 1, failed: 0 })
+    // R3-PA (R-036): GRI on its one scale 0–10 — 6.4, never «64 из 100».
+    expect(state.gri).toEqual({ index: 6.4, assessedAt: '2026-09-01T00:00:00Z' })
+    expect(state.sources.documents).toEqual({ parsed: 1, processing: 1, failed: 0, stale: 0 })
     expect(state.sources.metrics).toBe(1)
     expect(state.sources.survey.completed).toBeGreaterThanOrEqual(0)
     expect(state.goals.map((g) => g.goal.metricId)).toEqual([REVENUE])
