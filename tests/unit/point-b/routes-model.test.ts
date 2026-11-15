@@ -802,3 +802,27 @@ describe('POST …/plan/quick-draft — «Собрать черновик пла
   })
 })
 
+
+describe('R3-SLA: the plan_prep task in the client state (migration 152)', () => {
+  const prepTask = (over: Record<string, unknown> = {}) => ({
+    id: 'sla-1', source: 'plan_prep', source_id: COMPANY, client_id: CLIENT, assignee_id: null, first_response_at: null, closed_at: null,
+    received_at: '2026-10-18T08:00:00Z', answer_due_at: '2026-10-20T08:00:00Z', ...over,
+  })
+
+  it('«План готовит: <имя>, до <срок>» — the holder\'s profile name; «Назначаем ответственного» while nobody holds it', async () => {
+    db().expert_sla_tasks = [prepTask({ assignee_id: ADMIN })]
+    let r = await state()
+    expect(r.body.data.plan.prep).toEqual({ kind: 'waiting', missing: [], since: null, task: { assignee: 'Админ Главный', dueAt: '2026-10-20T08:00:00.000Z', overdue: false } })
+    expect(JSON.stringify(r.body)).not.toContain('@')
+    db().expert_sla_tasks = [prepTask()]
+    r = await state()
+    expect(r.body.data.plan.prep.task).toEqual({ assignee: null, dueAt: '2026-10-20T08:00:00.000Z', overdue: false })
+  })
+
+  it('an overdue task is marked; a closed task or another company\'s gives nothing', async () => {
+    db().expert_sla_tasks = [prepTask({ answer_due_at: '2026-10-18T08:59:00Z' })]
+    expect((await state()).body.data.plan.prep.task).toMatchObject({ overdue: true })
+    db().expert_sla_tasks = [prepTask({ closed_at: '2026-10-18T08:30:00Z' }), prepTask({ id: 'sla-2', source_id: OTHER_COMPANY, client_id: OTHER_CLIENT })]
+    expect((await state()).body.data.plan.prep).toEqual({ kind: 'waiting', missing: [], since: null })
+  })
+})

@@ -9,7 +9,7 @@
  * refused one (a CHECK, a unique index) leaves the transaction usable — like a PostgREST request. Queries are
  * serialised: the role switch is per query and the connection is shared.
  *
- * Supported subset (what lib/point-b, lib/goals and their helpers use):
+ * Supported subset (what lib/point-b, lib/goals, lib/expert-sla and their helpers use):
  *   from(t).select(cols?, { count?, head? }) · insert(row | rows) · update(patch) · upsert(rows, { onConflict, ignoreDuplicates })
  *   · delete() — then .select(cols) for RETURNING; filters eq / neq / gt / gte / lt / lte / in / is / not(col, 'is', null) /
  *   like / ilike, `col->>key` on the left; order (several, nullsFirst), limit, range, single, maybeSingle.
@@ -264,7 +264,26 @@ export function pgPostgrest(db: Db, userId: string | null): PgPostgrest {
   }
   return {
     from: (table: string) => new Query(table, run, types),
-    rpc: () => { throw new Error('pg-postgrest: rpc is not supported') },
+    // R3-SLA: a function call with named arguments, like PostgREST /rpc. Objects and arrays of objects go as JSON
+    // (jsonb arguments), arrays of scalars as Postgres arrays (uuid[] / text[]). A set-returning function gives its
+    // rows; a scalar one gives the value.
+    rpc: async (fn: string, args: Record<string, unknown> = {}) => {
+      try {
+        const names = Object.keys(args)
+        const values = names.map((k) => {
+          const v = args[k]
+          const scalarArray = Array.isArray(v) && v.every((x) => x === null || typeof x !== 'object')
+          return v !== null && typeof v === 'object' && !(v instanceof Date) && !scalarArray ? JSON.stringify(v) : v
+        })
+        const call = `public.${ident(fn)}(${names.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')})`
+        const rows = await run(`SELECT * FROM ${call}`, values)
+        const scalar = rows.length === 1 && Object.keys(rows[0]).length === 1 && Object.keys(rows[0])[0] === fn
+        return { data: scalar ? rows[0][fn] : rows, error: null, status: 200 }
+      } catch (err) {
+        const e = err as PgError
+        return { data: null, error: { message: e.message ?? String(err), code: e.code, details: e.details ?? null, hint: e.hint ?? null }, status: 400 }
+      }
+    },
     get sqlLog() { return log },
   } as unknown as PgPostgrest
 }

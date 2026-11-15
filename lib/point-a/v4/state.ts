@@ -24,6 +24,7 @@ import { loadBlockConfig } from './store'
 import { DEFAULT_KEY_METRICS, MAX_KEY_METRICS, keyMetricCatalog, loadMetricViews, type MetricView } from './metric-views'
 import { toGri } from '@/lib/format/gri'
 import { AI_VIEW_COLUMNS, AI_VIEW_COLUMNS_PRE150, aiAnalysisView, type PointAAiAnalysisView } from '@/lib/point-a/ai-review'
+import { loadClientTaskNotice, type ClientTaskNotice } from '@/lib/expert-sla/client-view'
 import { isMissingColumn } from '@/lib/point-a/ai-columns'
 import { isDocumentAbandoned } from '@/lib/documents/status-view'
 import { loadResolvedInputs } from '@/lib/point-a/resolved-inputs'
@@ -201,7 +202,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     return { ownerId: row?.user_id ?? null, industry: row?.industry ?? null }
   })
   const cfgP = companyP.then(({ industry }) => loadBlockConfig(client, companyId, industry))
-  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead, aiRow, resolved] = await Promise.all([
+  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead, aiRow, resolved, reviewTask] = await Promise.all([
     companyP,
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
@@ -244,6 +245,8 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
       console.error('[point-a/state] resolved inputs not loaded', err instanceof Error ? err.message : err)
       return {}
     }),
+    // R3-SLA: the expert's task on the AI analysis (152) — «Эксперт проверит до <срок>». Never fails the page.
+    companyP.then(({ ownerId }) => (ownerId ? loadClientTaskNotice(service, { source: 'pa_ai_review', clientId: ownerId, withName: false }) : null)).catch(() => null),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
@@ -353,9 +356,16 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     viewerIsOwner: viewerId !== null && ownerId !== null && ownerId === viewerId,
     answerAttribution: Object.fromEntries(POINT_A_QUESTION_KEYS.filter((k) => survey.attribution[k]?.updatedByRole).map((k) => [k, survey.attribution[k]])),
     // No official score → no analysis is made (and an old one is not shown).
-    aiAnalysis: snapshot && snapshot.assessment === 'full' && snapshot.overall !== null ? aiAnalysisView(aiRow) : null,
+    aiAnalysis: snapshot && snapshot.assessment === 'full' && snapshot.overall !== null ? withReviewDue(aiAnalysisView(aiRow), reviewTask) : null,
     scorePath: scorePathOf(surveyRows, resolved, cfg.blocks, snapshot),
   }
+}
+
+/** «Эксперт проверит до <срок>»: only a draft, only the task of THIS analysis (152). */
+function withReviewDue(view: PointAAiAnalysisView | null, task: ClientTaskNotice | null): PointAAiAnalysisView | null {
+  if (!view) return null
+  const due = view.draft && view.analysis && task && task.sourceId === view.diagnosticId ? { at: task.dueAt, overdue: task.overdue } : null
+  return { ...view, reviewDue: due }
 }
 
 /** The owner's current diagnostic, AI columns (before migration 150: without the review / diagnosis columns). */

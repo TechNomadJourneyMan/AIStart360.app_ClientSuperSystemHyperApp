@@ -53,6 +53,23 @@ describe('loadPointAState — R3-PA fields', () => {
     expect(state.scorePath).not.toBeNull()
   })
 
+  it('R3-SLA: «Эксперт проверит до <срок>» — the open expert task of THIS analysis, still ≤ 3 round trips', async () => {
+    const due = new Date(Date.now() + 30 * 3_600_000).toISOString()
+    const withTask = (sourceId: string, over: Record<string, unknown> = {}) => ({
+      ...tables(),
+      expert_sla_tasks: [{ id: 't1', source: 'pa_ai_review', source_id: sourceId, client_id: OWNER, closed_at: null, answer_due_at: due, received_at: '2026-11-15T10:00:00Z', assignee_id: null, first_response_at: null, ...over }],
+    })
+    const net = roundTrips(memoryDb(withTask('diag-1')))
+    const state = await loadPointAState(net.sb, net.sb, COMPANY, OWNER)
+    expect(net.waves()).toBeLessThanOrEqual(3)
+    expect(state.aiAnalysis?.reviewDue).toEqual({ at: due, overdue: false })
+    // Another analysis' task (an older row), a closed task, a checked analysis → no date.
+    expect((await loadPointAState(memoryDb(withTask('diag-0')), memoryDb(withTask('diag-0')), COMPANY)).aiAnalysis?.reviewDue).toBeNull()
+    expect((await loadPointAState(memoryDb(withTask('diag-1', { closed_at: '2026-11-15T11:00:00Z' })), memoryDb(withTask('diag-1', { closed_at: '2026-11-15T11:00:00Z' })), COMPANY)).aiAnalysis?.reviewDue).toBeNull()
+    const checked = { ...withTask('diag-1'), diagnostics: [{ ...tables().diagnostics[0], ai_reviewed_at: '2026-11-15T12:00:00Z', ai_reviewed_by_name: 'Алия' }] }
+    expect((await loadPointAState(memoryDb(checked), memoryDb(checked), COMPANY)).aiAnalysis?.reviewDue).toBeNull()
+  })
+
   it('GRI is 0–10 (5.8, not 58); the industry comparison is marked as not approved by an expert', async () => {
     const state = await loadPointAState(memoryDb(tables()), memoryDb(tables()), COMPANY)
     expect(state.gri).toEqual({ index: 5.8, assessedAt: '2026-09-01T00:00:00Z' })

@@ -217,6 +217,11 @@ export interface PointAAiAnalysisView {
   errorCode: string | null
   model: string | null
   generatedAt: string | null
+  /**
+   * R3-SLA: the expert's task to confirm this analysis (migration 152) — «Эксперт проверит до <срок>» while it is
+   * open and the deadline has not passed. Absent / null — no promise of a date.
+   */
+  reviewDue?: { at: string; overdue: boolean } | null
 }
 
 /** ai_analysis.partial of a stored partial analysis: the parts that did not come. */
@@ -277,4 +282,102 @@ export function aiFailureText(view: Pick<PointAAiAnalysisView, 'status' | 'missi
   return view.analysis
     ? 'Последняя попытка обновить разбор не удалась — показан предыдущий вариант.'
     : 'Разбор ИИ не удался.'
+}
+
+// ─── The expert's review form (R3-SLA: the route of the expert / staff) ─────
+
+export const ROADMAP_HORIZONS = ['30_days', '90_days', '180_days'] as const
+export const BLOCK_EDIT_FIELDS = ['diagnosis', 'benchmark_comparison', 'key_risk', 'top_recommendation'] as const
+
+/** The editor's form: the text the client sees now (the AI text with the corrections applied), plain strings. */
+export interface AiReviewForm {
+  executive_summary: string
+  industry_context: string
+  strategic_priorities: Array<{ title: string; rationale: string; expected_impact: string }>
+  /** One entry per horizon, actions one per line. */
+  growth_roadmap: Record<(typeof ROADMAP_HORIZONS)[number], string>
+  blocks: Record<string, Record<(typeof BLOCK_EDIT_FIELDS)[number], string>>
+  note: string
+}
+
+export function reviewFormOf(content: AiAnalysisContent | null, note: string | null = null): AiReviewForm {
+  const roadmap = Object.fromEntries(ROADMAP_HORIZONS.map((h) => [h, (content?.growth_roadmap.find((r) => r.horizon === h)?.actions ?? []).join('\n')])) as AiReviewForm['growth_roadmap']
+  const blocks: AiReviewForm['blocks'] = {}
+  for (const [k, b] of Object.entries(content?.blocks ?? {})) {
+    blocks[k] = Object.fromEntries(BLOCK_EDIT_FIELDS.map((f) => [f, b[f] ?? ''])) as AiReviewForm['blocks'][string]
+  }
+  return {
+    executive_summary: content?.executive_summary ?? '',
+    industry_context: content?.industry_context ?? '',
+    strategic_priorities: (content?.strategic_priorities ?? []).map((p) => ({ title: p.title, rationale: p.rationale ?? '', expected_impact: p.expected_impact ?? '' })),
+    growth_roadmap: roadmap,
+    blocks,
+    note: note ?? '',
+  }
+}
+
+const clean = (v: string | null | undefined): string => (v ?? '').replace(/\r\n/g, '\n').trim()
+
+/**
+ * The form as corrections (AiExpertEdits shape, every filled field). The server keeps only what differs from the AI
+ * text ({@link pruneEdits}); an emptied field means «as the AI wrote it» — the AI text is never deleted, only replaced.
+ */
+export function editsFromForm(form: AiReviewForm): AiExpertEdits {
+  const out: AiExpertEdits = {}
+  if (clean(form.executive_summary)) out.executive_summary = clean(form.executive_summary)
+  if (clean(form.industry_context)) out.industry_context = clean(form.industry_context)
+  const priorities = form.strategic_priorities
+    .map((p) => ({ title: clean(p.title), rationale: clean(p.rationale), expected_impact: clean(p.expected_impact) }))
+    .filter((p) => p.title && p.rationale && p.expected_impact)
+  if (priorities.length) out.strategic_priorities = priorities.slice(0, 6)
+  const roadmap = ROADMAP_HORIZONS
+    .map((h) => ({ horizon: h, actions: clean(form.growth_roadmap[h]).split('\n').map((a) => a.trim()).filter(Boolean).slice(0, 8) }))
+    .filter((r) => r.actions.length > 0)
+  if (roadmap.length) out.growth_roadmap = roadmap
+  const blocks: NonNullable<AiExpertEdits['blocks']> = {}
+  for (const [k, b] of Object.entries(form.blocks)) {
+    const e: Record<string, string> = {}
+    for (const f of BLOCK_EDIT_FIELDS) if (clean(b[f])) e[f] = clean(b[f])
+    if (Object.keys(e).length) blocks[k] = e
+  }
+  if (Object.keys(blocks).length) out.blocks = blocks
+  if (clean(form.note)) out.note = clean(form.note)
+  return out
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * Corrections = only what differs from the AI text: a field equal to the AI text is not a correction (the client
+ * would see «поправлено экспертом» on a text nobody changed). null — nothing left.
+ */
+export function pruneEdits(ai: AiAnalysisContent | null, edits: AiExpertEdits | null): AiExpertEdits | null {
+  if (!edits) return null
+  const out: AiExpertEdits = {}
+  if (edits.executive_summary && clean(edits.executive_summary) !== clean(ai?.executive_summary)) out.executive_summary = edits.executive_summary
+  if (edits.industry_context && clean(edits.industry_context) !== clean(ai?.industry_context)) out.industry_context = edits.industry_context
+  if (edits.strategic_priorities) {
+    const base = (ai?.strategic_priorities ?? []).map((p) => ({ title: clean(p.title), rationale: clean(p.rationale), expected_impact: clean(p.expected_impact) }))
+    const mine = edits.strategic_priorities.map((p) => ({ title: clean(p.title), rationale: clean(p.rationale), expected_impact: clean(p.expected_impact) }))
+    if (!same(base, mine)) out.strategic_priorities = edits.strategic_priorities
+  }
+  if (edits.growth_roadmap) {
+    const norm = (rs: ReadonlyArray<{ horizon: string; actions: readonly string[] }>) =>
+      ROADMAP_HORIZONS.map((h) => (rs.find((r) => r.horizon === h)?.actions ?? []).map((a) => clean(a)).filter(Boolean))
+    if (!same(norm(ai?.growth_roadmap ?? []), norm(edits.growth_roadmap))) out.growth_roadmap = edits.growth_roadmap
+  }
+  if (edits.blocks) {
+    const blocks: NonNullable<AiExpertEdits['blocks']> = {}
+    for (const [k, b] of Object.entries(edits.blocks)) {
+      const e: Record<string, string> = {}
+      for (const f of BLOCK_EDIT_FIELDS) {
+        const v = b[f]
+        if (v && clean(v) !== clean(ai?.blocks[k]?.[f])) e[f] = v
+      }
+      if (Object.keys(e).length) blocks[k] = e
+    }
+    if (Object.keys(blocks).length) out.blocks = blocks
+  }
+  if (edits.note && clean(edits.note)) out.note = edits.note
+  return Object.keys(out).length ? out : null
 }

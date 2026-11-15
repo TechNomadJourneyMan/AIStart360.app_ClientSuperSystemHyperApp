@@ -7,8 +7,8 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { actorClientScope, scopeAllows } from '@/lib/admin/actor-scope'
 import { setClientAssignment } from '@/lib/admin/client-actions'
 import { createServiceClient } from '@/lib/supabase-service'
-import { TASK_COLUMNS } from '@/lib/expert-sla/policy'
-import { reassignClientWork, type SlaTaskRow } from '@/lib/expert-sla/store'
+import { TASK_COLUMNS, isPlanSource } from '@/lib/expert-sla/policy'
+import { reassignClientWork, takePlanTask, type SlaTaskRow } from '@/lib/expert-sla/store'
 
 /**
  * PATCH /api/giga-admin/expert-sla/:id { assigneeId }
@@ -22,6 +22,11 @@ import { reassignClientWork, type SlaTaskRow } from '@/lib/expert-sla/store'
  * назначенные» не вернёт себе клиента, которого у него забрали.
  * Журнал — каждое изменение; новый исполнитель получает уведомление через
  * outbox прохода SLA (assign_notified_at сброшен, ≤ 5 минут).
+ *
+ * План Точки Б (plan_prep / plan_review, миграция 152): «Взять себе» —
+ * исполнителем задачи становится Admin / Super Admin (решение PO: планы
+ * готовят и одобряют они); ответственный клиента не меняется. Передать можно
+ * только Admin / Super Admin; эксперту — нельзя.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -44,6 +49,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const scope = await actorClientScope(actor)
   if (!scopeAllows(scope, task.client_id)) {
     return NextResponse.json({ ok: false, error: 'Этот клиент вам не назначен' }, { status: 403 })
+  }
+
+  if (isPlanSource(task.source)) {
+    const taken = await takePlanTask(sb, { taskId: task.id, assigneeId, actorId: actor.id })
+    if (!taken.ok) return NextResponse.json({ ok: false, error: taken.error }, { status: taken.status })
+    await recordAdminAction(actor, {
+      action: 'expert_sla.taken',
+      entityType: 'expert_sla_task',
+      entityId: task.id,
+      targetUserId: task.client_id,
+      oldValue: { assignee_id: taken.previous },
+      newValue: { assignee_id: assigneeId },
+      metadata: { source: task.source, title: task.title, self: assigneeId === actor.id },
+    }, req)
+    return NextResponse.json({ ok: true, moved: taken.moved })
   }
 
   const res = await reassignClientWork(sb, {

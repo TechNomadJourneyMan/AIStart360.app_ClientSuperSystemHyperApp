@@ -17,7 +17,8 @@ import { companyOfUser } from '../plan/flow'
 import { goalsSnapshotFrom, loadLatestReviews, snapshotGoals } from '../plan/goals'
 import { loadPlanBundle, type PlanBundle } from '../plan/store'
 import type { PlanGoalsSnapshot } from '../plan/types'
-import { planPrepState } from '../plan/waiting'
+import { planPrepState, withPlanTask } from '../plan/waiting'
+import { loadClientTaskNotice } from '@/lib/expert-sla/client-view'
 import { loadStrategyState } from '../strategy/load'
 import { listActiveInvites } from '../invites/store'
 import type { InviteView } from '../invites/types'
@@ -159,7 +160,7 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       ]).then(([read, bundle]) => (read ? goalsSnapshotFrom(read[1], read[0], bundle.published?.goals?.primary ?? undefined) : null))
     : Promise.resolve(null)
 
-  const [bundle, goals, { inputs, pb }, strategy, recs, invites, planFact] = await Promise.all([
+  const [bundle, goals, { inputs, pb }, strategy, recs, invites, planFact, planTask] = await Promise.all([
     bundleP,
     goalsP,
     loadModelForCompany(sb, { userId, companyId: company?.id ?? null, goals: goalsP, now, readGoals: readGoals ?? undefined }),
@@ -171,6 +172,8 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
     company
       ? bundleP.then((b) => (b.published ? quietly('plan-fact', () => loadPlanFactState(sb, { companyId: company.id, published: b.published, versions: b.versions, audience: 'client', now }), null) : null))
       : Promise.resolve(null),
+    // R3-SLA: the plan_prep task (152) — «План готовит: <имя>, до <срок>» / «Назначаем ответственного».
+    company ? loadClientTaskNotice(sb, { source: 'plan_prep', clientId: userId, sourceId: company.id, now }).catch(() => null) : Promise.resolve(null),
   ])
   const result = computeModel(inputs)
 
@@ -189,11 +192,11 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
       strategy,
-      prep: planPrepState({
+      prep: withPlanTask(planPrepState({
         published: !!published,
         open: bundle.open ? { status: bundle.open.status, createdAt: bundle.open.created_at, submittedAt: bundle.open.submitted_at } : null,
         result,
-      }),
+      }), planTask ? { assignee: planTask.assignee, dueAt: planTask.dueAt, overdue: planTask.overdue } : null),
     },
     recommendations: clientView(recs),
     invites,

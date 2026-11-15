@@ -26,6 +26,15 @@ import { withDeadline } from '@/lib/runtime/deadline'
 import { gatePaidSection } from '@/lib/access/gate'
 import { aiErrorOf, aiModelOf, clipAiError, type PointAAnalysisReport } from '@/lib/point-a/ai-review'
 import { updateDiagnosticAi } from '@/lib/point-a/ai-columns'
+import { announceAiReviewNow } from '@/lib/expert-sla/immediate'
+
+/**
+ * R3-SLA: the expert's review belongs to the TEXT it checked. A new generation
+ * (not the cached text) starts unchecked — «Проверено экспертом» and the
+ * corrections of the previous text are not carried over; a cached text keeps the
+ * review and the corrections of the row it came from.
+ */
+const NO_REVIEW = { ai_reviewed_at: null, ai_reviewed_by: null, ai_reviewed_by_name: null, ai_expert_edits: null } as const
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -225,8 +234,12 @@ async function handlePost(req: NextRequest) {
           const data = (res.error ? null : res.data) as Record<string, unknown> | null
           const cached = data ? readAiAnalysis(data.ai_analysis) : null // error: e.g. migration 091 not applied yet
           if (!cached) return null
-          if (data?.ai_reviewed_at) {
-            cachedReview = { ai_reviewed_at: data.ai_reviewed_at, ai_reviewed_by: data.ai_reviewed_by ?? null, ai_reviewed_by_name: data.ai_reviewed_by_name ?? null, ai_expert_edits: data.ai_expert_edits ?? null }
+          if (data && 'ai_reviewed_at' in data) {
+            // The review (or the corrections in progress) of the same text — whatever it is, never the current row's.
+            cachedReview = {
+              ai_reviewed_at: data.ai_reviewed_at ?? null, ai_reviewed_by: data.ai_reviewed_by ?? null,
+              ai_reviewed_by_name: data.ai_reviewed_by_name ?? null, ai_expert_edits: data.ai_expert_edits ?? null,
+            }
           }
           // The cached text keeps its own model and time (no generation happened now).
           if (typeof data?.ai_model === 'string') cachedReview = { ...(cachedReview ?? {}), ai_model: data.ai_model }
@@ -272,8 +285,8 @@ async function handlePost(req: NextRequest) {
       // A partial analysis is never the cached one: no input hash on it.
       const base = { ai_analysis: merged, ai_status: status, ...(partial ? {} : { narrative_input_hash: inputHash }) }
       const extra = outcome.cached
-        ? { ai_error: null, ai_generated_at: diagnosis.ai_generated_at, ...(cachedReview ?? {}) }
-        : { ai_error: aiError, ...diagnosis }
+        ? { ai_error: null, ai_generated_at: diagnosis.ai_generated_at, ...NO_REVIEW, ...(cachedReview ?? {}) }
+        : { ai_error: aiError, ...diagnosis, ...NO_REVIEW }
       const stored = await updateDiagnosticAi(db, target, base, extra)
       if (!stored.ok) {
         // Before migration 091 there is no narrative_input_hash: the analysis without it.
@@ -284,6 +297,10 @@ async function handlePost(req: NextRequest) {
           .eq('user_id', user_id)
         if (saveErr) return fail(500, 'Анализ получен, но не сохранён', 'save', saveErr)
       }
+
+      // Решение PO «гибрид»: the expert's task to confirm the analysis opens and is announced NOW
+      // (not at the next SLA pass); an already confirmed (cached) text opens nothing. Never throws.
+      await announceAiReviewNow({ sb: db, diagnosticId: String(diagnostic_id) })
 
       if (partial) {
         console.error(`[ai-analyze] partial analysis for diagnostic ${diagnostic_id}: ${aiError ?? ''}`)

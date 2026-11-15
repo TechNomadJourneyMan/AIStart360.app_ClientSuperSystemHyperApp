@@ -65,6 +65,11 @@ vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeClient
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/internal-auth', () => ({ hasValidInternalToken: () => true, internalFetchHeaders: () => ({}), internalBaseUrl: () => 'http://localhost' }))
 const analyzer = vi.hoisted(() => ({ analyze: vi.fn() }))
+// R3-SLA: the expert's task is opened and announced at once (lib/expert-sla/immediate).
+const announced = vi.hoisted(() => ({ calls: [] as string[] }))
+vi.mock('@/lib/expert-sla/immediate', () => ({
+  announceAiReviewNow: async (d: { diagnosticId: string }) => { announced.calls.push(d.diagnosticId); return { opened: true, notified: 'queue' } },
+}))
 vi.mock('@/lib/ai/point-a-analyzer', () => ({ analyzePointA: (...a: unknown[]) => analyzer.analyze(...a) }))
 
 const { POST } = await import('@/app/api/v1/diagnostics/ai-analyze/route')
@@ -117,6 +122,7 @@ beforeEach(() => {
     point_a_snapshots: [],
   }
   analyzer.analyze.mockReset()
+  announced.calls = []
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
 })
 
@@ -208,5 +214,48 @@ describe('the fan-out writes why a call never answered (R3-PA)', () => {
     await Promise.all(works)
     delete process.env.INTERNAL_TOKEN_SECRET
     expect(row()).toMatchObject({ ai_status: 'failed', ai_error: 'fanout:TimeoutError' })
+  })
+})
+
+describe('R3-SLA: the expert\'s review follows the AI text; the expert task is announced at once', () => {
+  it('a NEW generation clears «Проверено экспертом» and the corrections of the previous text; the task is announced', async () => {
+    h.tables.diagnostics = [diag({
+      ai_status: 'failed', ai_analysis: { ...FULL, partial: ['blocksB'] },
+      ai_reviewed_at: '2026-11-16T09:00:00Z', ai_reviewed_by: 'e-1', ai_reviewed_by_name: 'Алия', ai_expert_edits: { executive_summary: 'Старое' },
+    })]
+    answer(FULL, report())
+    expect((await post()).status).toBe(200)
+    expect(row()).toMatchObject({ ai_status: 'completed', ai_reviewed_at: null, ai_reviewed_by: null, ai_reviewed_by_name: null, ai_expert_edits: null })
+    expect(announced.calls).toEqual([DIAG])
+  })
+
+  it('a partial analysis is announced too (the client sees it as a draft); a failed one is not', async () => {
+    answer({ ...FULL, partial: ['blocksB'] }, report({ blocksB: 'cut' }))
+    expect((await post()).status).toBe(502)
+    expect(announced.calls).toEqual([DIAG])
+    announced.calls = []
+    h.tables.diagnostics = [diag()]
+    answer(null, report({ summary: 'schema' }))
+    expect((await post()).status).toBe(502)
+    expect(announced.calls).toEqual([])
+  })
+
+  it('a cached text keeps the corrections in progress of the row it came from (not checked yet)', async () => {
+    const answers = { s2_revenue_2025: 95_000_000 }
+    const company = { id: 'co', user_id: USER, name: 'ТОО', industry: 'Розница', stage: 'early' }
+    const { officialPointA, pointAFromOfficial } = await import('@/lib/point-a/official')
+    const scored = pointAFromOfficial(officialPointA(diag() as Record<string, unknown>, null))!
+    const hash = pointAAnalysisInputHash({
+      answers, pointA: scored.blocksWithoutData.length ? { ...scored.pointA, blocksWithoutData: scored.blocksWithoutData } : scored.pointA,
+      company, expertNotes: {}, locale: 'ru',
+    })
+    h.tables.diagnostics = [diag({ ai_reviewed_at: '2026-11-10T00:00:00Z', ai_reviewed_by_name: 'Чужая отметка' })]
+    h.tables.diagnostics.push({
+      id: OLD, user_id: USER, is_current: false, ai_status: 'completed', ai_analysis: FULL, narrative_input_hash: hash,
+      ai_reviewed_at: null, ai_reviewed_by: null, ai_reviewed_by_name: null, ai_expert_edits: { note: 'Черновик эксперта' },
+    })
+    expect(await (await post()).json()).toMatchObject({ ok: true, cached: true })
+    expect(row()).toMatchObject({ ai_reviewed_at: null, ai_reviewed_by_name: null, ai_expert_edits: { note: 'Черновик эксперта' } })
+    expect(announced.calls).toEqual([DIAG])
   })
 })

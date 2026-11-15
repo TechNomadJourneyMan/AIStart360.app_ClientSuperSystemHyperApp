@@ -7,6 +7,7 @@
  *   исполнитель запись в его ленте (app_notifications, createNotification) и
  *              экспертный Telegram-бот, если он привязан (telegram_bot_links
  *              bot = 'expert') — как напоминание «30 минут» (lib/comm/escalation).
+ *   план Б     (152) клиент ждёт план Точки Б — Admin / Super Admin (queued(…, 'admins')).
  *
  * Каждый вызов ВОЗВРАЩАЕТ результат доставки (п. 6 ревью): run.ts отмечает
  * задачу «уведомлено» (expert_sla_mark_notified, миграция 146) только при
@@ -25,6 +26,7 @@ import { SOURCE_LABELS, chunked, type ExpertSlaSource } from './policy'
 export const BATCH = 5
 export const EXPERT_QUEUE_PATH = '/expert/queue'
 export const GIGA_SLA_PATH = `${GIGA_BASE}/expert-sla`
+export const GIGA_POINT_B_QUEUE_PATH = `${GIGA_BASE}/point-b-queue`
 
 export interface TaskBrief {
   id: string
@@ -40,13 +42,18 @@ export interface TaskBrief {
 }
 
 export type SlaThreshold = 'escalated' | 'breached'
+export type QueueAudience = 'experts' | 'admins'
 export type Delivery = { ok: true } | { ok: false; error: string }
 
 export interface SlaNotifier {
   /** Новые задачи исполнителя — ОДНИМ сообщением на исполнителя. */
   assigned(assigneeId: string, tasks: TaskBrief[]): Promise<Delivery>
-  /** Задачи без исполнителя (одна или сводка) — SuperExpert, без них Admin. */
-  queued(tasks: TaskBrief[]): Promise<Delivery>
+  /**
+   * Задачи без исполнителя (одна или сводка). `experts` (по умолчанию) — экспертная
+   * работа: SuperExpert, без них Admin. `admins` — план Точки Б ждёт подготовки
+   * (plan_prep, 152): Admin и Super Admin (решение PO: планы готовят они).
+   */
+  queued(tasks: TaskBrief[], audience?: QueueAudience): Promise<Delivery>
   /** Порог пройден (одна задача или сводка): 24 ч без реакции / 48 ч без ответа. */
   threshold(stage: SlaThreshold, tasks: TaskBrief[]): Promise<Delivery>
   /** Синхронизация источников упала (не чаще раза в час) — Admin / Super Admin. */
@@ -220,13 +227,30 @@ export function createDefaultNotifier(deps: DefaultNotifierDeps): SlaNotifier {
       })
     },
 
-    queued(tasks) {
+    queued(tasks, audience = 'experts') {
       return deliver('queued', async () => {
         if (!tasks.length) return
         const { superExperts, admins } = await getAudience()
-        const audienceUserIds = superExperts.length ? superExperts : admins
         const names = await clientNames(sb, tasks)
         const first = tasks[0]
+        if (audience === 'admins') {
+          // 152: a client waits for a Point B plan — Admin / Super Admin prepare and approve it.
+          await feed({
+            level: 'WARNING',
+            type: 'expert_sla.plan_prep',
+            title: tasks.length > 1 ? `План Точки Б ждут ${tasks.length} клиентов` : `Клиент ждёт план Точки Б: ${names.get(first.client_id) ?? 'клиент'}`.slice(0, 200),
+            lines: [...lines(tasks, names), 'Соберите черновик плана в «Точке Б» клиента (User 360) или возьмите задачу себе в «SLA экспертов».'],
+            companyId: tasks.length === 1 ? first.company_id : null,
+            entityType: 'expert_sla_task',
+            entityId: tasks.length === 1 ? first.id : null,
+            link: tasks.length === 1 ? `${GIGA_BASE}/users/${first.client_id}?tab=point-b` : GIGA_POINT_B_QUEUE_PATH,
+            dedupeKey: groupKey('queued', tasks),
+            audienceUserIds: admins.length ? admins : null,
+            skipCooldown: true,
+          })
+          return
+        }
+        const audienceUserIds = superExperts.length ? superExperts : admins
         await feed({
           level: 'WARNING',
           type: 'expert_sla.queued',

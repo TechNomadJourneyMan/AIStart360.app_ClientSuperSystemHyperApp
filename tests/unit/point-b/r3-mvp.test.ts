@@ -199,6 +199,15 @@ describe('planPrepState / isWaitingForPlan (S1, without the SLA)', () => {
     // no access (Free) → never in the queue; the limit truncates
     expect((await listClientsWaitingForPlan(h.sb, { now: NOW, hasAccess: async (u) => u === C1, model })).waiting.map((w) => w.userId)).toEqual([C1])
     expect(await listClientsWaitingForPlan(h.sb, { now: NOW, hasAccess: async () => true, model, limit: 1 })).toMatchObject({ checked: 1, truncated: true })
+    // R3-SLA (152): why the checked ones do not wait — the pass closes their plan_prep tasks; every candidate is listed
+    expect(r.dropped).toEqual([{ companyId: 'co5', userId: C5, reason: 'needs_data' }])
+    expect([...r.candidates].sort()).toEqual(['co1', 'co2', 'co5'])
+    const free = await listClientsWaitingForPlan(h.sb, { now: NOW, hasAccess: async (u) => u !== C2, model })
+    expect(free.dropped).toContainEqual({ companyId: 'co2', userId: C2, reason: 'no_access' })
+    // a model that failed: neither waiting nor dropped (an open task stays as it is)
+    const broken = await listClientsWaitingForPlan(h.sb, { now: NOW, hasAccess: async () => true, model: async (_u, c) => { if (c === 'co1') throw new Error('x'); return ready } })
+    expect(broken.dropped.map((d) => d.companyId)).not.toContain('co1')
+    expect(broken.waiting.map((w) => w.companyId)).not.toContain('co1')
   })
 })
 

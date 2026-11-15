@@ -11,6 +11,7 @@
  */
 import type { PointAAiAnalysisView } from '@/lib/point-a/ai-review'
 import { AI_DRAFT_LABEL, AI_REVIEWED_LABEL, aiFailureText } from '@/lib/point-a/ai-review'
+import { clientDueLabel } from '@/lib/expert-sla/policy'
 import { BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
 import { BTN_GHOST, CARD, CHIP, Icon, SectionTitle } from './ui'
 import { cn } from '@/lib/utils'
@@ -66,6 +67,11 @@ export function AiAnalysisCard({ ai, canRetry, onRetry, retrying = false, showDi
       {ai.draft && (
         <p className="-mt-1 mb-3 text-[11px] text-on-surface-variant">
           Разбор подготовлен ИИ по вашим данным. Эксперт проверит его и при необходимости поправит — здесь появится отметка «{AI_REVIEWED_LABEL}» с именем и датой.
+        </p>
+      )}
+      {ai.draft && ai.analysis && ai.reviewDue && !ai.reviewDue.overdue && (
+        <p className="-mt-2 mb-3 flex items-center gap-1.5 text-xs font-medium text-amber-200" data-ai-review-due suppressHydrationWarning>
+          <Icon name="schedule" className="text-[14px]" />Эксперт проверит до {clientDueLabel(ai.reviewDue.at)}
         </p>
       )}
 

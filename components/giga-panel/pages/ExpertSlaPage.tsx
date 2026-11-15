@@ -12,7 +12,7 @@ import {
   gigaFetch, GigaApiError, useGigaQuery, type Column, type Tone,
 } from '@/components/giga-panel/kit'
 import { STAGE_LABELS, slaStage, slaTimerLabel, type ExpertSlaSource, type SlaStage } from '@/lib/expert-sla/policy'
-import { staffTaskHref } from '@/lib/expert-sla/links'
+import { planDraftHref, staffTaskHref } from '@/lib/expert-sla/links'
 import type { SlaView } from '@/lib/expert-sla/store'
 
 /**
@@ -20,6 +20,9 @@ import type { SlaView } from '@/lib/expert-sla/store'
  * эскалация SuperExpert и Admin), ответ клиенту за 48 ч (иначе просрочка).
  * Отсюда берут задачи из общей очереди и переназначают: исполнитель
  * становится ответственным клиента, его открытые задачи переходят к нему.
+ * 152: разбор ИИ Точки А на проверке — экспертная работа (как обращения);
+ * подготовка плана Точки Б — Admin / Super Admin «Взять себе» (ответственный
+ * клиента не меняется), ссылка «Собрать черновик плана».
  */
 
 interface Task {
@@ -34,6 +37,8 @@ interface Task {
   client: { id: string; name: string }
   assignee: { id: string; name: string } | null
   reassignable: boolean
+  /** План Точки Б (152): Admin / Super Admin «Взять себе». */
+  takeable?: boolean
 }
 interface Summary { open: number; dueSoon: number; escalated: number; breached: number; queue: number; mine: number }
 interface Worker { id: string; name: string; kind: 'expert' | 'super_expert' | 'admin' | 'super_admin'; openTasks: number }
@@ -41,7 +46,8 @@ interface Worker { id: string; name: string; kind: 'expert' | 'super_expert' | '
 const STAGE_TONE: Record<SlaStage, Tone> = { breached: 'red', escalated: 'red', due_soon: 'amber', ok: 'neutral', closed: 'green' }
 const KIND_LABEL: Record<Worker['kind'], string> = { expert: 'эксперт', super_expert: 'SuperExpert', admin: 'Admin', super_admin: 'Super Admin' }
 const CLOSE_LABEL: Record<string, string> = {
-  superseded: 'заменена новой версией', stale: 'рекомендации устарели', excluded: 'рекомендации сняты с SLA', withdrawn: 'отозвана', failed: 'сбой сборки', gone: 'удалена',
+  superseded: 'заменена новой версией', stale: 'рекомендации устарели', excluded: 'рекомендации сняты с SLA', withdrawn: 'отозвана', failed: 'сбой — проверять нечего', gone: 'удалена',
+  no_access: 'у клиента нет доступа к Точке Б', needs_data: 'данных для плана не хватает', no_goal: 'нет цели по выручке', not_waiting: 'клиент больше не ждёт план',
 }
 const VIA_LABEL: Record<string, string> = { source: 'из обращения', client: 'ответственный клиента', auto: 'авто: наименее загружен', manual: 'вручную' }
 
@@ -74,7 +80,7 @@ function ExpertSlaInner() {
     setBusy(true)
     try {
       const res = await gigaFetch<{ moved: number }>(`/api/giga-admin/expert-sla/${pending.task.id}`, { method: 'PATCH', json: { assigneeId: pending.worker.id } })
-      toast.success(`Клиент передан: ${pending.worker.name}. Задач перешло: ${res.moved}`)
+      toast.success(pending.task.takeable ? `Задача ваша: ${pending.task.title}` : `Клиент передан: ${pending.worker.name}. Задач перешло: ${res.moved}`)
       setPending(null)
       reload()
       workers.reload()
@@ -106,6 +112,9 @@ function ExpertSlaInner() {
             <Link href={`${base}/users/${t.client.id}`} className="text-blue-300 hover:underline">{t.client.name}</Link>
             {' · поступила '}{fmtAgo(t.received_at)}
           </p>
+          {t.source === 'plan_prep' && !t.closed_at && !base.startsWith('/super-expert') && (
+            <Link href={planDraftHref(t.client.id, base)} className="text-[10px] font-medium text-teal-300 hover:underline">Собрать черновик плана →</Link>
+          )}
         </div>
       ),
     },
@@ -140,6 +149,22 @@ function ExpertSlaInner() {
     {
       key: 'assignee', header: 'Исполнитель',
       render: (t) => {
+        const list = workers.data?.data ?? []
+        if (t.takeable) {
+          // 152: a Point B plan — Admin / Super Admin take it themselves (the client's responsible stays).
+          const meWorker = me ? list.find((w) => w.id === me.id && (w.kind === 'admin' || w.kind === 'super_admin')) : undefined
+          return (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">
+                {t.assignee?.name ?? 'Admin / Super Admin · очередь'}
+                {t.assigned_via && <span className="block text-[10px] text-slate-600">{VIA_LABEL[t.assigned_via] ?? t.assigned_via}</span>}
+              </span>
+              {canAssign && meWorker && t.assignee_id !== meWorker.id && (
+                <Button size="sm" variant="ghost" onClick={() => setPending({ task: t, worker: meWorker })}>Взять себе</Button>
+              )}
+            </div>
+          )
+        }
         if (!t.reassignable || !canAssign) {
           return (
             <span className="text-[11px] text-slate-400">
@@ -148,7 +173,6 @@ function ExpertSlaInner() {
             </span>
           )
         }
-        const list = workers.data?.data ?? []
         return (
           <div className="flex flex-wrap items-center gap-1.5">
             <select
@@ -199,7 +223,7 @@ function ExpertSlaInner() {
           rows={data?.data}
           rowKey={(t) => t.id}
           loading={loading}
-          empty={<EmptyState icon={<ListChecks size={18} />} title="Задач нет" text="Здесь появляются обращения клиентов, отчёты и рекомендации на проверке и планы Точки Б на одобрении — с часами SLA." />}
+          empty={<EmptyState icon={<ListChecks size={18} />} title="Задач нет" text="Здесь появляются обращения клиентов, отчёты и разборы ИИ Точки А на проверке, планы Точки Б к подготовке и на одобрении — с часами SLA." />}
         />
       </Panel>
       <ConfirmDialog
@@ -208,9 +232,14 @@ function ExpertSlaInner() {
         onConfirm={() => void confirm()}
         loading={busy}
         tone="primary"
-        title="Передать клиента исполнителю?"
-        confirmLabel="Передать"
-        text={pending ? (
+        title={pending?.task.takeable ? 'Взять задачу себе?' : 'Передать клиента исполнителю?'}
+        confirmLabel={pending?.task.takeable ? 'Взять' : 'Передать'}
+        text={pending?.task.takeable ? (
+          <>
+            Вы станете исполнителем задачи «{pending.task.title}» клиента «{pending.task.client.name}». Ответственный клиента не меняется.
+            Реакцией считается открытый черновик плана, ответом — одобренная версия.
+          </>
+        ) : pending ? (
           <>
             <b className="text-slate-200">{pending.worker.name}</b> станет ответственным клиента «{pending.task.client.name}»:
             все его открытые задачи и обращения перейдут к новому исполнителю, прежний ответственный потеряет доступ к клиенту (если он видит только своих).

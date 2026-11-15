@@ -12,7 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isSlaWorker } from './assign'
 import {
-  EXPERT_WORK_SOURCES, SOURCE_LABELS, TASK_COLUMNS, chunked, isExpertWorkSource, slaStage, slaTimerLabel, type ExpertSlaSource, type SlaStage,
+  EXPERT_WORK_SOURCES, SOURCE_LABELS, TASK_COLUMNS, chunked, isExpertWorkSource, isPlanSource, slaStage, slaTimerLabel, type ExpertSlaSource, type SlaStage,
 } from './policy'
 
 type Sb = Pick<SupabaseClient, 'from'>
@@ -57,6 +57,16 @@ export interface SlaTaskView extends SlaTaskRow {
   assignee: { id: string; name: string } | null
   /** Задачу можно переназначить эксперту (план Точки Б одобряет Admin — нет). */
   reassignable: boolean
+  /** План Точки Б (152): Admin / Super Admin может «Взять себе» (без смены ответственного клиента). */
+  takeable: boolean
+}
+
+/**
+ * «Без исполнителя» — общая очередь: экспертная работа (ждёт SuperExpert) и подготовка плана
+ * Точки Б (ждёт Admin / Super Admin, 152). Одобрение плана — своя очередь «Точка Б — на одобрении».
+ */
+export function isQueueSource(source: unknown): boolean {
+  return isExpertWorkSource(source) || source === 'plan_prep'
 }
 
 export type SlaVisibility =
@@ -85,7 +95,7 @@ export function summarize(rows: SlaTaskRow[], actorId: string | null, now: Date 
     if (st === 'due_soon') s.dueSoon++
     else if (st === 'escalated') s.escalated++
     else if (st === 'breached') s.breached++
-    if (!r.assignee_id && isExpertWorkSource(r.source)) s.queue++
+    if (!r.assignee_id && isQueueSource(r.source)) s.queue++
     if (actorId && r.assignee_id === actorId) s.mine++
   }
   return s
@@ -100,7 +110,7 @@ export function inView(view: SlaView, r: SlaTaskRow, actorId: string | null, now
     case 'open': return true
     case 'attention': return st !== 'ok'
     case 'breached': return st === 'breached'
-    case 'queue': return !r.assignee_id && isExpertWorkSource(r.source)
+    case 'queue': return !r.assignee_id && isQueueSource(r.source)
     case 'mine': return !!actorId && r.assignee_id === actorId
   }
 }
@@ -161,6 +171,7 @@ export async function decorate(sb: Sb, rows: SlaTaskRow[], now: Date = new Date(
         client: { id: r.client_id, name: companyBy.get(r.client_id)?.trim() || c?.organization?.trim() || c?.full_name?.trim() || 'Клиент' },
         assignee: r.assignee_id ? { id: r.assignee_id, name: a?.full_name?.trim() || 'Эксперт' } : null,
         reassignable: !r.closed_at && isExpertWorkSource(r.source),
+        takeable: !r.closed_at && isPlanSource(r.source),
       }
     })
     .sort((x, y) => STAGE_ORDER[x.stage] - STAGE_ORDER[y.stage] || x.answer_due_at.localeCompare(y.answer_due_at))
@@ -206,6 +217,56 @@ export async function reassignClientWork(sb: Sb, input: {
   if (mErr) return { ok: false, status: 500, error: 'Не удалось переназначить задачи' }
   await sb.from('expert_cases').update({ assignee_id: input.assigneeId, assigned_to: input.assigneeId })
     .eq('user_id', task.client_id).in('status', ['new', 'in_progress'])
+  return { ok: true, moved: (moved as unknown[] | null)?.length ?? 0, previous: task.assignee_id }
+}
+
+// ─── «Взять себе»: план Точки Б (152) ────────────────────────────────────────
+
+/** Staff-роли, которые готовят и одобряют план Точки Б (решение PO). Синхронно с POINT_B_APPROVER_ROLES. */
+export const PLAN_HOLDER_STAFF = ['super_admin', 'admin'] as const
+
+/** Может ли человек вести план Точки Б: одобренный профиль со staff-ролью Admin / Super Admin. */
+export async function isPlanHolder(sb: Sb, userId: string): Promise<boolean> {
+  try {
+    const [{ data: profile, error: pErr }, { data: staff, error: sErr }] = await Promise.all([
+      sb.from('profiles').select('status').eq('id', userId).maybeSingle(),
+      sb.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
+    ])
+    if (pErr || sErr) return false
+    const role = (staff as { role?: string } | null)?.role
+    return (profile as { status?: string } | null)?.status === 'approved' && !!role && (PLAN_HOLDER_STAFF as readonly string[]).includes(role)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * «Взять себе» задачу плана Точки Б (plan_prep / plan_review): исполнителем задачи
+ * становится Admin / Super Admin. Ответственный клиента НЕ меняется (Admin видит всех
+ * клиентов и так), задачи клиента по экспертной работе не трогаются. Взявший сам себя
+ * не уведомляет (assign_notified_at = сейчас); переданному другому Admin уведомление
+ * приходит через outbox прохода SLA. Реакцией это не считается: реакция — открытый
+ * черновик плана (миграция 152).
+ */
+export async function takePlanTask(sb: Sb, input: { taskId: string; assigneeId: string; actorId: string; now?: Date }): Promise<ReassignResult> {
+  const now = (input.now ?? new Date()).toISOString()
+  const { data: found, error } = await sb.from('expert_sla_tasks').select(TASK_COLUMNS).eq('id', input.taskId).maybeSingle()
+  if (error) return { ok: false, status: 503, error: 'Очередь недоступна — применена ли миграция 152?' }
+  const task = found as SlaTaskRow | null
+  if (!task) return { ok: false, status: 404, error: 'Задача не найдена' }
+  if (task.closed_at) return { ok: false, status: 409, error: 'Задача уже закрыта' }
+  if (!isPlanSource(task.source)) return { ok: false, status: 400, error: 'Это экспертная задача — её передают эксперту вместе с клиентом' }
+  if (!(await isPlanHolder(sb, input.actorId))) return { ok: false, status: 403, error: 'План Точки Б ведут Admin и Super Admin' }
+  if (!(await isPlanHolder(sb, input.assigneeId))) return { ok: false, status: 400, error: 'Передать план можно только Admin или Super Admin' }
+  if (task.assignee_id === input.assigneeId) return { ok: true, moved: 0, previous: task.assignee_id }
+  const { data: moved, error: mErr } = await sb.from('expert_sla_tasks')
+    .update({
+      assignee_id: input.assigneeId, assigned_at: now, assigned_via: 'manual',
+      assign_notified_at: input.assigneeId === input.actorId ? now : null,
+    })
+    .eq('id', task.id).is('closed_at', null)
+    .select('id')
+  if (mErr) return { ok: false, status: 500, error: 'Не удалось взять задачу' }
   return { ok: true, moved: (moved as unknown[] | null)?.length ?? 0, previous: task.assignee_id }
 }
 

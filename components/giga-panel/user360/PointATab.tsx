@@ -10,6 +10,7 @@ import { formatGri } from '@/lib/format/gri'
 import {
   Badge, Button, EmptyState, ErrorState, GigaApiError, Panel, Skeleton, StatTile, cx, fmtDate, fmtDateTime, gigaFetch, inputClass, useGigaQuery, type Tone,
 } from '../kit'
+import { AiReviewPanel } from '@/components/expert-review/AiReviewPanel'
 
 /**
  * Точка А клиента в User 360 (spec 2026-10-12 §7).
@@ -71,6 +72,8 @@ export function PointATab({ userId, canReview = false }: { userId: string; canRe
   const [legacyOpen, setLegacyOpen] = useState(false)
   return (
     <div className="space-y-4">
+      {/* R3-SLA: the expert's check of the AI analysis («гибрид»: the client sees the draft until it is confirmed). */}
+      <AiReviewPanel apiUrl={`/api/giga-admin/users/${userId}/point-a/ai-review`} canEdit={canReview} />
       <ExpertPointA userId={userId} canReview={canReview} />
       <section className="rounded-2xl border border-white/[0.07] bg-white/[0.02]">
         <button

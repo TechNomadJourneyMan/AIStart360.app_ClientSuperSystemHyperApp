@@ -6,8 +6,8 @@
  *   in_work     a DRAFT is open: somebody of the team works on the plan
  *   in_review   a version waits for the approval of Admin / Super Admin
  *   waiting     the data carries a plan (the model has scenarios), nobody has started: the client WAITS for a plan
- *               — {@link isWaitingForPlan}; the queue «Pro без плана» and its 48-hour SLA (lib/expert-sla, next round)
- *               plug in here
+ *               — {@link isWaitingForPlan}; the queue «Pro без плана» and its 48-hour SLA plug in here: the pass of
+ *               lib/expert-sla/run.ts opens / drops the plan_prep tasks (migration 152) from {@link listClientsWaitingForPlan}
  *   needs_data  the model cannot build scenarios (no revenue goal or no base revenue): the client is told what to add
  *
  * The client is never promised «эксперт готовит», «от вас ничего не требуется» while nobody works: the texts are in
@@ -26,12 +26,31 @@ export interface PlanPrepMissing {
   actions: MissingInput['actions']
 }
 
+/**
+ * R3-SLA (migration 152): the open plan_prep task of the client — «План готовит: <имя>, до <срок>» / «Назначаем
+ * ответственного». `assignee` — the profile name of who took it (never the email), null — nobody yet; `overdue` — the
+ * deadline has passed (no date is promised then).
+ */
+export interface PlanPrepTask {
+  assignee: string | null
+  dueAt: string
+  overdue: boolean
+}
+
 export interface PlanPrep {
   kind: PlanPrepKind
   /** needs_data: what the plan lacks and where to add it (level-1 inputs of the model). Empty otherwise. */
   missing: PlanPrepMissing[]
   /** in_work: when the draft was created; in_review: when it was sent; otherwise null. */
   since: string | null
+  /** The SLA task of the plan (waiting / in_work / in_review), when there is one. */
+  task?: PlanPrepTask | null
+}
+
+/** The task joins the state only while the plan is not published and somebody owes it to the client. */
+export function withPlanTask(prep: PlanPrep, task: PlanPrepTask | null | undefined): PlanPrep {
+  if (!task || !['waiting', 'in_work', 'in_review'].includes(prep.kind)) return prep
+  return { ...prep, task }
 }
 
 export interface PlanPrepFacts {
@@ -73,12 +92,22 @@ export interface WaitingClient {
   since: string | null
 }
 
+/** Why a checked candidate does not wait (R3-SLA, migration 152: closes its plan_prep task when nobody works on the plan). */
+export type NotWaitingReason = 'no_access' | 'needs_data'
+
 export interface WaitingScan {
   waiting: WaitingClient[]
   /** Clients whose model was calculated. */
   checked: number
   /** The budget or the limit stopped the scan before every candidate was checked. */
   truncated: boolean
+  /** Candidates the scan checked and found NOT waiting (no Point B access; the model builds no scenarios). */
+  dropped: Array<{ companyId: string; userId: string; reason: NotWaitingReason }>
+  /**
+   * Every candidate company (a revenue goal, an owner, no approved / open version) — checked or not. A company with an
+   * open SLA task that is not here lost its goal or got a plan version (R3-SLA).
+   */
+  candidates: string[]
 }
 
 export interface WaitingScanOptions {
@@ -177,18 +206,21 @@ export async function listClientsWaitingForPlan(sb: SupabaseClient, opts: Waitin
 
   const list = await candidates(sb)
   const waiting: WaitingClient[] = []
+  const dropped: WaitingScan['dropped'] = []
   let checked = 0
   let truncated = false
   for (const c of list) {
     if (checked >= limit || clock() - started > budget) { truncated = true; break }
-    if (!(await access(c.userId))) continue
+    if (!(await access(c.userId))) { dropped.push({ companyId: c.companyId, userId: c.userId, reason: 'no_access' }); continue }
     checked += 1
     try {
       const result = await model(c.userId, c.companyId, now)
       if (isWaitingForPlan(planPrepState({ published: false, open: null, result }))) waiting.push(c)
+      else dropped.push({ companyId: c.companyId, userId: c.userId, reason: 'needs_data' })
     } catch (err) {
+      // Not calculated: neither waiting nor dropped — an open task stays as it is.
       console.error('[point-b/waiting] model not calculated', c.companyId, err instanceof Error ? err.message : err)
     }
   }
-  return { waiting, checked, truncated }
+  return { waiting, checked, truncated, dropped, candidates: list.map((c) => c.companyId) }
 }
