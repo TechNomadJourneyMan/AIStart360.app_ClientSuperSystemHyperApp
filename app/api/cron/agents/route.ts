@@ -4,6 +4,8 @@ import { drainQueue } from '@/lib/agents/queue'
 import { enqueueScheduledAgents, scheduledAgentsOn } from '@/lib/functions/agents'
 import { redispatchPending } from '@/lib/events/platform'
 import { drainPointARecalc } from '@/lib/point-a/recalc-queue'
+import { failStaleAiAnalyses } from '@/lib/point-a/ai-claim'
+import { createServiceClient } from '@/lib/supabase-service'
 import { pruneRateLimits } from '@/lib/rate-limit'
 import { portalRole, runsAgentWork } from '@/lib/runtime/role'
 import { drainWhatsAppOutbox } from '@/lib/whatsapp/outbox'
@@ -93,6 +95,10 @@ export async function GET(req: NextRequest) {
       console.error('[cron/agents] point A drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
       return null
     })
+    // Ревью R3-PA H1: a Point A AI analysis «готовится» for more than 15 min was lost
+    // (network, redeploy / OOM mid-call) → failed / 'stale', «Повторить» is offered.
+    // One conditional UPDATE; never fails the cron.
+    const aiStale = await failStaleAiAnalyses(createServiceClient()).catch(() => 0)
     const drained = await drainQueue({ budgetMs: budgets.queueMs })
     const rateLimitsPruned = await pruneRateLimits() // expired rate_limit_hits rows (migration 100); never throws
     return NextResponse.json({
@@ -105,6 +111,7 @@ export async function GET(req: NextRequest) {
       rateLimitsPruned,
       whatsapp,
       pointA: pointA ? { done: pointA.done.length, failed: pointA.failed.length } : null,
+      pointAAiStale: aiStale,
       executed: drained.executed.map((r) => ({ taskId: r.taskId, status: r.finalStatus, errorCode: r.errorCode })),
     })
   } catch (err) {

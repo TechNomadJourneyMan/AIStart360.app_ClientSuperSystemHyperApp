@@ -64,6 +64,7 @@ vi.mock('@/lib/rate-limit', () => ({
   },
 }))
 
+vi.mock('@/lib/point-a/ai-claim', () => ({ failStaleAiAnalyses: async () => 0 }))
 import { GET } from '@/app/api/cron/agents/route'
 import { CRON_JOBS } from '@/lib/cron/schedule'
 import { agentsMaintenance } from '@/lib/functions/agents'

@@ -9,7 +9,8 @@
  *   - gri_assessments.top_5_limits / gri_index
  *   - companies.target_revenue_12m/3y_kzt
  *   - metrics biz.finansy.vyruchka_god     → current revenue (REVENUE_METRIC_IDS)
- *   - calculatePointBV2()                  → gap / realism / data_sufficiency
+ *   - lib/point-b/report.ts (R3-PB review M3) → gap / realism / data_sufficiency from the SAME
+ *     calculation as «Обзор» (the model + the approved plan), not the V2 engine
  *
  * CRITICAL ANTI-HALLUCINATION BOUNDARY: the object returned here is the ONLY
  * thing later serialized into an LLM prompt. Never hand raw DB rows to the LLM —
@@ -19,7 +20,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PointA, BlockScore } from '@/types/onboarding'
-import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
+import type { PointBReport } from '@/lib/point-b/report'
+import { assistantPointBFrom, EMPTY_ASSISTANT_POINT_B } from './point-b'
 import type {
   AssistantContext,
   AssistantBlock,
@@ -109,10 +111,18 @@ function mapGriTop5(raw: unknown): AssistantGri['top_5_limits'] {
     .filter((x): x is NonNullable<typeof x> => x !== null)
 }
 
-/** Map GRI top-5 into the Point B engine's griTop5 option shape. */
-function griTop5ToOption(top5: AssistantGri['top_5_limits']): PointBOptions['griTop5'] {
-  if (!top5.length) return undefined
-  return top5.map((t) => ({ rank: t.rank, title: t.title, block: t.block, severity: 'high' }))
+const companyIdOf = (diag: unknown): string | null => {
+  const id = (diag as { company_id?: unknown } | null)?.company_id
+  return typeof id === 'string' && id ? id : null
+}
+
+/**
+ * The client's Point B report (the state of /client/point-b) — service role: the plan tables are read the way the page
+ * reads them; `userId` is the one the caller already authorised (the session user, or a client of the staff member).
+ */
+async function defaultPointBReport(userId: string, companyId: string | null): Promise<PointBReport> {
+  const [{ createServiceClient }, { loadPointBReport }] = await Promise.all([import('@/lib/supabase-service'), import('@/lib/point-b/report')])
+  return loadPointBReport(createServiceClient(), userId, { companyId })
 }
 
 /** Blocks WITH official data only — a block without data is listed apart, never as a 0. */
@@ -134,7 +144,11 @@ function toAssistantBlocks(pointA: PointA, noData: ReadonlySet<string>): Assista
 export async function buildAssistantContext(
   userId: string,
   sb: SupabaseClient,
-  opts: { sections?: SectionAccess } = {},
+  opts: {
+    sections?: SectionAccess
+    /** Test seam: the Point B report of the client (default: lib/point-b/report.ts with the service role). */
+    pointBReport?: (userId: string, companyId: string | null) => Promise<PointBReport | null>
+  } = {},
 ): Promise<AssistantContext> {
   const sectionsP = sectionsFor(userId, sb, opts.sections)
   // 1. Latest diagnostic (Point A). RLS scopes the row; we also filter by user.
@@ -222,15 +236,15 @@ export async function buildAssistantContext(
     }
   }
 
-  // 6. Compute Point B (gap / realism / data_sufficiency) — never fabricated.
-  const pointBV2 = calculatePointBV2(pointA, answers, {
-    diagnosticId,
-    blocksWithoutData: [...noData],
-    griTop5: griTop5ToOption(griTop5),
-    currentRevenueYear,
-    goal12mYear: target12m,
-    goal3yYear: target3y,
-  })
+  // 6. Point B — R3-PB review M3: the SAME calculation as «Обзор» (the model + the approved plan version,
+  //    lib/point-b/report.ts), only when Точка Б is open for this snapshot (a closed section is scrubbed anyway).
+  const sections = await sectionsP
+  const report = sections.point_b
+    ? await (opts.pointBReport ?? defaultPointBReport)(userId, (company?.id as string | null | undefined) ?? companyIdOf(diag)).catch((err: unknown) => {
+        console.error('[assistant/context] Point B not calculated — left empty', err instanceof Error ? err.message : err)
+        return null
+      })
+    : null
 
   // ── Assemble the curated snapshot ──────────────────────────────────────────
 
@@ -255,45 +269,9 @@ export async function buildAssistantContext(
     })),
   }
 
-  const gap12 = pointBV2.gap.find((g) => g.horizon === '12m')
-  const assistantPointB: AssistantPointB = {
-    has_goal:
-      pointBV2.goals.goal_12m_revenue_year != null ||
-      pointBV2.goals.goal_3y_revenue_year != null,
-    current_revenue_year: pointBV2.goals.current_revenue_year,
-    goal_12m_revenue_year: pointBV2.goals.goal_12m_revenue_year,
-    goal_3y_revenue_year: pointBV2.goals.goal_3y_revenue_year,
-    gap: {
-      multiplier: gap12?.multiplier ?? null,
-      required_cagr: gap12?.required_cagr ?? null,
-      required_mom_growth: gap12?.required_mom_growth ?? null,
-      data_complete: gap12?.data_complete ?? false,
-    },
-    realism: {
-      level: pointBV2.realism.level,
-      score: pointBV2.realism.score,
-      rationale: pointBV2.realism.rationale,
-      weak_blocks: pointBV2.realism.weak_blocks,
-    },
-    data_sufficiency: {
-      sufficient: pointBV2.data_sufficiency.sufficient,
-      confidence: pointBV2.data_sufficiency.confidence,
-      missing: pointBV2.data_sufficiency.missing,
-      have: pointBV2.data_sufficiency.have,
-    },
-    levers: pointBV2.levers.map((l) => ({
-      key: l.key,
-      label: l.label,
-      expected_effect: l.expected_effect,
-      data_available: l.data_available,
-    })),
-    top5_limits: pointBV2.top5_limits.map((t) => ({
-      rank: t.rank,
-      title: t.title,
-      block: t.block,
-      severity: t.severity,
-    })),
-  }
+  const assistantPointB: AssistantPointB = report
+    ? assistantPointBFrom(report, { goal12m: target12m, goal3y: target3y, griTop5, blocks: blocks.map((b) => ({ label: b.label, score: b.score })) })
+    : { ...EMPTY_ASSISTANT_POINT_B, has_goal: target12m !== null || target3y !== null, goal_12m_revenue_year: target12m, goal_3y_revenue_year: target3y }
 
   const assistantGri: AssistantGri = {
     has_assessment: !!gri,
@@ -322,5 +300,5 @@ export async function buildAssistantContext(
     llm_analysis: null,
   }
   // R2-A: the data of closed paid sections never leaves this function.
-  return scrubAssistantContext(full, await sectionsP)
+  return scrubAssistantContext(full, sections)
 }

@@ -47,9 +47,12 @@ export const INITIAL_REVENUE_SNAPSHOT: RevenueHistorySnapshot = {
 
 export const SOURCE_LABEL: Record<RevenueSource, string> = {
   owner: 'внесено вами',
-  reconciliation: 'факт сверки',
+  reconciliation: 'факт сверки — меняется в «План-факте»',
   data: 'из документов',
 }
+
+/** A month reconciled through «Факт за месяц» is read-only here: it is corrected in the plan-fact form (review M1). */
+export const isLocked = (r: Pick<RevenueRowView, 'source'>): boolean => r.source === 'reconciliation'
 
 const ERROR_TEXT: Record<number, string> = {
   0: 'Нет связи с сервером. Проверьте соединение и повторите.',
@@ -96,8 +99,10 @@ export function parseRevenueTable(body: unknown): Omit<RevenueHistorySnapshot, '
 export function changedMonths(rows: RevenueRowView[]): { months: Array<{ period: string; revenue: number | null }>; invalid: string | null } {
   const months: Array<{ period: string; revenue: number | null }> = []
   for (const r of rows) {
+    if (isLocked(r)) continue
     const v = parseAmount(r.text)
-    if (v !== null && (!Number.isFinite(v) || v < 0)) return { months: [], invalid: r.period }
+    // > 0 like the server and the model: no revenue — leave the month empty (review L3).
+    if (v !== null && (!Number.isFinite(v) || v <= 0)) return { months: [], invalid: r.period }
     if (v === null && r.original === null) continue
     if (v !== null && r.original !== null && Math.abs(v - r.original) < 0.005) continue
     months.push({ period: r.period, revenue: v })
@@ -146,6 +151,7 @@ export class RevenueHistoryController {
   }
 
   setValue(period: string, text: string): void {
+    if (this.snap.rows.some((r) => r.period === period && isLocked(r))) return
     this.set({
       rows: this.snap.rows.map((r) => (r.period === period ? { ...r, text } : r)),
       message: null,
@@ -157,7 +163,7 @@ export class RevenueHistoryController {
     if (this.snap.saving) return false
     const { months, invalid } = changedMonths(this.snap.rows)
     if (invalid) {
-      this.set({ error: 'Выручка за месяц — число в тенге, не меньше нуля', field: invalid, message: null })
+      this.set({ error: 'Выручка за месяц — число в тенге больше нуля (если выручки не было, оставьте месяц пустым)', field: invalid, message: null })
       return false
     }
     if (!months.length) { this.set({ message: 'Изменений нет', error: null, field: null }); return false }

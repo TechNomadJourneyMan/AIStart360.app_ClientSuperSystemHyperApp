@@ -46,9 +46,12 @@ const { REASON_PRIMARY_NOT_VERIFIED } = await import('@/lib/point-b/plan/status'
 const { listClientsWaitingForPlan } = await import('@/lib/point-b/plan/waiting')
 const { loadPointBState } = await import('@/lib/point-b/model/load')
 const { loadPointBReport } = await import('@/lib/point-b/report')
-const { revenueHistoryPeriods, saveRevenueHistory, loadRevenueTable } = await import('@/lib/point-b/finmodel/revenue-history')
+const { revenueHistoryPeriods, saveRevenueHistory, loadRevenueTable, refreshAfterRevenueHistory } = await import('@/lib/point-b/finmodel/revenue-history')
 const { recomputeNow, saveFactsAndRefresh } = await import('@/lib/point-b/planfact/route')
-const { lastFinishedPeriod } = await import('@/lib/point-b/planfact/kpis')
+const { recomputeCompany } = await import('@/lib/point-b/planfact/recompute')
+const { addPeriods, lastFinishedPeriod } = await import('@/lib/point-b/planfact/kpis')
+const { loadModelForCompany } = await import('@/lib/point-b/model/load')
+const { snapshotGoals } = await import('@/lib/point-b/plan/goals')
 
 const REVENUE = 'biz.finansy.vyruchka_god'
 
@@ -281,4 +284,82 @@ describe.skipIf(!dbTestsEnabled)('Точка Б end to end on the real schema (R
       expect(state.plan.prep.kind).toBe('needs_data')
       expect(state.plan.prep.missing.map((m) => m.key)).toContain('goal')
     }))
+
+  it('R3-PB review M1: after the approval «Выручка по месяцам», «Факт за месяц» and «План-факт» stay one history', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const now = new Date()
+      const author = { id: w.admin, name: 'Админ Главный', kind: 'admin' as const }
+      const months = revenueHistoryPeriods(now).slice(-12).map((period) => ({ period, revenue: 5_000_000 }))
+      await saveRevenueHistory(w.svc, { companyId: w.company, enteredBy: w.client, role: 'owner', months })
+      const built = await buildQuickDraft(w.svc, { companyId: w.company, userId: w.client, author, now, ai: false })
+      await reviewGoal(w.svc, { companyId: w.company, metricKey: REVENUE, periodLabel: '12m', action: 'verify', reviewer: { id: w.admin, name: 'Админ Главный' } })
+      const submitted = await submitPlanVersion(w.svc, { companyId: w.company, userId: w.client, version: built.version, actor: author })
+      await approvePlanVersion(w.svc, { companyId: w.company, userId: w.client, version: submitted, actor: author })
+      const P = lastFinishedPeriod(now)
+      const Q = addPeriods(P, -1)
+      // checkpoints of the last finished month and (an older one) of Q
+      await recomputeCompany(w.svc, { companyId: w.company, userId: w.client, now, force: true, mode: 'checkpoint', extraPeriods: [Q] })
+      const checkpoint = async (period: string) => (await db.query(
+        `SELECT (actual->'values'->>'revenue')::float8 AS revenue, actual->'sources'->>'revenue' AS source FROM public.pb_checkpoints WHERE version_id = $1 AND period = $2`,
+        [built.version.id, period],
+      )).rows[0] as { revenue: number; source: string } | undefined
+      const historyOf = async (period: string) => {
+        const goals = await snapshotGoals(w.svc, w.company)
+        const { inputs } = await loadModelForCompany(w.svc, { userId: w.client, companyId: w.company, goals, now })
+        return inputs.history.find((h) => h.period === period)?.revenue ?? null
+      }
+      expect(await checkpoint(Q)).toEqual({ revenue: 5_000_000, source: 'reconciliation' })
+
+      // the owner corrects an older history month: its checkpoint follows at once (no waiting for the scheduled recompute)
+      await saveRevenueHistory(w.svc, { companyId: w.company, enteredBy: w.client, role: 'owner', months: [{ period: Q, revenue: 6_000_000 }] })
+      const refreshed = await refreshAfterRevenueHistory(w.svc, { companyId: w.company, userId: w.client, periods: [Q], now })
+      expect(refreshed).toMatchObject({ status: 'done', periods: [Q] })
+      expect(await checkpoint(Q)).toEqual({ revenue: 6_000_000, source: 'reconciliation' })
+      expect(await historyOf(Q)).toBe(6_000_000)
+
+      // the expert enters «Факт за месяц» for P: 7 млн
+      await saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: P, values: { revenue: 7_000_000 } }, enteredBy: w.admin, role: 'expert', now })
+      expect(await checkpoint(P)).toEqual({ revenue: 7_000_000, source: 'reconciliation' })
+
+      // the owner tries 1 млн for P — through «Финмодель» (write or clear) and through his «Факт за месяц»: refused
+      await expect(saveRevenueHistory(w.svc, { companyId: w.company, enteredBy: w.client, role: 'owner', months: [{ period: P, revenue: 1_000_000 }] }))
+        .rejects.toMatchObject({ code: 'invalid', field: 'months[0].revenue' })
+      await expect(saveRevenueHistory(w.svc, { companyId: w.company, enteredBy: w.client, role: 'owner', months: [{ period: Q, revenue: 6_100_000 }, { period: P, revenue: null }] }))
+        .rejects.toMatchObject({ code: 'invalid', field: 'months[1].revenue' })
+      await expect(saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: P, values: { revenue: 1_000_000 } }, enteredBy: w.client, role: 'owner', now }))
+        .rejects.toMatchObject({ code: 'invalid', field: 'revenue' })
+      // nothing was half-written: Q is still 6 млн (the refused batch wrote nothing)
+      expect(await historyOf(Q)).toBe(6_000_000)
+
+      // «Обзор» (the model history), the table and «План-факт» agree on P: the expert's 7 млн, his trace kept
+      const row = (await db.query(`SELECT value::float8 AS value, source, entered_role FROM public.pb_monthly_facts WHERE company_id = $1 AND metric = 'revenue' AND period = $2`, [w.company, P])).rows[0]
+      expect(row).toEqual({ value: 7_000_000, source: 'monthly_reconciliation', entered_role: 'expert' })
+      expect(await historyOf(P)).toBe(7_000_000)
+      expect((await loadRevenueTable(w.svc, w.company, now)).months.find((m) => m.period === P)).toEqual({ period: P, revenue: 7_000_000, source: 'reconciliation' })
+      const state = await loadPointBState(w.svc, w.client, { now })
+      expect(state.planFact!.checkpoints.find((c) => c.period === P)!.actual.revenue).toBe(7_000_000)
+
+      // the expert may correct his own value; the checkpoint follows
+      await saveFactsAndRefresh(w.svc, { companyId: w.company, userId: w.client, body: { period: P, values: { revenue: 6_500_000 } }, enteredBy: w.admin, role: 'expert', now })
+      expect(await checkpoint(P)).toEqual({ revenue: 6_500_000, source: 'reconciliation' })
+      expect(await historyOf(P)).toBe(6_500_000)
+    }), 60_000)
+
+  it('R3-PB review L8: the PDF / share / chat name the company — its own numbers; another owner\'s company gives nothing (one company per owner: companies_user_id_uidx)', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const now = new Date()
+      // the schema keeps one company per owner (migration 013): the case «an owner of two companies» cannot arise
+      await db.query('SAVEPOINT two')
+      await expect(seedCompany(db, w.client, 'Василёк')).rejects.toMatchObject({ code: '23505' })
+      await db.query('ROLLBACK TO SAVEPOINT two')
+      const first = await loadPointBReport(w.svc, w.client, { now })
+      const named = await loadPointBReport(w.svc, w.client, { now, companyId: w.company })
+      expect(named.gap).toEqual(first.gap)
+      expect(named.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000 })
+      // a company of another owner is never read for this user
+      await expect(loadPointBReport(w.svc, w.client, { now, companyId: w.otherCompany })).rejects.toMatchObject({ name: 'PointBCompanyError' })
+    }), 60_000)
 })
+

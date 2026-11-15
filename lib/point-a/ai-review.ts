@@ -12,6 +12,7 @@
  */
 import { z } from 'zod'
 import type { AIAnalysis, AIBlockAnalysis, RoadmapItem, StrategicPriority } from '@/types/onboarding'
+import { AI_STALE_CODE, isAiStale } from './ai-claim'
 
 // ─── Parts of one generation (lib/ai/point-a-analyzer.ts) ───────────────────
 
@@ -194,9 +195,9 @@ export const AI_DRAFT_LABEL = 'Черновик ИИ — эксперт пров
 export const AI_REVIEWED_LABEL = 'Проверено экспертом'
 
 /** Columns of public.diagnostics the view reads (150 columns included). */
-export const AI_VIEW_COLUMNS = 'id, ai_status, ai_analysis, ai_error, ai_model, ai_generated_at, ai_reviewed_at, ai_reviewed_by_name, ai_expert_edits'
+export const AI_VIEW_COLUMNS = 'id, ai_status, ai_analysis, ai_error, ai_model, ai_generated_at, ai_started_at, calculated_at, ai_reviewed_at, ai_reviewed_by_name, ai_expert_edits'
 /** The same before migration 150. */
-export const AI_VIEW_COLUMNS_PRE150 = 'id, ai_status, ai_analysis'
+export const AI_VIEW_COLUMNS_PRE150 = 'id, ai_status, ai_analysis, calculated_at'
 
 export type AiAnalysisStatus = 'processing' | 'completed' | 'partial' | 'failed' | 'none'
 
@@ -217,11 +218,23 @@ export interface PointAAiAnalysisView {
   errorCode: string | null
   model: string | null
   generatedAt: string | null
+  /** 'processing': when the current attempt started (the page polls faster only at first). */
+  startedAt?: string | null
   /**
    * R3-SLA: the expert's task to confirm this analysis (migration 152) — «Эксперт проверит до <срок>» while it is
    * open and the deadline has not passed. Absent / null — no promise of a date.
    */
   reviewDue?: { at: string; overdue: boolean } | null
+}
+
+/**
+ * Ревью R3-PA L4: the failure code and the model are for staff — a client's
+ * answer carries neither (the page shows them only to staff anyway).
+ */
+export function aiViewForViewer<T extends Pick<PointAAiAnalysisView, 'errorCode' | 'model'>>(view: T | null, staff: boolean): T | null {
+  if (!view || staff) return view
+  // 'stale' stays: it only says «не завершился» (the client's text depends on it).
+  return { ...view, errorCode: view.errorCode === AI_STALE_CODE ? AI_STALE_CODE : null, model: null }
 }
 
 /** ai_analysis.partial of a stored partial analysis: the parts that did not come. */
@@ -236,9 +249,12 @@ export function missingPartsOf(ai: unknown): AnalysisPart[] {
  * 'failed' keeps the last analysis of the row when there is one — a partial
  * one (ai_analysis.partial) or a complete one an unsuccessful retry left.
  */
-export function aiAnalysisView(row: Record<string, unknown> | null | undefined): PointAAiAnalysisView | null {
+export function aiAnalysisView(row: Record<string, unknown> | null | undefined, opts: { now?: number } = {}): PointAAiAnalysisView | null {
   if (!row || row.id === undefined || row.id === null) return null
-  const raw = row.ai_status
+  // Ревью R3-PA H1: «готовится» longer than AI_STALE_AFTER_MS is a lost attempt — a failure
+  // the client can retry (the row itself is turned 'failed' / 'stale' by the page read and the sweep).
+  const stale = isAiStale(row, opts.now ?? Date.now())
+  const raw = stale ? 'failed' : row.ai_status
   const stored = isRecord(row.ai_analysis) && !('strengths_text' in row.ai_analysis) ? (row.ai_analysis as Partial<AIAnalysis>) : null
   const missing = missingPartsOf(stored)
   const edits = readExpertEdits(row.ai_expert_edits)
@@ -257,27 +273,42 @@ export function aiAnalysisView(row: Record<string, unknown> | null | undefined):
     review: reviewedAt ? { by: str(row.ai_reviewed_by_name), at: reviewedAt } : null,
     editedByExpert: edited,
     expertNote: edits?.note ?? null,
-    errorCode: str(row.ai_error),
+    errorCode: stale ? AI_STALE_CODE : str(row.ai_error),
     model: str(row.ai_model) ?? str(stored?.model_used),
     generatedAt: isoOf(row.ai_generated_at) ?? str(stored?.generated_at),
+    startedAt: status === 'processing' ? (isoOf(row.ai_started_at) ?? isoOf(row.calculated_at)) : null,
   }
 }
 
-/** The line next to the analysis in the PDF and the share link (null: nothing AI to label). */
-export function aiAnalysisNote(view: Pick<PointAAiAnalysisView, 'draft' | 'review'> | null): string | null {
+/**
+ * The line next to the analysis in the PDF and the share link (null: nothing AI to label).
+ * Ревью R3-PA L3: a partial analysis, or an earlier one after a failed retry, says so there too.
+ */
+export function aiAnalysisNote(view: Pick<PointAAiAnalysisView, 'draft' | 'review'> & Partial<Pick<PointAAiAnalysisView, 'status' | 'missingParts' | 'analysis' | 'errorCode'>> | null): string | null {
   if (!view) return null
+  let note: string
   if (!view.draft && view.review) {
     const at = new Date(view.review.at)
     const date = Number.isFinite(at.getTime()) ? at.toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty' }) : ''
-    return `${AI_REVIEWED_LABEL}${view.review.by ? `: ${view.review.by}` : ''}${date ? `, ${date}` : ''}`
+    note = `${AI_REVIEWED_LABEL}${view.review.by ? `: ${view.review.by}` : ''}${date ? `, ${date}` : ''}`
+  } else {
+    note = `${AI_DRAFT_LABEL}. Разбор подготовлен ИИ по вашим данным и ещё не проверен экспертом.`
   }
-  return `${AI_DRAFT_LABEL}. Разбор подготовлен ИИ по вашим данным и ещё не проверен экспертом.`
+  if (view.status === 'partial' || (view.status === 'failed' && view.analysis)) {
+    note += ` ${aiFailureText({ status: view.status, missingParts: view.missingParts ?? [], analysis: view.analysis ?? null, errorCode: view.errorCode ?? null })}`
+  }
+  return note
 }
 
 /** The client's sentence for a failed generation (the code stays for staff). */
-export function aiFailureText(view: Pick<PointAAiAnalysisView, 'status' | 'missingParts' | 'analysis'>): string {
+export function aiFailureText(view: Pick<PointAAiAnalysisView, 'status' | 'missingParts' | 'analysis'> & { errorCode?: string | null }): string {
   if (view.status === 'partial') {
     return `Часть разбора не получилась: ${view.missingParts.map((p) => PART_LABEL_RU[p]).join('; ')}. Остальное — ниже.`
+  }
+  if (view.errorCode === AI_STALE_CODE) {
+    return view.analysis
+      ? 'Обновление разбора не завершилось — показан предыдущий вариант.'
+      : 'Разбор ИИ не завершился.'
   }
   return view.analysis
     ? 'Последняя попытка обновить разбор не удалась — показан предыдущий вариант.'

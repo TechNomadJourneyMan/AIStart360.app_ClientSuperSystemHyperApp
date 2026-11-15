@@ -26,6 +26,7 @@ import { withDeadline } from '@/lib/runtime/deadline'
 import { gatePaidSection } from '@/lib/access/gate'
 import { aiErrorOf, aiModelOf, clipAiError, type PointAAnalysisReport } from '@/lib/point-a/ai-review'
 import { updateDiagnosticAi } from '@/lib/point-a/ai-columns'
+import { claimAiAnalysis, claimRefusalText } from '@/lib/point-a/ai-claim'
 import { announceAiReviewNow } from '@/lib/expert-sla/immediate'
 
 /**
@@ -71,7 +72,7 @@ async function handlePost(req: NextRequest) {
   // never be able to flip someone's status, even through an error path.
   let target: { diagnosticId: string; userId: string } | null = null
   try {
-    const { diagnostic_id, user_id, locale: bodyLocale } = await req.json()
+    const { diagnostic_id, user_id, locale: bodyLocale, regenerate: regenerateAsked } = await req.json()
     if (!diagnostic_id || !user_id) {
       return NextResponse.json({ ok: false, error: 'diagnostic_id and user_id required' }, { status: 400 })
     }
@@ -85,7 +86,11 @@ async function handlePost(req: NextRequest) {
     // carry a signed internal token (cookies aren't forwarded). Accept that
     // token; otherwise require a session that owns `user_id` (or staff), and
     // throttle that direct path. Anonymous callers can no longer burn credits.
-    if (!hasValidInternalToken(req, { userId: String(user_id), diagnosticId: String(diagnostic_id) })) {
+    // A server-to-server call (snapshot fan-out, retry-ai, catch-up) has already CLAIMED the row;
+    // a direct call by a session claims it here (ревью R3-PA M1).
+    const internal = hasValidInternalToken(req, { userId: String(user_id), diagnosticId: String(diagnostic_id) })
+    let directCallerId: string | null = null
+    if (!internal) {
       const caller = await getSessionUser(sb)
       if (!caller) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
       if (!(await mayActOnUser(sb, caller.id, String(user_id)))) {
@@ -97,7 +102,11 @@ async function handlePost(req: NextRequest) {
       // R2-A (ревью M-3): the paid AI analysis is Точка А — not for a Free caller (staff exempt).
       const upgrade = await gatePaidSection(sb, caller.id, 'point_a')
       if (upgrade) return upgrade
+      directCallerId = caller.id
     }
+    // «Перегенерировать» a complete analysis (skip the input cache): staff only — through
+    // retry-ai (internal, flag in the body) or a direct call of staff for a client.
+    const regenerate = regenerateAsked === true && (internal || (directCallerId !== null && directCallerId !== String(user_id)))
 
     // Server-to-server fires (recalculate → ai-analyze) do NOT forward cookies,
     // so the caller's locale arrives in the body. Fall back to this request's
@@ -147,12 +156,18 @@ async function handlePost(req: NextRequest) {
       }, { status: 409 })
     }
 
-    // 1. Mark as processing
-    await db
-      .from('diagnostics')
-      .update({ ai_status: 'processing' })
-      .eq('id', diagnostic_id)
-      .eq('user_id', user_id)
+    // 1. Mark as processing (+ when the attempt started: «готовится» older than 15 min is stale).
+    if (internal) {
+      await updateDiagnosticAi(db, target, { ai_status: 'processing' }, { ai_started_at: new Date().toISOString() })
+    } else {
+      // A direct call: never a second analysis of a row in progress, never a complete one
+      // again (staff may regenerate), not right after the last start.
+      const claim = await claimAiAnalysis(db, target, { allowCompleted: regenerate })
+      if (!claim.ok) {
+        const r = claimRefusalText(claim)
+        return NextResponse.json({ ok: false, error: r.error, reason: claim.reason }, { status: r.status })
+      }
+    }
 
     // 2. Fetch survey answers. A failed read must not become an analysis of
     // «no data» stored as the client's personal result (and a paid call).
@@ -219,6 +234,7 @@ async function handlePost(req: NextRequest) {
     try {
       outcome = await analyzeWithInputCache(inputHash, {
         findCached: async (hash) => {
+          if (regenerate) return null // an explicit «перегенерировать»: a new text, not the cached one
           const read = (cols: string) => db
             .from('diagnostics')
             .select(cols)

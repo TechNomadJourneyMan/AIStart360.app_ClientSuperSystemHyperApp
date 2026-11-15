@@ -8,7 +8,7 @@
 import { useEffect, useId, useMemo, useRef, useSyncExternalStore } from 'react'
 import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
-import { RevenueHistoryController, SOURCE_LABEL, runText, type RevenueHistorySnapshot } from './revenueHistoryController'
+import { RevenueHistoryController, SOURCE_LABEL, isLocked, runText, type RevenueHistorySnapshot } from './revenueHistoryController'
 
 const INPUT =
   'w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 pr-8 text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60'
@@ -71,7 +71,8 @@ export function RevenueHistoryView({ snap, onValue, onSave, onRetry }: {
                       autoComplete="off"
                       value={r.text}
                       onChange={(e) => onValue(r.period, e.target.value)}
-                      disabled={snap.saving}
+                      disabled={snap.saving || isLocked(r)}
+                      readOnly={isLocked(r)}
                       placeholder="—"
                       aria-invalid={invalid || undefined}
                       aria-describedby={invalid ? `${uid}-err` : undefined}

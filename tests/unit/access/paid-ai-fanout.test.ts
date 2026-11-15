@@ -114,11 +114,13 @@ describe('catchUpPaidAi — after the move to Pro', () => {
       from: () => {
         const b: Record<string, unknown> = {}
         const self = () => b
+        let updating = false
         Object.assign(b, {
-          select: self, eq: self,
-          update: (p: unknown) => { updates.push(p); return b },
+          select: self, eq: self, is: self,
+          update: (p: unknown) => { updates.push(p); updating = true; return b },
           maybeSingle: async () => ({ data: diag, error: null }),
-          then: (res: (v: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(res),
+          // the claim (R3-PA M1) reads the rows it changed
+          then: (res: (v: unknown) => unknown) => Promise.resolve({ data: updating && diag ? [{ id: diag.id }] : null, error: null }).then(res),
         })
         return b
       },
@@ -132,7 +134,7 @@ describe('catchUpPaidAi — after the move to Pro', () => {
     const fire = vi.fn()
     const fired = await row.catchUpPaidAi('owner', { sb: sb as never, baseUrl: 'https://app.test', fire })
     expect(fired).toEqual([ANALYZE])
-    expect(sb.updates).toEqual([{ ai_status: 'processing' }])
+    expect(sb.updates).toEqual([{ ai_status: 'processing', ai_started_at: expect.any(String) }])
     expect(fire).toHaveBeenCalledWith(expect.objectContaining({ diagnosticId: 'd-1', userId: 'owner', paths: [ANALYZE] }))
   })
 

@@ -11,6 +11,10 @@
 -- narrow CHECK of 145 does not admit them, and the code of 149 cannot show them.
 -- They are derived bookkeeping — the AI analyses (diagnostics, incl. the expert's
 -- corrections and «Проверено экспертом») and the plans of Point B are not touched.
+-- With the 149 body back, a version of a plan in review whose approval was held by
+-- an open plan_prep (152: no second task while the plan is prepared) gets its
+-- plan_review task on the next pass, the clock from its submission (the rule of
+-- 149, never before the general clock start).
 -- Roll the app back first (its pass calls expert_sla_plan_prep and its pages
 -- read the new sources), or switch the setting expert_sla.enabled off.
 --   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -1 -f supabase/migrations/rollback/152_expert_sla_ai_review_plan_prep.down.sql

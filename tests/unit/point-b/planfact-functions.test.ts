@@ -175,8 +175,12 @@ describe('the plan companies and the monthly reconciliation', () => {
 
   it('a month already filled is not asked again; a client without Point B is skipped; no assignee — no task', async () => {
     const c = company(2)
-    s.h = pbDb({ pb_monthly_facts: [{ company_id: c.companyId, period: '2026-10', metric: 'revenue', value: 1 }], staff_tasks: [] })
+    // R3-PB review L1: a revenue month of «Финмодель» (revenue_history) is NOT a passed reconciliation — the owner is still asked
+    s.h = pbDb({ pb_monthly_facts: [{ company_id: c.companyId, period: '2026-10', metric: 'revenue', value: 1, source: 'revenue_history' }], staff_tasks: [] })
     const now = new Date('2026-11-01T04:00:00Z')
+    expect((await monthlyReconciliation(s.h.sb, { ...c, period: '2026-10', now })).filled).toBe(false)
+    s.notify.length = 0
+    s.h = pbDb({ pb_monthly_facts: [{ company_id: c.companyId, period: '2026-10', metric: 'revenue', value: 1, source: 'monthly_reconciliation' }], staff_tasks: [] })
     expect(await monthlyReconciliation(s.h.sb, { ...c, period: '2026-10', now })).toEqual({ companyId: c.companyId, reminded: false, task: 'no_assignee', filled: true })
     expect(s.notify).toEqual([])
     s.gates = true

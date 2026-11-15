@@ -45,7 +45,7 @@ async function world(db: Db) {
 const columns = (db: Db) => db.query<{ column_name: string; data_type: string }>(
   `SELECT column_name, data_type FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'diagnostics' AND column_name = ANY($1::text[]) ORDER BY 1`,
-  [['ai_error', 'ai_model', 'ai_generated_at', 'ai_reviewed_at', 'ai_reviewed_by', 'ai_reviewed_by_name', 'ai_expert_edits']],
+  [['ai_error', 'ai_model', 'ai_generated_at', 'ai_started_at', 'ai_reviewed_at', 'ai_reviewed_by', 'ai_reviewed_by_name', 'ai_expert_edits']],
 ).then((r) => Object.fromEntries(r.rows.map((x) => [x.column_name, x.data_type])))
 
 describe.skipIf(!dbTestsEnabled)('migration 150 — AI analysis diagnosis and expert review', () => {
@@ -54,7 +54,7 @@ describe.skipIf(!dbTestsEnabled)('migration 150 — AI analysis diagnosis and ex
   it('the columns exist with their types', async () => {
     await inRollback(async (db) => {
       expect(await columns(db)).toEqual({
-        ai_error: 'text', ai_expert_edits: 'jsonb', ai_generated_at: 'timestamp with time zone', ai_model: 'text',
+        ai_error: 'text', ai_expert_edits: 'jsonb', ai_generated_at: 'timestamp with time zone', ai_model: 'text', ai_started_at: 'timestamp with time zone',
         ai_reviewed_at: 'timestamp with time zone', ai_reviewed_by: 'uuid', ai_reviewed_by_name: 'text',
       })
     })
@@ -126,7 +126,7 @@ describe.skipIf(!dbTestsEnabled)('migration 150 — AI analysis diagnosis and ex
     await inRollback(async (db) => {
       await db.query(UP)
       await db.query(UP)
-      expect(Object.keys(await columns(db))).toHaveLength(7)
+      expect(Object.keys(await columns(db))).toHaveLength(8)
 
       await db.query(DOWN)
       expect(await columns(db)).toEqual({})
@@ -136,9 +136,67 @@ describe.skipIf(!dbTestsEnabled)('migration 150 — AI analysis diagnosis and ex
       // An environment where ai_model already existed before 150 (added by hand): 150 keeps it, the rollback too.
       await db.query(`ALTER TABLE public.diagnostics ADD COLUMN ai_model TEXT`)
       await db.query(UP)
-      expect(Object.keys(await columns(db))).toHaveLength(7)
+      expect(Object.keys(await columns(db))).toHaveLength(8)
       await db.query(DOWN)
       expect(await columns(db)).toEqual({ ai_model: 'text' })
+    })
+  })
+
+  // Ревью R3-PA M2: on an environment where the columns were added by hand and hold old data
+  // of any length / shape, 150 must not fail (it used to: VALIDATE / FK on old rows).
+  it('columns already there with unfitting data → 150 passes; the checks bind new writes, old rows untouched; the rollback keeps them', async () => {
+    await inRollback(async (db) => {
+      await db.query(DOWN)
+      expect(await columns(db)).toEqual({})
+      const owner = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, owner)
+      await db.query(`
+        ALTER TABLE public.diagnostics
+          ADD COLUMN ai_error TEXT, ADD COLUMN ai_generated_at TEXT, ADD COLUMN ai_reviewed_at TIMESTAMPTZ,
+          ADD COLUMN ai_reviewed_by UUID, ADD COLUMN ai_reviewed_by_name TEXT, ADD COLUMN ai_expert_edits JSONB`)
+      // an old row breaking every check, and an old row pointing to a deleted profile
+      const { rows } = await db.query(
+        `INSERT INTO public.diagnostics (user_id, company_id, overall_score, is_current, ai_error, ai_generated_at, ai_reviewed_at, ai_expert_edits)
+         VALUES ($1, $2, 50, true, repeat('x', 800), 'вчера вечером', now(), '[1, 2]'::jsonb) RETURNING id::text AS id`,
+        [owner, company])
+      const old = rows[0].id as string
+      await db.query(
+        `INSERT INTO public.diagnostics (user_id, company_id, overall_score, is_current, ai_reviewed_by, ai_reviewed_by_name, ai_reviewed_at)
+         VALUES ($1, $2, 49, false, gen_random_uuid(), 'Ушедший эксперт', now())`, [owner, company])
+
+      await db.query(UP) // must not throw
+      const cons = async () => (await db.query<{ conname: string; convalidated: boolean }>(
+        `SELECT conname, convalidated FROM pg_constraint WHERE conrelid = 'public.diagnostics'::regclass AND conname LIKE 'diagnostics_ai_%' AND conname <> 'diagnostics_ai_status_check' ORDER BY 1`)).rows
+      // a CHECK over violating old rows is NOT added (it would break every later update of them);
+      // the key is added NOT VALID (checked only when it changes)
+      expect(await cons()).toEqual([{ conname: 'diagnostics_ai_reviewed_by_fkey', convalidated: false }])
+      // the old row is untouched; the columns 150 had to create are there
+      const { rows: kept } = await db.query(`SELECT length(ai_error) AS n, ai_generated_at, ai_model, ai_started_at FROM public.diagnostics WHERE id = $1`, [old])
+      expect(kept[0]).toEqual({ n: 800, ai_generated_at: 'вчера вечером', ai_model: null, ai_started_at: null })
+      // the next recalculation can still retire the violating row; a new row can be written
+      // (the orphan row is not updated here: inside this one test transaction Postgres re-checks
+      // the key of a row inserted by the same transaction — not the case for real old rows)
+      await db.query(`UPDATE public.diagnostics SET is_current = false WHERE id = $1`, [old])
+      const { rows: fresh } = await db.query(`INSERT INTO public.diagnostics (user_id, company_id, overall_score) VALUES ($1, $2, 51) RETURNING id::text AS id`, [owner, company])
+      await db.query('SAVEPOINT w')
+      expect(await pgErrorCode(db.query(`UPDATE public.diagnostics SET ai_reviewed_by = gen_random_uuid(), ai_reviewed_by_name = 'x', ai_reviewed_at = now() WHERE id = $1`, [fresh[0].id]))).toBe('23503')
+      await db.query('ROLLBACK TO SAVEPOINT w')
+
+      // the data cleaned → re-running 150 adds and validates the checks
+      await db.query(`UPDATE public.diagnostics SET ai_error = left(ai_error, 100), ai_expert_edits = NULL, ai_reviewed_by = NULL, ai_reviewed_by_name = 'Эксперт' WHERE id = $1`, [old])
+      await db.query(UP)
+      expect(await cons()).toEqual([
+        { conname: 'diagnostics_ai_error_len', convalidated: true },
+        { conname: 'diagnostics_ai_expert_edits_object', convalidated: true },
+        { conname: 'diagnostics_ai_review_complete', convalidated: true },
+        { conname: 'diagnostics_ai_reviewed_by_fkey', convalidated: false },
+      ])
+      expect(await pgErrorCode(db.query(`UPDATE public.diagnostics SET ai_error = repeat('y', 600) WHERE id = $1`, [fresh[0].id]))).toBe('23514')
+      await db.query('ROLLBACK TO SAVEPOINT w')
+      // idempotent on such an environment too; the rollback drops only what 150 created
+      await db.query(UP)
+      await db.query(DOWN)
+      expect(Object.keys(await columns(db)).sort()).toEqual(['ai_error', 'ai_expert_edits', 'ai_generated_at', 'ai_reviewed_at', 'ai_reviewed_by', 'ai_reviewed_by_name'])
     })
   })
 })

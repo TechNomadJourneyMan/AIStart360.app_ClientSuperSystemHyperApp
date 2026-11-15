@@ -103,10 +103,22 @@ export interface MonthlyFactRow {
   updated_at?: string
 }
 
+/** R3-PB review M1: what an expert / staff member entered for a month the owner does not overwrite or clear. */
+export const EXPERT_FACT_TEXT = 'это значение за месяц внёс эксперт — изменить его может эксперт; если оно неверно, напишите ему в «Сообщениях»'
+
 export async function saveMonthlyFacts(
   sb: SupabaseClient,
   input: ValidMonthlyFacts & { companyId: string; enteredBy: string | null; role: 'owner' | 'expert' },
 ): Promise<{ saved: PlanKpi[]; cleared: PlanKpi[] }> {
+  const touched = Object.keys(input.values) as PlanKpi[]
+  if (input.role === 'owner' && touched.length) {
+    // The expert's value of a month is checked staff work (the reconciliation of the plan): the owner's own form never
+    // replaces or removes it silently — the expert changes it (and the checkpoint is recalculated then).
+    const { data, error } = await sb.from('pb_monthly_facts').select('metric, entered_role').eq('company_id', input.companyId).eq('period', input.period).in('metric', touched)
+    if (error) throw dbError('read monthly facts', error)
+    const byExpert = ((data ?? []) as Array<{ metric: PlanKpi; entered_role: string }>).find((r) => r.entered_role === 'expert')
+    if (byExpert) throw new PlanFactError('invalid', `«${KPI_META[byExpert.metric].label}»: ${EXPERT_FACT_TEXT}`, byExpert.metric)
+  }
   const saved: PlanKpi[] = []
   const cleared: PlanKpi[] = []
   const rows = (Object.entries(input.values) as Array<[PlanKpi, number | null]>).flatMap(([metric, value]) => {

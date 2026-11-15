@@ -103,7 +103,11 @@ export const CLIENT_FAN_OUT_PATHS: readonly FanOutPath[] = [FAN_OUT_PATHS[0]]
  * `paths` (R2-A, ревью M-3): only the calls of the paid sections the OWNER has —
  * the AI analysis is Точка А. Default: {@link CLIENT_FAN_OUT_PATHS}.
  */
-export type FanOutOpts = { baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[] }
+export type FanOutOpts = {
+  baseUrl: string; diagnosticId: string; userId: string; locale: string; paths?: readonly FanOutPath[]
+  /** Staff's explicit «перегенерировать» of a complete analysis (retry-ai): the analysis skips its input cache. */
+  regenerate?: boolean
+}
 
 /**
  * R2-A (ревью M-3): the paid AI calls the owner of a diagnostic is entitled to
@@ -129,7 +133,7 @@ export async function paidFanOutPaths(sb: SupabaseClient, ownerId: string): Prom
  * analysis of the current diagnostic (only when the official Point A is
  * scored) and the Point B bridge. Never throws; returns the paths fired.
  */
-export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpts) => void; sb?: SupabaseClient; baseUrl?: string | null } = {}): Promise<FanOutPath[]> {
+export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpts) => void; sb?: SupabaseClient; baseUrl?: string | null; hypotheses?: (userId: string) => Promise<unknown> } = {}): Promise<FanOutPath[]> {
   try {
     if (!process.env.OPENROUTER_API_KEY && !deps.fire) return []
     const sb = deps.sb ?? (await import('@/lib/supabase-service')).createServiceClient()
@@ -143,12 +147,22 @@ export async function catchUpPaidAi(userId: string, deps: { fire?: (o: FanOutOpt
     const { getOfficialPointA } = await import('./official')
     const official = await getOfficialPointA(sb, userId).catch(() => null)
     if (official?.state !== 'scored') return []
-    // The analysis only when it has not run yet (or failed); never twice in parallel.
-    const paths = allowed.filter((p) => p !== FAN_OUT_PATHS[0] || (row.ai_status !== 'processing' && row.ai_status !== 'completed'))
-    if (paths.length === 0) return []
-    if (paths.includes(FAN_OUT_PATHS[0])) {
-      await sb.from('diagnostics').update({ ai_status: 'processing' }).eq('id', row.id).eq('user_id', userId)
+    // Ревью R3-PA L2: the AI hypotheses of the blocks without data the Free account did not get
+    // (the latest snapshot; budget-guarded inside). In the background, never fails the catch-up.
+    if (allowed.includes(FAN_OUT_PATHS[0])) {
+      const hypotheses = deps.hypotheses ?? (async (u: string) => (await import('./snapshot')).catchUpHypotheses(u))
+      void runInBackground('point-a-hypotheses-catch-up', async () => { await hypotheses(userId) })
     }
+    // The analysis only when it has not run yet (or failed); never twice in parallel —
+    // ревью R3-PA M1: one atomic claim (lib/point-a/ai-claim.ts), no cooldown for a first run.
+    let paths: FanOutPath[] = allowed.filter((p) => p !== FAN_OUT_PATHS[0])
+    // (refused for an analysis in progress — unless it is stale — and for a complete one)
+    if (allowed.includes(FAN_OUT_PATHS[0]) && row.ai_status !== 'completed') {
+      const { claimAiAnalysis } = await import('./ai-claim')
+      const claim = await claimAiAnalysis(sb, { diagnosticId: String(row.id), userId }, { cooldownMs: 0 })
+      if (claim.ok) paths = [FAN_OUT_PATHS[0], ...paths]
+    }
+    if (paths.length === 0) return []
     ;(deps.fire ?? fireAiFanOut)({ baseUrl, diagnosticId: String(row.id), userId, locale: 'ru', paths })
     return paths
   } catch (err) {
@@ -220,7 +234,7 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
         const res = await doFetch(`${baseUrl}${path}`, {
           method: 'POST',
           headers: internalFetchHeaders({}, { path, userId, diagnosticId }),
-          body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale }),
+          body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale, ...(opts.regenerate ? { regenerate: true } : {}) }),
           signal: AbortSignal.timeout(timeoutMs),
         })
         if (!res.ok) reason = `http_${res.status}`
@@ -251,9 +265,15 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
  */
 export type PipelineTrigger = 'manual' | 'event' | 'schedule'
 
-/** The pipeline trigger of a Point A recalculation (lib/point-a/snapshot.ts SnapshotTrigger). */
+/**
+ * The pipeline trigger of a Point A recalculation (lib/point-a/snapshot.ts SnapshotTrigger).
+ * Ревью R3-PA M3: only a recalculation by STAFF in GIGA ('expert') starts a «manual»
+ * pipeline (its model stages run as before); the owner's «Обновить» / the
+ * questionnaire's recalculation ('manual') is an automatic consequence → 'event',
+ * so its model stages pass the paid / score / interval gate (lib/diagnostics/llm-gate.ts).
+ */
 export function pipelineTriggerOf(trigger: string): PipelineTrigger {
-  if (trigger === 'manual' || trigger === 'expert') return 'manual'
+  if (trigger === 'expert') return 'manual'
   if (trigger === 'schedule') return 'schedule'
   return 'event'
 }

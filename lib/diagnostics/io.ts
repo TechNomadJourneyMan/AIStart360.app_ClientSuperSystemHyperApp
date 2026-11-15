@@ -22,6 +22,11 @@ export interface DiagnosticsIO {
   /** The ONE official Point A recalculation (writes the current diagnostic when the inputs changed). */
   snapshot(companyId: string): Promise<SnapshotResult>
   overview(companyId: string): Promise<PointAOverview>
+  /**
+   * Ревью R3-PA M3: the company owner's Точка А is open (the paid-section decision for the
+   * OWNER — paidFanOutPaths). Any failure → false (fail closed: no paid model call).
+   */
+  ownerPaidPointA(ownerId: string): Promise<boolean>
 }
 
 const defaultIO: DiagnosticsIO = {
@@ -37,6 +42,17 @@ const defaultIO: DiagnosticsIO = {
   async snapshot(companyId) {
     const { buildPointASnapshot } = await import('@/lib/point-a/snapshot')
     return buildPointASnapshot(companyId, { trigger: 'event', reasons: ['DIAGNOSTIC_PIPELINE'], lock: true, fromPipeline: true })
+  },
+  async ownerPaidPointA(ownerId) {
+    try {
+      const [{ createServiceClient }, { paidFanOutPaths }] = await Promise.all([
+        import('@/lib/supabase-service'),
+        import('@/lib/point-a/diagnostic-row'),
+      ])
+      return (await paidFanOutPaths(createServiceClient(), ownerId)).includes('/api/v1/diagnostics/ai-analyze')
+    } catch {
+      return false
+    }
   },
   async overview(companyId) {
     const [{ createServiceClient }, { loadPointAOverview }] = await Promise.all([

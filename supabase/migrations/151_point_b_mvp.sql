@@ -12,12 +12,20 @@
 -- Отдельная таблица по-прежнему нужна (см. 132): metric_overrides сделали бы месячную выручку текущей ГОДОВОЙ
 -- выручкой Точки А, а metric_facts — производная таблица слоя данных (её перезаписывает синхронизация).
 --
--- Что делает: расширяет CHECK источника pb_monthly_facts. Больше ничего: RLS (132 + 147: клиент читает месяцы своей
--- компании при открытом разделе Точка Б, персонал — по своему скоупу, пишет только сервер) не меняется.
+-- Что делает:
+--   1. расширяет CHECK источника pb_monthly_facts (RLS 132 + 147 не меняется: клиент читает месяцы своей компании при
+--      открытом разделе Точка Б, персонал — по своему скоупу, пишет только сервер);
+--   2. (ревью R3-PB, H1) point_b_analysis: ИИ-стратегия Точки Б — черновик ТОЛЬКО для персонала (решение PO), а
+--      политики 029 давали владельцу диагностики читать и переписывать строку через PostgREST (его JWT + anon-ключ):
+--      `ai_strategy`, `ai_status`, `roadmap`, `target_*`, которые читает ИИ-черновик ревью персонала. Все чтения и записи
+--      приложения идут сервисной ролью (diagnostics/point-b, ai-generate, fan-out, ai-draft и профиль в ГИГА), поэтому
+--      политики владельца `point_b_owner_read` / `point_b_owner_write` удаляются, у authenticated отзываются права на
+--      запись, у anon — все права. Персонал по-прежнему читает через `point_b_staff_read` (140: Admin / Super Admin и
+--      назначенный эксперт), сервисная роль — всё. Старые строки не трогаются: клиент их больше не видит.
 --
--- Идемпотентна; без BEGIN/COMMIT (применяется через psql -1). Порядок: после 132 (и 147).
+-- Идемпотентна; без BEGIN/COMMIT (применяется через psql -1). Порядок: после 132, 140 и 147.
 -- Откат: rollback/151_point_b_mvp.down.sql (строки 'revenue_history' становятся 'monthly_reconciliation' —
--- данные владельца не теряются, CHECK возвращается к 132).
+-- данные владельца не теряются, CHECK возвращается к 132; политики и права point_b_analysis — как до 151).
 
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
@@ -36,5 +44,21 @@ ALTER TABLE public.pb_monthly_facts
 
 COMMENT ON COLUMN public.pb_monthly_facts.source IS
   'monthly_reconciliation — «Факт за месяц» сверки одобренного плана; revenue_history — таблица «Выручка по месяцам» во «Финмодели» (151), до плана';
+
+-- ─── 2. point_b_analysis: клиент не читает и не пишет (ИИ-стратегия — черновик персонала) ─────────────────
+DO $$
+BEGIN
+  IF to_regclass('public.point_b_analysis') IS NULL THEN
+    RAISE NOTICE '151: public.point_b_analysis is absent — skipped';
+    RETURN;
+  END IF;
+  DROP POLICY IF EXISTS point_b_owner_read ON public.point_b_analysis;
+  DROP POLICY IF EXISTS point_b_owner_write ON public.point_b_analysis;
+  REVOKE ALL ON public.point_b_analysis FROM anon;
+  REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.point_b_analysis FROM authenticated;
+  -- Staff sessions keep reading through point_b_staff_read (140); without a policy a client reads nothing.
+  GRANT SELECT ON public.point_b_analysis TO authenticated;
+  GRANT ALL ON public.point_b_analysis TO service_role;
+END $$;
 
 NOTIFY pgrst, 'reload schema';

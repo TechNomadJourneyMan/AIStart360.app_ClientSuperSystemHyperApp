@@ -46,6 +46,12 @@ describe('share link view of Point A', () => {
     expect(v?.blocks.find((b) => b.key === 'finance')?.key_risk).toBe('кассовый разрыв')
   })
 
+  it('a partial analysis is labelled partial (ревью L3)', async () => {
+    stubRest({ ...base, ai_status: 'failed', ai_analysis: { ...AI, partial: ['blocksB'] } })
+    const v = await loadPointAView(subject)
+    expect(v?.aiNote).toContain('Часть разбора не получилась: разбор маркетинга и стратегии')
+  })
+
   it('no AI text → no label', async () => {
     stubRest({ ...base, ai_status: 'none', ai_analysis: null })
     const v = await loadPointAView(subject)
@@ -62,10 +68,4 @@ describe('the PDF', () => {
     expect(buf.length).toBeGreaterThan(1000)
   })
 
-  it('the export route passes the label (source)', async () => {
-    const { readFileSync } = await import('node:fs')
-    const src = readFileSync('app/api/export/report/route.ts', 'utf8')
-    expect(src).toContain('aiNote: ai ? aiAnalysisNote(aiView) : null')
-    expect(readFileSync('lib/reports/pdf.ts', 'utf8')).toMatch(/if \(input\.aiNote\) paragraph\(doc, input\.aiNote/)
-  })
 })

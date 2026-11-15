@@ -44,7 +44,10 @@ export async function monthlyReconciliation(
 ): Promise<ReconciliationOutcome> {
   let filled = false
   try {
-    const { data, error } = await sb.from('pb_monthly_facts').select('metric').eq('company_id', input.companyId).eq('period', input.period).limit(1)
+    // Only «Факт за месяц» is a passed reconciliation: a revenue month of «Финмодель» (revenue_history) asks nothing
+    // about leads, conversion, check or cash (R3-PB review L1).
+    const { data, error } = await sb.from('pb_monthly_facts').select('metric').eq('company_id', input.companyId).eq('period', input.period)
+      .eq('source', 'monthly_reconciliation').limit(1)
     if (error && !isMissingTable(`(${error.code ?? ''})`)) throw new Error(`read failed (${error.code ?? 'unknown'})`)
     filled = ((data ?? []) as unknown[]).length > 0
   } catch (err) {

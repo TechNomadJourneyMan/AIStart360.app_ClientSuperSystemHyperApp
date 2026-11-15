@@ -199,4 +199,43 @@ describe.skipIf(!dbTestsEnabled)('RLS of the pb_* tables by role (R3-PB, R-045)'
         expect(await asUser(db, uid, () => codeOf(db, `DELETE FROM public.pb_recommendations`))).toBe('42501')
       }
     }))
+
+  it('R3-PB review H1 (151): point_b_analysis — the staff-only AI strategy: the client neither reads nor writes it; staff and the service role do', () =>
+    inRollback(async (db) => {
+      const w = await world(db)
+      const diag = (await db.query(`INSERT INTO public.diagnostics (user_id, company_id, overall_score) VALUES ($1, $2, 60) RETURNING id`, [w.owner, w.company])).rows[0].id as string
+      await db.query(
+        `INSERT INTO public.point_b_analysis (diagnostic_id, is_current, ai_status, ai_strategy) VALUES ($1, true, 'completed', '{"draft":"ИИ-черновик для персонала"}'::jsonb)`,
+        [diag],
+      )
+      const read = (uid: string | null) => asUser(db, uid, () => codeOf(db, `SELECT ai_strategy FROM public.point_b_analysis`))
+      const rows = (uid: string) => asUser(db, uid, async () => (await db.query(`SELECT ai_status, ai_strategy FROM public.point_b_analysis WHERE diagnostic_id = $1`, [diag])).rows)
+
+      // the owner (Pro, gates on): no row at all, and no write — not the AI fields, not the V2 snapshot staff read
+      expect(await read(w.owner)).toBeNull()
+      expect(await rows(w.owner)).toEqual([])
+      expect(await asUser(db, w.owner, () => codeOf(db, `UPDATE public.point_b_analysis SET ai_strategy = '{"x":1}'::jsonb, ai_status = 'completed'`))).toBe('42501')
+      expect(await asUser(db, w.owner, () => codeOf(db, `INSERT INTO public.point_b_analysis (diagnostic_id, is_current, ai_status) VALUES ($1, false, 'completed')`, [diag]))).toBe('42501')
+      expect(await asUser(db, w.owner, () => codeOf(db, `DELETE FROM public.point_b_analysis`))).toBe('42501')
+      // another client: nothing either; anon: no grant
+      expect(await rows(w.other)).toEqual([])
+      expect(await read(null)).toBe('42501')
+
+      // staff read it (the draft is theirs): Admin always, an expert once assigned; a staff session does not write
+      const admin = await seedStaff(db, 'admin')
+      expect(await rows(admin)).toEqual([{ ai_status: 'completed', ai_strategy: { draft: 'ИИ-черновик для персонала' } }])
+      expect(await asUser(db, admin, () => codeOf(db, `UPDATE public.point_b_analysis SET ai_status = 'none'`))).toBe('42501')
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      expect(await rows(expert)).toEqual([])
+      await assign(db, w.owner, expert)
+      expect(await rows(expert)).toHaveLength(1)
+
+      // the service role (every path of the app) reads and writes as before
+      const svc = await db.query(`SELECT has_table_privilege('service_role', 'public.point_b_analysis', 'SELECT, UPDATE, INSERT') AS ok`)
+      expect(svc.rows[0].ok).toBe(true)
+      const policies = (await db.query(`SELECT polname FROM pg_policy WHERE polrelid = 'public.point_b_analysis'::regclass ORDER BY 1`)).rows.map((r) => r.polname)
+      expect(policies).not.toContain('point_b_owner_read')
+      expect(policies).not.toContain('point_b_owner_write')
+    }))
 })
+

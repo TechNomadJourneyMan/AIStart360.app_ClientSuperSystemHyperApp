@@ -45,13 +45,22 @@
 --                             queue + a notice to Admin / Super Admin, «Взять
 --                             себе» in ГИГА «SLA экспертов». Not realigned with
 --                             the client's responsible.
+--                   approval  (решение PO) while plan_prep is OPEN, a version sent
+--                             for approval opens NO plan_review: preparation and
+--                             approval are one piece of work of the same Admin /
+--                             Super Admin — one 48-hour deadline, one escalation;
+--                             plan_prep is answered by the approval. Without an
+--                             open plan_prep (closed, or a plan started outside
+--                             the queue) plan_review opens as before (145/149).
 --
 -- Also:
 --   * CHECK of expert_sla_tasks.source is widened (old values kept);
 --   * expert_sla_realign: pa_ai_review follows the client's responsible (expert
 --     work), plan_prep does not (Admin / Super Admin);
 --   * expert_sla_sync = the body of 149 + the branches of the new sources (close,
---     reactions, opening of pa_ai_review). Nothing of 149 is changed;
+--     reactions, opening of pa_ai_review). Nothing of 149 is removed; one
+--     condition is added to the opening of plan_review: not while the company
+--     has an open plan_prep (see «approval» above);
 --   * clock start of the new sources: system_settings
 --     'expert_sla_clock_start_152', written on the first call (ON CONFLICT DO
 --     NOTHING) — work that waited before 152 counts from that moment, not as a
@@ -716,6 +725,10 @@ BEGIN
       WHERE v.status = 'in_review'
         AND NOT EXISTS (SELECT 1 FROM public.expert_sla_tasks t
                          WHERE t.source = 'plan_review' AND t.source_id = v.id::text AND t.closed_at IS NULL)
+        -- 152 (решение PO): while the plan is prepared under plan_prep, its approval is the answer of THAT task —
+        -- the same Admin / Super Admin, one 48-hour deadline, one escalation. No second task for the approval.
+        AND NOT EXISTS (SELECT 1 FROM public.expert_sla_tasks pp
+                         WHERE pp.source = 'plan_prep' AND pp.source_id = p.company_id AND pp.closed_at IS NULL)
       ORDER BY coalesce(v.submitted_at, v.created_at)
       LIMIT v_limit)
   ), pick AS (
@@ -765,7 +778,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.expert_sla_sync(timestamptz, int, int, int) IS
-  '145/146/149/152 (R2-B, R3-SLA): one SLA pass — clock start on the first pass, close (answered or not), follow «Эскалации», realign with the responsible, reactions, new work (inheriting the clock of unanswered predecessors). 149: Point B recommendations are not opened as SLA work. 152: the AI analysis of Point A (pa_ai_review: open / react / close) and the plan of Point B (plan_prep: react / close; opened by expert_sla_plan_prep). Service role only.';
+  '145/146/149/152 (R2-B, R3-SLA): one SLA pass — clock start on the first pass, close (answered or not), follow «Эскалации», realign with the responsible, reactions, new work (inheriting the clock of unanswered predecessors). 149: Point B recommendations are not opened as SLA work. 152: the AI analysis of Point A (pa_ai_review: open / react / close) and the plan of Point B (plan_prep: react / close; opened by expert_sla_plan_prep); no plan_review while the company has an open plan_prep (PO: one deadline, one escalation). Service role only.';
 
 -- ─── 7. Rights: service role only ───────────────────────────────────────────
 DO $$

@@ -28,6 +28,8 @@ export interface PointBReportScenario {
   timeToGoalMonths: number | null
   /** Annual run-rate at the goal's deadline (base of the range). */
   revenueAtDeadline: number | null
+  /** What the pace asks of each lever (current → target; conversion and repeat as fractions, growth as a fraction). */
+  levers: Array<{ lever: string; label: string; current: number | null; target: number | null; upliftPct: number | null }>
 }
 
 export interface PointBReport {
@@ -37,13 +39,15 @@ export interface PointBReport {
   /** Always: the verdict, the gap and the forecast are the automatic preliminary calculation. */
   automatic: true
   verdict: { key: VerdictKey; headline: string; reason: string }
-  gap: { baseAnnual: number | null; targetAnnual: number | null; absolute: number | null; multiplier: number | null; months: number | null }
+  gap: { baseAnnual: number | null; targetAnnual: number | null; absolute: number | null; multiplier: number | null; requiredCagrPct: number | null; months: number | null }
   forecast: { atCurrentPace: number | null; trendMonthlyPct: number | null; basis: 'history' | 'insufficient' }
   /** Labels of what the calculation lacks. */
   missing: string[]
   plan: {
     status: PointBState['plan']['status']
     prep: PlanPrepKind
+    /** needs_data: what the plan needs (labels), the list the PDF / share link print (review L7). */
+    prepMissing: string[]
     version: number | null
     approvedAt: string | null
     authorName: string | null
@@ -83,13 +87,14 @@ export function pointBReportFrom(state: PointBState): PointBReport {
     verdict: { key: r.verdict.key, headline: r.verdict.headline, reason: r.verdict.reason },
     gap: {
       baseAnnual: numOrNull(r.gap.baseAnnual), targetAnnual: numOrNull(r.gap.targetAnnual), absolute: numOrNull(r.gap.absolute),
-      multiplier: numOrNull(r.gap.multiplier), months: numOrNull(r.gap.months),
+      multiplier: numOrNull(r.gap.multiplier), requiredCagrPct: numOrNull(r.gap.requiredCagrPct), months: numOrNull(r.gap.months),
     },
     forecast: { atCurrentPace: numOrNull(r.forecast.atCurrentPace.base), trendMonthlyPct: numOrNull(r.forecast.trendMonthlyPct), basis: r.forecast.basis },
     missing: r.missing.map((m) => m.label),
     plan: {
       status: plan.status,
       prep: plan.prep?.kind ?? (plan.status === 'published' ? 'published' : 'needs_data'),
+      prepMissing: plan.prep?.kind === 'needs_data' ? plan.prep.missing.map((m) => m.label) : [],
       version: plan.version,
       approvedAt: plan.approvedAt,
       authorName: plan.authorName,
@@ -102,6 +107,9 @@ export function pointBReportFrom(state: PointBState): PointBReport {
         infeasibleReason: s.infeasibleReason,
         timeToGoalMonths: numOrNull(s.timeToGoalMonths.base),
         revenueAtDeadline: numOrNull(s.revenueAtDeadline.base),
+        levers: (s.requiredUplift ?? []).map((u) => ({
+          lever: u.lever, label: u.label, current: numOrNull(u.current), target: numOrNull(u.target), upliftPct: numOrNull(u.upliftPct),
+        })),
       })),
       strategy,
       milestones: (plan.strategy?.milestones ?? []).map((m) => ({ title: m.title, date: m.date })).sort((a, b) => a.date.localeCompare(b.date)),
@@ -112,7 +120,8 @@ export function pointBReportFrom(state: PointBState): PointBReport {
   }
 }
 
-export async function loadPointBReport(sb: SupabaseClient, userId: string, opts: { now?: Date } = {}): Promise<PointBReport> {
+/** `companyId`: the company the caller means (PDF / share of the chosen company, the chat's tenant) — only one of the user's own. */
+export async function loadPointBReport(sb: SupabaseClient, userId: string, opts: { now?: Date; companyId?: string | null } = {}): Promise<PointBReport> {
   return pointBReportFrom(await loadPointBState(sb, userId, opts))
 }
 
@@ -144,7 +153,7 @@ export function pointBReportText(r: PointBReport): string {
     for (const s of r.plan.strategy) lines.push(`- Стратегия: ${s.title}${s.initiatives.length ? ` (инициативы: ${s.initiatives.join('; ')})` : ''}.`)
     for (const rec of r.recommendations) lines.push(`- Рекомендация (проверена): ${rec.title}${rec.nextAction ? ` — следующий шаг: ${rec.nextAction}` : ''}.`)
   } else {
-    lines.push(`План: ${PREP_TEXT[r.plan.prep]}.`)
+    lines.push(`План: ${PREP_TEXT[r.plan.prep]}${r.plan.prepMissing.length ? `: ${r.plan.prepMissing.join(', ')}` : ''}.`)
   }
   if (finite(r.forecast.trendMonthlyPct)) lines.push(`Тренд выручки: ${fmtPct(r.forecast.trendMonthlyPct / 100, 1)} в месяц.`)
   return lines.join('\n')

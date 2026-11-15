@@ -671,8 +671,13 @@ async function PointBBody({ subject }: { subject: ReportSubject }) {
             {plan.prep === 'in_work' ? 'План готовит команда AIStart360.'
               : plan.prep === 'in_review' ? 'План собран и проходит проверку перед публикацией.'
               : plan.prep === 'waiting' ? 'Данных для плана достаточно — план подготовит команда AIStart360.'
-              : 'Для плана нужны данные.'}
+              : 'Для плана нужны данные:'}
           </p>
+          {plan.prep === 'needs_data' && plan.prepMissing.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-on-surface-variant">
+              {plan.prepMissing.map((m) => <li key={m}>{m}</li>)}
+            </ul>
+          )}
         </Section>
       ) : (
         <>

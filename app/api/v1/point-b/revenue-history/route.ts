@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { gateFeature } from '@/lib/access/gate'
 import { activeImpersonation } from '@/lib/impersonation/server'
 import {
-  loadRevenueTable, RevenueHistoryError, saveRevenueHistory, validateRevenueHistory,
+  loadRevenueTable, refreshAfterRevenueHistory, RevenueHistoryError, saveRevenueHistory, validateRevenueHistory,
 } from '@/lib/point-b/finmodel/revenue-history'
 import { companyOfUser } from '@/lib/point-b/plan/flow'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -18,7 +18,9 @@ import { createServiceClient } from '@/lib/supabase-service'
  * GET → { ok, data: { months: [{ period, revenue, source: 'owner'|'reconciliation'|'data'|null }], run, needed, stale, minMonths } }
  * PUT { months: [{ period: 'YYYY-MM', revenue: number | string | null }] } — null clears a month. Saved to
  *     pb_monthly_facts (metric revenue, source revenue_history): the same history the overview, the recompute and the
- *     plan-fact read. → the table as GET returns it.
+ *     plan-fact read. A month already reconciled through «Факт за месяц» is not changed here (400 with the field — it is
+ *     corrected in the plan-fact form); with an approved plan the checkpoints of the changed months are recalculated
+ *     right away. → the table as GET returns it, plus `checkpoints` ({ status, periods } | null without a plan).
  * The user and the company come from the session only. PUT refused «от имени» (403: impersonation is read-only).
  * Point B is a PRO feature (402 for a free client while the access gates are on). 400 with the field, 409 without a
  * company, 429 more often than 20 times an hour, 503 before migrations 132 / 151.
@@ -72,8 +74,11 @@ export async function PUT(req: NextRequest) {
     const months = validateRevenueHistory(body, now)
     const company = await companyOfUser(service, user.id)
     if (!company) return noCompany()
-    await saveRevenueHistory(service, { companyId: company.id, enteredBy: user.id, role: 'owner', months })
-    return NextResponse.json({ ok: true, data: await loadRevenueTable(service, company.id, now) })
+    const r = await saveRevenueHistory(service, { companyId: company.id, enteredBy: user.id, role: 'owner', months })
+    // The approved plan: the checkpoints of the changed months are recalculated now (one history — review M1).
+    const refreshed = await refreshAfterRevenueHistory(service, { companyId: company.id, userId: user.id, periods: [...r.saved, ...r.cleared], now })
+      .catch((err) => { console.error('[v1/point-b/revenue-history] checkpoints not refreshed', err instanceof Error ? err.message : err); return null })
+    return NextResponse.json({ ok: true, data: await loadRevenueTable(service, company.id, now), checkpoints: refreshed })
   } catch (err) {
     const f = failure(err)
     if (f) return f

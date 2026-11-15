@@ -36,6 +36,7 @@ import { evaluateGoals } from '@/lib/goals/current'
 import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
 import { pipelineTriggerOf, type FanOutPath } from './diagnostic-row'
+import { internalBaseUrl } from '@/lib/internal-auth'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
 
@@ -93,6 +94,12 @@ export interface SnapshotDeps {
    * analysis / Point B bridge). Omitted: both (hand-built deps in tests).
    */
   paidAi?: (service: SupabaseClient, ownerId: string) => Promise<FanOutPath[]>
+  /**
+   * Ревью R3-PA H1: the trusted origin the analysis call goes to (lib/internal-auth.ts
+   * internalBaseUrl). None → the row is not marked «готовится» (nothing would run).
+   * Omitted (hand-built deps in tests): treated as present.
+   */
+  baseUrl?: () => string | null
 }
 
 const defaultDeps: SnapshotDeps = {
@@ -108,6 +115,7 @@ const defaultDeps: SnapshotDeps = {
   },
   store: async (...args) => (await import('./diagnostic-row')).storeCurrentDiagnostic(...args),
   paidAi: async (service, ownerId) => (await import('./diagnostic-row')).paidFanOutPaths(service, ownerId),
+  baseUrl: () => internalBaseUrl({}),
   surveyComplete: async (service, ownerId) => {
     // One definition of «анкета заполнена» (lib/survey/completion.ts, migration 090).
     const { data, error } = await service.rpc('survey_completed_at', { p_user: ownerId })
@@ -161,10 +169,9 @@ export function afterWritePlan(o: Pick<AfterWriteInput, 'preliminary' | 'noScore
 export function runAfterWrite(o: AfterWriteInput): Promise<void> {
   // Registered with waitUntil: on Vercel un-awaited work after the response is dropped.
   return runInBackground('point-a-after-write', async () => {
-    const [{ emitPlatformEventSafely }, { fireAiFanOut, startDiagnosticPipeline }, { internalBaseUrl }] = await Promise.all([
+    const [{ emitPlatformEventSafely }, { fireAiFanOut, startDiagnosticPipeline }] = await Promise.all([
       import('@/lib/events/platform'),
       import('./diagnostic-row'),
-      import('@/lib/internal-auth'),
     ])
     // No official score (preliminary, or v4 without an overall): no number in events.
     const overall = o.preliminary || o.noScore ? null : o.written.overall_score
@@ -185,6 +192,32 @@ export function runAfterWrite(o: AfterWriteInput): Promise<void> {
     void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: overall === null ? null : Number(overall), preliminary: o.preliminary, engine: o.engine, trigger: o.trigger } })
     if (plan.hypotheses && o.snapshotId) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
   })
+}
+
+/**
+ * Ревью R3-PA L2: the AI hypotheses of the owner's LATEST snapshot, for an
+ * account that just got Точка А (catchUpPaidAi) — a Free account got none and
+ * the nightly pass stops at «unchanged». Only after the full questionnaire.
+ * Returns whether hypotheses were asked for; never throws.
+ */
+export async function catchUpHypotheses(ownerId: string, deps: { service?: () => SupabaseClient; add?: typeof addHypotheses } = {}): Promise<boolean> {
+  try {
+    if (!process.env.OPENROUTER_API_KEY && !deps.add) return false
+    const service = (deps.service ?? (() => createServiceClient()))()
+    const { data: company } = await service.from('companies').select('id, industry').eq('user_id', ownerId).maybeSingle()
+    const c = company as { id?: string; industry?: string | null } | null
+    if (!c?.id) return false
+    const { data } = await service.from('point_a_snapshots').select('id, blocks, v4').eq('company_id', c.id).order('created_at', { ascending: false }).limit(1)
+    const snap = ((data ?? []) as Array<{ id: string; blocks: V4Block[] | null; v4: { assessment?: string } | null }>)[0]
+    if (!snap || snap.v4?.assessment === 'preliminary' || !Array.isArray(snap.blocks)) return false
+    const { blocksNeedingHypothesis } = await import('./v4/hypotheses')
+    if (!blocksNeedingHypothesis(snap.blocks).length) return false
+    await (deps.add ?? addHypotheses)(snap.id, snap.blocks, c.industry ?? null, ownerId)
+    return true
+  } catch (err) {
+    console.error('[point-a/snapshot] hypotheses catch-up failed', err instanceof Error ? err.message : err)
+    return false
+  }
 }
 
 /** AI hypotheses of the blocks without data, written into the snapshot (budget-guarded). */
@@ -386,7 +419,7 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   const analysisRuns = !paidPaths || paidPaths.includes('/api/v1/diagnostics/ai-analyze')
   const stored = await deps.store(service, {
     userId: ownerId, companyId, result: written, preliminary: preliminary || noScore,
-    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary && !noScore && analysisRuns ? 'processing' : 'none',
+    aiStatus: process.env.OPENROUTER_API_KEY && !preliminary && !noScore && analysisRuns && (deps.baseUrl ? !!deps.baseUrl() : true) ? 'processing' : 'none',
   })
   if (!stored.ok) {
     const del = await service.from('point_a_snapshots').delete().eq('id', snapshotId)

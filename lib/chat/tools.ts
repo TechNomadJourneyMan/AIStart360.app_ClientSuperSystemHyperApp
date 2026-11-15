@@ -219,15 +219,19 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
       // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan version
       // (lib/point-b/report.ts), never the old V2 snapshot of point_b_analysis and never a draft.
       const owner = t.ownerId ?? t.userId
-      const [{ createServiceClient }, { companyOfUser }, { loadPointBReport, pointBReportText }] = await Promise.all([
-        import('@/lib/supabase-service'), import('@/lib/point-b/plan/flow'), import('@/lib/point-b/report'),
+      // R3-PB review M2 — the rule of RLS (pb_plans / pb_plan_versions): the plan is read by the OWNER of the company
+      // and by staff inside their client scope (mayActOnUser: staff_roles / an active expert, the second factor, the
+      // assignment); a member of the company is not. The paywall is the asker's own decision: the tool is offered only
+      // when Точка Б is open for the asker (toolsFor ← resolveAccess in the route).
+      const [{ mayActOnUser }, { createServiceClient }, { loadPointBReport, pointBReportText }] = await Promise.all([
+        import('@/lib/api-identity'), import('@/lib/supabase-service'), import('@/lib/point-b/report'),
       ])
-      // Service role: the tenant (company) was authorised by the route; the plan tables are not readable by a member.
+      if (!(await mayActOnUser(t.sb, t.userId, owner))) return { status: 'no_access' }
+      // Service role after that check: the tenant is this company (the route resolved it), its plan tables are read here.
       const sb = createServiceClient()
-      const company = await companyOfUser(sb, owner)
-      // Point B lives on the owner's (first) company: another company of the same owner has none of its own yet.
-      if (!company || company.id !== t.companyId) return { status: 'not_calculated' }
-      const report = await loadPointBReport(sb, owner, { now: t.now })
+      const { data: company } = await sb.from('companies').select('id').eq('id', t.companyId).eq('user_id', owner).maybeSingle()
+      if (!company) return { status: 'not_calculated' }
+      const report = await loadPointBReport(sb, owner, { now: t.now, companyId: t.companyId })
       return {
         summary: pointBReportText(report),
         level: report.level,

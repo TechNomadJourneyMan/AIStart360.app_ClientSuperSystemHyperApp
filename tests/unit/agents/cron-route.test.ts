@@ -29,6 +29,8 @@ vi.mock('@/lib/whatsapp/outbox', () => ({ drainWhatsAppOutbox: work.drainWhatsAp
 vi.mock('@/lib/point-a/recalc-queue', () => ({ drainPointARecalc: work.drainPointARecalc }))
 vi.mock('@/lib/agents/queue', () => ({ drainQueue: work.drainQueue }))
 vi.mock('@/lib/rate-limit', () => ({ pruneRateLimits: work.pruneRateLimits }))
+// R3-PA (ревью H1): the stale AI-analysis sweep of the loop — tested in tests/unit/point-a/ai-claim.test.ts.
+vi.mock('@/lib/point-a/ai-claim', () => ({ failStaleAiAnalyses: async () => 0 }))
 
 const SECRET = 'cron-secret-for-tests'
 const WHATSAPP = { claimed: 2, sent: 2, retried: 0, deferred: 0, failed: 0, unknown: 0, skipped: 0, viaBridge: 0 }
@@ -125,6 +127,7 @@ describe('GET /api/cron/agents: one process for everything (PORTAL_ROLE unset) -
       rateLimitsPruned: 7,
       whatsapp: WHATSAPP,
       pointA: { done: 1, failed: 0 },
+      pointAAiStale: 0,
       executed: [{ taskId: 't1', status: 'succeeded', errorCode: null }],
     })
     expect(work.enqueueScheduledAgents).not.toHaveBeenCalled() // «Агенты по расписанию (24/7)» is off
@@ -396,6 +399,7 @@ describe('GET /api/cron/agents: the agents role - the maintenance loop of the ag
       rateLimitsPruned: 4,
       whatsapp: WHATSAPP,
       pointA: { done: 0, failed: 0 },
+      pointAAiStale: 0,
       executed: [{ taskId: 't9', status: 'dead', errorCode: 'BUDGET_EXCEEDED' }],
     })
   })

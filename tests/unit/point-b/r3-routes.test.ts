@@ -86,6 +86,21 @@ describe('/api/v1/point-b/revenue-history (R3, M2)', () => {
     expect(s.h!.db.pb_monthly_facts.filter((x) => x.company_id === 'co-2')).toHaveLength(1)
   })
 
+  it('R3-PB review M1: a month reconciled through «Факт за месяц» is not changed or cleared from the table (400 with the field)', async () => {
+    const P = revenueHistoryPeriods(new Date())[23]
+    s.h!.db.pb_monthly_facts.push({ company_id: 'co-1', period: P, metric: 'revenue', value: 7_000_000, source: 'monthly_reconciliation', entered_role: 'expert' })
+    for (const revenue of [1_000_000, null]) {
+      const r = await json(await route.PUT(put({ months: [{ period: P, revenue }] })))
+      expect(r.status).toBe(400)
+      expect(r.body).toMatchObject({ code: 'invalid', field: 'months[0].revenue' })
+      expect(r.body.error).toMatch(/Факт за месяц/)
+    }
+    expect(s.h!.db.pb_monthly_facts.find((x) => x.company_id === 'co-1' && x.period === P)).toMatchObject({ value: 7_000_000, entered_role: 'expert' })
+    // the table shows it as the reconciliation's month
+    const g = await json(await route.GET())
+    expect(g.body.data.months.find((m: { period: string }) => m.period === P)).toEqual({ period: P, revenue: 7_000_000, source: 'reconciliation' })
+  })
+
   it('PUT: 400 with the field, 403 «от имени», 402 Free, 429 the limit — nothing written', async () => {
     const bad = await json(await route.PUT(put({ months: [{ period: '2020-01', revenue: 1 }] })))
     expect(bad.status).toBe(400)
@@ -108,15 +123,15 @@ describe('the PDF of Точка Б renders the report of the page (R3, M3)', () 
     const report = {
       computedAt: '2026-11-15T00:00:00Z', level: 1 as const, kind: 'funnel' as const, automatic: true as const,
       verdict: { key: 'at_risk' as const, headline: 'Есть риск не дойти до цели', reason: 'При текущем ходе — 82% цели.' },
-      gap: { baseAnnual: 60_000_000, targetAnnual: 120_000_000, absolute: 60_000_000, multiplier: 2, months: 12 },
+      gap: { baseAnnual: 60_000_000, targetAnnual: 120_000_000, absolute: 60_000_000, multiplier: 2, requiredCagrPct: 100, months: 12 },
       forecast: { atCurrentPace: 98_000_000, trendMonthlyPct: 4.1, basis: 'history' as const },
       missing: ['Повторные покупки'],
       plan: {
-        status: 'published' as const, prep: 'published' as const, version: 1, approvedAt: '2026-11-10T00:00:00Z', authorName: 'Админ', selectedScenario: 'moderate',
+        status: 'published' as const, prep: 'published' as const, prepMissing: [] as string[], version: 1, approvedAt: '2026-11-10T00:00:00Z', authorName: 'Админ', selectedScenario: 'moderate',
         scenarios: [
-          { key: 'cautious', label: 'Осторожный', selected: false, feasible: true, infeasibleReason: null, timeToGoalMonths: 18, revenueAtDeadline: 100_000_000 },
-          { key: 'moderate', label: 'Умеренный', selected: true, feasible: true, infeasibleReason: null, timeToGoalMonths: 12, revenueAtDeadline: 120_000_000 },
-          { key: 'aggressive', label: 'Ускоренный', selected: false, feasible: false, infeasibleReason: 'Лиды выше потолка', timeToGoalMonths: null, revenueAtDeadline: null },
+          { key: 'cautious', label: 'Осторожный', selected: false, feasible: true, infeasibleReason: null, timeToGoalMonths: 18, revenueAtDeadline: 100_000_000, levers: [] },
+          { key: 'moderate', label: 'Умеренный', selected: true, feasible: true, infeasibleReason: null, timeToGoalMonths: 12, revenueAtDeadline: 120_000_000, levers: [] },
+          { key: 'aggressive', label: 'Ускоренный', selected: false, feasible: false, infeasibleReason: 'Лиды выше потолка', timeToGoalMonths: null, revenueAtDeadline: null, levers: [] },
         ],
         strategy: [{ title: 'Больше заявок', description: 'Рычаг', initiatives: ['Новый канал'], tasks: 2 }],
         milestones: [{ title: 'Сверка', date: '2027-02-15' }],

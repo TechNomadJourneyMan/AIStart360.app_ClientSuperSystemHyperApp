@@ -19,6 +19,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { HISTORY_MAX_LAG_MONTHS, HISTORY_MIN_MONTHS } from '../model/forecast'
 import { loadRevenueHistory } from '../model/history'
+import { monthOrdinalInAlmaty } from '../period'
+import { periodLabel } from '../planfact/kpis'
 
 export const REVENUE_HISTORY_SOURCE = 'revenue_history'
 export const REVENUE_HISTORY_MONTHS = 24
@@ -34,6 +36,8 @@ export class RevenueHistoryError extends Error {
 }
 
 const PERIOD_RE = /^(\d{4})-(0[1-9]|1[0-2])$/
+export const REVENUE_INVALID_TEXT = 'Выручка за месяц — число в тенге больше нуля (если выручки не было, оставьте месяц пустым)'
+export const RECONCILED_TEXT = 'сверена через «Факт за месяц» — исправить её можно там, на вкладке «План-факт и история»'
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
 
 const ordinal = (period: string): number | null => {
@@ -42,9 +46,9 @@ const ordinal = (period: string): number | null => {
 }
 const fromOrdinal = (o: number): string => `${Math.floor(o / 12)}-${String((o % 12) + 1).padStart(2, '0')}`
 
-/** The last `months` finished months (the current one is not over), oldest first. */
+/** The last `months` finished months (the current one is not over — in Almaty, lib/point-b/period.ts), oldest first. */
 export function revenueHistoryPeriods(now: Date, months = REVENUE_HISTORY_MONTHS): string[] {
-  const current = now.getUTCFullYear() * 12 + now.getUTCMonth()
+  const current = monthOrdinalInAlmaty(now)
   const out: string[] = []
   for (let i = months; i >= 1; i--) out.push(fromOrdinal(current - i))
   return out
@@ -52,13 +56,17 @@ export function revenueHistoryPeriods(now: Date, months = REVENUE_HISTORY_MONTHS
 
 export interface RevenueMonthInput { period: string; revenue: number | null }
 
-/** «1 250 000», «1250000,5», 1250000 → a number; '' / null → null; anything else → NaN. */
-function parseAmount(raw: unknown): number | null {
+/**
+ * «1 250 000», «1250000,5», 1250000 → a number; '' / null → null; anything else (1e5, 0x1F, «много») → NaN — the same
+ * strict rule as the client form (components/point-b/revenueHistoryController.ts parseAmount; review L4).
+ */
+export function parseAmount(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null
   if (typeof raw === 'number') return raw
   if (typeof raw === 'string') {
     const t = raw.replace(/[\s  ]/g, '').replace(',', '.')
-    return t === '' ? null : Number(t)
+    if (t === '') return null
+    return /^\d+(\.\d+)?$/.test(t) ? Number(t) : NaN
   }
   return NaN
 }
@@ -80,8 +88,10 @@ export function validateRevenueHistory(body: unknown, now: Date): RevenueMonthIn
     if (seen.has(period)) throw new RevenueHistoryError('invalid', 'Месяц повторяется', `months[${i}].period`)
     seen.add(period)
     const value = parseAmount(row.revenue)
-    if (value !== null && (!finite(value) || value < 0 || value > REVENUE_MAX)) {
-      throw new RevenueHistoryError('invalid', 'Выручка за месяц — число в тенге, не меньше нуля', `months[${i}].revenue`)
+    // A month is a real revenue (> 0): the model counts only such months (lib/point-b/model/history.ts), so a 0 here
+    // would show «внесено» in the table and be skipped by the forecast (review L3). No revenue — leave the month empty.
+    if (value !== null && (!finite(value) || value <= 0 || value > REVENUE_MAX)) {
+      throw new RevenueHistoryError('invalid', REVENUE_INVALID_TEXT, `months[${i}].revenue`)
     }
     out.push({ period, revenue: value })
   }
@@ -97,12 +107,35 @@ const dbError = (op: string, error: { code?: string } | null | undefined): Error
   return new Error(`point-b revenue history: ${op} failed (${code})`)
 }
 
+/**
+ * Saves the owner's months. After the plan is approved a month may already hold a «Факт за месяц» of the monthly
+ * reconciliation (source monthly_reconciliation — the owner's or an expert's): the table never overwrites or clears it
+ * (review M1). One place per kind of fact — the reconciliation is corrected in the plan-fact form, which recalculates its
+ * checkpoint and keeps the expert's value (lib/point-b/planfact/store.ts) — so «Обзор» and «План-факт» never disagree
+ * and the expert's trace is not lost. Clearing removes only the owner's own history month. The months are checked first;
+ * then the clears and the saves are written (clears first: a failure leaves no value of a month that was cleared).
+ */
 export async function saveRevenueHistory(
   sb: SupabaseClient,
   input: { companyId: string; enteredBy: string | null; role: 'owner' | 'expert'; months: RevenueMonthInput[] },
 ): Promise<{ saved: string[]; cleared: string[] }> {
+  const periods = input.months.map((m) => m.period)
+  if (periods.length) {
+    const { data, error } = await sb.from('pb_monthly_facts').select('period, source').eq('company_id', input.companyId).eq('metric', 'revenue').in('period', periods)
+    if (error) throw dbError('read', error)
+    const reconciled = new Set(((data ?? []) as Array<{ period: string; source: string }>).filter((r) => r.source !== REVENUE_HISTORY_SOURCE).map((r) => r.period))
+    const i = input.months.findIndex((m) => reconciled.has(m.period))
+    if (i >= 0) {
+      throw new RevenueHistoryError('invalid', `Выручка за ${periodLabel(input.months[i].period)} ${RECONCILED_TEXT}`, `months[${i}].revenue`)
+    }
+  }
   const saved = input.months.filter((m) => m.revenue !== null)
   const cleared = input.months.filter((m) => m.revenue === null).map((m) => m.period)
+  if (cleared.length) {
+    const { error } = await sb.from('pb_monthly_facts').delete().eq('company_id', input.companyId).eq('metric', 'revenue')
+      .eq('source', REVENUE_HISTORY_SOURCE).in('period', cleared)
+    if (error) throw dbError('clear', error)
+  }
   if (saved.length) {
     const rows = saved.map((m) => ({
       company_id: input.companyId, period: m.period, metric: 'revenue', value: m.revenue, source: REVENUE_HISTORY_SOURCE,
@@ -111,11 +144,27 @@ export async function saveRevenueHistory(
     const { error } = await sb.from('pb_monthly_facts').upsert(rows, { onConflict: 'company_id,period,metric' })
     if (error) throw dbError('save', error)
   }
-  if (cleared.length) {
-    const { error } = await sb.from('pb_monthly_facts').delete().eq('company_id', input.companyId).eq('metric', 'revenue').in('period', cleared)
-    if (error) throw dbError('clear', error)
-  }
   return { saved: saved.map((m) => m.period), cleared }
+}
+
+/**
+ * After the owner changed months of the history: when the plan is approved, the checkpoints of the changed months that
+ * exist, and of the last finished and the current month, are recalculated right away (the same short recompute as after
+ * «Факт за месяц», checkpoints only) — «Обзор» and «План-факт» read one history (review M1). null without a plan.
+ */
+export async function refreshAfterRevenueHistory(
+  sb: SupabaseClient, input: { companyId: string; userId: string; periods: string[]; now: Date },
+): Promise<{ status: string; periods: string[] } | null> {
+  const [{ loadPlanBundle }, { recomputeCompany }] = await Promise.all([import('../plan/store'), import('../planfact/recompute')])
+  const bundle = await loadPlanBundle(sb, input.companyId)
+  if (!bundle.published) return null
+  let extra: string[] = []
+  if (input.periods.length) {
+    const { data, error } = await sb.from('pb_checkpoints').select('period').eq('version_id', bundle.published.id).in('period', input.periods)
+    if (!error) extra = ((data ?? []) as Array<{ period: string }>).map((r) => r.period)
+  }
+  const out = await recomputeCompany(sb, { companyId: input.companyId, userId: input.userId, now: input.now, mode: 'checkpoint', force: true, extraPeriods: extra })
+  return { status: out.status, periods: extra }
 }
 
 export type RevenueMonthSource = 'owner' | 'reconciliation' | 'data'
@@ -159,7 +208,7 @@ export function revenueTableFrom(
   let lagMonths: number | null = null
   if (withRevenue.length) {
     const last = withRevenue[withRevenue.length - 1].period
-    const current = now.getUTCFullYear() * 12 + now.getUTCMonth()
+    const current = monthOrdinalInAlmaty(now)
     lagMonths = current - ordinal(last)!
     const has = new Set(withRevenue.map((m) => m.period))
     for (let o = ordinal(last)!; has.has(fromOrdinal(o)); o--) run += 1

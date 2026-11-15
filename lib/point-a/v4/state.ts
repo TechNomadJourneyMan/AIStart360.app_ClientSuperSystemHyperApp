@@ -24,6 +24,7 @@ import { loadBlockConfig } from './store'
 import { DEFAULT_KEY_METRICS, MAX_KEY_METRICS, keyMetricCatalog, loadMetricViews, type MetricView } from './metric-views'
 import { toGri } from '@/lib/format/gri'
 import { AI_VIEW_COLUMNS, AI_VIEW_COLUMNS_PRE150, aiAnalysisView, type PointAAiAnalysisView } from '@/lib/point-a/ai-review'
+import { failStaleAiAnalyses, isAiStale } from '@/lib/point-a/ai-claim'
 import { loadClientTaskNotice, type ClientTaskNotice } from '@/lib/expert-sla/client-view'
 import { isMissingColumn } from '@/lib/point-a/ai-columns'
 import { isDocumentAbandoned } from '@/lib/documents/status-view'
@@ -202,7 +203,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     return { ownerId: row?.user_id ?? null, industry: row?.industry ?? null }
   })
   const cfgP = companyP.then(({ industry }) => loadBlockConfig(client, companyId, industry))
-  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead, aiRow, resolved, reviewTask] = await Promise.all([
+  const [{ ownerId, industry }, latest, snaps, disc, gri, docs, metricRows, queue, commentRows, reviewed, survey, goals, cfg, keyMetricsRead, aiRow, resolved, reviewTask, surveySent] = await Promise.all([
     companyP,
     client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     // The history needs only the summary of each snapshot (not inputs / blocks).
@@ -247,6 +248,9 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     }),
     // R3-SLA: the expert's task on the AI analysis (152) — «Эксперт проверит до <срок>». Never fails the page.
     companyP.then(({ ownerId }) => (ownerId ? loadClientTaskNotice(service, { source: 'pa_ai_review', clientId: ownerId, withName: false }) : null)).catch(() => null),
+    // Ревью R3-PA L5: «анкета отправлена» from the ONE definition (lib/survey/completion.ts, 090),
+    // not from the snapshot (a v1 snapshot / a recalculation that failed after sending said otherwise).
+    companyP.then(({ ownerId }) => (ownerId ? loadSurveySent(service, ownerId) : null)),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
@@ -300,7 +304,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
 
   // Before the full questionnaire no score is shown — older snapshots' scores neither (PO 2026-11-02).
   const preliminary = snapshot?.assessment === 'preliminary'
-  return {
+  const result: PointAState = {
     snapshot,
     history: rows.map((r) => ({
       id: String(r.id),
@@ -356,8 +360,23 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     viewerIsOwner: viewerId !== null && ownerId !== null && ownerId === viewerId,
     answerAttribution: Object.fromEntries(POINT_A_QUESTION_KEYS.filter((k) => survey.attribution[k]?.updatedByRole).map((k) => [k, survey.attribution[k]])),
     // No official score → no analysis is made (and an old one is not shown).
-    aiAnalysis: snapshot && snapshot.assessment === 'full' && snapshot.overall !== null ? withReviewDue(aiAnalysisView(aiRow), reviewTask) : null,
-    scorePath: scorePathOf(surveyRows, resolved, cfg.blocks, snapshot),
+    aiAnalysis: snapshot && snapshot.assessment === 'full' && snapshot.overall !== null ? withReviewDue(aiAnalysisView(aiRow, { now }), reviewTask) : null,
+    scorePath: scorePathOf(surveyRows, resolved, cfg.blocks, snapshot, surveySent),
+  }
+  // Ревью R3-PA H1: an attempt «готовится» for longer than 15 min is lost — the row is
+  // turned failed / 'stale' now (the view already shows «Повторить»). Cheap: only then.
+  if (aiRow && isAiStale(aiRow, now)) await failStaleAiAnalyses(service, { diagnosticId: String(aiRow.id) })
+  return result
+}
+
+/** public.survey_completed_at (090) of the owner; null when it cannot be read (then: the snapshot says). */
+async function loadSurveySent(service: SupabaseClient, ownerId: string): Promise<boolean | null> {
+  try {
+    const { data, error } = await service.rpc('survey_completed_at', { p_user: ownerId })
+    if (error) return null
+    return data !== null && data !== undefined
+  } catch {
+    return null
   }
 }
 
@@ -388,6 +407,7 @@ function scorePathOf(
   resolved: PointAResolvedInputs,
   blocks: Parameters<typeof calculatePointAV4>[0]['blocks'],
   snapshot: PointASnapshotView | null,
+  surveySent: boolean | null,
 ): ScorePath | null {
   if (!blocks.length) return null
   try {
@@ -397,8 +417,12 @@ function scorePathOf(
       answers[r.question_key] = a && typeof a === 'object' && 'value' in a ? a.value : a
     }
     const fresh = calculatePointAV4({ answers, resolved, blocks, surveyComplete: true }).blocks
+    // A block scored by a confirmed hypothesis keeps its score — as «inferred» (the rule needs one block on facts).
     const inferred = new Map((snapshot?.blocks ?? []).filter((b) => b.basis === 'inferred' && typeof b.score === 'number').map((b) => [b.key, b.score]))
-    return pointAScorePath(fresh.map((b) => (inferred.has(b.key) ? { ...b, score: inferred.get(b.key) ?? null } : b)), { surveySent: snapshot?.assessment === 'full' })
+    return pointAScorePath(
+      fresh.map((b) => (inferred.has(b.key) && b.score === null ? { ...b, score: inferred.get(b.key) ?? null, basis: 'inferred' as const } : b)),
+      { surveySent: surveySent ?? snapshot?.assessment === 'full' },
+    )
   } catch (err) {
     console.error('[point-a/state] score path not computed', err instanceof Error ? err.message : err)
     return null

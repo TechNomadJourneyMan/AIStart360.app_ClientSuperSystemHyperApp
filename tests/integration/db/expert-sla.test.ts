@@ -929,6 +929,62 @@ describe.skipIf(!dbTestsEnabled)('R3-SLA: ИИ-разбор Точки А и п�
       expect((await tasksOf(db, b))[0]).toMatchObject({ close_reason: 'gone', answered: false })
     }))
 
+  it('PO: while plan_prep is open, a version sent for approval opens NO plan_review — one deadline, one escalation, answered by the approval', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await planPrep(db, t0, [{ company, client }])
+      const plan = await seedPlan(db, company, client)
+      const v1 = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, created_at, submitted_at) VALUES ($1, 1, 'in_review', $2, $3) RETURNING id`, [plan, plus(t0, 2), plus(t0, 3)])).rows[0].id
+      const opened = (await sync(db, plus(t0, 4))).filter((c) => c.r_client === client)
+      expect(opened.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['plan_prep:reacted']) // no plan_review:new
+      // Returned for changes and sent again — still the one task.
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'draft', rejected_at = $2, rejected_reason = 'нет темпа' WHERE id = $1`, [v1, plus(t0, 5)])
+      await sync(db, plus(t0, 6))
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'in_review', submitted_at = $2 WHERE id = $1`, [v1, plus(t0, 7)])
+      await sync(db, plus(t0, 8))
+      expect((await tasksOf(db, client)).map((t) => t.source)).toEqual(['plan_prep'])
+      // One escalation path: past 48 h only plan_prep is claimed.
+      expect((await claim(db, 'breached', plus(t0, 48.5))).filter((t) => t.client_id === client).map((t) => t.source)).toEqual(['plan_prep'])
+      // The approval answers plan_prep; nothing is opened for the approved version.
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'approved', approved_at = $2 WHERE id = $1`, [v1, plus(t0, 49)])
+      const closed = (await sync(db, plus(t0, 50))).filter((c) => c.r_client === client)
+      expect(closed.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['plan_prep:closed'])
+      const all = await tasksOf(db, client)
+      expect(all).toHaveLength(1)
+      expect(all[0]).toMatchObject({ source: 'plan_prep', close_reason: 'approved', answered: true })
+    }))
+
+  it('without an open plan_prep (a plan started outside the queue, or the task closed) plan_review opens as before', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      // (a) never in the queue: the plan was started by staff directly.
+      const a = await seedUser(db, { status: 'approved' })
+      const ca = await seedCompany(db, a)
+      const va = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, submitted_at) VALUES ($1, 1, 'in_review', $2) RETURNING id`, [await seedPlan(db, ca, a), plus(t0, 1)])).rows[0].id
+      // (b) plan_prep closed without an answer (no Point B access, no version then), later a version is sent.
+      const b = await seedUser(db, { status: 'approved' })
+      const cb = await seedCompany(db, b)
+      await planPrep(db, t0, [{ company: cb, client: b }])
+      await planPrep(db, plus(t0, 1), [], [{ company: cb, reason: 'no_access' }])
+      const vb = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, submitted_at) VALUES ($1, 1, 'in_review', $2) RETURNING id`, [await seedPlan(db, cb, b), plus(t0, 2)])).rows[0].id
+      // (c) another company's open plan_prep does not hold this one's approval.
+      const c = await seedUser(db, { status: 'approved' })
+      await planPrep(db, t0, [{ company: await seedCompany(db, c), client: c }])
+
+      const changes = (await sync(db, plus(t0, 3))).filter((x) => [a, b].includes(x.r_client) && x.r_change === 'new')
+      expect(changes.map((x) => x.r_source)).toEqual(['plan_review', 'plan_review'])
+      const ra = (await tasksOf(db, a)).find((t) => t.source === 'plan_review')!
+      expect(ra).toMatchObject({ source_id: va, assignee_id: null })
+      expect(ra.received_at.getTime()).toBe(plus(t0, 1).getTime()) // the clock of 149: from the submission
+      expect((await tasksOf(db, b)).find((t) => t.source === 'plan_review')!.source_id).toBe(vb)
+    }))
+
   it('the clock of 152: work that waited before the new sources counts from their clock start', () =>
     inRollback(async (db) => {
       await clockStart(db)

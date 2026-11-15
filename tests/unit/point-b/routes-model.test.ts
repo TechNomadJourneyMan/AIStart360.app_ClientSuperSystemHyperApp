@@ -28,6 +28,8 @@ const s = vi.hoisted(() => ({
   /** Migration 129 not applied: pb_recommendations / pb_invites answer «relation does not exist». */
   break129: false,
   limited: false,
+  /** The client's Точка Б is closed (his access decision) — R3-PB review L2. */
+  closedPointB: false,
 }))
 
 /** The same DB; with `breakPlanTables` the plan tables answer «relation does not exist» (migration 125 not applied). */
@@ -56,6 +58,10 @@ vi.mock('@/lib/access/gate', () => ({
 }))
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
+vi.mock('@/lib/access/decision', async (orig) => ({
+  ...(await orig<typeof import('@/lib/access/decision')>()),
+  resolveFeature: async () => (s.closedPointB ? { allowed: false, reason: 'upgrade_required' } : { allowed: true, reason: 'gates_off' }),
+}))
 // No model is reachable in the unit tests: the AI parts answer «no key» and the draft is built by the rules.
 vi.mock('@/lib/ai/gateway', async (orig) => ({ ...(await orig<typeof import('@/lib/ai/gateway')>()), hasLlmKey: () => false }))
 vi.mock('@/lib/admin/audit', () => ({
@@ -153,6 +159,7 @@ beforeEach(() => {
   s.breakPlanTables = false
   s.break129 = false
   s.limited = false
+  s.closedPointB = false
   as('admin')
 })
 afterEach(() => { vi.useRealTimers() })
@@ -799,6 +806,16 @@ describe('POST …/plan/quick-draft — «Собрать черновик пла
 
     s.limited = true
     expect((await quick({ ai: false })).status).toBe(429)
+  })
+
+  it('R3-PB review L2: a client whose Точка Б is closed (Free) gets no draft and no AI spend — 409 point_b_closed, nothing written', async () => {
+    s.closedPointB = true
+    const r = await quick()
+    expect(r.status).toBe(409)
+    expect(r.body.code).toBe('point_b_closed')
+    expect(versions()).toHaveLength(0)
+    expect(db().pb_plans).toHaveLength(0)
+    expect(s.audits).toEqual([])
   })
 })
 

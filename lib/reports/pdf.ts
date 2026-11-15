@@ -655,7 +655,7 @@ const PB_PREP_TEXT: Record<PointBReport['plan']['prep'], string> = {
   in_work: 'План готовит команда AIStart360. Сценарии, стратегия и задачи появятся после одобрения плана.',
   in_review: 'План собран и проходит проверку перед публикацией.',
   waiting: 'Данных для плана достаточно — план подготовит команда AIStart360.',
-  needs_data: 'Для плана нужны данные — список ниже.',
+  needs_data: 'Для плана нужны данные:',
 }
 
 function fmtMonthsPdf(n: number | null): string {
@@ -696,6 +696,8 @@ export async function renderPointBPdf(input: PointBPdfInput): Promise<Buffer> {
   sectionHeader(doc, 'План')
   if (r.plan.status !== 'published') {
     paragraph(doc, PB_PREP_TEXT[r.plan.prep])
+    // The list right under the sentence (review L7): what the PLAN needs, else what the calculation lacks.
+    if (r.plan.prep === 'needs_data') for (const m of r.plan.prepMissing.length ? r.plan.prepMissing : r.missing) bullet(doc, m)
     return finalize(doc)
   }
   const approved = r.plan.approvedAt ? fmtDate(r.plan.approvedAt) : null

@@ -308,7 +308,8 @@ export async function loadPointBView(
   // R3 (M3): the share link shows the SAME calculation as the client's page — the model and the APPROVED plan
   // version (lib/point-b/report.ts), never the old V2 engine, never a draft, never the staff-only AI strategy.
   // Service role: the share link has no session; the token already authorised ONE company.
-  const report = await loadPointBReport(createServiceClient(), subject.userId)
+  // The shared company itself (R3-PB review L8): an owner of two companies shares the numbers of the one in the link.
+  const report = await loadPointBReport(createServiceClient(), subject.userId, { companyId: subject.companyId })
   return report.level === 0 && report.plan.status !== 'published' ? null : report
 }
 

@@ -38,11 +38,19 @@ function isLocked(d: StateResponse | undefined): d is Locked {
   return !!d && 'locked' in d
 }
 
-/** How often the page re-reads its state (ms), or false. */
-export function pollIntervalOf(d: StateResponse | undefined): number | false {
+/**
+ * How often the page re-reads its state (ms), or false. While the AI analysis
+ * is being prepared: every 10 s for the first 3 minutes, then every 30 s —
+ * and not for ever: after 15 min the server says «не завершился — Повторить»
+ * (lib/point-a/ai-claim.ts), the status is no longer 'processing' (ревью R3-PA H1).
+ */
+export function pollIntervalOf(d: StateResponse | undefined, now: number = Date.now()): number | false {
   if (!d || isNoCompany(d) || isLocked(d)) return false
   if (d.recalculation !== 'idle') return 5_000
-  if (d.aiAnalysis?.status === 'processing') return 10_000
+  if (d.aiAnalysis?.status === 'processing') {
+    const started = d.aiAnalysis.startedAt ? Date.parse(d.aiAnalysis.startedAt) : NaN
+    return Number.isFinite(started) && now - started > 3 * 60_000 ? 30_000 : 10_000
+  }
   return 60_000
 }
 
@@ -109,9 +117,11 @@ export function useRetryAiAnalysis() {
     mutationFn: async (diagnosticId: string) => {
       const res = await fetch('/api/v1/diagnostics/retry-ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ diagnostic_id: diagnosticId }) })
       const body = await res.json().catch(() => null)
-      if (res.status === 429) throw new Error('Слишком много попыток — повторите через минуту')
+      // 409 «уже готовится / уже готов», 429 «повторить можно через N мин» — the server's own words.
+      const said = typeof body?.error === 'string' && /[а-яё]/i.test(body.error) ? body.error : null
       if (res.status === 402 || body?.error === 'upgrade_required') throw new Error('Разбор ИИ — в платном доступе')
-      if (!res.ok || !body?.ok) throw new Error(typeof body?.error === 'string' && /[а-яё]/i.test(body.error) ? body.error : 'Не удалось перезапустить разбор')
+      if (res.status === 429) throw new Error(said ?? 'Слишком много попыток — повторите через минуту')
+      if (!res.ok || !body?.ok) throw new Error(said ?? 'Не удалось перезапустить разбор')
       return body as { ok: true; ai_status: string }
     },
     onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),

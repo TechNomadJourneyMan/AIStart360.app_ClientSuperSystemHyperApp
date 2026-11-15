@@ -31,6 +31,8 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
   const users: string[] = []
   const companies: string[] = []
   let materializeFails = false
+  /** Ревью R3-PA M3: the owner's Точка А (the paid-section decision) as the gate of the model stages sees it. */
+  let ownerPaid = false
   let llmCalls: string[] = []
 
   function overview(companyId: string, sources: Partial<PointAOverview['sources']> = {}): PointAOverview {
@@ -181,6 +183,7 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
     process.env.AGENT_INLINE_EXECUTION = 'false'
     __useTestAgents(DIAGNOSTIC_AGENTS)
     setDiagnosticsIO({
+      async ownerPaidPointA() { return ownerPaid },
       async materialize() {
         if (materializeFails) throw new AgentError('MATERIALIZE_DOWN', 'хранилище метрик недоступно', false)
         return { written: 4, total: 148, skipped: 144, errors: 0 }
@@ -236,6 +239,45 @@ describe.skipIf(!dbTestsEnabled)('diagnostic pipeline', async () => {
     expect(after.status).toBe('succeeded')
     const [s] = await sessions(companyId)
     expect(s.trigger).toBe('event')
+  })
+
+  // Ревью R3-PA M3: an AUTOMATIC run (after every written Point A) calls the model only for an
+  // owner whose Точка А is open, with an official score, at most every 6 h per company.
+  it('an automatic run: no model call for a Free owner; a paid owner — once, then not again within 6 h', async () => {
+    const { companyId } = await seedCompany({ answers: LEGACY_WEAK })
+    await addMetric(companyId, 'biz.finansy.vyruchka_god', 100_000_000, 'survey')
+    await addMetric(companyId, 'biz.finansy.vyruchka_god', 40_000_000, 'document')
+    await addMetric(companyId, 'biz.marketing.cac', -500, 'manual')
+    stubModel()
+    const auto = async () => {
+      await enqueueAgentTask({
+        agentKey: 'diagnostic_orchestrator', companyId, trigger: 'event', requestedBy: 'system:point-a',
+        input: { action: 'start', trigger: 'event', reason: 'пересчёт Точки А после изменения данных' }, idempotencyKey: `test:${randomUUID()}`, kick: false,
+      })
+      await drain(companyId)
+      const all = await sessions(companyId)
+      return all[all.length - 1]
+    }
+
+    ownerPaid = false
+    const free = await auto()
+    expect(free.trigger).toBe('event')
+    expect(free.stages.diagnostic).toMatchObject({ llm: 'skipped', llm_reason: 'free' })
+    expect(free.stages.recommendation.llm === 'skipped' || free.stages.recommendation.llm === 'insufficient_data').toBe(true)
+    expect(llmCalls).toEqual([])
+
+    ownerPaid = true
+    const paid = await auto()
+    expect(paid.stages.diagnostic.llm).toBe('done')
+    expect(llmCalls).toContain('hypotheses')
+
+    // New evidence within 6 h: no new model call for an automatic run.
+    await addMetric(companyId, 'biz.marketing.cac', 12_000, 'document')
+    llmCalls = []
+    const soon = await auto()
+    expect(soon.stages.diagnostic).toMatchObject({ llm: 'skipped', llm_reason: 'interval' })
+    expect(llmCalls.filter((c) => c === 'hypotheses')).toEqual([])
+    ownerPaid = false
   })
 
   it('runs every stage in order and finalises the session with evidence-backed findings', async () => {

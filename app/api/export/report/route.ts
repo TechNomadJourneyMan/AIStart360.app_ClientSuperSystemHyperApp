@@ -329,7 +329,8 @@ async function loadPointB(subject: Subject): Promise<PointBPdfInput | null> {
   // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan version
   // (lib/point-b/report.ts), never the old V2 engine, never a draft. Service role: the caller (the owner, or an
   // expert / admin of this client) is authorised above; the page state reads the plan tables the session cannot.
-  const report = await loadPointBReport(createServiceClient(), subject.userId)
+  // The company the PDF is signed with is the company the numbers are of (R3-PB review L8: an owner of two companies).
+  const report = await loadPointBReport(createServiceClient(), subject.userId, { companyId: subject.companyId })
   if (report.level === 0 && report.plan.status !== 'published') return null
 
   const meta: ReportMeta = {

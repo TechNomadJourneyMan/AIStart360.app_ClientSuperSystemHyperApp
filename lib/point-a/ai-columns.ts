@@ -4,9 +4,9 @@
  * ai_generated_at, and the expert's review carried with a cached analysis).
  *
  * Before migration 150 the extra columns do not exist: PostgREST answers
- * PGRST204 («Could not find the … column») / Postgres 42703. Then the row is
- * written without them — the status is never lost because a diagnosis column
- * is missing. `db` must be the service role (diagnostics has no UPDATE policy
+ * PGRST204 («Could not find the … column») / Postgres 42703. Then — and on any
+ * other failure of the extra columns — the row is written without them: the
+ * status is never lost because a diagnosis column could not be written. `db` must be the service role (diagnostics has no UPDATE policy
  * for API roles); the write is scoped to the verified diagnostic of the user.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -26,7 +26,11 @@ export async function updateDiagnosticAi(
   const hasExtra = Object.keys(extra).length > 0
   const first = await write(hasExtra ? { ...base, ...extra } : base)
   if (!first.error) return { ok: true, withDiagnosis: hasExtra }
-  if (!hasExtra || !isMissingColumn(first.error)) return { ok: false, code: first.error.code ?? null }
+  if (!hasExtra) return { ok: false, code: first.error.code ?? null }
+  // Ревью R3-PA L1: ANY failure of the diagnosis part (a missing column before 150, a
+  // hand-made VARCHAR(50) ai_error → 22001, a check) must not cost the status itself:
+  // without it the row would stay «готовится».
+  if (!isMissingColumn(first.error)) console.error('[point-a/ai] diagnosis columns not written', first.error.code ?? '')
   const second = await write(base)
   return second.error ? { ok: false, code: second.error.code ?? null } : { ok: true, withDiagnosis: false }
 }

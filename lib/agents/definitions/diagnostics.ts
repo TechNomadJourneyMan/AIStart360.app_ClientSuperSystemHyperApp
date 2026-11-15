@@ -26,6 +26,7 @@ import { ORCHESTRATOR_KEY, STAGE_LABELS, type DiagnosticStageKey } from '@/lib/d
 import { dataQualityFindings, type QualityDocumentRow, type QualityMetricRow } from '@/lib/diagnostics/quality'
 import type { CompanyProfile } from '@/lib/diagnostics/scoring'
 import type { PointA } from '@/types/onboarding'
+import { LLM_GATE_TEXT, type LlmGateReason } from '@/lib/diagnostics/llm-gate'
 import '../tools/diagnostics'
 import { notifyStaffTool } from '../tools/notify'
 import { AgentError, type AgentContext, type AgentDefinition, type AgentLimits } from '../types'
@@ -106,7 +107,7 @@ function profileOf(c: CurrentDiagnostic, companyId: string | null): CompanyProfi
   }
 }
 
-type LlmState = 'done' | 'cached' | 'unavailable' | 'insufficient_data' | 'budget' | 'failed'
+type LlmState = 'done' | 'cached' | 'unavailable' | 'insufficient_data' | 'budget' | 'failed' | 'skipped'
 
 /** Transient model errors are retried by the queue while attempts remain; then the stage degrades. */
 function isTransient(code: string): boolean {
@@ -338,13 +339,25 @@ const LLM_STATE_TEXT: Record<LlmState, string> = {
   insufficient_data: 'данных мало для анализа моделью',
   budget: 'бюджет ИИ исчерпан',
   failed: 'модель не ответила',
+  skipped: 'ИИ-этап автоматического запуска пропущен',
+}
+
+/**
+ * Ревью R3-PA M3: an automatic session calls the model only for an owner with
+ * Точка А open, an official score, at most every 6 h (lib/diagnostics/llm-gate.ts).
+ * Null — go on; otherwise the state to record.
+ */
+async function llmGate(ctx: AgentContext): Promise<{ llm: 'skipped'; llm_reason: string; text: string } | null> {
+  const g = await ctx.tool<{ allowed: boolean; reason: LlmGateReason | null }>('diagnostics.llm_gate', {})
+  if (g.allowed || !g.reason) return null
+  return { llm: 'skipped', llm_reason: g.reason, text: `${LLM_STATE_TEXT.skipped}: ${LLM_GATE_TEXT[g.reason]}` }
 }
 
 export const diagnosticAgent = stageAgent({
   key: 'diagnostic',
   name: 'Гипотезы ИИ',
   description: 'Строит гипотезы о причинах проблем по доказательствам (метрики, баллы, выводы). Гипотезы скрыты от клиента до проверки сотрудником; о критических рисках сообщает команде.',
-  tools: ['diagnostics.current', 'metrics.read', 'findings.read', 'diagnostics.ai_cache', 'findings.write', 'notify.staff'],
+  tools: ['diagnostics.current', 'metrics.read', 'findings.read', 'diagnostics.ai_cache', 'diagnostics.llm_gate', 'findings.write', 'notify.staff'],
   permissions: { READ_CLIENT_DATA: 'ALLOW', CREATE_FINDINGS: 'ALLOW', CALL_LLM: 'ALLOW', SEND_TELEGRAM: 'ALLOW' },
   tier: 'standard',
   promptVersion: HYPOTHESES_PROMPT_VERSION,
@@ -388,6 +401,8 @@ export const diagnosticAgent = stageAgent({
     if (cache.hit) {
       return { summary: `критических рисков ${critical.length}; ${LLM_STATE_TEXT.cached}`, data: { ...base, llm: 'done', cached: true, input_hash: inputHash } }
     }
+    const gated = await llmGate(ctx)
+    if (gated) return { summary: `критических рисков ${critical.length}; ${gated.text}`, data: { ...base, llm: gated.llm, llm_reason: gated.llm_reason } }
     const res = await modelCall(ctx, DIAGNOSTIC_LIMITS.maxAttempts, { system: prompt.system, user: prompt.user, schema: HypothesesSchema })
     if (!res.ok) {
       await ctx.log('warn', 'diagnostic.llm_skipped', `гипотезы не построены: ${res.reason}`, { state: res.state })
@@ -408,7 +423,7 @@ export const recommendationAgent = stageAgent({
   key: 'recommendation',
   name: 'Рекомендации',
   description: 'Собирает рекомендации из правил методики (видны клиенту) и предлагает действия моделью по выводам (скрыты до проверки сотрудником).',
-  tools: ['diagnostics.current', 'findings.read', 'diagnostics.ai_cache', 'recommendations.write'],
+  tools: ['diagnostics.current', 'findings.read', 'diagnostics.ai_cache', 'diagnostics.llm_gate', 'recommendations.write'],
   permissions: { READ_CLIENT_DATA: 'ALLOW', CREATE_FINDINGS: 'ALLOW', CALL_LLM: 'ALLOW' },
   tier: 'standard',
   promptVersion: RECOMMENDATIONS_PROMPT_VERSION,
@@ -428,6 +443,8 @@ export const recommendationAgent = stageAgent({
     const inputHash = promptInputHash(RECOMMENDATIONS_PROMPT_VERSION, prompt.system + prompt.text)
     const cache = await ctx.tool<{ hit: boolean }>('diagnostics.ai_cache', { input_hash: inputHash })
     if (cache.hit) return { summary: `по правилам: ${rules.length}; ${LLM_STATE_TEXT.cached}`, data: { ...base, llm: 'done', cached: true, input_hash: inputHash } }
+    const gated = await llmGate(ctx)
+    if (gated) return { summary: `по правилам: ${rules.length}; ${gated.text}`, data: { ...base, llm: gated.llm, llm_reason: gated.llm_reason } }
 
     const res = await modelCall(ctx, RECOMMENDATION_LIMITS.maxAttempts, { system: prompt.system, user: prompt.user, schema: RecommendationsSchema })
     if (!res.ok) {

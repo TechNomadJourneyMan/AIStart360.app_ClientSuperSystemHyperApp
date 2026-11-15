@@ -161,7 +161,8 @@ describe('the real buildAssistantContext applies the decision (one place for eve
   it('source: the snapshot is scrubbed with resolveAccess before it is returned; staff overrides only in GIGA', async () => {
     const { readFileSync } = await import('node:fs')
     const src = readFileSync('lib/assistant/context.ts', 'utf8')
-    expect(src).toMatch(/return scrubAssistantContext\(full, await sectionsP\)/)
+    expect(src).toMatch(/const sections = await sectionsP/)
+    expect(src).toMatch(/return scrubAssistantContext\(full, sections\)/)
     expect(src).toContain('resolveAccess(sb, userId)')
     expect(src).toContain('return ALL_SECTIONS_CLOSED') // a failed decision → all closed
   })

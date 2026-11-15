@@ -3,6 +3,7 @@ export const maxDuration = 90
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
+import { resolveFeature } from '@/lib/access/decision'
 import { buildQuickDraft } from '@/lib/point-b/plan/quick-draft'
 import { auditPlan, fail, guarded, guardPlanRoute, json, NO_COMPANY, PLAN_AUDIT } from '@/lib/point-b/plan/route-guard'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -16,6 +17,7 @@ import { withDeadline } from '@/lib/runtime/deadline'
  * and approve plans); the client must be one the actor may manage. Nothing is approved here.
  *   → 201 { ok, data: { version, created, level, scenarios, selectedScenario, strategy, recommendations, warnings } }
  *   409 { reasons } — not enough data for scenarios (nothing written) or a version already in review;
+ *   409 point_b_closed — the client's Точка Б is closed (his access decision), nothing is built;
  *   429 — more often than 6 times in 10 minutes per actor or once a minute per client.
  * Audit: point_b.plan.quick_draft.
  */
@@ -29,6 +31,11 @@ async function handlePost(req: NextRequest, { params }: { params: { id: string }
     const parsed = Body.safeParse((await req.json().catch(() => null)) ?? {})
     if (!parsed.success) return fail('Неверный запрос', 400)
     if (!ctx.company) return fail(NO_COMPANY, 404)
+    // R3-PB review L2: the CLIENT's Точка Б must be open (the access decision of the owner: tariff, override, the
+    // switch) — no draft and no AI spent for a client who cannot see the plan; the same rule as ai-generate.
+    if (!(await resolveFeature(ctx.sb, ctx.userId, 'point_b')).allowed) {
+      return fail('У клиента закрыта Точка Б (тариф Free) — черновик плана не собирается', 409, { code: 'point_b_closed' })
+    }
 
     if (await isRateLimitedKey(ctx.actor.id, 'pb-quick-draft', { max: 6, windowMs: 600_000 })) {
       return fail('Черновик можно собирать не чаще 6 раз за 10 минут — попробуйте позже', 429, { code: 'rate_limited' })

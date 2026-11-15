@@ -25,6 +25,8 @@ export interface ScorePathInputBlock {
   informational?: boolean
   score: number | null
   checks: ReadonlyArray<ScorePathCheck>
+  /** 'inferred': scored by an AI hypothesis an expert confirmed — not a fact (the engine wants one block on facts). */
+  basis?: 'facts' | 'inferred'
 }
 
 export interface ScorePathBlock {
@@ -94,14 +96,16 @@ export function pointAScorePath(blocks: ReadonlyArray<ScorePathInputBlock>, opts
   const wScored = scored.reduce((s, b) => s + b.weight, 0)
   const needsRequired = weighted.some((b) => required(b.key))
   const hasRequired = !needsRequired || scored.some((b) => required(b.key))
+  // The engine (lib/point-a/v4/engine.ts `factual`): no overall from confirmed hypotheses alone.
+  const hasFactual = scored.some((b) => b.basis !== 'inferred')
 
   const candidates = weighted
     .filter((b) => !hasScore(b))
     .map((b) => ({ b, cost: itemsToScore(b) }))
     .filter((c): c is { b: ScorePathInputBlock; cost: { items: number; needs: string[] } } => c.cost !== null)
 
-  const ok = (w: number, req: boolean) => w / wAll >= MIN_OVERALL_WEIGHT_COVERAGE - EPS && req
-  const enough = ok(wScored, hasRequired)
+  const ok = (w: number, req: boolean, fact: boolean) => w / wAll >= MIN_OVERALL_WEIGHT_COVERAGE - EPS && req && fact
+  const enough = ok(wScored, hasRequired, hasFactual)
   const view = (c: (typeof candidates)[number]): ScorePathBlock => ({
     key: c.b.key as BlockKey, title: titleOf(c.b), items: c.cost.items, needs: c.cost.needs, required: required(c.b.key),
   })
@@ -113,7 +117,8 @@ export function pointAScorePath(blocks: ReadonlyArray<ScorePathInputBlock>, opts
     for (let mask = 1; mask < 1 << n; mask++) {
       const set = candidates.filter((_, i) => mask & (1 << i))
       const w = wScored + set.reduce((s, c) => s + c.b.weight, 0)
-      if (!ok(w, hasRequired || set.some((c) => required(c.b.key)))) continue
+      // a filled block rests on facts
+      if (!ok(w, hasRequired || set.some((c) => required(c.b.key)), true)) continue
       const items = set.reduce((s, c) => s + c.cost.items, 0)
       if (!best || items < best.items || (items === best.items && (set.length < best.set.length || (set.length === best.set.length && w > best.weight)))) {
         best = { set, items, weight: w }
