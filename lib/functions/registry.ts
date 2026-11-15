@@ -66,8 +66,23 @@ const ALL: readonly InngestFunction.Like[] = [
  *   'web'    - the same without the agent runtime;
  *   'agents' - none: the agents service has no public domain and no Inngest.
  */
-export function inngestFunctionsForRole(role: PortalRole): InngestFunction.Like[] {
+export function inngestFunctionsForRole(role: PortalRole, env: NodeJS.ProcessEnv = process.env): InngestFunction.Like[] {
   if (role === 'agents') return []
-  if (role === 'web') return ALL.filter((fn) => !AGENT_RUNTIME.includes(fn))
-  return [...ALL]
+  const disabled = disabledFunctionIds(env)
+  const served = role === 'web' ? ALL.filter((fn) => !AGENT_RUNTIME.includes(fn)) : [...ALL]
+  return disabled.size ? served.filter((fn) => !disabled.has(functionId(fn))) : served
+}
+
+/**
+ * INNGEST_DISABLED_FUNCTIONS — ids of functions the route does NOT serve (comma or space separated),
+ * e.g. «assistant-events-retention». A function that is not served is removed from the Inngest
+ * server on the next sync, so it neither runs on schedule nor on events. Used to hold back a job
+ * that deletes data until the PO allows it; unknown ids are ignored.
+ */
+export function disabledFunctionIds(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return new Set((env.INNGEST_DISABLED_FUNCTIONS ?? '').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean))
+}
+
+function functionId(fn: InngestFunction.Like): string {
+  return (fn as unknown as { opts?: { id?: string } }).opts?.id ?? ''
 }
