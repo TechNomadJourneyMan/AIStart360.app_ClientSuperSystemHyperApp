@@ -17,6 +17,7 @@
  */
 import { prisma } from '@/lib/db'
 import { canRunAfterResponse } from '@/lib/runtime/platform'
+import { inngestEnabled } from '@/lib/inngest-target'
 
 export const RECALC_DEBOUNCE_MS = 20_000
 export const POINT_A_RECALC_EVENT = 'point-a/recalc.requested'
@@ -68,7 +69,8 @@ export function drainInBackground(companyId: string, delayMs = 0): void {
 }
 
 function inngestConfigured(): boolean {
-  return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
+  // Self-hosted server, cloud event key or the local dev server (lib/inngest.ts).
+  return inngestEnabled()
 }
 
 /**

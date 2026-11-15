@@ -39,6 +39,7 @@ import { CommError } from './store'
 import { defaultTransports, type CommTransports } from './transports'
 import type { CommChannel } from './types'
 import type { CampaignStatus, RecipientStatus } from './campaign-labels'
+import { inngestEnabled } from '@/lib/inngest-target'
 
 export const COMM_CAMPAIGN_RUN_EVENT = 'comm/campaign.run'
 
@@ -114,7 +115,8 @@ export async function loadSendSchedule(): Promise<SendSchedule> {
 // ─── Inngest ────────────────────────────────────────────────────────────────
 
 function inngestConfigured(): boolean {
-  return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
+  // Self-hosted server, cloud event key or the local dev server (lib/inngest.ts).
+  return inngestEnabled()
 }
 
 /** Wake the sending engine for a campaign. Never throws; false when Inngest is not configured or the send failed. */

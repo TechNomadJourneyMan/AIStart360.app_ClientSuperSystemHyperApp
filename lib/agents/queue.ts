@@ -26,6 +26,7 @@ import { agentRunSlots } from './run-slots'
 import { runClaimedTask, type RunReport } from './runner'
 import type { AgentDefinition, AgentTaskRow } from './types'
 import * as store from './store'
+import { inngestEnabled } from '@/lib/inngest-target'
 
 export const AGENT_TASK_REQUESTED_EVENT = 'agents/task.requested'
 
@@ -56,7 +57,8 @@ export async function enqueueAgentTask(opts: EnqueueOptions): Promise<{ id: stri
 }
 
 function inngestConfigured(): boolean {
-  return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
+  // Self-hosted server, cloud event key or the local dev server (lib/inngest.ts).
+  return inngestEnabled()
 }
 
 /**
