@@ -1,6 +1,6 @@
 /**
- * lib/expert-sla/run.ts — один проход часов SLA экспертов (Inngest cron каждые
- * 5 минут, lib/functions/expert-sla.ts). Шаги НЕЗАВИСИМЫ: сбой одного не
+ * lib/expert-sla/run.ts — один проход часов SLA экспертов (крон портала каждые
+ * 5 минут, /api/cron/expert-sla, lib/cron/schedule.ts). Шаги НЕЗАВИСИМЫ: сбой одного не
  * останавливает следующие (п. 9 ревью).
  *
  *   1. expert_sla_sync (145/146): старт часов на первом проходе, закрыть

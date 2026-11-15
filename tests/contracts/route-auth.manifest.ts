@@ -67,6 +67,7 @@ export const ROUTE_AUTH_MANIFEST: Record<string, Partial<Record<HttpMethod, Rout
   '/api/cron/billing-expiry': { GET: 'cron' },
   '/api/cron/client-digest': { GET: 'cron' },
   '/api/cron/crm-digest': { GET: 'cron' },
+  '/api/cron/expert-sla': { GET: 'cron' },
   '/api/cron/reminders': { GET: 'cron' },
   '/api/cron/staff-digest': { GET: 'cron' },
   '/api/dev/confirm-email': { GET: 'dev-only', POST: 'dev-only', PUT: 'dev-only', PATCH: 'dev-only', DELETE: 'dev-only', OPTIONS: 'dev-only' },

@@ -30,7 +30,6 @@ const ALL = [
   'pb-recompute-company',
   'pb-monthly-checkpoint',
   'pb-invite-external',
-  'expert-sla-watch',
 ]
 const AGENT_RUNTIME = ['agents-task-requested', 'agents-maintenance']
 
