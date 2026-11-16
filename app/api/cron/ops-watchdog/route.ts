@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
-import { runJobWatchdog } from '@/lib/ops/job-watchdog'
+import { runJobWatchdog, WATCHDOG_UNDELIVERED_HTTP } from '@/lib/ops/job-watchdog'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -15,6 +15,9 @@ export const maxDuration = 60
  * Логика — lib/ops/job-watchdog.ts.
  *
  * Без миграции 154 остальные проверки работают, в ответе journal = 'not_migrated'.
+ * Если хотя бы одну тревогу не удалось отправить, проход доводится до конца (остальные тревоги,
+ * чистка), но ответ — 502 «alerts_not_delivered» (NV-4): планировщик запишет исход как ошибку, и
+ * ГИГА покажет «тревоги не доставлены», а не «в норме».
  * Auth: только заголовок `Authorization: Bearer ${CRON_SECRET}`.
  */
 export async function GET(req: NextRequest) {
@@ -24,6 +27,9 @@ export async function GET(req: NextRequest) {
   }
   try {
     const report = await runJobWatchdog(new Date())
+    if (report.status === 'undelivered') {
+      return NextResponse.json({ ok: false, error: 'alerts_not_delivered', ...report }, { status: WATCHDOG_UNDELIVERED_HTTP })
+    }
     return NextResponse.json({ ok: true, ...report })
   } catch (e) {
     console.error('[cron/ops-watchdog]', e instanceof Error ? e.message.split('\n')[0].slice(0, 200) : 'error')

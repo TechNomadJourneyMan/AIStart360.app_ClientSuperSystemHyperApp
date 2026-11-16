@@ -215,7 +215,7 @@ describe('runJobWatchdog', () => {
 
   it('all fine: ok, nothing sent, retention ran', async () => {
     const t = deps()
-    expect(await runJobWatchdog(now, t.d)).toEqual({ status: 'ok', journal: 'ok', problems: [], notified: [], failedChecks: [], pruned: { jobRuns: 0, cronRuns: 0 } })
+    expect(await runJobWatchdog(now, t.d)).toEqual({ status: 'ok', journal: 'ok', problems: [], notified: [], undelivered: [], failedChecks: [], pruned: { jobRuns: 0, cronRuns: 0 } })
     expect(t.sent).toEqual([])
   })
 
@@ -320,6 +320,34 @@ describe('runJobWatchdog', () => {
     await expect(runJobWatchdog(now, t.d)).rejects.toThrow(/pool timeout/) // the alarm throws: still the db error
   })
 
+  // NV-4: a pass whose alerts could not be sent is never a quiet «ok».
+  it('alerts that could not be sent: status undelivered (the route answers 502), a direct alarm, and the rest of the pass still done', async () => {
+    const prune = vi.fn(async () => ({ jobRuns: 1, cronRuns: 0 }))
+    const t = deps({
+      pointAQueue: async () => ({ due: 9, overdue: 2, oldestOverdueMinutes: 7 * 60 }), // CRITICAL
+      demo: async () => ({ created24h: 50, olderThan48h: 0 }), // WARNING
+      notify: async () => { throw new Error('insert into notification_events failed') },
+      prune,
+    })
+    const report = await runJobWatchdog(now, t.d)
+    expect(report.status).toBe('undelivered')
+    expect(report.undelivered).toEqual(['pa_queue:overdue', 'demo:burst'])
+    expect(report.notified).toEqual([])
+    expect(prune).toHaveBeenCalledTimes(1)
+    expect(t.direct).toHaveLength(1)
+    expect(t.direct[0]).toMatchObject({ key: 'watchdog:undelivered', level: 'CRITICAL', title: 'Сторож задач не смог отправить тревоги' })
+    expect(t.direct[0].lines.join(' ')).toContain('Не отправлено: 2')
+
+    // one of two that fails is «undelivered» too; the one that went is still counted
+    const partial = deps({
+      demo: async () => ({ created24h: 50, olderThan48h: 3 }),
+      notify: async (p) => { if (p.key === 'demo:stale') throw new Error('x'); return { sent: true } },
+    })
+    const r2 = await runJobWatchdog(now, partial.d)
+    expect(r2).toMatchObject({ status: 'undelivered', notified: ['demo:burst'], undelivered: ['demo:stale'] })
+    expect(partial.direct[0].level).toBe('WARNING')
+  })
+
   it('a failed retention is named, never fatal', async () => {
     const t = deps({ prune: vi.fn(async () => { throw new Error('cron_runs retention failed: timeout') }) })
     const report = await runJobWatchdog(now, t.d)
@@ -347,6 +375,27 @@ describe('opsOverview (GIGA → «Состояние системы»)', () => {
     expect(overview.jobs.find((j) => j.job === 'inngest:ops-ping')).toMatchObject({ health: 'stale', label: expect.stringContaining('Inngest') })
     expect(overview.jobs.find((j) => j.job === '/api/cron/expert-sla')).toMatchObject({ health: 'waiting', lastAt: null })
     expect(overview.alertRoutes).toEqual({ linkedStaff: 0, envChats: 0, direct: false, nowhere: true })
+  })
+
+  // NV-4: the GIGA card sees the last pass of the watchdog that could not send its alerts.
+  it('the last watchdog pass answered 502 (alerts not delivered): alertsUndeliveredAt; a 500 is not that', async () => {
+    const { opsOverview, WATCHDOG_UNDELIVERED_HTTP } = await import('@/lib/ops/job-watchdog')
+    const now = new Date('2026-11-16T12:00:00Z')
+    const at = new Date(now.getTime() - 4 * MIN)
+    const view = (httpStatus: number) => opsOverview(now, {
+      role: () => 'all',
+      inngestCrons: async () => [],
+      loadJobs: async (expected) => ({
+        expected,
+        last: new Map([['/api/cron/ops-watchdog', { job: '/api/cron/ops-watchdog', status: 'http_error' as const, finishedAt: at, httpStatus, error: `HTTP ${httpStatus}` }]]),
+        recent: new Map(),
+        expectedSince: new Map(),
+      }),
+      alertRoutes: async () => ({ linkedStaff: 1, envChats: 0, direct: false }),
+    })
+    expect(WATCHDOG_UNDELIVERED_HTTP).toBe(502)
+    expect((await view(502)).alertsUndeliveredAt).toBe(at.toISOString())
+    expect((await view(500)).alertsUndeliveredAt).toBeNull()
   })
 
   it('without the journal: not_migrated and no jobs', async () => {

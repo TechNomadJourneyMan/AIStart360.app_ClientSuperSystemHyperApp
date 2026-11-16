@@ -26,6 +26,8 @@ export interface OpsData {
   journal: 'ok' | 'not_migrated'
   jobs: OpsJob[]
   alertRoutes: { linkedStaff: number; envChats: number; direct: boolean; nowhere: boolean }
+  /** The last pass of the watchdog could not send its alerts (NV-4); absent on older deployments. */
+  alertsUndeliveredAt?: string | null
 }
 
 export interface OpsFailure {
@@ -47,6 +49,7 @@ export function opsCounts(ops: OpsData | null | undefined, error: OpsFailure | n
   return {
     problems: jobs.filter((j) => j.health === 'stale' || j.health === 'never').length
       + (ops?.alertRoutes.nowhere ? 1 : 0)
+      + (ops?.alertsUndeliveredAt ? 1 : 0)
       + (error?.kind === 'failed' ? 1 : 0),
     warnings: jobs.filter((j) => j.health === 'failing').length,
   }
@@ -56,6 +59,12 @@ export function ScheduledJobsBlock({ ops, error }: { ops: OpsData | null | undef
   return (
     <div className="mt-4 border-t border-white/[0.05] pt-4">
       <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><Clock size={12} /> Задачи по расписанию и тревоги</p>
+      {ops?.alertsUndeliveredAt && (
+        <p role="alert" className="mb-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-200">
+          Тревоги не доставлены: последний проход сторожа ({fmtAgo(ops.alertsUndeliveredAt)}) не смог отправить тревоги — запись в ленту
+          уведомлений не прошла. Проверьте базу данных и лог портала; список проблем ниже может быть неполным.
+        </p>
+      )}
       {ops?.alertRoutes.nowhere && (
         <p role="alert" className="mb-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-200">
           Тревогам некуда приходить: ни один Super Admin не привязал Telegram (тревоги сторожа уходят только им), и TELEGRAM_ADMIN_CHAT_IDS

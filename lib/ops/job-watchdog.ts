@@ -432,15 +432,27 @@ export interface WatchdogDeps {
 }
 
 export interface WatchdogReport {
-  /** ok — проблем нет; alerted — что-то отправлено; quiet — проблемы есть, но о них уже сказали. */
-  status: 'ok' | 'alerted' | 'quiet'
+  /**
+   * ok — проблем нет; alerted — что-то отправлено; quiet — проблемы есть, но о них уже сказали;
+   * undelivered — хотя бы одну тревогу не удалось отправить (NV-4): маршрут отвечает
+   * WATCHDOG_UNDELIVERED_HTTP, журнал задач и ГИГА это видят.
+   */
+  status: 'ok' | 'alerted' | 'quiet' | 'undelivered'
   journal: 'ok' | 'not_migrated'
   problems: string[]
   notified: string[]
+  /** Problems whose alert could not be sent (the feed or the delivery failed). */
+  undelivered: string[]
   /** Checks that could not run (their own failure is a problem too). */
   failedChecks: string[]
   pruned: { jobRuns: number | null; cronRuns: number | null }
 }
+
+/**
+ * The HTTP status of /api/cron/ops-watchdog when an alert could not be sent (R4-A1 verify NV-4): the
+ * runner journals it as http_error with this code, and the GIGA card shows «тревоги не доставлены».
+ */
+export const WATCHDOG_UNDELIVERED_HTTP = 502
 
 const remindHoursOf = (key: string) => (key === 'alerts:nowhere' ? NOWHERE_REMIND_HOURS : WATCHDOG_REMIND_HOURS)
 
@@ -556,6 +568,7 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
   // 3. Alerts, at most once per key and window. One that cannot be sent (the database wobbles)
   // is named and does not keep the others — CRITICAL among them — or the retention from going.
   const notified: string[] = []
+  const undelivered: WatchProblem[] = []
   for (const p of problems) {
     try {
       const remind = remindHoursOf(p.key)
@@ -565,7 +578,25 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
       if (res.sent) notified.push(p.key)
     } catch (e) {
       failedChecks.push(`notify:${p.key}`)
+      undelivered.push(p)
       console.error(`[ops-watchdog] alert ${p.key} not sent:`, shortMessage(e))
+    }
+  }
+  // Alerts that could not go through the feed: at least the alarm without the database (its own
+  // limit: once per 6 h per process), and the pass says so (NV-4) — never a quiet «ok».
+  if (undelivered.length > 0) {
+    try {
+      await deps.alertDirect({
+        key: 'watchdog:undelivered',
+        level: undelivered.some((p) => p.level === 'CRITICAL') ? 'CRITICAL' : 'WARNING',
+        title: 'Сторож задач не смог отправить тревоги',
+        lines: [
+          `Не отправлено: ${undelivered.length} (${undelivered.slice(0, 5).map((p) => p.title).join('; ')}${undelivered.length > 5 ? '; …' : ''}).`,
+          'Запись в ленту уведомлений не прошла — проверьте базу данных; подробности в логе портала.',
+        ],
+      })
+    } catch (alarmError) {
+      console.error('[ops-watchdog] direct alarm failed:', shortMessage(alarmError))
     }
   }
 
@@ -579,10 +610,11 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
   }
 
   return {
-    status: problems.length === 0 ? 'ok' : notified.length > 0 ? 'alerted' : 'quiet',
+    status: undelivered.length > 0 ? 'undelivered' : problems.length === 0 ? 'ok' : notified.length > 0 ? 'alerted' : 'quiet',
     journal,
     problems: problems.map((p) => p.key),
     notified,
+    undelivered: undelivered.map((p) => p.key),
     failedChecks,
     pruned,
   }
@@ -781,6 +813,11 @@ export interface OpsOverview {
   journal: 'ok' | 'not_migrated'
   jobs: JobView[]
   alertRoutes: AlertRoutes & { nowhere: boolean }
+  /**
+   * The last pass of the watchdog could not send its alerts (it answered WATCHDOG_UNDELIVERED_HTTP,
+   * NV-4): when, else null.
+   */
+  alertsUndeliveredAt: string | null
 }
 
 /**
@@ -795,10 +832,14 @@ export async function opsOverview(
   const crons = await deps.inngestCrons().catch(() => [] as InngestCron[])
   const expected = expectedJobs(deps.role(), crons)
   const [state, routes] = await Promise.all([deps.loadJobs(expected), deps.alertRoutes()])
+  const watchdogRun = state?.last.get('/api/cron/ops-watchdog') ?? null
   return {
     journal: state ? 'ok' : 'not_migrated',
     jobs: state ? assessJobs(state, now).views : [],
     alertRoutes: { ...routes, nowhere: alertsGoNowhere(routes) },
+    alertsUndeliveredAt: watchdogRun && watchdogRun.status === 'http_error' && watchdogRun.httpStatus === WATCHDOG_UNDELIVERED_HTTP
+      ? watchdogRun.finishedAt.toISOString()
+      : null,
   }
 }
 

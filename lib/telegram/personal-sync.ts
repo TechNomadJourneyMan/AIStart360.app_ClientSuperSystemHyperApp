@@ -355,10 +355,15 @@ async function collectIncomingMessages(
     const firstSeenChat = !state
     const lastProcessed = Number(state?.last_processed_message_id ?? 0)
     const latestIncomingId = inbox[inbox.length - 1]?.id ?? lastProcessed
+    // A chat seen for the first time skips its history — but never past a link code it has not
+    // handled yet (NV-2): a code left for the next run by the budget (RA-5) would be behind the
+    // cursor then, and lost. The cursor stops just before the first code; handling it moves it on.
+    const firstLinkCodeId = firstSeenChat ? inbox.find((m) => extractTelegramLinkToken(m.text))?.id : undefined
+    const firstSeenCursor = firstLinkCodeId !== undefined ? firstLinkCodeId - 1 : latestIncomingId
 
     await upsertChatState(admin, identity, {
       linked_profile_id: state?.linked_profile_id ?? null,
-      last_processed_message_id: firstSeenChat ? latestIncomingId : lastProcessed,
+      last_processed_message_id: firstSeenChat ? firstSeenCursor : lastProcessed,
     })
 
     for (const message of inbox) {

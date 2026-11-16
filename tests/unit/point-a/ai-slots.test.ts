@@ -51,7 +51,7 @@ const { runAfterWrite } = await import('@/lib/point-a/snapshot')
 const { pointAAiSlots, resetPointAAiSlotsForTests } = await import('@/lib/point-a/ai-slots')
 const { createSemaphore } = await import('@/lib/agents/run-slots')
 const { drainPointARecalc } = await import('@/lib/point-a/recalc-queue')
-const { pointAAiBacklogged } = await import('@/lib/point-a/ai-slots')
+const { pointAAiBacklogged, acquirePatiently } = await import('@/lib/point-a/ai-slots')
 
 const BASE = 'https://app.test'
 const ANALYZE = '/api/v1/diagnostics/ai-analyze' as const
@@ -149,7 +149,7 @@ describe('N4A-12 the Point A AI slots', () => {
 })
 
 describe('RA-2: the AI hypotheses are never dropped for want of a slot', () => {
-  it('6 snapshots while the slots and the queue of waiters are full: all 6 hypotheses are made, never more than 2 at a time', async () => {
+  it('6 snapshots while the slots and the queue of waiters are full: all 6 hypotheses are made, one at a time (NV-1: the other slot stays free for an analysis)', async () => {
     // a tiny queue and a short wait: before, 3 of 6 were dropped («left for the next pass» that never came)
     vi.stubEnv('POINT_A_AI_MAX_WAITING', '1')
     vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '40')
@@ -165,7 +165,7 @@ describe('RA-2: the AI hypotheses are never dropped for want of a slot', () => {
     await Promise.all(Array.from({ length: 6 }, (_, i) => runAfterWrite(input(i))))
 
     expect(h.hypotheses).toBe(6)
-    expect(h.peak).toBe(2)
+    expect(h.peak).toBe(1)
   })
 })
 
@@ -239,5 +239,79 @@ describe('RA-3: the minute drain does not overflow the slots', () => {
     expect(report.done).toHaveLength(1)
     for (const r of held) r()
     for (const w of await Promise.all(waiting)) w?.()
+  })
+})
+
+describe('NV-1: the paid analysis goes before the hypotheses', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  it('a wave of 120 hypotheses: an analysis requested in the middle of it starts at once, and all 120 are still made', async () => {
+    // scaled time: one hypothesis chain «1 min» = 20 ms, the 10 min wait of an analysis = 200 ms
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '200')
+    vi.stubEnv('POINT_A_AI_SLOT_RETRY_MS', '5')
+    resetPointAAiSlotsForTests()
+    const slots = pointAAiSlots()
+    let running = 0
+    let peak = 0
+    let done = 0
+    const wave = Array.from({ length: 120 }, async () => {
+      const release = await acquirePatiently()
+      running += 1
+      peak = Math.max(peak, running)
+      try { await sleep(20) } finally { running -= 1; release() }
+      done += 1
+    })
+
+    await sleep(100) // the wave is in full swing
+    const asked = Date.now()
+    const analysis = await slots.acquire()
+    const waitedMs = Date.now() - asked
+    // before: the queue of 50 was full of patient hypotheses → null («busy», «Повторить») for ~45 «min»
+    expect(analysis).not.toBeNull()
+    expect(waitedMs).toBeLessThan(20) // not even one hypothesis «minute»
+    analysis!()
+
+    await Promise.all(wave)
+    expect(done).toBe(120)
+    expect(peak).toBe(1) // the hypotheses never took the slot kept for an analysis
+  })
+
+  it('both slots busy: a freed slot goes to the waiting analysis, not to the next hypothesis in line', async () => {
+    const slots = pointAAiSlots()
+    const hypothesis = await slots.acquireBackground() // slot 1
+    const analysis1 = (await slots.acquire())! // slot 2
+    const order: string[] = []
+    const nextHypothesis = slots.acquireBackground().then((r) => { order.push('hypothesis'); return r })
+    const analysis2 = slots.acquire().then((r) => { order.push('analysis'); return r })
+    await sleep(5)
+    expect(order).toEqual([])
+
+    hypothesis() // the hypothesis ends first: its slot goes to the analysis that waits
+    const second = await analysis2
+    expect(second).not.toBeNull()
+    expect(order).toEqual(['analysis'])
+
+    analysis1()
+    second!()
+    ;(await nextHypothesis)()
+    expect(order).toEqual(['analysis', 'hypothesis'])
+    expect(slots.active()).toBe(0)
+    expect(slots.waiting()).toBe(0)
+  })
+
+  it('analyses still wait their bounded time behind other analyses (busy after POINT_A_AI_SLOT_WAIT_MS), hypotheses never are refused', async () => {
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '30')
+    resetPointAAiSlotsForTests()
+    const slots = pointAAiSlots()
+    const a = [(await slots.acquire())!, (await slots.acquire())!]
+    expect(await slots.acquire()).toBeNull() // 30 ms passed with both slots held by analyses
+    let gotIt = false
+    const hypothesis = slots.acquireBackground().then((r) => { gotIt = true; return r })
+    await sleep(50)
+    expect(gotIt).toBe(false) // waits, is not refused
+    a[0]()
+    ;(await hypothesis)()
+    expect(gotIt).toBe(true)
+    a[1]()
   })
 })

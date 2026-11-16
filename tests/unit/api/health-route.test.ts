@@ -373,7 +373,30 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
     expect((await (await GET()).json()).checks.jobs).toBe('fail')
     resetReadinessCache()
     state.evidence = { last_cron: null, role_since: null, last_ping: null }
-    expect((await (await GET()).json()).checks.jobs).toBe('unknown')
+    const uptime = vi.spyOn(process, 'uptime').mockReturnValue(4 * 60) // a process 4 minutes up
+    try {
+      expect((await (await GET()).json()).checks.jobs).toBe('unknown')
+    } finally {
+      uptime.mockRestore()
+    }
+  })
+
+  // NV-3: the runner is on, but not one row of this role in the journal: judged from the start of
+  // this process (the check runs in the process whose cron it judges), not «unknown» forever.
+  it('the cron is on and the role has no row at all: a failure once this process has been up for 15 min', async () => {
+    portal()
+    vi.stubEnv('CRON_RUNNER_ENABLED', '1')
+    state.evidence = { last_cron: null, role_since: null, last_ping: null }
+    const uptime = vi.spyOn(process, 'uptime').mockReturnValue(20 * 60)
+    try {
+      const res = await GET()
+      const body = await res.json()
+      expect(res.status).toBe(503)
+      expect(body.checks.jobs).toBe('fail')
+      expect(body.summary).toMatch(/Задачи по расписанию/)
+    } finally {
+      uptime.mockRestore()
+    }
   })
 
   it('the agents service has no Inngest entry, whatever the variables say', async () => {

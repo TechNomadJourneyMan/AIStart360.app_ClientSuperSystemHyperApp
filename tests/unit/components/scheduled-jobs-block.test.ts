@@ -39,6 +39,16 @@ describe('ScheduledJobsBlock', () => {
     expect(out).toContain('Тревогам некуда приходить')
   })
 
+  // NV-4: the last watchdog pass could not send its alerts — never shown as «all fine».
+  it('alerts not delivered: a red banner, and it counts as a problem', () => {
+    const ops = data({ alertsUndeliveredAt: new Date(Date.now() - 5 * 60_000).toISOString() })
+    const out = html(ops)
+    expect(out).toContain('Тревоги не доставлены')
+    expect(out).toContain('5 мин назад')
+    expect(opsCounts(ops, null)).toEqual({ problems: 2, warnings: 1 })
+    expect(html(data({ alertsUndeliveredAt: null }))).not.toContain('Тревоги не доставлены')
+  })
+
   it('without migration 154 it says so; a failed read is an alert with the message', () => {
     expect(html(data({ journal: 'not_migrated', jobs: [] }))).toContain('миграция 154')
     const failed = html(null, { kind: 'failed', message: "Can't reach database server" })

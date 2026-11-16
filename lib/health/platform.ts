@@ -13,7 +13,8 @@
  *     portal writes the database) without a call to the Inngest server itself;
  *   • jobs — the in-process cron of this role (CRON_RUNNER_ENABLED=1) has called something in the
  *     last 15 min (public.ops_job_runs, migration 154; with no call at all: a failure once the role
- *     has rows older than 15 min).
+ *     has rows older than 15 min, or — no row of the role at all — once this process has been up
+ *     for 15 min).
  *   A check whose evidence is not there yet (journal table missing, no row yet after a fresh start)
  *   is 'unknown', never a failure. Every check is bounded (DB_TIMEOUT_MS) and the whole result is
  *   cached for READINESS_CACHE_MS, one computation at a time, so a burst of probes is one query.
@@ -113,8 +114,20 @@ export function readinessScope(env: Env = process.env): { inngest: boolean; jobs
   }
 }
 
-/** The journal checks from the evidence. Pure. */
-export function judgeJournal(e: JournalEvidence | null, scope: { inngest: boolean; jobs: boolean }, now: Date): { inngest: ReadinessCheck; jobs: ReadinessCheck } {
+/**
+ * The journal checks from the evidence. Pure.
+ * `processStartedAt` (R4-A1 verify NV-3): the jobs check runs in the very process whose cron it
+ * judges, so a role with no row at all is judged from the start of this process — a runner that is
+ * switched on but has written nothing for 15 minutes since the start is a failure, not «unknown»
+ * forever. The first start after a deploy is covered: the busiest cron of a role writes within
+ * 5 minutes (web) or 1 minute (agents).
+ */
+export function judgeJournal(
+  e: JournalEvidence | null,
+  scope: { inngest: boolean; jobs: boolean },
+  now: Date,
+  processStartedAt: Date | null = null,
+): { inngest: ReadinessCheck; jobs: ReadinessCheck } {
   const age = (d: Date | null) => (d ? now.getTime() - d.getTime() : 0)
   /** `since`: from when the evidence could exist; without it (nothing noted yet) there is no verdict. */
   const judge = (last: Date | null, since: Date | null, maxMs: number): ReadinessCheck => {
@@ -125,7 +138,7 @@ export function judgeJournal(e: JournalEvidence | null, scope: { inngest: boolea
   }
   return {
     inngest: scope.inngest ? judge(e?.lastPing ?? null, e?.pingExpectedSince ?? null, INNGEST_HEARTBEAT_MAX_MS) : 'off',
-    jobs: scope.jobs ? judge(e?.lastCron ?? null, e?.roleSince ?? null, JOBS_FRESH_MAX_MS) : 'off',
+    jobs: scope.jobs ? judge(e?.lastCron ?? null, e?.roleSince ?? processStartedAt, JOBS_FRESH_MAX_MS) : 'off',
   }
 }
 
@@ -153,6 +166,8 @@ async function loadJournalEvidence(role: PortalRole): Promise<JournalEvidence | 
 export interface ReadinessDeps {
   env?: Env
   now?: () => Date
+  /** When this process started. Default: now minus process.uptime(). */
+  processStartedAt?: () => Date
   platform?: () => Promise<PlatformHealth>
   journal?: (role: PortalRole) => Promise<JournalEvidence | null>
 }
@@ -176,7 +191,12 @@ async function computeReadiness(deps: ReadinessDeps): Promise<Readiness> {
   // A journal that cannot be read while the database answers is a failure of those checks; with
   // the database down the db check already fails, and the journal says nothing more.
   const judged = journal.ok
-    ? judgeJournal(journal.e, scope, (deps.now ?? (() => new Date()))())
+    ? judgeJournal(
+        journal.e,
+        scope,
+        (deps.now ?? (() => new Date()))(),
+        (deps.processStartedAt ?? (() => new Date(Date.now() - process.uptime() * 1000)))(),
+      )
     : { inngest: scope.inngest ? ('unknown' as const) : ('off' as const), jobs: scope.jobs ? ('unknown' as const) : ('off' as const) }
   const missingEnv = platform.missingEnv + missingServiceLinkEnv(env).length
   return {
