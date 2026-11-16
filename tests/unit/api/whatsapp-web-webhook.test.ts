@@ -41,7 +41,12 @@ vi.mock("@/lib/comm/inbound", () => ({
   mirrorWhatsAppInbound: vi.fn(async () => "no_user"),
 }));
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { POST } from "@/app/api/webhooks/whatsapp-web/route";
+import { deadlineRemainingMs } from "@/lib/runtime/deadline";
+
+// Next puts AsyncLocalStorage on globalThis (both runtimes): the route's deadline is ambient, as in production.
+(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage ??= AsyncLocalStorage;
 
 const managedEnv = [
   "WHATSAPP_WEB_BRIDGE_ENABLED",
@@ -596,6 +601,33 @@ describe("/api/webhooks/whatsapp-web", () => {
     expect(repository.recordWebhookEvent).toHaveBeenCalledOnce();
     expect(postgres.recordWebhookEvent).not.toHaveBeenCalled();
   });
+  it("RA-1: after a 504 the late handler still queues the job, and the fast path (the AI reply) runs outside the spent deadline", async () => {
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = "database";
+    process.env.OMNICHANNEL_PERSISTENCE = "postgres";
+    process.env.OMNICHANNEL_DATABASE_URL = "postgresql://restricted.invalid/omnichannel";
+    process.env.PERSISTENT_SERVER = "1";
+    vi.stubEnv("ROUTE_DEADLINE_MS_WEBHOOK_WHATSAPP_WEB", "30");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // the database is slow: the delivery outlives its deadline
+    postgres.recordWebhookEvent.mockImplementationOnce(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+      return { id: "pg-audit-1", duplicate: false, status: "received" };
+    });
+    processingJobs.enqueue.mockResolvedValue({ id: "job-1", runAt: new Date(Date.now() - 1_000).toISOString() });
+    let seen: number | null = -1;
+    jobDrain.drain.mockImplementation(async () => {
+      seen = deadlineRemainingMs();
+      return { completed: 1 };
+    });
+
+    const response = await POST(request(payload()));
+    expect(response.status).toBe(504);
+    await vi.waitFor(() => expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 }), { timeout: 2_000 });
+    await waitForBackgroundWork(1_000);
+    // before: 0 — the AI reply of the job was refused at once and the message went to a human
+    expect(seen).toBeNull();
+  });
+
   describe("R-015 (R4-A2): a hung queue no longer holds the delivery", () => {
     afterEach(() => {
       vi.useRealTimers();

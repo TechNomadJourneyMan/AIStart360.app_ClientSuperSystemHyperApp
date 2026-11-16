@@ -1,7 +1,7 @@
 -- rollback/153_expert_sla_clients_only.down.sql
 --
 -- Removes the «clients only» rule of 153: the trigger and the three functions.
--- Tasks closed by 153 ('excluded') stay closed; the next SLA pass opens tasks for
+-- Tasks closed by 153 ('not_client') stay closed; the next SLA pass opens tasks for
 -- staff accounts again as before 153 (inheriting the clock of an unanswered
 -- predecessor within the answer window, the rule of 146).
 --

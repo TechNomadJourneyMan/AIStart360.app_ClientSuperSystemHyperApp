@@ -12,6 +12,8 @@ import { CREATE_CRON_RUNS_TABLE } from './cron-runs-table.mjs'
 
 /** An unreachable host fails the claim (and the runner skips that job) instead of hanging the tick. */
 const CONNECT_TIMEOUT_MS = 10_000
+/** Client side: pg stops waiting for the INSERT of a claim after this. */
+const CLAIM_QUERY_TIMEOUT_MS = 10_000
 
 const CLAIM = 'INSERT INTO cron_runs (path, minute) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING 1'
 
@@ -33,6 +35,9 @@ export function createPgCronClaim(
         connectionString,
         max: 2,
         connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+        // A claim that hangs on an accepted connection fails instead of holding a slot (R4-A1 RB-7);
+        // the runner also gives up after CLAIM_TIMEOUT_MS.
+        query_timeout: CLAIM_QUERY_TIMEOUT_MS,
         application_name: 'aistart360-cron-claim',
       })
       // An idle client dropped by the server emits 'error' on the pool; unhandled, that kills the process.

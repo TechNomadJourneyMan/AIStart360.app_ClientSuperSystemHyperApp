@@ -14,8 +14,10 @@
  * без неё — NEXT_PUBLIC_APP_URL (публичный домен: тогда проверяется и край Railway).
  *
  * Тревога — только напрямую в Telegram (lib/notifications/ops-direct.ts): база может лежать.
- * Первая — после двух проверок подряд с той же проблемой (выкатка портала не должна будить людей),
- * потом не чаще раза в 6 ч, и одно сообщение «восстановлено», когда проблема ушла. Состояние — в
+ * Первая — после двух неудачных проверок подряд (выкатка портала не должна будить людей), потом не
+ * чаще раза в 6 ч, и одно сообщение «восстановлено», когда проблема ушла. «Портал не отвечает» и
+ * «портал не готов» — одна серия (портал, который мигает между ними, — тоже сбой), и «восстановлено»
+ * приходит только когда /api/health ответил 200. Состояние — в
  * памяти процесса (globalThis): после перезапуска счёт начинается заново.
  *
  * Портал проверяет сервис агентов сам — в стороже задач (lib/ops/job-watchdog.ts, agents:down и
@@ -88,7 +90,13 @@ export async function probePortal(base: string, fetchImpl: typeof fetch = fetch)
   return { key: 'portal:down', title: 'Портал не отвечает', detail: `GET /api/health ответил HTTP ${res.status}` }
 }
 
+/** The series a problem belongs to: every problem of the portal is one series. */
+type Series = 'portal' | 'db'
+const seriesOf = (key: CrossProblemKey): Series => (key === 'db:down' ? 'db' : 'portal')
+
 interface Track {
+  /** The kind seen last (portal:down / portal:not_ready / db:down). */
+  key: CrossProblemKey
   fails: number
   firstAt: number
   alertedAt?: number
@@ -97,8 +105,8 @@ interface Track {
 }
 
 const STATE_KEY = Symbol.for('aistart360.ops.crosswatch.state')
-function state(): Map<CrossProblemKey, Track> {
-  const g = globalThis as Record<symbol, Map<CrossProblemKey, Track> | undefined>
+function state(): Map<Series, Track> {
+  const g = globalThis as Record<symbol, Map<Series, Track> | undefined>
   return (g[STATE_KEY] ??= new Map())
 }
 
@@ -152,14 +160,16 @@ export async function runCrosswatch(deps: CrosswatchDeps): Promise<CrosswatchRep
   const tracks = state()
   const alerted: CrossProblemKey[] = []
   const recovered: CrossProblemKey[] = []
-  const seen = new Set(found.map((p) => p.key))
+  const seen = new Set(found.map((p) => seriesOf(p.key)))
 
   for (const p of found) {
-    const t = tracks.get(p.key) ?? { fails: 0, firstAt: now, detail: p.detail, title: p.title }
+    const series = seriesOf(p.key)
+    const t = tracks.get(series) ?? { key: p.key, fails: 0, firstAt: now, detail: p.detail, title: p.title }
     t.fails += 1
+    t.key = p.key
     t.detail = p.detail
     t.title = p.title
-    tracks.set(p.key, t)
+    tracks.set(series, t)
     // Every failed check is on the error log; the alarm waits for the second in a row.
     logError(`ops-crosswatch: ${p.title} — ${p.detail} (подряд: ${t.fails})`)
     if (t.fails < CROSSWATCH_FAILS_BEFORE_ALERT) continue
@@ -179,11 +189,12 @@ export async function runCrosswatch(deps: CrosswatchDeps): Promise<CrosswatchRep
     alerted.push(p.key)
   }
 
-  for (const [key, t] of tracks) {
-    if (seen.has(key)) continue
-    tracks.delete(key)
+  // Only a series with no problem this pass is over: for the portal that is a 200 from /api/health.
+  for (const [series, t] of tracks) {
+    if (seen.has(series)) continue
+    tracks.delete(series)
     if (t.alertedAt === undefined) continue // never announced: nothing to take back
-    recovered.push(key)
+    recovered.push(t.key)
     await alert({
       level: 'SUCCESS',
       title: `Восстановлено: ${t.title.toLowerCase()}`,

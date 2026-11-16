@@ -9,7 +9,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createServer, type Server, type Socket } from 'node:net'
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 beforeAll(() => {
@@ -104,6 +104,39 @@ describe('N4A-1 inngest.send against a server that never answers', () => {
 
     expect(err).toBeInstanceOf(InngestSendTimeoutError)
     expect(Date.now() - started).toBeLessThan(1_000)
+    // RA-4: the message tells the budget the send really had, not the configured 15 000 ms
+    const timeout = err as InstanceType<typeof InngestSendTimeoutError>
+    expect(timeout.ms).toBeLessThanOrEqual(300)
+    expect(timeout.ms).toBeGreaterThan(200)
+    expect(timeout.by).toBe('request')
+    expect(timeout.message).not.toContain('15000')
+    expect(timeout.message).toMatch(/within (2\d\d|300) ms \(the deadline of the request it ran in\)/)
+  })
+
+  it('RA-4: an attempt cut by the time limit is not logged by the SDK as a «misconfiguration» (it was, once per attempt, with a stack)', async () => {
+    const silent = await silentServer()
+    const client = createInngestClient(selfHosted(silent.port, { INNGEST_FETCH_TIMEOUT_MS: '100', INNGEST_SEND_TIMEOUT_MS: '60000' }))
+    const lines: string[] = []
+    const capture = (...args: unknown[]) => { lines.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(' ')) }
+    const spies = [vi.spyOn(console, 'error').mockImplementation(capture), vi.spyOn(console, 'warn').mockImplementation(capture), vi.spyOn(console, 'info').mockImplementation(capture)]
+    try {
+      const err = await client.send({ name: 'test/event', data: {} }).then(() => null, (e: unknown) => e)
+      expect(err).toBeInstanceOf(TypeError)
+      expect((err as Error).message).toMatch(/^fetch failed: no answer from Inngest within the time limit/)
+      expect(silent.connections()).toBe(5)
+    } finally {
+      for (const spy of spies) spy.mockRestore()
+    }
+    expect(lines.filter((l) => /misconfiguration|custom fetch implementation/i.test(l))).toEqual([])
+  })
+
+  it('its own budget is named as such', async () => {
+    const silent = await silentServer()
+    const client = createInngestClient(selfHosted(silent.port, { INNGEST_FETCH_TIMEOUT_MS: '5000', INNGEST_SEND_TIMEOUT_MS: '250' }))
+    const err = await client.send({ name: 'test/event', data: {} }).then(() => null, (e: unknown) => e) as InstanceType<typeof InngestSendTimeoutError>
+    expect(err).toBeInstanceOf(InngestSendTimeoutError)
+    expect(err.by).toBe('send')
+    expect(err.ms).toBe(250)
   })
 })
 

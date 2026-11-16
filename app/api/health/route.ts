@@ -57,7 +57,10 @@ const JOURNAL_STATUS: Record<Exclude<ReadinessCheck, 'off'>, ServiceResult['stat
 
 export async function GET() {
   const health = await checkReadiness()
-  const db: ServiceResult = { name: 'База данных', status: health.db.status, latencyMs: health.db.latencyMs, uptime: NOT_MEASURED }
+  // A slow answer (≥ 400 ms, a queue for the Prisma pool included) is «degraded»; only an error or no
+  // answer within 3 s is «offline» and fails the check — the agents service reads this every 3 minutes.
+  const dbStatus: ServiceResult['status'] = !health.db.reachable ? 'offline' : health.db.status === 'online' ? 'online' : 'degraded'
+  const db: ServiceResult = { name: 'База данных', status: dbStatus, latencyMs: health.db.latencyMs, uptime: NOT_MEASURED }
   const missing = health.missingEnv
   const config: ServiceResult = {
     name: 'Конфигурация сервера',

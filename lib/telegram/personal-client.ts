@@ -28,6 +28,33 @@ export function getTelegramPersonalConfig(): TelegramPersonalConfig {
  */
 export const TELEGRAM_CONNECT_TIMEOUT_MS = 15_000
 
+/**
+ * RA-5 (review of R4-A2): how long closing a client may take (destroy after a failed connect,
+ * disconnect after the sync). A WSS close that never completes must not hold the sync past its limits.
+ */
+export const TELEGRAM_CLOSE_TIMEOUT_MS = 5_000
+
+/** `close()` or TELEGRAM_CLOSE_TIMEOUT_MS, whichever comes first; false when it did not finish (or failed). */
+async function closeWithin(close: () => Promise<void>, what: string): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const gaveUp = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), envMs('TELEGRAM_CLOSE_TIMEOUT_MS', TELEGRAM_CLOSE_TIMEOUT_MS))
+  })
+  try {
+    const closed = await Promise.race([
+      close().then(() => true as const, (err: unknown) => {
+        console.error(`[telegram/personal] ${what} failed:`, err instanceof Error ? err.name : 'error')
+        return false as const
+      }),
+      gaveUp,
+    ])
+    if (!closed) console.error(`[telegram/personal] ${what} did not finish in time`)
+    return closed
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export class TelegramConnectTimeoutError extends Error {
   readonly code = 'TELEGRAM_CONNECT_TIMEOUT'
   constructor(readonly ms: number) {
@@ -57,9 +84,7 @@ export async function createTelegramPersonalClient(): Promise<TelegramClient> {
     await Promise.race([client.connect(), expired])
   } catch (error) {
     // A connection that did not come up must not keep its socket and its reconnect loop.
-    await client.destroy().catch((err: unknown) => {
-      console.error('[telegram/personal] destroy after a failed connect failed:', err instanceof Error ? err.name : 'error')
-    })
+    await closeWithin(() => client.destroy(), 'destroy after a failed connect')
     throw error
   } finally {
     clearTimeout(timer)
@@ -68,9 +93,5 @@ export async function createTelegramPersonalClient(): Promise<TelegramClient> {
 }
 
 export async function disconnectTelegramPersonalClient(client: TelegramClient): Promise<void> {
-  try {
-    await client.disconnect()
-  } catch (error) {
-    console.error('[telegram/personal] disconnect failed:', error)
-  }
+  await closeWithin(() => client.disconnect(), 'disconnect')
 }

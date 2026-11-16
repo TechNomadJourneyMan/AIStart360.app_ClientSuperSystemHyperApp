@@ -29,7 +29,7 @@ describe('ScheduledJobsBlock', () => {
     expect(out).toContain('пинг Inngest')
     expect(out).toContain('не запускалась')
     expect(out).toContain('ошибки')
-    expect(out).toContain('привязано сотрудников — 2')
+    expect(out).toContain('Super Admin с привязкой (получают тревоги) — 2')
     expect(out).not.toContain('Тревогам некуда приходить')
   })
 

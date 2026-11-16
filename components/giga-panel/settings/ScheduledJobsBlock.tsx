@@ -58,13 +58,14 @@ export function ScheduledJobsBlock({ ops, error }: { ops: OpsData | null | undef
       <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><Clock size={12} /> Задачи по расписанию и тревоги</p>
       {ops?.alertRoutes.nowhere && (
         <p role="alert" className="mb-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-200">
-          Тревогам некуда приходить: ни один сотрудник не привязал Telegram, и TELEGRAM_ADMIN_CHAT_IDS не задан. Сбои видны только в ленте уведомлений,
-          а тревоги без базы (не работают кроны, портал или база недоступны) — только в логах. Привяжите Telegram в «Уведомлениях».
+          Тревогам некуда приходить: ни один Super Admin не привязал Telegram (тревоги сторожа уходят только им), и TELEGRAM_ADMIN_CHAT_IDS
+          не задан или у бота нет токена. Сбои видны только в ленте уведомлений, а тревоги без базы (не работают кроны, портал или база
+          недоступны) — только в логах. Привяжите Telegram в «Уведомлениях».
         </p>
       )}
       {ops && (
         <p className="mb-2 text-[11px] text-slate-500">
-          Telegram: привязано сотрудников — {ops.alertRoutes.linkedStaff}; чатов для тревог без базы (TELEGRAM_ADMIN_CHAT_IDS) — {ops.alertRoutes.envChats}
+          Telegram: Super Admin с привязкой (получают тревоги) — {ops.alertRoutes.linkedStaff}; чатов для тревог без базы (TELEGRAM_ADMIN_CHAT_IDS) — {ops.alertRoutes.envChats}
           {ops.alertRoutes.envChats > 0 && !ops.alertRoutes.direct ? ' (нет токена бота)' : ''}.
         </p>
       )}

@@ -10,6 +10,11 @@ import {
   type TelegramIngestPersistence,
 } from '@/lib/omnichannel/telegram-ingest'
 import { parseTelegramInboxUpdate } from '@/lib/omnichannel/telegram-webhook'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { deadlineRemainingMs, runWithDeadline } from '@/lib/runtime/deadline'
+
+// Next puts AsyncLocalStorage on globalThis (both runtimes): a webhook's deadline is ambient, as in production.
+;(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage ??= AsyncLocalStorage
 
 // The database job queue's fast path: only record what is started, never reach a database.
 const jobs = vi.hoisted(() => ({
@@ -126,6 +131,23 @@ describe('defaultTelegramIngestQueue (database backend fast path)', () => {
     await expect(waitForBackgroundWork(1000)).resolves.toEqual({ finished: true, pending: 0 })
     expect(jobs.enqueue).toHaveBeenCalledWith({ messageId: 'msg-1', forceDraft: false })
     expect(jobs.drain).toHaveBeenCalledWith({ limit: 1 })
+  })
+
+  it('RA-1: enqueued by a late webhook (its deadline spent), the fast path runs outside that deadline', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    let seen: number | null = -1
+    jobs.drain.mockImplementation(async () => {
+      seen = deadlineRemainingMs()
+      return { completed: 1 }
+    })
+    await runWithDeadline('webhook-telegram-inbox', 10, async () => {
+      await new Promise((r) => setTimeout(r, 30)) // the delivery outlived its deadline (504)
+      await defaultTelegramIngestQueue.enqueue({ messageId: 'msg-1', conversationId: 'conv-1' })
+    })
+    await waitForBackgroundWork(1000)
+    expect(jobs.drain).toHaveBeenCalledWith({ limit: 1 })
+    // before: 0 — the AI reply of the job was refused at once
+    expect(seen).toBeNull()
   })
 
   it('drains the due job in the background on Vercel', async () => {

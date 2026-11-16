@@ -106,7 +106,8 @@ const CASES: Case[] = [
   { route: 'gri/ai-strategy', method: 'POST', label: 'gri-ai-strategy', ms: 60_000, load: () => import('@/app/api/gri/ai-strategy/route') },
   { route: 'gri/financial-analyst', method: 'POST', label: 'gri-financial-analyst', ms: 90_000, load: () => import('@/app/api/gri/financial-analyst/route') },
   { route: 'pulse/briefing', method: 'POST', label: 'pulse-briefing', ms: 60_000, load: () => import('@/app/api/pulse/briefing/route') },
-  { route: 'v1/market-analysis/generate', method: 'POST', label: 'market-analysis-generate', ms: 60_000, load: () => import('@/app/api/v1/market-analysis/generate/route') },
+  // RA-6: two model calls of up to 45 s each (one retry on an unparsable answer) + the upstream reads
+  { route: 'v1/market-analysis/generate', method: 'POST', label: 'market-analysis-generate', ms: 120_000, load: () => import('@/app/api/v1/market-analysis/generate/route') },
   { route: 'v1/point-a/insights/ai-generate', method: 'POST', label: 'point-a-insights-ai', ms: 60_000, load: () => import('@/app/api/v1/point-a/insights/ai-generate/route') },
   { route: 'v1/survey/chat', method: 'GET', label: 'survey-chat', ms: 60_000, load: () => import('@/app/api/v1/survey/chat/route') },
   { route: 'v1/survey/chat', method: 'POST', label: 'survey-chat', ms: 60_000, load: () => import('@/app/api/v1/survey/chat/route'), body: { message: 'Привет' } },

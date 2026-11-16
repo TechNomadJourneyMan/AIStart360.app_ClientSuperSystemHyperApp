@@ -50,6 +50,8 @@ const { fireAiFanOut } = await import('@/lib/point-a/diagnostic-row')
 const { runAfterWrite } = await import('@/lib/point-a/snapshot')
 const { pointAAiSlots, resetPointAAiSlotsForTests } = await import('@/lib/point-a/ai-slots')
 const { createSemaphore } = await import('@/lib/agents/run-slots')
+const { drainPointARecalc } = await import('@/lib/point-a/recalc-queue')
+const { pointAAiBacklogged } = await import('@/lib/point-a/ai-slots')
 
 const BASE = 'https://app.test'
 const ANALYZE = '/api/v1/diagnostics/ai-analyze' as const
@@ -143,5 +145,99 @@ describe('N4A-12 the Point A AI slots', () => {
 
     expect(h.hypotheses).toBe(10)
     expect(h.peak).toBe(2)
+  })
+})
+
+describe('RA-2: the AI hypotheses are never dropped for want of a slot', () => {
+  it('6 snapshots while the slots and the queue of waiters are full: all 6 hypotheses are made, never more than 2 at a time', async () => {
+    // a tiny queue and a short wait: before, 3 of 6 were dropped («left for the next pass» that never came)
+    vi.stubEnv('POINT_A_AI_MAX_WAITING', '1')
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '40')
+    vi.stubEnv('POINT_A_AI_SLOT_RETRY_MS', '10')
+    resetPointAAiSlotsForTests()
+    const input = (i: number) => ({
+      companyId: `co-${i}`, ownerId: `owner-${i}`, diagnosticId: `d-${i}`, snapshotId: `s-${i}`, engine: 'v4' as const,
+      // no official score → no analysis fan-out: only the hypotheses compete for the slots here
+      written: { overall_score: null } as never, preliminary: false, noScore: true, changes: [], trigger: 'schedule' as const,
+      locale: 'ru', blocks: [BLOCK_NEEDING] as never, industry: null, paidPaths: [ANALYZE] as const,
+    })
+
+    await Promise.all(Array.from({ length: 6 }, (_, i) => runAfterWrite(input(i))))
+
+    expect(h.hypotheses).toBe(6)
+    expect(h.peak).toBe(2)
+  })
+})
+
+describe('RA-3: the minute drain does not overflow the slots', () => {
+  function queue(n: number) {
+    const rows = Array.from({ length: n }, (_, i) => ({ company_id: `co-${i}`, reasons: ['nightly'] }))
+    const claim = vi.fn(async (limit: number) => rows.splice(0, limit).map((r) => ({ ...r, started_at: new Date(), attempts: 1 })))
+    return { rows, claim }
+  }
+  const noop = async () => undefined
+
+  it('while 2 AI jobs already wait for a slot, no new rows are taken: they stay in the queue (deferred)', async () => {
+    const slots = pointAAiSlots()
+    const held = [slots.tryAcquire()!, slots.tryAcquire()!]
+    const waiting = [slots.acquire(), slots.acquire()]
+    expect(slots.waiting()).toBe(2)
+    const { rows, claim } = queue(9)
+
+    const report = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    expect(claim).not.toHaveBeenCalled()
+    expect(report).toEqual({ done: [], failed: [], deferred: true })
+    expect(rows).toHaveLength(9)
+
+    // the slots free up → the next minute drains again
+    for (const r of held) r()
+    for (const w of await Promise.all(waiting)) w?.()
+    expect(slots.waiting()).toBe(0)
+    const again = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+    expect(again.done).toHaveLength(9)
+    expect(again.deferred).toBeUndefined()
+  })
+
+  it('stops between batches as soon as the AI work of the built rows backs up', async () => {
+    const slots = pointAAiSlots()
+    const pending: Array<Promise<unknown>> = []
+    const { rows, claim } = queue(9)
+    // every build starts AI work that takes a slot, as the snapshot's afterWrite does
+    const build = async () => { pending.push(slots.acquire().then((r) => { setTimeout(() => r?.(), 30) })); return { status: 'written' } }
+
+    const report = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never, build, aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    // batch 1 (3 rows): 2 jobs run, 1 waits — go on; batch 2: 4 wait — stop, 3 rows stay queued
+    expect(claim).toHaveBeenCalledTimes(2)
+    expect(report.done).toHaveLength(6)
+    expect(report.deferred).toBe(true)
+    expect(rows).toHaveLength(3)
+    await Promise.all(pending)
+  })
+
+  it('one company\'s own recalculation (the client\'s event) is never held back', async () => {
+    const slots = pointAAiSlots()
+    const held = [slots.tryAcquire()!, slots.tryAcquire()!]
+    const waiting = [slots.acquire(), slots.acquire()]
+    const { claim } = queue(1)
+
+    const report = await drainPointARecalc({ companyId: 'co-0' }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    expect(claim).toHaveBeenCalledTimes(1)
+    expect(report.done).toHaveLength(1)
+    for (const r of held) r()
+    for (const w of await Promise.all(waiting)) w?.()
   })
 })

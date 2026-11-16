@@ -12,17 +12,27 @@
 --                                  синтетический пинг ops-ping: ok / error (последняя попытка).
 --                 service — роль процесса (PORTAL_ROLE): all / web / agents.
 --
+--   ops_job_expectations  одна строка на задачу, которую сторож ждёт по расписанию: с какого
+--                 момента её ждут (first_expected_at) и когда ждали в последний раз
+--                 (last_expected_at). «Ни разу не запускалась» отсчитывается от first_expected_at,
+--                 а не от возраста журнала: задача, добавленная в новом выпуске, не даёт ложной
+--                 тревоги. Задача, которую не ждали больше суток (выключили и включили, сменили
+--                 роль), начинает отсчёт заново.
+--
 --   Кто читает: сторож /api/cron/ops-watchdog (lib/ops/job-watchdog.ts) — «не запускалась
---   N часов» (интервал расписания × 2), он же раз в проход удаляет строки старше 30 дней;
---   /api/health — свежесть журнала своей роли (lib/health/platform.ts); ГИГА → Система.
+--   N часов» (интервал расписания × 2), он же раз в проход удаляет строки журнала старше
+--   30 дней, кроме последнего исхода каждой задачи (месячная задача, допуск 62 дня, не
+--   теряет свой последний запуск); /api/health — свежесть журнала своей роли и пинг Inngest
+--   (lib/health/platform.ts); ГИГА → Система.
 --
 -- Пишет только сервер: отдельный маленький пул pg к той же базе, что у Prisma процесса
 -- (lib/ops/job-journal.ts), запись — best effort, её сбой не мешает самой задаче.
 -- RLS включён без единой политики; anon / authenticated не получают НИЧЕГО (REVOKE ALL) —
 -- журнал не виден через PostgREST. service_role — полный доступ.
 --
--- Идемпотентна (IF NOT EXISTS). Без таблицы код работает как раньше: запись в журнал
--- молча пропускается, сторож отвечает 503 «migration_154_required».
+-- Идемпотентна (IF NOT EXISTS). Без таблиц код работает: запись в журнал пропускается (одна
+-- строка в логе на процесс), /api/cron/ops-watchdog отвечает 200 с journal = 'not_migrated' и
+-- выполняет остальные проверки, /api/health показывает проверки журнала как unknown (не провал).
 -- Откат: supabase/migrations/rollback/154_ops_job_runs.down.sql
 --   node scripts/apply-migration.js supabase/migrations/154_ops_job_runs.sql
 
@@ -58,6 +68,20 @@ REVOKE ALL ON public.ops_job_runs FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.ops_job_runs TO service_role;
 
 COMMENT ON TABLE public.ops_job_runs IS
-  '154: журнал исходов плановых задач (крон портала и агентов, функции Inngest по расписанию). Только service_role / postgres; RLS без политик; строки старше 30 дней удаляет /api/cron/ops-watchdog.';
+  '154: журнал исходов плановых задач (крон портала и агентов, функции Inngest по расписанию). Только service_role / postgres; RLS без политик; строки старше 30 дней, кроме последнего исхода каждой задачи, удаляет /api/cron/ops-watchdog.';
+
+CREATE TABLE IF NOT EXISTS public.ops_job_expectations (
+  job                TEXT        PRIMARY KEY CHECK (length(job) BETWEEN 1 AND 200),
+  first_expected_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_expected_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.ops_job_expectations ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.ops_job_expectations FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.ops_job_expectations TO service_role;
+
+COMMENT ON TABLE public.ops_job_expectations IS
+  '154: с какого момента сторож задач ждёт каждую задачу по расписанию (отсчёт «ни разу не запускалась»). Только service_role / postgres; RLS без политик.';
 
 NOTIFY pgrst, 'reload schema';

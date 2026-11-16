@@ -5,7 +5,7 @@
  * own test case, reports, Point B plan). On the real schema, inside a rolled-back transaction:
  *   • every source (case, report_review via expert_sla_sync; pa_ai_review; plan_prep) opens a task for a client
  *     and none for a staff account (staff_roles row, also with a «client» profile, as on production) or an expert;
- *   • expert_sla_close_non_clients closes what was opened before 153 ('excluded', answered = false), a client's
+ *   • expert_sla_close_non_clients closes what was opened before 153 ('not_client', answered = false), a client's
  *     task stays open;
  *   • the plan scan (lib/point-b/plan/waiting.ts) does not calculate the model for a staff account.
  */
@@ -89,7 +89,7 @@ describe.skipIf(!dbTestsEnabled)('expert SLA — clients only (153)', () => {
       expect(r).toEqual({ c: true, s: false, m: false, n: true })
     }))
 
-  it('tasks opened before 153 for staff are closed as excluded; a client task stays open', () =>
+  it('tasks opened before 153 for staff are closed as not_client; a client task stays open', () =>
     inRollback(async (db) => {
       await clocks(db)
       const client = await seedUser(db, { status: 'approved' })
@@ -107,7 +107,7 @@ describe.skipIf(!dbTestsEnabled)('expert SLA — clients only (153)', () => {
       expect(await sources(db, client)).toEqual(['case', 'pa_ai_review', 'report_review'])
       const reasons = (await db.query(
         `SELECT DISTINCT close_reason, answered FROM public.expert_sla_tasks WHERE client_id = $1`, [staff])).rows
-      expect(reasons).toEqual([{ close_reason: 'excluded', answered: false }])
+      expect(reasons).toEqual([{ close_reason: 'not_client', answered: false }])
     }))
 
   it('only the service role runs the new functions', () =>

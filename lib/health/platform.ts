@@ -9,10 +9,11 @@
  *     missingServiceLinkEnv) — by number, never by name;
  *   • inngest — our own Inngest (INNGEST_SELF_HOSTED_URL) in the role that serves functions: the
  *     heartbeat `ops-ping` (lib/functions/ops-ping.ts, every 10 min) is in the journal and younger
- *     than 30 min. It proves the whole chain (the server fires the cron, calls the portal, the
+ *     than 30 min (with no ping at all: a failure once the watchdog has expected it for 30 min). It proves the whole chain (the server fires the cron, calls the portal, the
  *     portal writes the database) without a call to the Inngest server itself;
  *   • jobs — the in-process cron of this role (CRON_RUNNER_ENABLED=1) has called something in the
- *     last 15 min (public.ops_job_runs, migration 154).
+ *     last 15 min (public.ops_job_runs, migration 154; with no call at all: a failure once the role
+ *     has rows older than 15 min).
  *   A check whose evidence is not there yet (journal table missing, no row yet after a fresh start)
  *   is 'unknown', never a failure. Every check is bounded (DB_TIMEOUT_MS) and the whole result is
  *   cached for READINESS_CACHE_MS, one computation at a time, so a burst of probes is one query.
@@ -27,7 +28,12 @@ import { portalRole, servesWeb, type PortalRole } from '@/lib/runtime/role'
 export type CheckStatus = 'online' | 'degraded' | 'offline'
 
 export interface PlatformHealth {
-  db: { status: CheckStatus; latencyMs: number }
+  /**
+   * status — the latency band (for the /intelligence tiles); reachable — the round trip answered
+   * within DB_TIMEOUT_MS. Readiness fails the database only when it is not reachable: a slow
+   * answer (the pool queue included) is «degraded», not «down» (R4-A1 review RB-6).
+   */
+  db: { status: CheckStatus; latencyMs: number; reachable: boolean }
   /** Number of missing critical server env vars (names are not exposed). */
   missingEnv: number
   allOnline: boolean
@@ -68,7 +74,7 @@ export async function checkPlatformHealth(): Promise<PlatformHealth> {
     ok = false
   }
   const latencyMs = Date.now() - t
-  const db = { status: dbStatusFor(ok, latencyMs), latencyMs }
+  const db = { status: dbStatusFor(ok, latencyMs), latencyMs, reachable: ok }
   const missingEnv = getMissingServerEnv().length
   return { db, missingEnv, allOnline: db.status === 'online' && missingEnv === 0 }
 }
@@ -88,10 +94,12 @@ type Env = Partial<NodeJS.ProcessEnv>
 export interface JournalEvidence {
   /** The last cron call of this role (claim failures left out). */
   lastCron: Date | null
+  /** The oldest row of this role in the journal: before it the cron of the role could not have written. */
+  roleSince: Date | null
   /** The last successful ops-ping. */
   lastPing: Date | null
-  /** The oldest row of the journal. */
-  since: Date | null
+  /** Since when the watchdog expects ops-ping (ops_job_expectations); null — not noted yet. */
+  pingExpectedSince: Date | null
 }
 
 /** Which of the journal checks apply to this process. */
@@ -107,34 +115,39 @@ export function readinessScope(env: Env = process.env): { inngest: boolean; jobs
 
 /** The journal checks from the evidence. Pure. */
 export function judgeJournal(e: JournalEvidence | null, scope: { inngest: boolean; jobs: boolean }, now: Date): { inngest: ReadinessCheck; jobs: ReadinessCheck } {
-  const age = (d: Date | null) => (d ? now.getTime() - d.getTime() : Number.POSITIVE_INFINITY)
-  const journalAge = age(e?.since ?? null)
-  const judge = (last: Date | null, maxMs: number): ReadinessCheck => {
+  const age = (d: Date | null) => (d ? now.getTime() - d.getTime() : 0)
+  /** `since`: from when the evidence could exist; without it (nothing noted yet) there is no verdict. */
+  const judge = (last: Date | null, since: Date | null, maxMs: number): ReadinessCheck => {
     if (!e) return 'unknown'
     if (last) return age(last) <= maxMs ? 'ok' : 'fail'
-    // Nothing yet: a young journal (just migrated, just started) has not had the chance.
-    return journalAge > maxMs ? 'fail' : 'unknown'
+    // Nothing yet: just migrated, a new role, ops-ping new in this release — not had the chance.
+    return since && age(since) > maxMs ? 'fail' : 'unknown'
   }
   return {
-    inngest: scope.inngest ? judge(e?.lastPing ?? null, INNGEST_HEARTBEAT_MAX_MS) : 'off',
-    jobs: scope.jobs ? judge(e?.lastCron ?? null, JOBS_FRESH_MAX_MS) : 'off',
+    inngest: scope.inngest ? judge(e?.lastPing ?? null, e?.pingExpectedSince ?? null, INNGEST_HEARTBEAT_MAX_MS) : 'off',
+    jobs: scope.jobs ? judge(e?.lastCron ?? null, e?.roleSince ?? null, JOBS_FRESH_MAX_MS) : 'off',
   }
 }
 
 /** null — the journal table does not exist here (migration 154 not applied). */
 async function loadJournalEvidence(role: PortalRole): Promise<JournalEvidence | null> {
-  const rows = await prisma.$queryRaw<Array<{ present: boolean }>>`
-    SELECT to_regclass('public.ops_job_runs') IS NOT NULL AS present`
+  const rows = await prisma.$queryRaw<Array<{ present: boolean; expectations: boolean }>>`
+    SELECT to_regclass('public.ops_job_runs') IS NOT NULL AS present,
+           to_regclass('public.ops_job_expectations') IS NOT NULL AS expectations`
   if (!rows[0]?.present) return null
-  const [r] = await prisma.$queryRaw<Array<{ last_cron: Date | null; last_ping: Date | null; since: Date | null }>>`
+  const [r] = await prisma.$queryRaw<Array<{ last_cron: Date | null; role_since: Date | null; last_ping: Date | null }>>`
     SELECT
       (SELECT max(finished_at) FROM public.ops_job_runs
         WHERE kind = 'cron' AND service = ${role} AND status <> 'claim_failed'
           AND finished_at > now() - interval '1 day') AS last_cron,
+      (SELECT min(finished_at) FROM public.ops_job_runs WHERE kind = 'cron' AND service = ${role}) AS role_since,
       (SELECT max(finished_at) FROM public.ops_job_runs
-        WHERE job = 'inngest:ops-ping' AND status = 'ok' AND finished_at > now() - interval '1 day') AS last_ping,
-      (SELECT min(finished_at) FROM public.ops_job_runs) AS since`
-  return { lastCron: r?.last_cron ?? null, lastPing: r?.last_ping ?? null, since: r?.since ?? null }
+        WHERE job = 'inngest:ops-ping' AND status = 'ok' AND finished_at > now() - interval '1 day') AS last_ping`
+  const [x] = rows[0].expectations
+    ? await prisma.$queryRaw<Array<{ since: Date | null }>>`
+        SELECT first_expected_at AS since FROM public.ops_job_expectations WHERE job = 'inngest:ops-ping'`
+    : []
+  return { lastCron: r?.last_cron ?? null, roleSince: r?.role_since ?? null, lastPing: r?.last_ping ?? null, pingExpectedSince: x?.since ?? null }
 }
 
 export interface ReadinessDeps {

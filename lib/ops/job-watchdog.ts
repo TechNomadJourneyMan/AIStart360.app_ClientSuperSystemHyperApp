@@ -8,7 +8,10 @@
  *       ops-ping каждые 10 минут (сервер Inngest → портал → база);
  *       «не запускалась»  последний запуск старше max(2 × интервал, интервал + 15 мин)
  *                         → CRITICAL для частых задач (интервал ≤ 15 мин), иначе WARNING;
- *       «ни разу»         то же для задачи, которой нет в журнале, когда журнал старше этого срока;
+ *       «ни разу»         то же для задачи, которой нет в журнале, когда её ждут дольше этого срока —
+ *                         с первого прохода сторожа, в котором она появилась в расписании
+ *                         (ops_job_expectations), а не с начала журнала: новая задача в новом
+ *                         выпуске не даёт ложной тревоги;
  *       «падает»          последний исход редкой задачи (интервал ≥ 1 ч) или три последних частой —
  *                         не ok → WARNING. claim_failed (задача не вызывалась) сюда не входит: о нём
  *                         кричит сам планировщик (lib/cron/runner.ts, N4A-4);
@@ -20,26 +23,34 @@
  *     зависшие и dead-задачи, документы, одобрения, CRM, расход ИИ) — теперь не зависят от
  *     тумблера «Агенты 24/7» (N4A-7); warn → WARNING, critical → CRITICAL;
  *   • демо-аккаунты (R-051): создано за сутки > 20 → WARNING; есть старше 48 ч (очистка не идёт) → WARNING;
- *   • сервис агентов (портал с PORTAL_ROLE=web): GET {AGENTS_SERVICE_URL}/api/healthz → CRITICAL;
- *   • «тревогам некуда приходить»: ни один сотрудник не привязал Telegram и TELEGRAM_ADMIN_CHAT_IDS
- *     пуст → WARNING в ленте ГИГА (напоминание раз в сутки).
+ *   • сервис агентов (портал с PORTAL_ROLE=web): GET {AGENTS_SERVICE_URL}/api/healthz не прошёл в
+ *     двух проходах подряд → CRITICAL (один перезапуск сервиса — не тревога);
+ *   • «тревогам некуда приходить»: ни один Super Admin (право settings.manage — только им уходят
+ *     тревоги сторожа) не привязал Telegram, и тревоге без базы некуда уйти (нет
+ *     TELEGRAM_ADMIN_CHAT_IDS или токена бота) → WARNING в ленте ГИГА (напоминание раз в сутки).
  *
  * Уведомление — notifyStaff (лента ГИГА + Telegram персонала + письмо для CRITICAL), только Super
  * Admin (settings.manage). Об одной проблеме (ключ) — не чаще раза в 6 ч (последнее событие
  * ops.watchdog с этим ключом), ключ dedupe ещё и привязан к окну, как у бэкапа. Если сам сторож не
- * может прочитать базу — тревога напрямую в Telegram (lib/notifications/ops-direct.ts), без базы.
+ * может прочитать базу два прохода подряд — тревога напрямую в Telegram
+ * (lib/notifications/ops-direct.ts), без базы. Сбой отправки одной тревоги не обрывает проход:
+ * остальные тревоги и чистка выполняются, сбой — в failedChecks.
  *
- * Ретенция (N4A-15): за проход удаляются строки ops_job_runs и cron_runs (workflow-db) старше
- * 30 дней — не больше 20 000 за раз.
+ * Ретенция (N4A-15): за проход удаляются строки ops_job_runs старше 30 дней, кроме последнего
+ * исхода каждой задачи (месячная задача с допуском 62 дня не теряет свой последний запуск), и
+ * строки cron_runs (workflow-db) старше 30 дней — не больше 20 000 за раз.
  */
 import { Cron } from 'croner'
 import { prisma } from '@/lib/db'
 import { CRON_JOBS, jobsForRole, type CronJob } from '@/lib/cron/schedule'
+import { hasPermission, isStaffRole } from '@/lib/admin/rbac'
 import { opsAlertChatIds, opsDirectConfigured, sendOpsDirect } from '@/lib/notifications/ops-direct'
 import { inngestJobName, type JobStatus } from '@/lib/ops/job-journal'
 import { agentsServiceUrl, portalRole, type PortalRole } from '@/lib/runtime/role'
 
 export const WATCHDOG_EVENT_TYPE = 'ops.watchdog'
+/** Who gets the watchdog's alarms in Telegram (notifyStaff audience): settings.manage = Super Admin. */
+export const WATCHDOG_AUDIENCE = 'settings.manage' as const
 export const WATCHDOG_REMIND_HOURS = 6
 /** «Тревогам некуда приходить» — напоминание раз в сутки, а не каждые 6 ч. */
 export const NOWHERE_REMIND_HOURS = 24
@@ -179,8 +190,8 @@ export interface JobsState {
   last: Map<string, JobRunRow>
   /** Up to three latest statuses of each job, newest first (claim_failed left out). */
   recent: Map<string, JobStatus[]>
-  /** The oldest row of the journal: before it nothing could have been recorded. */
-  journalSince: Date | null
+  /** Since when each job has been expected (ops_job_expectations); a job without one is new. */
+  expectedSince: Map<string, Date>
 }
 
 export type JobHealth = 'ok' | 'stale' | 'never' | 'failing' | 'waiting'
@@ -219,14 +230,15 @@ const STATUS_RU: Record<JobStatus, string> = {
 export function assessJobs(s: JobsState, now: Date): { views: JobView[]; problems: WatchProblem[] } {
   const views: JobView[] = []
   const problems: WatchProblem[] = []
-  const journalAge = s.journalSince ? now.getTime() - s.journalSince.getTime() : 0
   for (const e of s.expected) {
     const last = s.last.get(e.job) ?? null
     const recent = s.recent.get(e.job) ?? []
     const level: Level = e.gapMs <= FREQUENT_MS ? 'CRITICAL' : 'WARNING'
     let health: JobHealth = 'ok'
     if (!last) {
-      health = journalAge > e.allowedMs ? 'never' : 'waiting'
+      const since = s.expectedSince.get(e.job) ?? null
+      const waited = since ? now.getTime() - since.getTime() : 0
+      health = waited > e.allowedMs ? 'never' : 'waiting'
       if (health === 'never') {
         problems.push({
           key: `job:never:${e.job}`,
@@ -234,7 +246,7 @@ export function assessJobs(s: JobsState, now: Date): { views: JobView[]; problem
           title: 'Задача по расписанию ни разу не запускалась',
           lines: [
             `${jobLabel(e.job)}, расписание «${e.schedule}» (UTC, если не указано иное).`,
-            `В журнале задач нет ни одного её запуска за ${ago(journalAge)} — с начала журнала.`,
+            `Её ждут с ${almaty(since!)} (Алматы), ${ago(waited)}, — и ни одного запуска в журнале.`,
             e.kind === 'inngest'
               ? 'Проверьте сервис inngest в Railway и синхронизацию функций (PUT /api/inngest).'
               : 'Проверьте планировщик сервиса (CRON_RUNNER_ENABLED, CRON_SECRET) и его логи.',
@@ -257,8 +269,10 @@ export function assessJobs(s: JobsState, now: Date): { views: JobView[]; problem
         ],
       })
     } else {
+      // A rare job: its last outcome, however old (the journal keeps it). A frequent one: the last
+      // three of the past days.
       const failing = e.gapMs >= HOUR_MS
-        ? recent.length >= 1 && recent[0] !== 'ok'
+        ? last.status !== 'ok'
         : recent.length >= 3 && recent.slice(0, 3).every((st) => st !== 'ok')
       if (failing) {
         health = 'failing'
@@ -364,17 +378,21 @@ export function assessDemo(d: DemoState, dailyWarn = DEMO_DAILY_WARN): WatchProb
 }
 
 export interface AlertRoutes {
-  /** Approved staff with a linked Telegram chat. */
+  /**
+   * Approved staff with a linked Telegram chat who RECEIVE the watchdog's alarms: their role has
+   * settings.manage (the audience of the alarms; only Super Admin) — the same rule notifyStaff
+   * applies to its targets. An expert or an Admin with Telegram does not count.
+   */
   linkedStaff: number
   /** Chats of TELEGRAM_ADMIN_CHAT_IDS. */
   envChats: number
-  /** The alarm without the database (ops-direct) can reach someone: chats and a bot token. */
+  /** The alarm without the database (ops-direct) can reach someone: chats AND a bot token. */
   direct: boolean
 }
 
-/** Telegram has nobody to tell: no linked staff member and no TELEGRAM_ADMIN_CHAT_IDS. */
+/** Telegram has nobody to tell: no linked Super Admin, and no env chat that a bot token can reach. */
 export function alertsGoNowhere(r: AlertRoutes): boolean {
-  return r.linkedStaff === 0 && r.envChats === 0
+  return r.linkedStaff === 0 && !r.direct
 }
 
 export function assessAlertRoutes(r: AlertRoutes): WatchProblem[] {
@@ -384,7 +402,7 @@ export function assessAlertRoutes(r: AlertRoutes): WatchProblem[] {
     level: 'WARNING',
     title: 'Тревогам некуда приходить',
     lines: [
-      'Ни один сотрудник не привязал Telegram, и TELEGRAM_ADMIN_CHAT_IDS не задан: тревоги о сбоях видны только в этой ленте.',
+      'Ни один Super Admin не привязал Telegram, и TELEGRAM_ADMIN_CHAT_IDS не задан (или у бота нет токена): тревоги о сбоях видны только в этой ленте.',
       'Тревоги, которым не нужна база (не работают кроны, портал или база недоступны), не уходят никуда, кроме логов.',
       'Привязать: ГИГА → «Уведомления» → «Привязать Telegram»; для тревог без базы — задать TELEGRAM_ADMIN_CHAT_IDS.',
     ],
@@ -426,6 +444,32 @@ export interface WatchdogReport {
 
 const remindHoursOf = (key: string) => (key === 'alerts:nowhere' ? NOWHERE_REMIND_HOURS : WATCHDOG_REMIND_HOURS)
 
+/**
+ * A single failed probe is not an outage (a service restarting, one pool timeout): the CRITICAL of
+ * «agents:down» and «watchdog:db» needs this many passes in a row (10 minutes apart).
+ */
+export const ALERT_AFTER_FAILURES = 2
+const STREAK_KEY = Symbol.for('aistart360.ops.watchdog.streaks')
+function streaks(): Map<string, number> {
+  const g = globalThis as Record<symbol, Map<string, number> | undefined>
+  return (g[STREAK_KEY] ??= new Map())
+}
+/** Consecutive passes in which `key` failed, this one included; a pass that did not fail resets it. */
+export function failureStreak(key: string, failed: boolean): number {
+  const map = streaks()
+  if (!failed) {
+    map.delete(key)
+    return 0
+  }
+  const n = (map.get(key) ?? 0) + 1
+  map.set(key, n)
+  return n
+}
+/** For tests: forget the streaks of earlier passes. */
+export function resetWatchdogStreaks(): void {
+  streaks().clear()
+}
+
 function isMissingTable(e: unknown): boolean {
   const err = e as { code?: unknown; meta?: { code?: unknown }; message?: unknown } | null
   if (err?.code === '42P01' || err?.meta?.code === '42P01') return true
@@ -451,19 +495,28 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
   const expected = expectedJobs(role, crons)
   try {
     const state = await deps.loadJobs(expected)
+    failureStreak('watchdog:db', false)
     if (state) problems.push(...assessJobs(state, now).problems)
     else journal = 'not_migrated'
   } catch (e) {
     if (isMissingTable(e)) {
+      failureStreak('watchdog:db', false)
       journal = 'not_migrated'
     } else {
-      const problem: WatchProblem = {
-        key: 'watchdog:db',
-        level: 'CRITICAL',
-        title: 'Сторож задач не может прочитать базу',
-        lines: [`Ошибка: ${shortMessage(e)}`, 'Проверьте базу данных (Postgres) и её подключения.'],
+      // The second pass in a row that cannot read the database: the alarm without it.
+      if (failureStreak('watchdog:db', true) >= ALERT_AFTER_FAILURES) {
+        const problem: WatchProblem = {
+          key: 'watchdog:db',
+          level: 'CRITICAL',
+          title: 'Сторож задач не может прочитать базу',
+          lines: [`Ошибка: ${shortMessage(e)}`, `Уже ${ALERT_AFTER_FAILURES} прохода подряд (раз в 10 минут).`, 'Проверьте базу данных (Postgres) и её подключения.'],
+        }
+        try {
+          await deps.alertDirect(problem)
+        } catch (alarmError) {
+          console.error('[ops-watchdog] direct alarm failed:', shortMessage(alarmError))
+        }
       }
-      await deps.alertDirect(problem)
       throw e
     }
   }
@@ -476,12 +529,17 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
     ['alert_routes', async () => assessAlertRoutes(await deps.alertRoutes())],
     ['agents_service', async () => {
       const res = await deps.agentsService()
-      if (!res || res.ok) return []
+      // One failed probe may be the service restarting: the alarm needs two passes in a row.
+      const streak = failureStreak('agents:down', res !== null && !res.ok)
+      if (!res || res.ok || streak < ALERT_AFTER_FAILURES) return []
       return [{
         key: 'agents:down',
         level: 'CRITICAL' as const,
         title: 'Сервис агентов не отвечает порталу',
-        lines: [`GET /api/healthz по AGENTS_SERVICE_URL: ${res.detail}.`, 'Задачи агентов ждут в очереди; проверьте сервис agents в Railway.'],
+        lines: [
+          `GET /api/healthz по AGENTS_SERVICE_URL: ${res.detail}; проходов сторожа подряд: ${streak} (раз в 10 минут).`,
+          'Задачи агентов ждут в очереди; проверьте сервис agents в Railway.',
+        ],
       }]
     }],
   ]
@@ -495,14 +553,20 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
     }
   }
 
-  // 3. Alerts, at most once per key and window.
+  // 3. Alerts, at most once per key and window. One that cannot be sent (the database wobbles)
+  // is named and does not keep the others — CRITICAL among them — or the retention from going.
   const notified: string[] = []
   for (const p of problems) {
-    const remind = remindHoursOf(p.key)
-    const last = await deps.lastAlertAt(p.key)
-    if (last && now.getTime() - last.getTime() < remind * HOUR_MS) continue
-    const res = await deps.notify(p, now, remind)
-    if (res.sent) notified.push(p.key)
+    try {
+      const remind = remindHoursOf(p.key)
+      const last = await deps.lastAlertAt(p.key)
+      if (last && now.getTime() - last.getTime() < remind * HOUR_MS) continue
+      const res = await deps.notify(p, now, remind)
+      if (res.sent) notified.push(p.key)
+    } catch (e) {
+      failedChecks.push(`notify:${p.key}`)
+      console.error(`[ops-watchdog] alert ${p.key} not sent:`, shortMessage(e))
+    }
   }
 
   // 4. Retention (N4A-15). Never fails the pass.
@@ -526,11 +590,30 @@ export async function runJobWatchdog(now: Date = new Date(), deps: WatchdogDeps 
 
 // ─── База и рассылка по умолчанию ────────────────────────────────────────────
 
-/** The journal as the watchdog and the GIGA card read it. null — the table does not exist here. */
-export async function loadJobsState(expected: ExpectedJob[]): Promise<JobsState | null> {
-  const [exists] = await prisma.$queryRaw<Array<{ t: string | null }>>`SELECT to_regclass('public.ops_job_runs')::text AS t`
+/** A job not expected for longer than this (switched off, another role) starts its «never» count anew. */
+const EXPECTATION_RESET = '1 day'
+
+/**
+ * The journal as the watchdog and the GIGA card read it. null — the table does not exist here.
+ * With `recordExpectations` (the watchdog, not the GIGA card) every expected job is first noted in
+ * ops_job_expectations: the first pass that expects a job starts its «never» count.
+ */
+export async function loadJobsState(expected: ExpectedJob[], opts: { recordExpectations?: boolean } = {}): Promise<JobsState | null> {
+  const [exists] = await prisma.$queryRaw<Array<{ t: string | null; e: string | null }>>`
+    SELECT to_regclass('public.ops_job_runs')::text AS t, to_regclass('public.ops_job_expectations')::text AS e`
   if (!exists?.t) return null
-  const [lastRows, recentRows, since] = await Promise.all([
+  const jobs = expected.map((e) => e.job)
+  if (opts.recordExpectations && exists.e && jobs.length > 0) {
+    await prisma.$executeRaw`
+      INSERT INTO public.ops_job_expectations (job, first_expected_at, last_expected_at)
+      SELECT j, now(), now() FROM unnest(${jobs}::text[]) AS j
+      ON CONFLICT (job) DO UPDATE SET
+        first_expected_at = CASE
+          WHEN public.ops_job_expectations.last_expected_at < now() - ${EXPECTATION_RESET}::interval THEN now()
+          ELSE public.ops_job_expectations.first_expected_at END,
+        last_expected_at = now()`
+  }
+  const [lastRows, recentRows, expectations] = await Promise.all([
     prisma.$queryRaw<Array<{ job: string; status: JobStatus; finished_at: Date; http_status: number | null; error: string | null }>>`
       SELECT DISTINCT ON (job) job, status, finished_at, http_status, error
         FROM public.ops_job_runs
@@ -544,13 +627,16 @@ export async function loadJobsState(expected: ExpectedJob[]): Promise<JobsState 
                WHERE status <> 'claim_failed' AND finished_at > now() - interval '8 days') t
        WHERE rn <= 3
        GROUP BY job`,
-    prisma.$queryRaw<Array<{ since: Date | null }>>`SELECT min(finished_at) AS since FROM public.ops_job_runs`,
+    exists.e
+      ? prisma.$queryRaw<Array<{ job: string; first_expected_at: Date }>>`
+          SELECT job, first_expected_at FROM public.ops_job_expectations WHERE job = ANY (${jobs}::text[])`
+      : Promise.resolve([] as Array<{ job: string; first_expected_at: Date }>),
   ])
   return {
     expected,
     last: new Map(lastRows.map((r) => [r.job, { job: r.job, status: r.status, finishedAt: r.finished_at, httpStatus: r.http_status, error: r.error }])),
     recent: new Map(recentRows.map((r) => [r.job, r.statuses])),
-    journalSince: since[0]?.since ?? null,
+    expectedSince: new Map(expectations.map((r) => [r.job, r.first_expected_at])),
   }
 }
 
@@ -582,15 +668,21 @@ async function demo(): Promise<DemoState> {
   return { created24h: Number(r?.created ?? 0), olderThan48h: Number(r?.old ?? 0) }
 }
 
-/** Staff that notifyStaff would reach in Telegram (lib/notifications/staff.ts linkedStaff), and the env chats. */
-export async function loadAlertRoutes(env: Env = process.env): Promise<AlertRoutes> {
-  const [r] = await prisma.$queryRaw<Array<{ n: bigint }>>`
-    SELECT count(*) AS n
+/**
+ * Who the watchdog's alarms reach in Telegram: linked staff as notifyStaff selects them
+ * (lib/notifications/staff.ts linkedStaff — approved profile, a role from staff_roles) and, among
+ * them, only those whose role has the alarms' audience permission (settings.manage); plus the env
+ * chats and whether a bot token can reach them.
+ */
+export async function loadAlertRoutes(env: Env = process.env, db: Pick<typeof prisma, '$queryRaw'> = prisma): Promise<AlertRoutes> {
+  const rows = await db.$queryRaw<Array<{ role: string | null }>>`
+    SELECT s.role
       FROM public.staff_telegram_links l
       JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
       JOIN public.staff_roles s ON s.user_id = l.user_id
      WHERE l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL`
-  return { linkedStaff: Number(r?.n ?? 0), envChats: opsAlertChatIds(env).length, direct: opsDirectConfigured(env) }
+  const linkedStaff = rows.filter((r) => isStaffRole(r.role) && hasPermission(r.role, WATCHDOG_AUDIENCE)).length
+  return { linkedStaff, envChats: opsAlertChatIds(env).length, direct: opsDirectConfigured(env) }
 }
 
 async function agentsService(): Promise<{ ok: boolean; detail: string } | null> {
@@ -610,10 +702,16 @@ async function agentsService(): Promise<{ ok: boolean; detail: string } | null> 
 async function prune(): Promise<{ jobRuns: number | null; cronRuns: number | null }> {
   let jobRuns: number | null = null
   try {
+    // Older than 30 days goes — except the last outcome of every job (a later call of the same job
+    // exists): a monthly job, allowed 62 days, keeps its last run, and so does a job that stopped.
+    // Old claim failures go in any case: they are never «the last run».
     jobRuns = await prisma.$executeRaw`
       DELETE FROM public.ops_job_runs
-       WHERE id IN (SELECT id FROM public.ops_job_runs
-                     WHERE finished_at < now() - make_interval(days => ${JOURNAL_RETENTION_DAYS}::int)
+       WHERE id IN (SELECT r.id FROM public.ops_job_runs r
+                     WHERE r.finished_at < now() - make_interval(days => ${JOURNAL_RETENTION_DAYS}::int)
+                       AND (r.status = 'claim_failed'
+                            OR EXISTS (SELECT 1 FROM public.ops_job_runs n
+                                        WHERE n.job = r.job AND n.status <> 'claim_failed' AND n.finished_at > r.finished_at))
                      LIMIT ${PRUNE_BATCH}::int)`
   } catch (e) {
     if (!isMissingTable(e)) throw e
@@ -644,7 +742,7 @@ async function notify(problem: WatchProblem, now: Date, remindHours: number): Pr
       dedupeKey: `${WATCHDOG_EVENT_TYPE}:${problem.key}:${window}`,
       link: '/admin-giga-panel/settings',
       // settings.manage есть только у Super Admin (lib/admin/rbac.ts).
-      audiencePermission: 'settings.manage',
+      audiencePermission: WATCHDOG_AUDIENCE,
       // Свой интервал повторов — общий cooldown по типу не нужен.
       skipCooldown: true,
     },
@@ -689,7 +787,11 @@ export interface OpsOverview {
  * The state of every scheduled job (last run, status, health) and where alarms can go, for the
  * system card in GIGA (/api/giga-admin/system/health). Read only; the same rules as the watchdog.
  */
-export async function opsOverview(now: Date = new Date(), deps: Pick<WatchdogDeps, 'role' | 'inngestCrons' | 'loadJobs' | 'alertRoutes'> = defaultDeps): Promise<OpsOverview> {
+export async function opsOverview(
+  now: Date = new Date(),
+  // Read only: the GIGA card does not start anyone's «never» count.
+  deps: Pick<WatchdogDeps, 'role' | 'inngestCrons' | 'loadJobs' | 'alertRoutes'> = { ...defaultDeps, loadJobs: (expected) => loadJobsState(expected) },
+): Promise<OpsOverview> {
   const crons = await deps.inngestCrons().catch(() => [] as InngestCron[])
   const expected = expectedJobs(deps.role(), crons)
   const [state, routes] = await Promise.all([deps.loadJobs(expected), deps.alertRoutes()])
@@ -703,7 +805,7 @@ export async function opsOverview(now: Date = new Date(), deps: Pick<WatchdogDep
 export const defaultDeps: WatchdogDeps = {
   role: () => portalRole(),
   inngestCrons,
-  loadJobs: loadJobsState,
+  loadJobs: (expected) => loadJobsState(expected, { recordExpectations: true }),
   pointAQueue,
   platformChecks,
   demo,

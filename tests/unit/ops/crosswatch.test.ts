@@ -131,6 +131,27 @@ describe('runCrosswatch', () => {
     expect(alerts).toHaveLength(3)
   })
 
+  // RB-8: «does not answer» and «not ready» are one series of the portal.
+  it('a portal that flips between «no answer» and «not ready» is one series: the alarm comes on the second check', async () => {
+    const kinds = [refused, notReady, refused, notReady, refused, notReady]
+    const results = []
+    for (const kind of kinds) {
+      answer = kind
+      results.push(await run())
+      step()
+    }
+    expect(results[1].alerted).toEqual(['portal:not_ready'])
+    expect(alerts.filter((a) => a.level === 'CRITICAL')).toHaveLength(1)
+    // no «recovered» while the portal is still failing, whatever the kind
+    expect(alerts.filter((a) => a.level === 'SUCCESS')).toEqual([])
+    expect(results.every((r) => r.recovered.length === 0)).toBe(true)
+
+    answer = healthy
+    const back = await run()
+    expect(back.recovered).toEqual(['portal:not_ready'])
+    expect(alerts.filter((a) => a.level === 'SUCCESS')).toHaveLength(1)
+  })
+
   it('its own database not answering is a problem of its own', async () => {
     dbOk = false
     await run(); step()

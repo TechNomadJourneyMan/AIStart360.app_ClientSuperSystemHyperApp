@@ -56,11 +56,15 @@ export const INNGEST_API_REQUEST_MS = 30_000
 /** All attempts of one `inngest.send` together. */
 export const INNGEST_SEND_TOTAL_MS = 15_000
 
-/** Raised by `inngest.send` when its budget is spent; callers treat it as any failed send. */
+/**
+ * Raised by `inngest.send` when its budget is spent; callers treat it as any failed send. `ms` is
+ * the budget the send really had (RA-4): its own 15 s, or what was left of the request's deadline
+ * (`by: 'request'`) — never the configured value when the request cut it shorter.
+ */
 export class InngestSendTimeoutError extends Error {
   readonly code = 'INNGEST_SEND_TIMEOUT'
-  constructor(readonly ms: number) {
-    super(`inngest send gave no answer in ${ms} ms`)
+  constructor(readonly ms: number, readonly by: 'send' | 'request' = 'send') {
+    super(`inngest send gave no answer within ${ms} ms (${by === 'request' ? 'the deadline of the request it ran in' : 'its own budget'})`)
     this.name = 'InngestSendTimeoutError'
   }
 }
@@ -112,8 +116,21 @@ export function boundedInngestFetch(base?: typeof fetch, env: NodeJS.ProcessEnv 
     if (init?.signal) signals.push(init.signal)
     const ambient = currentDeadline()?.signal
     if (ambient) signals.push(ambient)
-    // Read at call time: a test (or a polyfill) may replace the global after this module loaded.
-    return (base ?? globalThis.fetch)(input, { ...init, signal: anySignal(signals) })
+    const signal = anySignal(signals)
+    try {
+      // Read at call time: a test (or a polyfill) may replace the global after this module loaded.
+      return await (base ?? globalThis.fetch)(input, { ...init, signal })
+    } catch (err) {
+      // RA-4: cut by our own limit (not the caller's signal). The SDK logs every error of a custom
+      // fetch except «fetch failed …» at error level as a «misconfiguration», with a stack — once per
+      // attempt, up to 5 per send. Said as the plain network failure it is: the SDK stays quiet and
+      // the caller logs its one line.
+      if (signal.aborted && !init?.signal?.aborted) {
+        const reason = (signal.reason as { name?: unknown } | undefined)?.name
+        throw new TypeError(`fetch failed: no answer from Inngest within the time limit (${typeof reason === 'string' ? reason : 'aborted'})`, { cause: signal.reason })
+      }
+      throw err
+    }
   }
 }
 
@@ -124,10 +141,13 @@ function boundSend(client: Client, env: NodeJS.ProcessEnv): Client {
   const unbounded = client.send.bind(client)
   const bounded = (...args: Parameters<typeof unbounded>) => {
     const ms = envMs('INNGEST_SEND_TIMEOUT_MS', INNGEST_SEND_TOTAL_MS, { env })
+    const started = Date.now()
     // Under its own deadline: the fetch above sees it (ambient) and aborts the attempt in flight,
     // and every later attempt fails at once instead of waiting out its own timeout.
     return runWithDeadline('inngest-send', ms, (deadline) => new Promise<Awaited<ReturnType<typeof unbounded>>>((resolve, reject) => {
-      const expired = () => reject(new InngestSendTimeoutError(ms))
+      // The budget it really had: a nearer deadline of the request wins (runWithDeadline).
+      const budget = Math.min(ms, Math.max(0, deadline.at - started))
+      const expired = () => reject(new InngestSendTimeoutError(budget, budget < ms ? 'request' : 'send'))
       if (deadline.signal.aborted) return expired()
       deadline.signal.addEventListener('abort', expired, { once: true })
       unbounded(...args).then(resolve, reject).finally(() => deadline.signal.removeEventListener('abort', expired))

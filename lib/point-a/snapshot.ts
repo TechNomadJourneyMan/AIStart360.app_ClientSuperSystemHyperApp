@@ -37,7 +37,7 @@ import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
 import { pipelineTriggerOf, type FanOutPath } from './diagnostic-row'
 import { internalBaseUrl } from '@/lib/internal-auth'
-import { pointAAiSlots } from './ai-slots'
+import { acquirePatiently } from './ai-slots'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
 
@@ -232,12 +232,9 @@ async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: st
   }
   const need = blocksNeedingHypothesis(blocks).length
   // N4A-12: a Point A AI slot (≤ 2 per process with the analysis fan-out, lib/point-a/ai-slots.ts):
-  // a wave of snapshots must not start one chain of model calls per company at once.
-  const release = await pointAAiSlots().acquire()
-  if (!release) {
-    console.error(`[point-a/snapshot] hypotheses: no AI slot for snapshot ${snapshotId}, left for the next pass`)
-    return
-  }
+  // a wave of snapshots must not start one chain of model calls per company at once. RA-2: waited
+  // for as long as it takes — the next pass would not make them (an unchanged snapshot stops early).
+  const release = await acquirePatiently()
   try {
     const { blocks: withHyp, generated } = await generateHypotheses(blocks, { industry, userId: ownerId })
     // Ids and counts only (B3: 34 of 34 hypotheses failed and nothing said why — the model's

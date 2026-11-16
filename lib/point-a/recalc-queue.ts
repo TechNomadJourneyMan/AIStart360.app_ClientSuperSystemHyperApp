@@ -18,6 +18,7 @@
 import { prisma } from '@/lib/db'
 import { canRunAfterResponse } from '@/lib/runtime/platform'
 import { inngestEnabled } from '@/lib/inngest-target'
+import { pointAAiBacklogged } from './ai-slots'
 
 export const RECALC_DEBOUNCE_MS = 20_000
 export const POINT_A_RECALC_EVENT = 'point-a/recalc.requested'
@@ -210,6 +211,8 @@ export async function fail(c: Claimed, error: string): Promise<void> {
 export interface DrainReport {
   done: Array<{ companyId: string; status: string }>
   failed: Array<{ companyId: string; error: string }>
+  /** RA-3: stopped early — the AI work of the rows already built still waits for its slots. */
+  deferred?: boolean
 }
 
 export interface DrainDeps {
@@ -217,12 +220,15 @@ export interface DrainDeps {
   finish: typeof finish
   fail: typeof fail
   build: (companyId: string, reasons: string[]) => Promise<{ status: string }>
+  /** RA-3: the Point A AI slots are backed up (lib/point-a/ai-slots.ts). Default: the process-wide slots. */
+  aiBacklogged?: () => boolean
 }
 
 const defaultDrainDeps: DrainDeps = {
   claim: claimDue,
   finish,
   fail,
+  aiBacklogged: () => pointAAiBacklogged(),
   build: async (companyId, reasons) => {
     const { buildPointASnapshot } = await import('./snapshot')
     return buildPointASnapshot(companyId, { trigger: reasons.length > 0 && reasons.every((r) => r === 'nightly') ? 'schedule' : 'event', reasons })
@@ -238,6 +244,14 @@ export async function drainPointARecalc(
   const deadline = Date.now() + (opts.budgetMs ?? 60_000)
   try {
     while (Date.now() < deadline) {
+      // RA-3: every written snapshot starts AI work (the analysis, the hypotheses) that waits for one
+      // of 2 slots. While that is backed up the general drain takes no new rows — they wait in the
+      // queue for the next minute instead of overflowing the slots («busy» analyses). One company's
+      // own recalculation (companyId: the client's event) is never held back.
+      if (!opts.companyId && (deps.aiBacklogged ?? (() => false))()) {
+        report.deferred = true
+        break
+      }
       const claimed = await deps.claim(opts.batch ?? 3, opts.companyId)
       if (!claimed.length) break
       for (const c of claimed) {

@@ -62,7 +62,7 @@ interface Frame {
 }
 
 interface Store {
-  run<R>(store: Frame, fn: () => R): R
+  run<R>(store: Frame | undefined, fn: () => R): R
   getStore(): Frame | undefined
 }
 
@@ -80,6 +80,18 @@ function currentFrame(): Frame | null {
   let frame = als()?.getStore() ?? null
   while (frame && !frame.open) frame = frame.outer
   return frame
+}
+
+/**
+ * Starts `fn` outside any deadline (RA-1): work that outlives the request — runInBackground, a
+ * webhook's queue fast path — has its own budgets and must not inherit the request's, least of all
+ * a spent one (after a 504 the late handler sees its deadline spent and stops; what it hands to the
+ * background — an auto-reply, the AI hypotheses — must still run). Everything `fn` starts, now or
+ * later, runs without a deadline unless it sets its own.
+ */
+export function detachDeadline<R>(fn: () => R): R {
+  const store = als()
+  return store ? store.run(undefined, fn) : fn()
 }
 
 /** The deadline of the current request / job, when one is set. */

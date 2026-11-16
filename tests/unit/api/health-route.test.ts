@@ -12,10 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   dbFails: false,
   dbHangs: false,
+  dbDelayMs: 0,
   missing: [] as string[],
   missingLinks: [] as string[],
   journalPresent: true,
-  evidence: { last_cron: null as Date | null, last_ping: null as Date | null, since: null as Date | null },
+  evidence: { last_cron: null as Date | null, role_since: null as Date | null, last_ping: null as Date | null },
+  pingSince: null as Date | null,
   queries: [] as string[],
 }))
 vi.mock('@/lib/db', () => ({
@@ -25,7 +27,9 @@ vi.mock('@/lib/db', () => ({
       state.queries.push(sql)
       if (state.dbFails) throw new Error('connection refused')
       if (state.dbHangs) return new Promise(() => {})
-      if (sql.includes('to_regclass')) return [{ present: state.journalPresent }]
+      if (state.dbDelayMs && sql.includes('SELECT 1')) await new Promise((r) => setTimeout(r, state.dbDelayMs))
+      if (sql.includes('to_regclass')) return [{ present: state.journalPresent, expectations: state.journalPresent }]
+      if (sql.includes('ops_job_expectations')) return state.pingSince ? [{ since: state.pingSince }] : []
       if (sql.includes('last_cron')) return [state.evidence]
       return [{ '?column?': 1 }]
     },
@@ -42,10 +46,12 @@ const QUEUE_STATUS_KEY = Symbol.for('aistart360.workflow.queue.status')
 beforeEach(() => {
   state.dbFails = false
   state.dbHangs = false
+  state.dbDelayMs = 0
   state.missing = []
   state.missingLinks = []
   state.journalPresent = true
-  state.evidence = { last_cron: null, last_ping: null, since: null }
+  state.evidence = { last_cron: null, role_since: null, last_ping: null }
+  state.pingSince = null
   state.queries = []
   resetReadinessCache()
 })
@@ -280,7 +286,7 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
   it('the cron of this role called something within 15 minutes: «Задачи по расписанию» online, 200', async () => {
     portal()
     vi.stubEnv('CRON_RUNNER_ENABLED', '1')
-    state.evidence = { last_cron: ago(4 * MIN), last_ping: null, since: ago(3 * 24 * 60 * MIN) }
+    state.evidence = { last_cron: ago(4 * MIN), last_ping: null, role_since: ago(3 * 24 * 60 * MIN) }
 
     const res = await GET()
     const body = await res.json()
@@ -294,7 +300,7 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
   it('a cron that has been silent for longer fails the check (503) without any detail of the jobs', async () => {
     portal()
     vi.stubEnv('CRON_RUNNER_ENABLED', '1')
-    state.evidence = { last_cron: ago(40 * MIN), last_ping: null, since: ago(3 * 24 * 60 * MIN) }
+    state.evidence = { last_cron: ago(40 * MIN), last_ping: null, role_since: ago(3 * 24 * 60 * MIN) }
 
     const res = await GET()
     const text = await res.text()
@@ -309,7 +315,7 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
   it('no evidence yet (a young journal, or no migration 154) is «degraded», never a failure', async () => {
     portal()
     vi.stubEnv('CRON_RUNNER_ENABLED', '1')
-    state.evidence = { last_cron: null, last_ping: null, since: ago(5 * MIN) }
+    state.evidence = { last_cron: null, last_ping: null, role_since: ago(5 * MIN) }
     let res = await GET()
     expect(res.status).toBe(200)
     expect((await res.json()).checks.jobs).toBe('unknown')
@@ -325,19 +331,49 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
   it('our Inngest: the ops-ping heartbeat younger than 30 minutes is online, older fails the check', async () => {
     portal()
     vi.stubEnv('INNGEST_SELF_HOSTED_URL', 'http://inngest.railway.internal:8288')
-    state.evidence = { last_cron: null, last_ping: ago(9 * MIN), since: ago(3 * 24 * 60 * MIN) }
+    state.evidence = { last_cron: null, last_ping: ago(9 * MIN), role_since: ago(3 * 24 * 60 * MIN) }
     let body = await (await GET()).json()
     expect(entry(body, 'Фоновые задачи (Inngest)')).toMatchObject({ status: 'online' })
     expect(body.checks.inngest).toBe('ok')
     expect(body.checks).not.toHaveProperty('jobs') // CRON_RUNNER_ENABLED is not set here
 
     resetReadinessCache()
-    state.evidence = { last_cron: null, last_ping: ago(45 * MIN), since: ago(3 * 24 * 60 * MIN) }
+    state.evidence = { last_cron: null, last_ping: ago(45 * MIN), role_since: ago(3 * 24 * 60 * MIN) }
     const res = await GET()
     body = await res.json()
     expect(res.status).toBe(503)
     expect(body.checks.inngest).toBe('fail')
     expect(body.summary).toMatch(/Inngest/)
+  })
+
+  // RB-2 for readiness: «no ping at all» is judged from when the watchdog started to expect it.
+  it('no ping yet: unknown while ops-ping is new (not expected, or expected for under 30 min), a failure after', async () => {
+    portal()
+    vi.stubEnv('INNGEST_SELF_HOSTED_URL', 'http://inngest.railway.internal:8288')
+    state.evidence = { last_cron: null, role_since: ago(30 * 24 * 60 * MIN), last_ping: null }
+    let res = await GET()
+    expect(res.status).toBe(200)
+    expect((await res.json()).checks.inngest).toBe('unknown')
+
+    resetReadinessCache()
+    state.pingSince = ago(10 * MIN)
+    expect((await (await GET()).json()).checks.inngest).toBe('unknown')
+
+    resetReadinessCache()
+    state.pingSince = ago(40 * MIN)
+    res = await GET()
+    expect(res.status).toBe(503)
+    expect((await res.json()).checks.inngest).toBe('fail')
+  })
+
+  it('no cron call of this role in a day: a failure once the role has older rows, unknown for a new role', async () => {
+    portal()
+    vi.stubEnv('CRON_RUNNER_ENABLED', '1')
+    state.evidence = { last_cron: null, role_since: ago(40 * MIN), last_ping: null }
+    expect((await (await GET()).json()).checks.jobs).toBe('fail')
+    resetReadinessCache()
+    state.evidence = { last_cron: null, role_since: null, last_ping: null }
+    expect((await (await GET()).json()).checks.jobs).toBe('unknown')
   })
 
   it('the agents service has no Inngest entry, whatever the variables say', async () => {
@@ -363,7 +399,7 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
   it('cached for 15 s: a burst of probes is one round of queries; after that it is measured again', async () => {
     portal()
     vi.stubEnv('CRON_RUNNER_ENABLED', '1')
-    state.evidence = { last_cron: ago(MIN), last_ping: null, since: ago(60 * MIN) }
+    state.evidence = { last_cron: ago(MIN), last_ping: null, role_since: ago(60 * MIN) }
     await Promise.all([GET(), GET(), GET()])
     const first = state.queries.length
     await GET()
@@ -373,6 +409,19 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
     vi.setSystemTime(Date.now() + 16_000)
     await GET()
     expect(state.queries.length).toBeGreaterThan(first)
+  })
+
+  // RB-6: the agents service turns two 503s in a row into a CRITICAL; a slow answer (a queue for the
+  // Prisma pool) is «degraded», only an error or no answer within 3 s fails the database.
+  it('a slow database (≥ 400 ms) is degraded, not a failure: 200 and checks.db ok', async () => {
+    state.dbDelayMs = 450
+    const res = await GET()
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.checks.db).toBe('ok')
+    expect(body.services[0]).toMatchObject({ name: 'База данных', status: 'degraded' })
+    expect(body.allOnline).toBe(false)
+    expect(body.summary).toMatch(/База данных/)
   })
 
   it('a database that hangs is offline after 3 s, not waited for', async () => {

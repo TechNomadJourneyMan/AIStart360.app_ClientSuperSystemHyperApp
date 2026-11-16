@@ -1065,6 +1065,31 @@ describe('startCronRunner: claims that keep failing', () => {
     runner.stop()
   })
 
+  // RB-7: a claim that hangs (the connection accepted, the INSERT stuck) is a failed claim.
+  it('a claim that never answers fails after 15 s: no call, the slot is freed, it counts toward the outage', async () => {
+    const records: JobOutcome[] = []
+    vi.setSystemTime(new Date('2026-11-02T10:00:30Z'))
+    const runner = startCronRunner({
+      baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch,
+      log: (line) => { lines.push(line) }, logError: (line) => { errors.push(line) },
+      claim: () => new Promise<boolean>(() => {}), // hangs forever
+      record: async (o) => { records.push(o) },
+      onClaimOutage: (event) => { events.push(event) },
+    })
+    await vi.advanceTimersByTimeAsync(30_000) // 10:01: the claim hangs
+    expect(records).toEqual([])
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(records).toEqual([expect.objectContaining({ job: '/api/cron/agents', status: 'claim_failed' })])
+    expect(records[0].error).toMatch(/did not answer/)
+    expect(fetchImpl).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000) // 10:06: five minutes of hung claims, and the slots were never stuck
+    expect(records.length).toBeGreaterThanOrEqual(5)
+    expect(events.map((e) => e.state)).toEqual(['down'])
+    expect(errors).toHaveLength(1)
+    runner.stop()
+  })
+
   it('a short outage (under 5 minutes) raises nothing, not even a «recovered»', async () => {
     const runner = start()
     await vi.advanceTimersByTimeAsync(30_000 + 3 * 60_000) // 10:01 .. 10:04 fail

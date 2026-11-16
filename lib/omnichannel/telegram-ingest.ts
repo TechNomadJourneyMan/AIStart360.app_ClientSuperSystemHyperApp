@@ -8,6 +8,7 @@
  */
 import { trackBackground } from '@/lib/background'
 import { canRunAfterResponse } from '@/lib/runtime/platform'
+import { detachDeadline } from '@/lib/runtime/deadline'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from './events'
 import { shouldUseOmnichannelPostgres } from './postgres-runtime'
 import type {
@@ -87,11 +88,13 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
   if (!Number.isFinite(runAtMs)) return
   const delayMs = Math.max(0, runAtMs - Date.now())
   if (delayMs > MAX_FAST_PATH_DELAY_MS) return
-  const work = (async () => {
+  // RA-1 (R4-A2): outside the request's deadline (the webhook's 30 s): after a 504 the AI reply
+  // of this fast path must get its own budget, not the spent one.
+  const work = detachDeadline(async () => {
     if (delayMs > 0) await sleep(delayMs)
     const { drainOmnichannelProcessingJobs } = await import('./process-job-queue')
     await drainOmnichannelProcessingJobs({ limit: 1 })
-  })().catch(() => {
+  }).catch(() => {
     // The durable job stays queued and is recovered by a later drain.
   })
   trackBackground(work)

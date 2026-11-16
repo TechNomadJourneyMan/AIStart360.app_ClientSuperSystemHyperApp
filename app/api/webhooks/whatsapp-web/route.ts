@@ -40,7 +40,7 @@ import { runInBackground, trackBackground } from "@/lib/background";
 import { canRunAfterResponse } from "@/lib/runtime/platform";
 import { webhookRefusal } from "@/lib/runtime/webhook-log";
 import { mirrorWhatsAppInbound } from "@/lib/comm/inbound";
-import { withDeadline } from "@/lib/runtime/deadline";
+import { detachDeadline, withDeadline } from "@/lib/runtime/deadline";
 
 const WEBHOOK_PATH = "/api/webhooks/whatsapp-web";
 const MAX_BODY_BYTES = 256_000;
@@ -112,10 +112,12 @@ function scheduleDatabaseQueueFastPath(runAt: string): void {
   const delayMs = Math.max(0, runAtMs - Date.now());
   if (delayMs > MAX_FAST_PATH_DELAY_MS) return;
 
-  const work = (async () => {
+  // RA-1 (R4-A2): outside the request's deadline — after a 504 the late handler still queues the
+  // job, and the AI reply of this fast path must get its own budget, not the spent one.
+  const work = detachDeadline(async () => {
     if (delayMs > 0) await sleep(delayMs);
     await drainOmnichannelProcessingJobs({ limit: 1 });
-  })().catch(() => {
+  }).catch(() => {
     // The durable job remains queued and the signed bridge kicker retries it.
   });
   trackBackground(work);

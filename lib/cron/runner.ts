@@ -48,6 +48,12 @@ const MINUTE_MS = 60_000
 const MAX_CONCURRENT = 2
 /** A cron route may legitimately run for minutes (maxDuration 300 s on Vercel); a hung one must not hold a slot forever. */
 const FETCH_TIMEOUT_MS = 300_000
+/**
+ * A claim that has not answered by then is a failed claim (R4-A1 review RB-7): the job is not
+ * called, the slot is freed and the outage streak counts it. Should the hung INSERT land later, that
+ * minute is simply spent — a missed minute, never a double run.
+ */
+export const CLAIM_TIMEOUT_MS = 15_000
 /** Claims failing this long without a success in between are an outage: the error log and the alarm. */
 export const CLAIM_OUTAGE_ALERT_MS = 5 * MINUTE_MS
 /** While the outage lasts the alarm is repeated this often, not on every failed claim. */
@@ -220,8 +226,16 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
       if (opts.claim) {
         // After the stop check and right before the call, so a claim is never taken and then dropped.
         let won: boolean
+        let claimTimer: ReturnType<typeof setTimeout> | undefined
         try {
-          won = await opts.claim(job.path, minute)
+          won = await Promise.race([
+            opts.claim(job.path, minute),
+            new Promise<never>((_, reject) => {
+              // The process clock, not the injected tick timer: this one only bounds a wait.
+              claimTimer = setTimeout(() => reject(new Error(`claim did not answer in ${CLAIM_TIMEOUT_MS / 1000} s`)), CLAIM_TIMEOUT_MS)
+              ;(claimTimer as { unref?: () => void }).unref?.()
+            }),
+          ])
         } catch (error) {
           const message = messageOf(error)
           write(`cron: ${job.path} not run, claim failed: ${message}`)
@@ -229,6 +243,8 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
           journal({ job: job.path, kind: 'cron', scheduledFor: minute, startedAt: at, finishedAt: at, durationMs: 0, status: 'claim_failed', error: `claim failed: ${message}` })
           claimFailed(message)
           return
+        } finally {
+          clearTimeout(claimTimer)
         }
         claimAnswered()
         if (!won) {

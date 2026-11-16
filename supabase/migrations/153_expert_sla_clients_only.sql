@@ -26,7 +26,9 @@
 --                                           skipped row is simply not returned (no
 --                                           notice, no escalation);
 --   expert_sla_close_non_clients(ts)      — closes open tasks of such accounts
---                                           ('excluded', answered = false, as 149);
+--                                           (close_reason 'not_client', answered =
+--                                           false — its own code: 'excluded' reads
+--                                           «рекомендации сняты с SLA» in ГИГА);
 --                                           called once below.
 --
 -- The app's plan scan (lib/point-b/plan/waiting.ts) skips staff accounts too, so the
@@ -93,7 +95,7 @@ BEGIN
   RETURN QUERY
   UPDATE public.expert_sla_tasks t
      SET closed_at = greatest(coalesce(p_now, now()), t.received_at),
-         close_reason = 'excluded',
+         close_reason = 'not_client',
          answered = false
    WHERE t.closed_at IS NULL
      AND t.client_id IS NOT NULL
@@ -102,7 +104,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.expert_sla_close_non_clients(timestamptz) IS
-  '153: close open SLA tasks of accounts that are not clients (staff, experts) — close_reason excluded, answered false. Service role only.';
+  '153: close open SLA tasks of accounts that are not clients (staff, experts) — close_reason not_client, answered false. Service role only.';
 
 SELECT count(*) AS closed_non_client_tasks FROM public.expert_sla_close_non_clients(now());
 

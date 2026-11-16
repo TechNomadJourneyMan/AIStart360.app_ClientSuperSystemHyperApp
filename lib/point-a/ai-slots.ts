@@ -13,11 +13,15 @@
  *   - a job that finds none waits; at most POINT_A_AI_MAX_WAITING (default 50) wait, none longer than
  *     POINT_A_AI_SLOT_WAIT_MS (default 10 min, so a waiting analysis is never older than the 15 min
  *     after which the stale sweep marks it failed, lib/point-a/ai-claim.ts);
- *   - past that the job is not run: the analysis is marked failed («Повторить» is offered), the
- *     hypotheses are left for the next pass. The AI budget (assertAiBudget) stays the last guard.
+ *   - past that the analysis is not run: it is marked failed («Повторить» is offered). The AI
+ *     hypotheses nobody waits for are never dropped (RA-2): they wait as long as it takes
+ *     (acquirePatiently) — a wave delays them, it does not lose them;
+ *   - the minute drain of the Point A queue takes no new rows while POINT_A_DRAIN_MAX_AI_WAITING
+ *     (default 2) jobs already wait for a slot (RA-3, lib/point-a/recalc-queue.ts): a wave stays in
+ *     the queue instead of overflowing the slots. The AI budget (assertAiBudget) stays the last guard.
  * On globalThis: Next bundles a module once per route, and the limit is per process.
  */
-import { createSemaphore, type Semaphore } from '@/lib/agents/run-slots'
+import { createSemaphore, type Release, type Semaphore } from '@/lib/agents/run-slots'
 
 const KEY = Symbol.for('aistart360.pointA.aiSlots')
 
@@ -35,6 +39,27 @@ export function pointAAiSlots(): Semaphore {
     maxWaitMs: intFromEnv('POINT_A_AI_SLOT_WAIT_MS', 10 * 60_000),
   })
   return store[KEY]!
+}
+
+/**
+ * A slot for work nobody waits for (the AI hypotheses, RA-2): when the queue of waiters is full or a
+ * wait times out, it tries again after POINT_A_AI_SLOT_RETRY_MS (default 5 s) — until it has one.
+ * Only a restart of the process loses it (as any background work).
+ */
+export async function acquirePatiently(slots: Semaphore = pointAAiSlots()): Promise<Release> {
+  for (;;) {
+    const release = await slots.acquire()
+    if (release) return release
+    await new Promise((resolve) => setTimeout(resolve, intFromEnv('POINT_A_AI_SLOT_RETRY_MS', 5_000)))
+  }
+}
+
+/**
+ * RA-3: so many Point A AI jobs already wait for a slot that the minute drain should not start more
+ * (POINT_A_DRAIN_MAX_AI_WAITING, default 2). The rows stay in the queue for the next minute.
+ */
+export function pointAAiBacklogged(slots: Semaphore = pointAAiSlots()): boolean {
+  return slots.waiting() >= intFromEnv('POINT_A_DRAIN_MAX_AI_WAITING', 2)
 }
 
 /** Tests only: forget the slots so the next call reads the environment again. */

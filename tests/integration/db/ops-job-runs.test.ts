@@ -40,15 +40,6 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
   const env: Record<string, string | undefined> = {}
   let createdCronRuns = false
 
-  async function linkedStaff(u: { id: string; tg: number }, role: string) {
-    await prisma.$executeRaw`INSERT INTO auth.users (id, email) VALUES (${u.id}::uuid, ${`${u.id}@staff.local`})`
-    await prisma.$executeRaw`UPDATE public.profiles SET status = 'approved' WHERE id = ${u.id}::uuid`
-    await prisma.$executeRaw`INSERT INTO public.staff_roles (user_id, role) VALUES (${u.id}::uuid, ${role})`
-    await prisma.$executeRaw`
-      INSERT INTO public.staff_telegram_links (user_id, telegram_user_id, chat_id, linked_at, min_level)
-      VALUES (${u.id}::uuid, ${u.tg}, ${String(u.tg)}, now() - interval '1 day', 'WARNING')`
-  }
-
   async function addRun(job: string, minutesAgo: number, status = 'ok', service = 'all', kind = job.startsWith('inngest:') ? 'inngest' : 'cron') {
     await prisma.$executeRaw`
       INSERT INTO public.ops_job_runs (job, kind, service, started_at, finished_at, duration_ms, status)
@@ -59,7 +50,7 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
   /** Every job one process for everything expects, fresh and fine — the baseline of a healthy portal. */
   async function healthyJournal() {
     for (const e of watchdog.expectedJobs('all', [])) await addRun(e.job, 1)
-    await addRun('/api/cron/billing-expiry', 40 * 24 * 60) // the journal is old enough for «never» to count
+    await addRun('/api/cron/billing-expiry', 40 * 24 * 60) // a 40-day-old journal
   }
 
   const events = () => prisma.$queryRaw<Array<{ level: string; problem: string }>>`
@@ -72,6 +63,8 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
     inngestCrons: async () => [],
     agentsService: async () => null,
     platformChecks: async () => [],
+    // Linked staff of other test files may come and go: alert routes are tested on their own.
+    alertRoutes: async () => ({ linkedStaff: 1, envChats: 0, direct: false }),
     ...over,
   })
 
@@ -87,8 +80,9 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
     delete process.env.PORTAL_ROLE
     delete process.env.WORKFLOW_POSTGRES_URL
     vi.stubGlobal('fetch', fakeFetch)
-    await linkedStaff(superAdmin, 'super_admin')
-    await linkedStaff(admin, 'admin')
+    // No linked staff is committed here: tests/integration/db/backup.test.ts runs in parallel on the
+    // same database and counts the Super Admins its notifications reach. Routing to Super Admin
+    // only is pinned there; here the feed events are checked, and the alert routes in a transaction.
     const [{ t }] = await prisma.$queryRaw<Array<{ t: string | null }>>`SELECT to_regclass('public.cron_runs')::text AS t`
     if (!t) {
       await prisma.$executeRawUnsafe(CREATE_CRON_RUNS_TABLE)
@@ -99,13 +93,16 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
   beforeEach(async () => {
     sent.length = 0
     await prisma.$executeRaw`DELETE FROM public.ops_job_runs`
+    await prisma.$executeRaw`DELETE FROM public.ops_job_expectations`
     await prisma.$executeRaw`DELETE FROM public.notification_events WHERE type = 'ops.watchdog'`
     health.resetReadinessCache()
+    watchdog.resetWatchdogStreaks()
   })
 
   afterAll(async () => {
     vi.unstubAllGlobals()
     await prisma.$executeRaw`DELETE FROM public.ops_job_runs`
+    await prisma.$executeRaw`DELETE FROM public.ops_job_expectations`
     await prisma.$executeRaw`DELETE FROM public.notification_events WHERE type = 'ops.watchdog'`
     await prisma.$executeRaw`DELETE FROM auth.users WHERE id IN (${superAdmin.id}::uuid, ${admin.id}::uuid, ${demoUser.id}::uuid)`
     if (createdCronRuns) await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS public.cron_runs')
@@ -113,9 +110,16 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
     await prisma.$disconnect()
   })
 
-  it('the table: RLS on without policies, nothing for anon / authenticated, service_role may write, CHECKs hold', async () => {
-    const [t] = await prisma.$queryRaw<Array<{ rls: boolean }>>`SELECT relrowsecurity AS rls FROM pg_class WHERE oid = 'public.ops_job_runs'::regclass`
-    expect(t.rls).toBe(true)
+  it('the tables: RLS on without policies, nothing for anon / authenticated, service_role may write, CHECKs hold', async () => {
+    const rls = await prisma.$queryRaw<Array<{ rls: boolean }>>`
+      SELECT relrowsecurity AS rls FROM pg_class WHERE oid IN ('public.ops_job_runs'::regclass, 'public.ops_job_expectations'::regclass)`
+    expect(rls.map((t) => t.rls)).toEqual([true, true])
+    const [exp] = await prisma.$queryRaw<Array<{ anon: boolean; auth: boolean; svc: boolean; policies: bigint }>>`
+      SELECT has_table_privilege('anon', 'public.ops_job_expectations', 'SELECT') AS anon,
+             has_table_privilege('authenticated', 'public.ops_job_expectations', 'SELECT') AS auth,
+             has_table_privilege('service_role', 'public.ops_job_expectations', 'INSERT') AS svc,
+             (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ops_job_expectations') AS policies`
+    expect({ ...exp, policies: Number(exp.policies) }).toEqual({ anon: false, auth: false, svc: true, policies: 0 })
     const privs = await prisma.$queryRaw<Array<{ role: string; any: boolean }>>`
       SELECT r AS role,
              has_table_privilege(r, 'public.ops_job_runs', 'SELECT')
@@ -177,15 +181,16 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
     const first = await watchdog.runJobWatchdog(new Date(), deps())
     expect(first.problems).toContain('job:stale:/api/cron/expert-sla')
     expect(first.notified).toContain('job:stale:/api/cron/expert-sla')
-    const stale = sent.filter((s) => s.text.includes('давно не запускалась'))
-    expect(stale.map((s) => s.chat)).toEqual([String(superAdmin.tg)])
-    expect(stale[0].text).toContain('SLA экспертов')
-    expect(await events()).toContainEqual({ level: 'CRITICAL', problem: 'job:stale:/api/cron/expert-sla' })
+    const staleEvents = () => events().then((rows) => rows.filter((r) => r.problem === 'job:stale:/api/cron/expert-sla'))
+    expect(await staleEvents()).toEqual([{ level: 'CRITICAL', problem: 'job:stale:/api/cron/expert-sla' }])
+    const [feed] = await prisma.$queryRaw<Array<{ body: string }>>`
+      SELECT body FROM public.notification_events WHERE type = 'ops.watchdog' AND data->>'problem' = 'job:stale:/api/cron/expert-sla'`
+    expect(feed.body).toContain('SLA экспертов')
 
     const again = await watchdog.runJobWatchdog(new Date(Date.now() + 10 * MIN), deps())
     expect(again.problems).toContain('job:stale:/api/cron/expert-sla')
     expect(again.notified).not.toContain('job:stale:/api/cron/expert-sla')
-    expect(sent.filter((s) => s.text.includes('давно не запускалась'))).toHaveLength(1)
+    expect(await staleEvents()).toHaveLength(1)
   })
 
   it('a job whose last three calls failed is a WARNING with the HTTP code', async () => {
@@ -198,16 +203,82 @@ describe.skipIf(!dbTestsEnabled)('ops_job_runs (154)', async () => {
 
     const report = await watchdog.runJobWatchdog(new Date(), deps())
     expect(report.problems).toContain('job:failing:/api/cron/expert-sla')
-    expect(sent.find((s) => s.text.includes('завершается ошибкой'))?.text).toContain('HTTP 500')
+    const [feed] = await prisma.$queryRaw<Array<{ body: string }>>`
+      SELECT body FROM public.notification_events WHERE type = 'ops.watchdog' AND data->>'problem' = 'job:failing:/api/cron/expert-sla'`
+    expect(feed.body).toContain('HTTP 500')
   })
 
   it('nobody linked and no TELEGRAM_ADMIN_CHAT_IDS: «тревогам некуда приходить» in the feed', async () => {
     await healthyJournal()
-    const routes = await watchdog.loadAlertRoutes()
-    expect(routes.linkedStaff).toBeGreaterThanOrEqual(2)
     const report = await watchdog.runJobWatchdog(new Date(), deps({ alertRoutes: async () => ({ linkedStaff: 0, envChats: 0, direct: false }) }))
     expect(report.problems).toContain('alerts:nowhere')
     expect(await events()).toContainEqual({ level: 'WARNING', problem: 'alerts:nowhere' })
+  })
+
+  // RB-1: the watchdog's alarms go to settings.manage (Super Admin) only: an Admin or an expert with
+  // Telegram does not make «nowhere to alert» go away.
+  it('alert routes count only linked staff who receive the alarms (Super Admin), not every linked staff member', async () => {
+    // In one REPEATABLE READ transaction that is rolled back: the counts are relative to a fixed
+    // snapshot, and nothing is visible to the tests that run in parallel.
+    const ROLLBACK = new Error('rollback')
+    let seen: number[] = []
+    let nowhere: boolean[] = []
+    await prisma.$transaction(async (tx) => {
+      const env = { TELEGRAM_ADMIN_CHAT_IDS: '' }
+      const base = (await watchdog.loadAlertRoutes(env, tx)).linkedStaff
+      const link = async (u: { id: string; tg: number }, role: string) => {
+        await tx.$executeRaw`INSERT INTO auth.users (id, email) VALUES (${u.id}::uuid, ${`${u.id}@staff.local`})`
+        await tx.$executeRaw`UPDATE public.profiles SET status = 'approved' WHERE id = ${u.id}::uuid`
+        await tx.$executeRaw`INSERT INTO public.staff_roles (user_id, role) VALUES (${u.id}::uuid, ${role})`
+        await tx.$executeRaw`
+          INSERT INTO public.staff_telegram_links (user_id, telegram_user_id, chat_id, linked_at, min_level)
+          VALUES (${u.id}::uuid, ${u.tg}, ${String(u.tg)}, now() - interval '1 day', 'WARNING')`
+      }
+      await link(admin, 'admin') // an Admin with Telegram does not receive the watchdog's alarms
+      const withAdmin = await watchdog.loadAlertRoutes(env, tx)
+      await link(superAdmin, 'super_admin')
+      const withSuper = await watchdog.loadAlertRoutes(env, tx)
+      seen = [withAdmin.linkedStaff - base, withSuper.linkedStaff - base]
+      nowhere = [watchdog.alertsGoNowhere({ ...withAdmin, linkedStaff: withAdmin.linkedStaff - base })]
+      throw ROLLBACK
+    }, { isolationLevel: 'RepeatableRead' }).catch((e) => { if (e !== ROLLBACK) throw e })
+    expect(seen).toEqual([0, 1])
+    expect(nowhere).toEqual([true])
+  })
+
+  // RB-2: «never» counts from the first pass that expected the job, not from the age of the journal.
+  it('a job new in this release in a 40-day-old journal: no «never» on the first pass; once expected for 3 days, it is', async () => {
+    await healthyJournal()
+    await prisma.$executeRaw`DELETE FROM public.ops_job_runs WHERE job = '/api/cron/reminders'`
+    const first = await watchdog.runJobWatchdog(new Date(), deps())
+    expect(first.problems).not.toContain('job:never:/api/cron/reminders')
+    const [noted] = await prisma.$queryRaw<Array<{ first: Date }>>`
+      SELECT first_expected_at AS first FROM public.ops_job_expectations WHERE job = '/api/cron/reminders'`
+    expect(Date.now() - noted.first.getTime()).toBeLessThan(60_000)
+
+    await prisma.$executeRaw`UPDATE public.ops_job_expectations SET first_expected_at = now() - interval '3 days' WHERE job = '/api/cron/reminders'`
+    const later = await watchdog.runJobWatchdog(new Date(), deps())
+    expect(later.problems).toContain('job:never:/api/cron/reminders')
+
+    // a job not expected for more than a day (switched off and on again) starts its count anew
+    await prisma.$executeRaw`UPDATE public.ops_job_expectations SET first_expected_at = now() - interval '5 days', last_expected_at = now() - interval '2 days' WHERE job = '/api/cron/reminders'`
+    await prisma.$executeRaw`DELETE FROM public.notification_events WHERE type = 'ops.watchdog'`
+    const again = await watchdog.runJobWatchdog(new Date(), deps())
+    expect(again.problems).not.toContain('job:never:/api/cron/reminders')
+  })
+
+  // RB-3: a monthly job (allowed 62 days) keeps its last outcome past the 30-day retention.
+  it('retention keeps the last outcome of every job; a monthly job that failed 35 days ago is «failing»', async () => {
+    const monthly = 'inngest:pb-monthly-checkpoint'
+    await addRun(monthly, 65 * 24 * 60, 'ok', 'web')
+    await addRun(monthly, 35 * 24 * 60, 'error', 'web')
+    await addRun('/api/cron/reminders', 33 * 24 * 60, 'claim_failed') // an old claim failure is never «the last run»
+    await prisma.$executeRawUnsafe(`DELETE FROM public.cron_runs WHERE path LIKE '/test/%'`)
+    const report = await watchdog.runJobWatchdog(new Date(), deps({ inngestCrons: async () => [{ id: 'pb-monthly-checkpoint', cron: '0 4 1 * *' }] }))
+    const rows = await prisma.$queryRaw<Array<{ job: string; status: string }>>`SELECT job, status FROM public.ops_job_runs WHERE job IN (${monthly}, '/api/cron/reminders') ORDER BY finished_at`
+    expect(rows).toEqual([{ job: monthly, status: 'error' }])
+    expect(report.problems).toContain(`job:failing:${monthly}`)
+    expect(report.problems).not.toContain(`job:never:${monthly}`)
   })
 
   it('demo accounts older than 48 h (the cleanup does not run) are a WARNING', async () => {

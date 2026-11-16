@@ -235,8 +235,11 @@ async function fetchUpstream(
 }
 
 /**
- * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 120 s the client
  * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_MARKET_ANALYSIS_GENERATE overrides it;
  * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ * RA-6 (review of R4-A2): 120 s, not 60 — the generation of the 50 answers may take two model calls of
+ * up to 45 s each (lib/market-analysis/generator.ts: one retry on an unparsable answer) after the
+ * upstream reads (6 s); under 60 s the retry was cut to the remainder and failed with ai_unavailable.
  */
-export const POST = withDeadline(handlePost, { label: 'market-analysis-generate', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'market-analysis-generate', ms: 120_000 })
