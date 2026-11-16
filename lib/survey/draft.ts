@@ -183,9 +183,14 @@ export function updatedAtOf(attribution: Readonly<Record<string, { updatedAt?: s
   return out
 }
 
-/** `?step=N` deep link from «Мои данные → Редактировать»; null when absent/invalid. */
-export function parseStepParam(raw: string | null | undefined, total = 12): number | null {
+/**
+ * `?step=N` deep link from «Мои данные → Редактировать»; null when absent/invalid.
+ * `?step=review` (R3-PA, «Отправить анкету — получить оценку» on the Point A
+ * page) opens the final check before sending: `total + 1`, when `review` is allowed.
+ */
+export function parseStepParam(raw: string | null | undefined, total = 12, opts: { review?: boolean } = {}): number | null {
   if (raw == null || raw === '') return null
+  if (raw === 'review') return opts.review ? total + 1 : null
   const n = Number(raw)
   return Number.isInteger(n) && n >= 1 && n <= total ? n : null
 }

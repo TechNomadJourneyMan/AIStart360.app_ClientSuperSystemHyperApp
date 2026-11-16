@@ -21,7 +21,7 @@ import NextStepCard from '../NextStepCard'
 import StaleBaseBanner from '../StaleBaseBanner'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
-  TONE_CLASS, chartData, chartPlaceholder, costOfGoalView, fmtLongDate, otherWarnings, pathCells, staleWarning, verdictView,
+  TONE_CLASS, chartData, chartPlaceholder, costOfGoalView, fmtLongDate, otherWarnings, overviewActions, pathCells, staleWarning, verdictView,
   type PointBFinmodelStatus, type PointBPlanState,
 } from '../overviewModel'
 import type { PointBNextStep } from '../recsModel'
@@ -49,7 +49,6 @@ export function SectionError({ message, onRetry }: { message: string; onRetry?: 
         <div className="min-w-0">
           <p className="text-sm font-semibold text-on-surface">Не удалось загрузить расчёт</p>
           <p className="mt-0.5 text-xs text-on-surface-variant">{message}</p>
-          <p className="mt-0.5 text-xs text-on-surface-variant">Вкладка «Подробности» при этом работает.</p>
           {onRetry && <button type="button" onClick={onRetry} className={cn(BTN_GHOST, 'mt-3')}>Повторить</button>}
         </div>
       </div>
@@ -82,7 +81,7 @@ export function OverviewView({ result, plan, finmodel = null, invites = NO_INVIT
     ? 'Траектория по сценариям появится после того, как эксперт одобрит план. Прогноз и цель — выше.'
     : chartPlaceholder(result)
   const computed = fmtLongDate(result.computedAt)
-  const suggestScenarios = verdict.key === 'behind' || verdict.key === 'at_risk'
+  const actions = overviewActions(result, plan)
   const cost = costOfGoalView(result, finmodel, plan.selectedScenario)
 
   return (
@@ -102,9 +101,14 @@ export function OverviewView({ result, plan, finmodel = null, invites = NO_INVIT
             </div>
             <h2 className="mt-2 font-headline text-xl font-bold text-on-surface sm:text-2xl">{verdict.headline}</h2>
             {verdict.reason && <p className="mt-1 text-sm text-on-surface-variant">{verdict.reason}</p>}
-            {suggestScenarios && (
+            {actions.scenarios && (
               <button type="button" onClick={() => go('scenarios')} className={cn(BTN_PRIMARY, 'mt-3')}>
                 Что делать: смотреть сценарии
+              </button>
+            )}
+            {actions.revenueMonths && (
+              <button type="button" onClick={() => go('finmodel')} className={cn(BTN_PRIMARY, 'mt-3')}>
+                Внести выручку по месяцам
               </button>
             )}
           </div>
@@ -122,7 +126,7 @@ export function OverviewView({ result, plan, finmodel = null, invites = NO_INVIT
           ))}
         </dl>
         <p className="mt-2 text-xs text-on-surface-variant">
-          Цель — годовая выручка к сроку. Цели на другие сроки и подробный разбор — на вкладке «Подробности».
+          Цель — годовая выручка к сроку. Прогноз «при текущем ходе» строится по выручке за 12 месяцев подряд — её можно внести на вкладке «Финмодель».
         </p>
       </section>
 

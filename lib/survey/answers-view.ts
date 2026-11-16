@@ -22,7 +22,7 @@ export const ANSWER_FILTER_LABELS: Readonly<Record<AnswerFilter, string>> = {
   unsure: '«Не знаю» и «примерно»',
   assistant: 'ИИ-помощник и документы',
   staff: 'Изменено экспертом',
-  minimum: 'Минимум для Точки А',
+  minimum: 'Ключевые вопросы Точки А',
 }
 
 export function isAnswerFilter(v: unknown): v is AnswerFilter {

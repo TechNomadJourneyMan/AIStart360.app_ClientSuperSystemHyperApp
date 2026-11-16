@@ -20,6 +20,7 @@
 import PDFDocument from 'pdfkit'
 import { formatGri, griFromPercent, griTone, griZone } from '@/lib/format/gri'
 import { registerReportFonts, REPORT_FONTS } from './fonts'
+import type { PointBReport } from '@/lib/point-b/report'
 import {
   SURVEY_LABELS,
   SURVEY_STEP_LABELS,
@@ -100,57 +101,19 @@ export interface PointAPdfInput {
   strategicPriorities?: Array<{ title: string; rationale?: string; expected_impact?: string }>
   growthRoadmap?: Array<{ horizon: string; actions: string[] }>
   risks?: Array<{ level?: string; area: string; text: string }>
+  /** R3-PA: the label of the AI text («Черновик ИИ — эксперт проверит» / «Проверено экспертом: …»). */
+  aiNote?: string | null
 }
 
 // ── Точка Б ───────────────────────────────────────────────────────────────────
 
-export interface PointBGapInput {
-  horizon: string // '12m' | '3y'
-  current_revenue: number | null
-  target_revenue: number | null
-  multiplier: number | null
-  required_cagr: number | null
-}
-
+/**
+ * R3 (M3): the PDF of Точка Б is the SAME calculation as the page — the model and the APPROVED plan version
+ * (lib/point-b/report.ts), never the old V2 engine and never a draft.
+ */
 export interface PointBPdfInput {
   meta: ReportMeta
-  goals: {
-    current_revenue_year: number | null
-    goal_12m_revenue_year: number | null
-    goal_3y_revenue_year: number | null
-    goal_12m_text?: string
-    goal_3y_text?: string
-    main_pain?: string
-  }
-  gap: PointBGapInput[]
-  /** Set when the revenue base is out of date, e.g. «Период выручки: 2024 · данные устарели». */
-  baseNote?: string | null
-  realism?: {
-    level: string
-    score: number
-    rationale?: string[]
-    risk_factors?: string[]
-    weak_blocks?: string[]
-  } | null
-  scenarios?: Array<{
-    label: string
-    target_revenue_12m: number | null
-    target_revenue_3y: number | null
-    confidence: string
-  }>
-  top5Limits?: Array<{ rank: number; title: string; severity?: string }>
-  growthDecomposition?: {
-    required_multiplier: number | null
-    summary?: string
-    steps?: Array<{ label: string; note?: string }>
-  } | null
-  /** AI narrative bridge (PointBStrategy), optional. */
-  aiStrategy?: {
-    strategic_bridge_summary?: string
-    gap_bridge?: Array<{ block: string; gap: string; action: string; priority: string }>
-    milestones?: Array<{ q: string; title: string; desc: string }>
-    risk_mitigations?: Array<{ risk: string; mitigation: string }>
-  } | null
+  report: PointBReport
 }
 
 // ── Survey ─────────────────────────────────────────────────────────────────────
@@ -178,11 +141,6 @@ function fmtDate(d?: string | Date | null): string {
 function fmtKzt(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return `${Math.round(n).toLocaleString('ru-RU')} ₸`
-}
-
-function fmtPct(n: number | null | undefined, digits = 0): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  return `${n.toFixed(digits)}%`
 }
 
 function fmtMult(n: number | null | undefined): string {
@@ -612,6 +570,8 @@ export async function renderPointAPdf(input: PointAPdfInput): Promise<Buffer> {
   if (input.healthIndex !== null) kvRow(doc, 'Индекс здоровья бизнеса', `${Math.round(input.healthIndex)}/100`, scoreColor(input.healthIndex))
 
   // ── Резюме ───────────────────────────────────────────────────────────────
+  // R3-PA: the AI text is labelled — a draft until an expert checks it.
+  if (input.aiNote) paragraph(doc, input.aiNote, { size: 9, color: MUTED })
   if (input.executiveSummary) {
     sectionHeader(doc, 'Краткое резюме')
     paragraph(doc, input.executiveSummary)
@@ -690,145 +650,103 @@ function roadmapHorizonLabel(horizon: string): string {
 
 // ─── Точка Б ─────────────────────────────────────────────────────────────────
 
-export async function renderPointBPdf(input: PointBPdfInput): Promise<Buffer> {
-  const doc = newDoc(`Точка Б · ${input.meta.companyName}`)
+const PB_PREP_TEXT: Record<PointBReport['plan']['prep'], string> = {
+  published: 'План одобрен.',
+  in_work: 'План готовит команда AIStart360. Сценарии, стратегия и задачи появятся после одобрения плана.',
+  in_review: 'План собран и проходит проверку перед публикацией.',
+  waiting: 'Данных для плана достаточно — план подготовит команда AIStart360.',
+  needs_data: 'Для плана нужны данные:',
+}
 
-  const gap12 = input.gap.find((g) => g.horizon === '12m')
-  const headlineVal =
-    gap12 && gap12.multiplier != null ? `Рост ${fmtMult(gap12.multiplier)} за 12 мес` : 'План роста'
+function fmtMonthsPdf(n: number | null): string {
+  return n === null || !Number.isFinite(n) ? '—' : `${Math.round(n)} мес.`
+}
+
+export async function renderPointBPdf(input: PointBPdfInput): Promise<Buffer> {
+  const { report: r } = input
+  const doc = newDoc(`Точка Б · ${input.meta.companyName}`)
 
   drawCover(doc, {
     tag: 'Точка Б · Цель',
-    title: 'Точка Б — план достижения цели',
+    title: 'Точка Б — путь к цели',
     meta: input.meta,
-    headline: { label: 'Цель на 12 месяцев', value: headlineVal },
+    headline: {
+      label: 'Цель по выручке',
+      value: r.gap.targetAnnual !== null ? `${fmtKzt(r.gap.targetAnnual)} в год` : 'Цель не задана',
+    },
   })
 
-  // ── Цели ─────────────────────────────────────────────────────────────────
-  sectionHeader(doc, 'Цели владельца')
-  kvRow(doc, 'Текущая выручка / год', fmtKzt(input.goals.current_revenue_year))
-  if (input.baseNote) paragraph(doc, input.baseNote, { size: 10, color: CRIT, gap: 0.2 })
-  kvRow(doc, 'Цель на 12 месяцев / год', fmtKzt(input.goals.goal_12m_revenue_year), POSITIVE)
-  kvRow(doc, 'Цель на 3 года / год', fmtKzt(input.goals.goal_3y_revenue_year), POSITIVE)
-  if (input.goals.goal_12m_text) paragraph(doc, `Цель на 12 месяцев: ${input.goals.goal_12m_text}`, { size: 10, color: MUTED, gap: 0.2 })
-  if (input.goals.goal_3y_text) paragraph(doc, `Цель на 3 года: ${input.goals.goal_3y_text}`, { size: 10, color: MUTED, gap: 0.2 })
-  if (input.goals.main_pain) paragraph(doc, `Главная боль: ${input.goals.main_pain}`, { size: 10, color: MUTED })
+  // ── Сейчас → цель (автоматический расчёт) ───────────────────────────────
+  sectionHeader(doc, 'Сейчас → цель')
+  paragraph(doc, 'Автоматический расчёт по данным компании, не проверен экспертом.', { size: 9.5, color: MUTED, gap: 0.3 })
+  kvRow(doc, 'Выручка сейчас, в год', fmtKzt(r.gap.baseAnnual))
+  kvRow(doc, 'Цель, в год', fmtKzt(r.gap.targetAnnual), POSITIVE)
+  kvRow(doc, 'Срок цели', fmtMonthsPdf(r.gap.months))
+  kvRow(doc, 'Нужный рост', fmtMult(r.gap.multiplier))
+  kvRow(doc, 'При текущем ходе к сроку, в год', r.forecast.basis === 'history' ? fmtKzt(r.forecast.atCurrentPace) : 'нет прогноза')
+  subHeader(doc, r.verdict.headline, r.verdict.key === 'behind' ? CRIT : r.verdict.key === 'at_risk' ? WARN : r.verdict.key === 'on_track' ? POSITIVE : INK)
+  paragraph(doc, r.verdict.reason, { size: 10, color: MUTED })
 
-  // ── Разрыв ───────────────────────────────────────────────────────────────
-  sectionHeader(doc, 'Разрыв до цели')
-  table(
-    doc,
-    [
-      { label: 'Горизонт', width: 110 },
-      { label: 'Текущая', width: 120, align: 'right' },
-      { label: 'Цель', width: 120, align: 'right' },
-      { label: 'Множитель', width: 70, align: 'right' },
-      { label: 'CAGR', width: 65, align: 'right' },
-    ],
-    input.gap.map((g) => [
-      horizonLabel(g.horizon),
-      fmtKzt(g.current_revenue),
-      fmtKzt(g.target_revenue),
-      fmtMult(g.multiplier),
-      fmtPct(g.required_cagr),
-    ]),
-  )
-
-  // ── Реалистичность ───────────────────────────────────────────────────────
-  if (input.realism) {
-    sectionHeader(doc, 'Реалистичность цели')
-    kvRow(doc, 'Уровень', realismLabel(input.realism.level))
-    kvRow(doc, 'Уверенность', `${Math.round(input.realism.score)}/100`, scoreColor(input.realism.score))
-    for (const r of input.realism.rationale ?? []) paragraph(doc, r, { size: 10, color: MUTED, gap: 0.2 })
-    if ((input.realism.risk_factors ?? []).length > 0) {
-      subHeader(doc, 'Факторы риска', CRIT)
-      for (const rf of input.realism.risk_factors ?? []) bullet(doc, rf, { color: CRIT })
-    }
+  if (r.missing.length > 0) {
+    sectionHeader(doc, 'Каких данных не хватает')
+    for (const m of r.missing) bullet(doc, m)
   }
 
-  // ── Сценарии ─────────────────────────────────────────────────────────────
-  if (input.scenarios && input.scenarios.length > 0) {
-    sectionHeader(doc, 'Сценарии роста')
+  // ── План ─────────────────────────────────────────────────────────────────
+  sectionHeader(doc, 'План')
+  if (r.plan.status !== 'published') {
+    paragraph(doc, PB_PREP_TEXT[r.plan.prep])
+    // The list right under the sentence (review L7): what the PLAN needs, else what the calculation lacks.
+    if (r.plan.prep === 'needs_data') for (const m of r.plan.prepMissing.length ? r.plan.prepMissing : r.missing) bullet(doc, m)
+    return finalize(doc)
+  }
+  const approved = r.plan.approvedAt ? fmtDate(r.plan.approvedAt) : null
+  paragraph(doc, `План v${r.plan.version ?? '—'} одобрен${approved ? ` ${approved}` : ''}${r.plan.authorName ? ` · подготовил ${r.plan.authorName}` : ''}.`)
+
+  if (r.plan.scenarios.length > 0) {
+    subHeader(doc, 'Сценарии (темп плана отмечен)')
     table(
       doc,
       [
-        { label: 'Сценарий', width: 180 },
-        { label: 'Цель 12 мес', width: 135, align: 'right' },
-        { label: 'Цель 3 года', width: 135, align: 'right' },
+        { label: 'Сценарий', width: 170 },
+        { label: 'Срок выхода на цель', width: 125, align: 'right' },
+        { label: 'Выручка к сроку, в год', width: 150, align: 'right' },
+        { label: 'Темп', width: 50, align: 'right' },
       ],
-      input.scenarios.map((s) => [s.label, fmtKzt(s.target_revenue_12m), fmtKzt(s.target_revenue_3y)]),
+      r.plan.scenarios.map((s) => [
+        s.label,
+        s.feasible ? fmtMonthsPdf(s.timeToGoalMonths) : 'не достижим',
+        fmtKzt(s.revenueAtDeadline),
+        s.selected ? 'выбран' : '',
+      ]),
+      r.plan.scenarios.map((s) => (s.feasible ? undefined : CRIT)),
     )
+    for (const s of r.plan.scenarios) if (!s.feasible && s.infeasibleReason) paragraph(doc, `${s.label}: ${s.infeasibleReason}`, { size: 9.5, color: CRIT, gap: 0.2 })
   }
 
-  // ── Декомпозиция роста ───────────────────────────────────────────────────
-  if (input.growthDecomposition) {
-    sectionHeader(doc, 'Декомпозиция роста')
-    if (input.growthDecomposition.required_multiplier != null) {
-      kvRow(doc, 'Требуемый множитель выручки', fmtMult(input.growthDecomposition.required_multiplier))
-    }
-    if (input.growthDecomposition.summary) paragraph(doc, input.growthDecomposition.summary, { size: 10 })
-    for (const s of input.growthDecomposition.steps ?? []) {
-      bullet(doc, s.note ? `${s.label}: ${s.note}` : s.label)
+  if (r.plan.strategy.length > 0) {
+    subHeader(doc, 'Стратегия')
+    for (const st of r.plan.strategy) {
+      bullet(doc, st.tasks ? `${st.title} · задач: ${st.tasks}` : st.title)
+      if (st.description) paragraph(doc, st.description, { size: 9.5, color: MUTED, gap: 0.2 })
+      for (const i of st.initiatives) bullet(doc, i, { indent: 14, color: MUTED })
     }
   }
 
-  // ── TOP-5 ограничений ────────────────────────────────────────────────────
-  if (input.top5Limits && input.top5Limits.length > 0) {
-    sectionHeader(doc, 'TOP-5 ограничений роста')
-    input.top5Limits.slice(0, 5).forEach((t, i) => {
-      bullet(doc, `${t.rank ?? i + 1}. ${t.title}`, { color: severityColor(t.severity) })
-    })
+  if (r.plan.milestones.length > 0) {
+    subHeader(doc, 'Контрольные точки')
+    for (const m of r.plan.milestones) bullet(doc, `${fmtDate(m.date)} · ${m.title}`)
   }
 
-  // ── AI-стратегия ─────────────────────────────────────────────────────────
-  const ai = input.aiStrategy
-  if (ai && (ai.strategic_bridge_summary || (ai.gap_bridge?.length ?? 0) > 0 || (ai.milestones?.length ?? 0) > 0)) {
-    sectionHeader(doc, 'Стратегический мост к цели')
-    if (ai.strategic_bridge_summary) paragraph(doc, ai.strategic_bridge_summary)
-
-    if (ai.gap_bridge && ai.gap_bridge.length > 0) {
-      subHeader(doc, 'Закрытие разрывов')
-      for (const g of ai.gap_bridge) {
-        bullet(doc, `${g.block} — ${g.gap}`)
-        paragraph(doc, `Действие (${g.priority}): ${g.action}`, { size: 9.5, color: POSITIVE, gap: 0.3 })
-      }
-    }
-
-    if (ai.milestones && ai.milestones.length > 0) {
-      subHeader(doc, 'Вехи')
-      for (const m of ai.milestones) {
-        bullet(doc, `${m.q} · ${m.title}`)
-        if (m.desc) paragraph(doc, m.desc, { size: 9.5, color: MUTED, gap: 0.3 })
-      }
-    }
-
-    if (ai.risk_mitigations && ai.risk_mitigations.length > 0) {
-      subHeader(doc, 'Снижение рисков', CRIT)
-      for (const r of ai.risk_mitigations) {
-        bullet(doc, `Риск: ${r.risk}`, { color: CRIT })
-        paragraph(doc, `Мера: ${r.mitigation}`, { size: 9.5, color: MUTED, gap: 0.3 })
-      }
+  if (r.recommendations.length > 0) {
+    subHeader(doc, 'Рекомендации, проверенные экспертом')
+    for (const rec of r.recommendations) {
+      bullet(doc, rec.title)
+      if (rec.nextAction) paragraph(doc, `Следующий шаг: ${rec.nextAction}`, { size: 9.5, color: POSITIVE, gap: 0.3 })
     }
   }
 
   return finalize(doc)
-}
-
-function horizonLabel(h: string): string {
-  if (h === '12m') return '12 месяцев'
-  if (h === '3y') return '3 года'
-  return h
-}
-
-function realismLabel(level: string): string {
-  const map: Record<string, string> = {
-    realistic: 'Реалистичная',
-    ambitious: 'Амбициозная',
-    aggressive: 'Агрессивная',
-    unrealistic: 'Нереалистичная',
-    unknown: 'Недостаточно данных',
-  }
-  return map[level] ?? level
 }
 
 // ─── Survey ─────────────────────────────────────────────────────────────────

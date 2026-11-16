@@ -4,13 +4,18 @@ import Link from 'next/link'
 import { STEPS } from '@/components/onboarding/constants/step-config'
 import type { PointAMinimum, StepFill } from '@/lib/survey/progress'
 import { blindSpots } from '@/lib/survey/blind-spots'
+import { POINT_A_KEY_QUESTIONS_LABEL } from '@/lib/survey/point-a-minimum'
+import { scorePathSummary, scoreRuleText, type ScorePath } from '@/lib/point-a/v4/score-path'
 
 interface Props {
   fill: ReadonlyArray<StepFill>
   /** «Глубина», %. */
   percent: number
-  /** «Минимум для Точки А». */
+  /** The key questions of Point A (a counter, not the rule of the score). */
   minimum?: PointAMinimum
+  /** «Минимум для Точки А» — the rule of the official score (R3-PA), from the server. */
+  scorePath?: ScorePath | null
+  scorePathLoading?: boolean
   /** Flat answers: the «Не знаю» list (карта слепых зон). */
   answers?: Readonly<Record<string, unknown>>
   submitting: boolean
@@ -21,7 +26,15 @@ interface Props {
 }
 
 /** Final confirmation before the survey is submitted: what is filled, what is not. */
-export default function SurveyReview({ fill, percent, minimum, answers, submitting, hasUnsaved, onEditStep, onBack, onSubmit }: Props) {
+/** The «Минимум для Точки А» line of the review: what is left before the score once the survey is sent. */
+export function reviewScoreLine(path: ScorePath | null | undefined): string | null {
+  if (!path) return null
+  if (path.dataEnough) return 'данных хватает — после отправки появится оценка'
+  // On the review step the survey is about to be sent: only what is still missing.
+  return scorePathSummary({ ...path, surveySent: true })
+}
+
+export default function SurveyReview({ fill, percent, minimum, scorePath, scorePathLoading = false, answers, submitting, hasUnsaved, onEditStep, onBack, onSubmit }: Props) {
   const missing = fill.filter((s) => !s.started)
   const spots = answers ? blindSpots(answers) : []
 
@@ -43,9 +56,15 @@ export default function SurveyReview({ fill, percent, minimum, answers, submitti
             ? `Глубина ${percent}% — без ответов ${missing.length} из ${fill.length} разделов`
             : `Все разделы начаты · глубина ${percent}%`}
         </p>
+        {(scorePath || scorePathLoading) && (
+          <p className="mt-1 text-xs text-on-surface" data-score-path-review>
+            Минимум для Точки А: <b>{scorePathLoading && !scorePath ? 'проверяем…' : reviewScoreLine(scorePath)}</b>
+            {scorePath && <span className="block text-on-surface-variant">Правило: {scoreRuleText(scorePath)}.</span>}
+          </p>
+        )}
         {minimum && (
           <p className="mt-1 text-xs text-on-surface">
-            Минимум для Точки А: <b>{minimum.answered} из {minimum.total}</b>
+            {POINT_A_KEY_QUESTIONS_LABEL}: <b>{minimum.answered} из {minimum.total}</b>
             {minimum.missing.length > 0 && (
               <span className="text-on-surface-variant"> · не хватает: {minimum.missing.slice(0, 4).map((m) => m.label.toLowerCase()).join(', ')}{minimum.missing.length > 4 ? '…' : ''}</span>
             )}

@@ -171,6 +171,60 @@ describe('«Факт за месяц» controller', () => {
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 
+  it('R3-PB check N2: only the CHANGED KPIs are sent; the expert\'s KPIs are read-only for the owner; a second save sends only what changed after the first', async () => {
+    const f = vi.fn(async () => respond(200, { ok: true, data: { period: '2026-09', saved: ['leads'], cleared: [], checkpoint: { status: 'done', overall: 'on_track' } } }))
+    const c = new MonthlyFactController(f as unknown as typeof fetch, {
+      url: '/x', kpis: ['revenue', 'leads', 'conversion'], period: '2026-09', initial: { revenue: 7_000_000, conversion: 12 }, byExpert: ['revenue'], lockExpert: true,
+    })
+    expect(c.getSnapshot()).toMatchObject({ locked: ['revenue'], values: { revenue: '7000000', leads: '', conversion: '12' } })
+    c.setValue('revenue', '1') // ignored: the expert's KPI
+    expect(c.getSnapshot().values.revenue).toBe('7000000')
+    expect(await c.submit()).toBe(false)
+    expect(c.getSnapshot().error).toMatch(/Изменений нет/)
+    c.setValue('leads', '300')
+    expect(await c.submit()).toBe(true)
+    expect(JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)).values).toEqual({ leads: 300 })
+    c.setValue('conversion', '13')
+    await c.submit()
+    expect(JSON.parse(String((f.mock.calls[1] as unknown as [string, RequestInit])[1].body)).values).toEqual({ conversion: 13 })
+    // the staff form edits every KPI, and still sends only what changed
+    const staff = new MonthlyFactController(f as unknown as typeof fetch, {
+      url: '/y', kpis: ['revenue', 'leads'], period: '2026-09', initial: { revenue: 5_000_000, leads: 300 }, byExpert: [], lockExpert: false,
+    })
+    staff.setValue('leads', '310')
+    await staff.submit()
+    expect(JSON.parse(String((f.mock.calls[2] as unknown as [string, RequestInit])[1].body)).values).toEqual({ leads: 310 })
+  })
+
+  it('R3-PB check N4: the form switches to an older month with its own values and locks; the body carries that month', async () => {
+    const f = vi.fn(async () => respond(200, { ok: true, data: { period: '2026-07', saved: ['revenue'], cleared: [], checkpoint: { status: 'done', overall: 'risk' } } }))
+    const c = new MonthlyFactController(f as unknown as typeof fetch, {
+      url: '/x', kpis: ['revenue', 'leads'], period: '2026-09', initial: {}, lockExpert: true,
+      months: [
+        { period: '2026-10', values: {}, byExpert: [] },
+        { period: '2026-09', values: {}, byExpert: [] },
+        { period: '2026-08', values: { revenue: 5_000_000, leads: 250 }, byExpert: ['leads'] },
+        { period: '2026-07', values: { revenue: 4_000_000 }, byExpert: [] },
+      ],
+    })
+    expect(c.periods).toEqual(['2026-10', '2026-09', '2026-08', '2026-07'])
+    c.selectPeriod('2026-08')
+    expect(c.getSnapshot()).toMatchObject({ period: '2026-08', values: { revenue: '5000000', leads: '250' }, locked: ['leads'] })
+    c.selectPeriod('2026-07')
+    c.setValue('revenue', '4 500 000')
+    expect(await c.submit()).toBe(true)
+    expect(JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toEqual({ period: '2026-07', values: { revenue: 4_500_000 }, note: null })
+    c.selectPeriod('nonsense') // unknown month: nothing changes
+    expect(c.getSnapshot().period).toBe('2026-07')
+    // the view offers the months and draws the expert's KPI read-only
+    c.selectPeriod('2026-08')
+    const out = html(createElement(MonthlyFactFormView, { snap: c.getSnapshot(), kpis: ['revenue', 'leads'], audience: 'client', done: true, periods: c.periods }))
+    expect(out).toContain('id="pb-fact-period"')
+    expect(out).toContain('Можно исправить любой из последних 24 месяцев')
+    expect(out).toMatch(/name="leads"[^>]*readOnly|readOnly[^>]*name="leads"|name="leads"[^>]*disabled/)
+    expect(out).toContain('Внёс эксперт — изменить может он')
+  })
+
   it('server errors: the field of a 400, the text of a 409, PRO for a 402, the network', async () => {
     const c400 = make(vi.fn(async () => respond(400, { ok: false, error: 'Комментарий — не длиннее 500 символов', field: 'note' })))
     c400.setValue('revenue', '1')
@@ -203,7 +257,7 @@ describe('render of the tab', () => {
     const out = html(createElement(PlanFactTab, { snap: snapWith({ planFact: fixturePlanFact('level2') }) }))
     for (const text of ['Отстаём', 'сентябрь 2026', 'Обновлено вчера', 'Прогресс по целям', PLANFACT_NO_AGGREGATE, 'Пройдено пути', 'Прошло времени',
       'План и факт по месяцам', 'Факт за месяц · сентябрь 2026', 'Деньги на счетах', 'Версии плана', 'Версия 2', 'Действует', 'Заменена',
-      'Содержание прежних версий хранится у эксперта', 'role="img"', 'Источник значений: «ежемесячная сверка»']) {
+      'Содержание прежних версий хранится у эксперта', 'role="img"', 'Источник: «ежемесячная сверка»']) {
       expect(out, text).toContain(text)
     }
     expect(out).not.toMatch(/NaN|undefined|Infinity/)

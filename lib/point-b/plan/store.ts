@@ -279,7 +279,10 @@ export async function approveVersionDetailed(
   if (!current) throw planError('not_found')
   if (!canTransition(current.status, 'approve')) throw planError('bad_state')
   assertClean({ exceptionReason: opts.exceptionReason })
-  const check = checkApprovalConditions({ goals: current.goals, changeReason: current.change_reason }, { exceptionReason: opts.exceptionReason })
+  const check = checkApprovalConditions(
+    { goals: current.goals, changeReason: current.change_reason, scenarios: current.scenarios, selectedScenario: current.selected_scenario },
+    { exceptionReason: opts.exceptionReason },
+  )
   if (!check.ok) throw planError('conditions', check.reasons)
 
   const version = await transition(sb, versionId, 'in_review', {

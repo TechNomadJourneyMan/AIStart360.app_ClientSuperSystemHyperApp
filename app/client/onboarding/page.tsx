@@ -13,6 +13,8 @@ import { overallFill, pointAMinimum, stepFillFromAnswers, stepTimeHint } from '@
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import StepHeader from '@/components/onboarding/StepHeader'
 import SurveyReview from '@/components/onboarding/SurveyReview'
+import { recalcAfterSubmit } from '@/lib/survey/recalc-after-submit'
+import { useScorePath } from '@/hooks/useScorePath'
 import { SurveyModeGate } from '@/components/onboarding/modes/SurveyModeGate'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
 import { enabledSurveyModes, type SurveyMode } from '@/lib/survey/modes'
@@ -102,6 +104,8 @@ function OnboardingPageInner() {
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // R3-PA (B5): the recalculation after sending failed — told here, not swallowed.
+  const [recalcError, setRecalcError] = useState<{ message: string; target: string } | null>(null)
   // Who filled each answer (line under the field) and the open answer editor.
   const [attribution, setAttribution] = useState<Record<string, AnswerAttribution>>({})
   const [editor, setEditor] = useState<AnswerEditorTarget | null>(null)
@@ -193,7 +197,8 @@ function OnboardingPageInner() {
       if (stale.length) setStaleKeys(stale)
       stepDataRef.current = answers
       setStepData(answers)
-      const fromUrl = parseStepParam(searchParams.get('step'), TOTAL_STEPS)
+      // `?step=review` (R3-PA): «Отправить анкету — получить оценку» from the Point A page.
+      const fromUrl = parseStepParam(searchParams.get('step'), TOTAL_STEPS, { review: true })
       setCurrentStep(fromUrl ?? draft?.current_step ?? 1)
       if (dirtyKeys.length) setSaveState('dirty')
       setLoaded(true)
@@ -434,13 +439,14 @@ function OnboardingPageInner() {
   }
 
   const recalcAndLeave = async (target: string) => {
-    try {
-      await fetch('/api/v1/diagnostics/recalculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userIdRef.current }),
-      })
-    } catch {}
+    setRecalcError(null)
+    const r = await recalcAfterSubmit(fetch, userIdRef.current)
+    if (!r.ok) {
+      // The answers are saved (and the survey sent): stay and say what did not work.
+      setRecalcError({ message: r.message, target })
+      setSubmitting(false)
+      return
+    }
     router.push(target)
   }
 
@@ -488,6 +494,8 @@ function OnboardingPageInner() {
 
   const goBack = () => { setCurrentStep(s => Math.max(1, s - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const isReview = currentStep === REVIEW_STEP
+  // «Минимум для Точки А» = the rule of the score, from the server (saved answers).
+  const scorePath = useScorePath(loaded && isReview)
   // Progress = how much is actually filled, not which tab is open.
   const fill = stepFillFromAnswers(stepData)
   const overall = overallFill(fill)
@@ -530,6 +538,21 @@ function OnboardingPageInner() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
+        {recalcError && (
+          <div role="alert" className="mb-5 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3" data-recalc-error>
+            <p className="text-sm text-on-surface">{recalcError.message}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => { setSubmitting(true); void recalcAndLeave(recalcError.target) }} disabled={submitting}
+                className="min-h-[36px] rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-on-primary disabled:opacity-60">
+                Повторить пересчёт
+              </button>
+              <button type="button" onClick={() => router.push(recalcError.target)}
+                className="min-h-[36px] rounded-xl border border-white/10 px-3.5 py-2 text-xs text-on-surface-variant hover:text-on-surface">
+                Продолжить без пересчёта
+              </button>
+            </div>
+          </div>
+        )}
         {/* File upload — separate window, available from the very start */}
         <Link
           data-tour="onb-docs"
@@ -610,6 +633,8 @@ function OnboardingPageInner() {
             fill={fill}
             percent={progress}
             minimum={pointAMinimum(stepData)}
+            scorePath={scorePath.path}
+            scorePathLoading={scorePath.loading}
             answers={stepData}
             submitting={submitting}
             hasUnsaved={saveState === 'dirty' || saveState === 'error'}

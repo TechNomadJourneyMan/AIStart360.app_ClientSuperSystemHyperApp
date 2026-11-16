@@ -15,12 +15,17 @@
  */
 import type { MissingInput, ModelResult, Range, ScenarioFinance, ScenarioResult, VerdictKey } from '@/lib/point-b/model/types'
 import { FINMODEL_DEFS, FINMODEL_KEYS, type FinmodelKey } from '@/lib/point-b/finmodel/keys'
+import { parsePlanPrep, type PlanPrepState } from './planPrep'
 
 export const DASH = '—'
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 
-export type PointBTabKey = 'overview' | 'scenarios' | 'strategy' | 'roadmap' | 'recs' | 'history' | 'whatif' | 'finmodel' | 'details'
+/**
+ * R3 (M3, решение PO): «Подробности» (the old V2 calculation) is no longer a tab of the client page — the page shows ONE
+ * calculation, the model. The old view's code stays (components/point-b/PointBDetails.tsx) until the PO removes V2.
+ */
+export type PointBTabKey = 'overview' | 'scenarios' | 'strategy' | 'roadmap' | 'recs' | 'history' | 'whatif' | 'finmodel'
 
 export const POINT_B_TABS: ReadonlyArray<{ key: PointBTabKey; label: string }> = [
   { key: 'overview', label: 'Обзор' },
@@ -31,7 +36,6 @@ export const POINT_B_TABS: ReadonlyArray<{ key: PointBTabKey; label: string }> =
   { key: 'history', label: 'План-факт и история' },
   { key: 'whatif', label: 'Что если' },
   { key: 'finmodel', label: 'Финмодель' },
-  { key: 'details', label: 'Подробности' },
 ]
 
 export function isTabKey(v: unknown): v is PointBTabKey {
@@ -61,10 +65,12 @@ export interface PointBPlanState {
   scenarios: ScenarioResult[]
   approvedAt: string | null
   authorName: string | null
+  /** R3: where the plan honestly stands (lib/point-b/plan/waiting.ts); null = the server did not say. */
+  prep: PlanPrepState | null
 }
 
 export const EMPTY_PLAN_STATE: PointBPlanState = {
-  status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null,
+  status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null, prep: null,
 }
 
 /** `PointBState.finmodel` (plan Ф3 Task 4): completeness only, never the values. */
@@ -207,6 +213,7 @@ export function parsePointBState(body: unknown): PointBStateData | null {
     scenarios: parseScenarios(p.scenarios),
     approvedAt: str(p.approvedAt),
     authorName: str(p.authorName),
+    prep: parsePlanPrep(p.prep),
   }
   return { result, plan, finmodel: parseFinmodelStatus(body.data.finmodel) }
 }
@@ -534,6 +541,21 @@ export function corridorGeometry(d: CorridorChartData, width: number, height: nu
     deadlineX: finite(d.goalMonths) && d.goalMonths > 0 ? x(d.goalMonths) : null,
     yTicks: scale.ticks.map((v) => ({ y: y(v), label: fmtAxis(v) })),
     xTicks,
+  }
+}
+
+// ── What the overview offers to do (R3) ─────────────────────────────────
+
+/**
+ * B2 of the audit: «Что делать: смотреть сценарии» led into an empty tab. It is offered only when the APPROVED plan
+ * has scenarios. M2: without the 12 months of revenue the verdict is «нельзя сказать» — the overview then offers the
+ * table «Выручка по месяцам» of the «Финмодель» tab.
+ */
+export function overviewActions(result: ModelResult, plan: Pick<PointBPlanState, 'scenarios'>): { scenarios: boolean; revenueMonths: boolean } {
+  const lagging = result.verdict.key === 'behind' || result.verdict.key === 'at_risk'
+  return {
+    scenarios: lagging && plan.scenarios.length > 0,
+    revenueMonths: result.level >= 1 && result.verdict.key === 'no_data' && result.forecast.basis === 'insufficient',
   }
 }
 

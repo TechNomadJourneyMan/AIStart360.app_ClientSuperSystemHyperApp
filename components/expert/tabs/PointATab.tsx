@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
+import { AiReviewPanel } from '@/components/expert-review/AiReviewPanel'
 
 // Coerce any DB-returned value (number | string | null) to a safe display string
 // A diagnostics block column is { score, … }; null = «нет данных» (official row).
@@ -73,7 +74,21 @@ const STATUS_STYLE: Record<string, string> = {
   excellent: 'bg-primary/15 text-primary border-primary/30',
 }
 
+/**
+ * R3-SLA: on top — «Проверка разбора ИИ» (решение PO «гибрид»): the expert of an
+ * assigned client corrects and confirms the AI analysis the client already sees as
+ * a draft; below — the analysis as the client page shows it.
+ */
 export function PointATab({ clientId }: Props) {
+  return (
+    <div className="space-y-6">
+      <AiReviewPanel apiUrl={`/api/expert/clients/${clientId}/point-a-ai-review`} canEdit />
+      <ClientPointA clientId={clientId} />
+    </div>
+  )
+}
+
+function ClientPointA({ clientId }: Props) {
   const [diag, setDiag] = useState<DiagRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

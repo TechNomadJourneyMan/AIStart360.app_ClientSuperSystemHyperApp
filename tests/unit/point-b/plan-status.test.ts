@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { canTransition, checkApprovalConditions, EXCEPTION_REASON_MIN, isEditable } from '@/lib/point-b/plan/status'
+import {
+  calculatedScenarioKeys, canTransition, checkApprovalConditions, EXCEPTION_REASON_MIN, isEditable, REASON_NO_PACE, REASON_NO_SCENARIOS,
+} from '@/lib/point-b/plan/status'
 import type { GoalReviewStatus, PlanGoalsSnapshot } from '@/lib/point-b/plan/types'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
@@ -41,54 +43,57 @@ describe('plan version state machine', () => {
   })
 })
 
+/** R3: the scenarios of the model are calculated and the pace is chosen (every case below except the R3 block). */
+const CALC = { scenarios: [{ key: 'cautious' }, { key: 'moderate' }, { key: 'aggressive' }], selectedScenario: 'moderate' }
+
 describe('checkApprovalConditions', () => {
   const reason = 'Обновили цель по выручке'
 
   it('approval fails without a verified primary goal and lists the reason', () => {
-    const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason })
+    const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason, ...CALC })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reasons).toContain('Главная цель не проверена экспертом')
   })
 
   it('owner_draft, corrected and disputed primary goals block approval', () => {
     for (const s of ['owner_draft', 'corrected', 'disputed'] as const) {
-      expect(checkApprovalConditions({ goals: goals(s), changeReason: reason }).ok).toBe(false)
+      expect(checkApprovalConditions({ goals: goals(s), changeReason: reason, ...CALC }).ok).toBe(false)
     }
   })
 
   it('agreed and verified pass', () => {
     for (const s of ['agreed', 'verified'] as const) {
-      expect(checkApprovalConditions({ goals: goals(s), changeReason: reason })).toEqual({ ok: true, exception: false })
+      expect(checkApprovalConditions({ goals: goals(s), changeReason: reason, ...CALC })).toEqual({ ok: true, exception: false })
     }
   })
 
   it('a primary goal that is missing from the items is treated as not verified', () => {
     const g: PlanGoalsSnapshot = { primary: { metricKey: REVENUE, periodLabel: '12m' }, items: [] }
-    expect(checkApprovalConditions({ goals: g, changeReason: reason }).ok).toBe(false)
+    expect(checkApprovalConditions({ goals: g, changeReason: reason, ...CALC }).ok).toBe(false)
   })
 
   it('exception reason shorter than 10 chars is rejected', () => {
     expect(EXCEPTION_REASON_MIN).toBe(10)
-    const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason }, { exceptionReason: '123456789' })
+    const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason, ...CALC }, { exceptionReason: '123456789' })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reasons.some((x) => x.includes('10'))).toBe(true)
     // whitespace does not count
-    expect(checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason }, { exceptionReason: '   12345   ' }).ok).toBe(false)
+    expect(checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason, ...CALC }, { exceptionReason: '   12345   ' }).ok).toBe(false)
   })
 
   it('a sufficient exception reason passes the goal condition and is flagged as an exception', () => {
-    expect(checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason }, { exceptionReason: 'Владелец недоступен, срок горит' }))
+    expect(checkApprovalConditions({ goals: goals('owner_draft'), changeReason: reason, ...CALC }, { exceptionReason: 'Владелец недоступен, срок горит' }))
       .toEqual({ ok: true, exception: true })
   })
 
   it('an exception is not flagged when the goal condition holds anyway', () => {
-    expect(checkApprovalConditions({ goals: goals('verified'), changeReason: reason }, { exceptionReason: 'Не нужна, но есть' }))
+    expect(checkApprovalConditions({ goals: goals('verified'), changeReason: reason, ...CALC }, { exceptionReason: 'Не нужна, но есть' }))
       .toEqual({ ok: true, exception: false })
   })
 
   it('exception passes goal condition but not the missing change reason', () => {
     for (const changeReason of [null, '', '   ']) {
-      const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason }, { exceptionReason: 'Достаточно длинная причина' })
+      const r = checkApprovalConditions({ goals: goals('owner_draft'), changeReason, ...CALC }, { exceptionReason: 'Достаточно длинная причина' })
       expect(r.ok).toBe(false)
       if (!r.ok) {
         expect(r.reasons).toContain('Не указана причина изменений')
@@ -98,15 +103,37 @@ describe('checkApprovalConditions', () => {
   })
 
   it('no primary goal at all blocks approval', () => {
-    const r = checkApprovalConditions({ goals: goals(null, false), changeReason: reason })
+    const r = checkApprovalConditions({ goals: goals(null, false), changeReason: reason, ...CALC })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reasons).toContain('Не задана главная цель')
     // and a long exception reason bypasses it, as any goal condition
-    expect(checkApprovalConditions({ goals: goals(null, false), changeReason: reason }, { exceptionReason: 'Согласовано с владельцем устно' }).ok).toBe(true)
+    expect(checkApprovalConditions({ goals: goals(null, false), changeReason: reason, ...CALC }, { exceptionReason: 'Согласовано с владельцем устно' }).ok).toBe(true)
   })
 
   it('lists every failed condition at once', () => {
-    const r = checkApprovalConditions({ goals: goals('corrected'), changeReason: null })
+    const r = checkApprovalConditions({ goals: goals('corrected'), changeReason: null, ...CALC })
     expect(r).toEqual({ ok: false, reasons: ['Главная цель не проверена экспертом', 'Не указана причина изменений'] })
   })
 })
+
+describe('R3 (решение PO): a plan is published only with calculated scenarios and a chosen pace', () => {
+  const ok = { goals: goals('verified'), changeReason: 'Первая версия плана' }
+
+  it('a version without scenarios (e.g. only the expert notes) cannot be approved — not even by an exception', () => {
+    for (const scenarios of [[], null, undefined, {}, [{ key: 'nonsense' }]]) {
+      const r = checkApprovalConditions({ ...ok, scenarios, selectedScenario: null }, { exceptionReason: 'Очень нужно опубликовать сегодня' })
+      expect(r).toEqual({ ok: false, reasons: [REASON_NO_SCENARIOS] })
+    }
+  })
+
+  it('calculated scenarios without a chosen pace (or a pace that was not calculated) cannot be approved', () => {
+    expect(checkApprovalConditions({ ...ok, scenarios: CALC.scenarios, selectedScenario: null })).toEqual({ ok: false, reasons: [REASON_NO_PACE] })
+    expect(checkApprovalConditions({ ...ok, scenarios: [{ key: 'cautious' }], selectedScenario: 'moderate' })).toEqual({ ok: false, reasons: [REASON_NO_PACE] })
+  })
+
+  it('scenarios + a calculated pace + the other conditions → approved', () => {
+    expect(checkApprovalConditions({ ...ok, ...CALC })).toEqual({ ok: true, exception: false })
+    expect(calculatedScenarioKeys([{ key: 'moderate' }, null, { key: 1 }, { key: 'aggressive' }])).toEqual(['moderate', 'aggressive'])
+  })
+})
+

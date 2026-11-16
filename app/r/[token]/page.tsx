@@ -138,11 +138,6 @@ function fmtKzt(n: number | null | undefined): string {
   return `${Math.round(n).toLocaleString('ru-RU')} ₸`
 }
 
-function fmtPct(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  return `${Math.round(n)}%`
-}
-
 function fmtMult(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return `${Math.round(n * 10) / 10}×`
@@ -427,6 +422,10 @@ async function PointABody({ subject }: { subject: ReportSubject }) {
         </div>
       </Section>
 
+      {data.aiNote && (
+        <p className="text-xs text-amber-200/90" data-ai-note>{data.aiNote}</p>
+      )}
+
       {data.executiveSummary && (
         <Section title="Краткое резюме">
           <p className="text-sm text-on-surface leading-relaxed">
@@ -632,256 +631,121 @@ async function PointABody({ subject }: { subject: ReportSubject }) {
 }
 
 async function PointBBody({ subject }: { subject: ReportSubject }) {
+  // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan (lib/point-b/report.ts).
   const data = await loadPointBView(subject).catch(() => null)
   if (!data) return <NoData />
-  const gap12 = data.gap.find((g) => g.horizon === '12m')
-  const ai = data.ai_strategy as
-    | {
-        strategic_bridge_summary?: string
-        milestones?: Array<{ q?: string; title?: string; desc?: string }>
-      }
-    | null
+  const plan = data.plan
   return (
     <>
-      <Section title="Цели владельца">
+      <Section title="Сейчас → цель">
+        <p className="text-xs text-on-surface-variant mb-3">Автоматический расчёт по данным компании, не проверен экспертом.</p>
         <div className="space-y-2">
-          <div className="flex items-center justify-between py-1.5 border-b border-white/[0.04]">
-            <span className="text-sm text-on-surface-variant">
-              Текущая выручка / год
-            </span>
-            <span className="font-mono text-sm text-on-surface">
-              {fmtKzt(data.goals.current_revenue_year)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between py-1.5 border-b border-white/[0.04]">
-            <span className="text-sm text-on-surface-variant">
-              Цель на 12 месяцев / год
-            </span>
-            <span className="font-mono text-sm text-primary">
-              {fmtKzt(data.goals.goal_12m_revenue_year)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-sm text-on-surface-variant">
-              Цель на 3 года / год
-            </span>
-            <span className="font-mono text-sm text-primary">
-              {fmtKzt(data.goals.goal_3y_revenue_year)}
-            </span>
-          </div>
+          {[
+            ['Выручка сейчас / год', fmtKzt(data.gap.baseAnnual)],
+            ['Цель / год', fmtKzt(data.gap.targetAnnual)],
+            ['Срок цели', data.gap.months !== null ? `${Math.round(data.gap.months)} мес.` : '—'],
+            ['Нужный рост', fmtMult(data.gap.multiplier)],
+            ['При текущем ходе к сроку / год', data.forecast.basis === 'history' ? fmtKzt(data.forecast.atCurrentPace) : 'нет прогноза'],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-b-0">
+              <span className="text-sm text-on-surface-variant">{label}</span>
+              <span className="font-mono text-sm text-on-surface">{value}</span>
+            </div>
+          ))}
         </div>
-        {data.goals.main_pain && (
-          <p className="text-xs text-on-surface-variant mt-4">
-            <span className="text-on-surface">Главная боль:</span>{' '}
-            {data.goals.main_pain}
-          </p>
-        )}
+        <p className="text-sm font-semibold text-on-surface mt-4">{data.verdict.headline}</p>
+        <p className="text-xs text-on-surface-variant mt-1">{data.verdict.reason}</p>
       </Section>
 
-      {gap12 && (
-        <Section title="Разрыв до цели">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-1">
-                Множитель 12 мес
-              </p>
-              <p className="font-mono text-2xl font-extrabold text-primary">
-                {fmtMult(gap12.multiplier)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-1">
-                Требуемый CAGR
-              </p>
-              <p className="font-mono text-2xl font-extrabold text-on-surface">
-                {fmtPct(gap12.required_cagr)}
-              </p>
-            </div>
-          </div>
+      {data.missing.length > 0 && (
+        <Section title="Каких данных не хватает">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-on-surface-variant">
+            {data.missing.map((m) => <li key={m}>{m}</li>)}
+          </ul>
         </Section>
       )}
 
-      {data.realism && data.realism.level !== 'unknown' && (
-        <Section title="Реалистичность цели">
-          <div className="flex items-center gap-4 mb-3">
-            <span
-              className="font-mono text-3xl font-extrabold"
-              style={{ color: scoreColor(data.realism.score) }}
-            >
-              {Math.round(data.realism.score)}
-              <span className="text-sm text-on-surface-variant font-normal">
-                /100
-              </span>
-            </span>
-            <span className="text-sm text-on-surface-variant">
-              уверенность в достижимости
-            </span>
-          </div>
-          {data.realism.rationale.length > 0 && (
-            <ul className="space-y-1.5">
-              {data.realism.rationale.map((r, i) => (
-                <li
-                  key={i}
-                  className="text-sm text-on-surface-variant flex items-start gap-2"
-                >
-                  <span className="material-symbols-outlined text-sm text-primary mt-0.5 flex-shrink-0">
-                    chevron_right
-                  </span>
-                  {r}
-                </li>
-              ))}
+      {plan.status !== 'published' ? (
+        <Section title="План">
+          <p className="text-sm text-on-surface-variant">
+            {plan.prep === 'in_work' ? 'План готовит команда AIStart360.'
+              : plan.prep === 'in_review' ? 'План собран и проходит проверку перед публикацией.'
+              : plan.prep === 'waiting' ? 'Данных для плана достаточно — план подготовит команда AIStart360.'
+              : 'Для плана нужны данные:'}
+          </p>
+          {plan.prep === 'needs_data' && plan.prepMissing.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-on-surface-variant">
+              {plan.prepMissing.map((m) => <li key={m}>{m}</li>)}
             </ul>
           )}
         </Section>
-      )}
-
-      {data.scenarios.length > 0 && (
-        <Section title="Сценарии роста">
-          <div className="space-y-3">
-            {data.scenarios.map((s) => (
-              <div
-                key={s.key}
-                className="bg-surface-container-low rounded-xl border border-white/[0.06] p-4 flex items-center justify-between gap-4"
-              >
-                <span className="text-sm font-medium text-on-surface">
-                  {s.label}
-                </span>
-                <div className="text-right">
-                  <p className="font-mono text-sm text-primary">
-                    {fmtKzt(s.target_revenue_12m)}
-                  </p>
-                  <p className="text-xs text-on-surface-variant">за 12 мес</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {data.levers.length > 0 && (
-        <Section title="Рычаги роста">
-          <div className="space-y-3">
-            {data.levers
-              .slice()
-              .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
-              .map((l) => (
-                <div
-                  key={l.key}
-                  className="bg-surface-container-low rounded-xl border border-white/[0.06] p-4"
-                >
-                  <div className="flex items-center justify-between gap-3 mb-1.5">
+      ) : (
+        <>
+          <Section title={`План v${plan.version ?? '—'}`}>
+            <p className="text-xs text-on-surface-variant mb-3">
+              Одобрен{plan.approvedAt ? ` ${new Date(plan.approvedAt).toLocaleDateString('ru-RU')}` : ''}{plan.authorName ? ` · подготовил ${plan.authorName}` : ''}
+            </p>
+            {plan.scenarios.length > 0 && (
+              <div className="space-y-3">
+                {plan.scenarios.map((s) => (
+                  <div key={s.key} className="bg-surface-container-low rounded-xl border border-white/[0.06] p-4 flex items-center justify-between gap-4">
                     <span className="text-sm font-medium text-on-surface">
-                      {l.label}
+                      {s.label}{s.selected ? ' · темп плана' : ''}
                     </span>
-                    <span
-                      className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-lg flex-shrink-0 ${
-                        l.difficulty === 'high'
-                          ? 'text-error bg-error/10'
-                          : l.difficulty === 'medium'
-                            ? 'text-amber-400 bg-amber-400/10'
-                            : 'text-primary bg-primary/10'
-                      }`}
-                    >
-                      {l.difficulty === 'high'
-                        ? 'Сложно'
-                        : l.difficulty === 'medium'
-                          ? 'Средне'
-                          : 'Просто'}
-                    </span>
+                    <div className="text-right">
+                      <p className="font-mono text-sm text-primary">{s.feasible ? fmtKzt(s.revenueAtDeadline) : 'не достижим'}</p>
+                      <p className="text-xs text-on-surface-variant">{s.feasible && s.timeToGoalMonths !== null ? `к цели за ${Math.round(s.timeToGoalMonths)} мес.` : (s.infeasibleReason ?? '')}</p>
+                    </div>
                   </div>
-                  {l.expected_effect && (
-                    <p className="text-xs text-on-surface-variant">
-                      {l.expected_effect}
-                    </p>
-                  )}
-                </div>
-              ))}
-          </div>
-        </Section>
-      )}
+                ))}
+              </div>
+            )}
+          </Section>
 
-      {data.growth_decomposition &&
-        (data.growth_decomposition.summary ||
-          data.growth_decomposition.steps.length > 0) && (
-          <Section title="Декомпозиция роста">
-            {data.growth_decomposition.required_multiplier != null && (
-              <p className="text-sm text-on-surface-variant mb-3">
-                Требуемый множитель выручки:{' '}
-                <span className="font-mono font-bold text-primary">
-                  {fmtMult(data.growth_decomposition.required_multiplier)}
-                </span>
-              </p>
-            )}
-            {data.growth_decomposition.summary && (
-              <p className="text-sm text-on-surface leading-relaxed mb-3">
-                {data.growth_decomposition.summary}
-              </p>
-            )}
-            {data.growth_decomposition.steps.length > 0 && (
-              <ul className="space-y-1.5">
-                {data.growth_decomposition.steps.map((s) => (
-                  <li
-                    key={s.key}
-                    className="flex items-start gap-2 text-sm text-on-surface-variant"
-                  >
-                    <span className="material-symbols-outlined text-sm text-primary mt-0.5 flex-shrink-0">
-                      chevron_right
-                    </span>
-                    <span>
-                      <span className="text-on-surface">{s.label}</span>
-                      {s.note ? ` — ${s.note}` : ''}
-                    </span>
+          {plan.strategy.length > 0 && (
+            <Section title="Стратегия">
+              <ul className="space-y-3">
+                {plan.strategy.map((st, i) => (
+                  <li key={i}>
+                    <p className="text-sm font-medium text-on-surface">{st.title}</p>
+                    {st.description && <p className="text-xs text-on-surface-variant mt-0.5">{st.description}</p>}
+                    {st.initiatives.length > 0 && (
+                      <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-xs text-on-surface-variant">
+                        {st.initiatives.map((t, j) => <li key={j}>{t}</li>)}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>
-            )}
-          </Section>
-        )}
-
-      {data.top5_limits.length > 0 && (
-        <Section title="TOP-5 ограничений роста">
-          <ol className="space-y-2.5">
-            {data.top5_limits.slice(0, 5).map((t, i) => (
-              <li key={i} className="flex items-start gap-3">
-                <span className="font-mono text-xs text-on-surface-variant mt-0.5 w-5 flex-shrink-0">
-                  {t.rank}.
-                </span>
-                <span className={`text-sm ${severityClass(t.severity)}`}>
-                  {t.title}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      )}
-
-      {ai && (ai.strategic_bridge_summary || (ai.milestones?.length ?? 0) > 0) && (
-        <Section title="Стратегический мост к цели">
-          {ai.strategic_bridge_summary && (
-            <p className="text-sm text-on-surface leading-relaxed mb-4">
-              {ai.strategic_bridge_summary}
-            </p>
+            </Section>
           )}
-          {ai.milestones && ai.milestones.length > 0 && (
-            <div className="space-y-2.5">
-              {ai.milestones.map((m, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="text-xs font-mono text-primary/70 uppercase tracking-wider mt-0.5 flex-shrink-0">
-                    {m.q}
-                  </span>
-                  <div>
-                    <p className="text-sm text-on-surface">{m.title}</p>
-                    {m.desc && (
-                      <p className="text-xs text-on-surface-variant mt-0.5">
-                        {m.desc}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+
+          {plan.milestones.length > 0 && (
+            <Section title="Контрольные точки">
+              <ul className="space-y-1.5">
+                {plan.milestones.map((m, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm">
+                    <span className="font-mono text-xs text-primary/70 mt-0.5 flex-shrink-0">{new Date(m.date).toLocaleDateString('ru-RU')}</span>
+                    <span className="text-on-surface">{m.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
           )}
-        </Section>
+
+          {data.recommendations.length > 0 && (
+            <Section title="Рекомендации, проверенные экспертом">
+              <ul className="space-y-2">
+                {data.recommendations.map((r, i) => (
+                  <li key={i} className="text-sm text-on-surface">
+                    {r.title}
+                    {r.nextAction && <p className="text-xs text-on-surface-variant mt-0.5">Следующий шаг: {r.nextAction}</p>}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </>
       )}
     </>
   )

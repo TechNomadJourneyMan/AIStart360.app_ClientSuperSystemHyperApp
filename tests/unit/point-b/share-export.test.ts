@@ -1,7 +1,7 @@
 /**
- * The public share link and the PDF export compute Point B from the same loader
- * as the page: revenue from the metrics registry (not the dead `metrics.revenue`
- * key), the stale 2024 base flagged, a client without Point A handled.
+ * The public share link and the PDF export show Point B from the SAME state as the page (R3, M3:
+ * lib/point-b/report.ts — the model + the approved plan only): revenue from the metrics registry,
+ * the staff-only AI strategy and drafts never shown, a client with nothing to show handled.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -40,49 +40,48 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network in this test') }))
 })
 
-describe('share link', () => {
-  it('share report data computes Point B from the loader (revenue from registry metrics, not metrics.revenue)', async () => {
+describe('share link (R3, M3: the same calculation as the page)', () => {
+  it('the share data is the client page state as a report: the model on the registry revenue, not V2', async () => {
     const pb = await loadPointBView(subject())
     expect(pb).not.toBeNull()
-    expect(pb!.goals.current_revenue_year).toBe(60_000_000)
-    expect(pb!.gap.find((g) => g.horizon === '12m')!.data_complete).toBe(true)
-    expect(pb!.data_quality.base).toMatchObject({ period: '2024', stale: true })
+    expect(pb!.automatic).toBe(true)
+    expect(pb!.gap.baseAnnual).toBe(60_000_000)
+    expect(pb!.gap.targetAnnual).toBe(120_000_000)
+    // the stale 2024 base is said, never hidden
+    expect(pb!.verdict.reason.length).toBeGreaterThan(0)
+    // no approved plan → no scenarios, the honest state of the plan instead
+    expect(pb!.plan.status).not.toBe('published')
+    expect(pb!.plan.scenarios).toEqual([])
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('overlays a completed AI strategy', async () => {
-    s.db = pointBSeed({ point_b_analysis: [{ diagnostic_id: 'diag-1', is_current: true, ai_status: 'completed', ai_strategy: { strategic_bridge_summary: 'мост' } }] })
+  it('a stored AI strategy (a staff draft) and a draft plan never reach the share link', async () => {
+    s.db = pointBSeed({ point_b_analysis: [{ diagnostic_id: 'diag-1', is_current: true, ai_status: 'completed', ai_strategy: { strategic_bridge_summary: 'МОСТ-ЧЕРНОВИК' } }] })
     const pb = await loadPointBView(subject())
-    expect(pb!.ai_status).toBe('completed')
-    expect(pb!.ai_strategy).toEqual({ strategic_bridge_summary: 'мост' })
+    expect(JSON.stringify(pb)).not.toContain('МОСТ-ЧЕРНОВИК')
   })
 
-  it('a client without a diagnostic yields pointB null and no throw', async () => {
-    s.db = pointBSeed({ diagnostics: [] })
+  it('a client with neither a goal nor a revenue base yields null (nothing to share), not a throw', async () => {
+    s.db = pointBSeed({ diagnostics: [], metrics: [], point_a_snapshots: [], companies: [{ id: COMPANY, user_id: CLIENT, name: 'Ромашка', target_revenue_12m_kzt: null, target_revenue_3y_kzt: null }] })
     expect(await loadPointBView(subject())).toBeNull()
   })
 })
 
-describe('PDF export', () => {
-  it('export report passes a stale base note into the Point B section data', async () => {
+describe('PDF export (R3, M3: the same calculation as the page)', () => {
+  it('the Point B PDF gets the report of the page state (model numbers), not V2', async () => {
     const res = await GET(exportReq())
     expect(res.status).toBe(200)
     expect(s.pdf).toHaveLength(1)
-    expect(s.pdf[0].baseNote).toBe('Период выручки: 2024 · данные устарели')
-    expect((s.pdf[0].goals as { current_revenue_year: number }).current_revenue_year).toBe(60_000_000)
+    const report = s.pdf[0].report as { gap: { baseAnnual: number; targetAnnual: number }; automatic: boolean; plan: { scenarios: unknown[] } }
+    expect(report.automatic).toBe(true)
+    expect(report.gap).toMatchObject({ baseAnnual: 60_000_000, targetAnnual: 120_000_000 })
+    expect(report.plan.scenarios).toEqual([])
+    expect(s.pdf[0].goals).toBeUndefined()
+    expect((s.pdf[0].meta as { companyName: string }).companyName).toBe('Ромашка')
   })
 
-  it('a fresh base carries no note', async () => {
-    s.db = pointBSeed({
-      metrics: [{ company_id: COMPANY, metric_key: 'biz.finansy.vyruchka_god', metric_value: 80_000_000, source: 'survey', period_year: 2026, computed_at: '2026-10-01T00:00:00Z' }],
-      point_a_snapshots: [],
-    })
-    await GET(exportReq())
-    expect(s.pdf[0].baseNote).toBeNull()
-  })
-
-  it('a client without a diagnostic gets no_data (404), not a throw', async () => {
-    s.db = pointBSeed({ diagnostics: [] })
+  it('a client with nothing to show (no goal, no base, no plan) gets no_data (404), not a throw', async () => {
+    s.db = pointBSeed({ diagnostics: [], metrics: [], point_a_snapshots: [], companies: [{ id: COMPANY, user_id: CLIENT, name: 'Ромашка', target_revenue_12m_kzt: null, target_revenue_3y_kzt: null }] })
     const res = await GET(exportReq())
     expect(res.status).toBe(404)
     expect(s.pdf).toHaveLength(0)

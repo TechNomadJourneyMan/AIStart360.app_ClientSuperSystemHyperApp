@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 import type { StaffRole } from '@/lib/admin/rbac'
-import { pbDb } from './_pbdb'
+import { CALCULATED_SCENARIOS, pbDb } from './_pbdb'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
 const CLIENT = 'cccccccc-0000-4000-8000-000000000001'
@@ -159,7 +159,8 @@ function seed(opts: { versionStatus?: string } = {}) {
     point_a_snapshots: [{ id: 'snap-1', company_id: COMPANY, engine: 'v4', confidence: 0.6, coverage: 0.7, created_at: '2026-10-10T00:00:00Z', blocks: [{ key: 'finance', score: 60 }], inputs: {} }],
     point_b_versions: [],
     pb_plans: [{ id: 'plan-1', company_id: COMPANY, user_id: CLIENT, current_version_id: 'v-1', published_version_id: opts.versionStatus ? null : 'v-1', settings: {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' }],
-    pb_plan_versions: [version(opts.versionStatus ? { status: opts.versionStatus, approved_by: null, approved_at: null } : {})],
+    // R3: a version in review is calculated (scenarios + pace) — the approval needs them.
+    pb_plan_versions: [version(opts.versionStatus ? { status: opts.versionStatus, approved_by: null, approved_at: null, scenarios: structuredClone(CALCULATED_SCENARIOS) } : {})],
   })
 }
 

@@ -20,9 +20,8 @@ export const dynamic = 'force-dynamic'
  * Data loading mirrors the existing v1 routes:
  *   • Point A      ← public.diagnostics (is_current) + ai_analysis  (see
  *                    app/api/v1/diagnostics/current + ai-status)
- *   • Point B      ← lib/point-b/engine.calculatePointBV2 over the latest
- *                    diagnostic + survey answers (see
- *                    app/api/v1/diagnostics/point-b/route.ts)
+ *   • Point B      ← lib/point-b/report.ts: the model + the APPROVED plan version,
+ *                    the same calculation as /client/point-b (R3, M3)
  *   • GRI          ← public.gri_assessments (is_current)  (see
  *                    app/api/v1/gri/assessment + app/api/gri/baseline)
  *   • Survey       ← public.survey_answers
@@ -42,12 +41,10 @@ import {
   type PointBPdfInput,
   type SurveyPdfInput,
 } from '@/lib/reports/pdf'
-import { basePeriodLabel } from '@/lib/point-b/engine'
 import { diagToPointA } from '@/lib/point-b/adapters'
-import { loadPointBInputs } from '@/lib/point-b/inputs'
-import { computePointB } from '@/lib/point-b/compute'
-import type { PointA, AIAnalysis } from '@/types/onboarding'
-import type { PointBStrategy } from '@/types/point-b'
+import { loadPointBReport } from '@/lib/point-b/report'
+import type { PointA } from '@/types/onboarding'
+import { aiAnalysisNote, aiAnalysisView } from '@/lib/point-a/ai-review'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { fromAnswerEnvelope } from '@/lib/survey/answer-value'
@@ -287,7 +284,10 @@ async function loadPointA(
   const pointA = diagToPointA(diag)
   const noData = new Set(hasOfficialBlockScores(official) ? official.blocksWithoutData : ['finance', 'sales', 'operations', 'marketing', 'strategy'])
   const scored = official.state === 'scored'
-  const ai = diag.ai_analysis as AIAnalysis | null
+  // R3-PA: the AI text with the expert's corrections laid over it, labelled
+  // «Черновик ИИ — эксперт проверит» until an expert checks it (lib/point-a/ai-review.ts).
+  const aiView = aiAnalysisView(rawDiag as Record<string, unknown>)
+  const ai = aiView?.analysis ?? null
 
   const blockOrder: Array<keyof PointA['blocks']> = ['finance', 'sales', 'operations', 'marketing', 'strategy']
   const blocks: PointAPdfInput['blocks'] = blockOrder.map((key) => {
@@ -321,91 +321,25 @@ async function loadPointA(
     strategicPriorities: ai?.strategic_priorities,
     growthRoadmap: ai?.growth_roadmap,
     risks: pointA.risks,
+    aiNote: ai ? aiAnalysisNote(aiView) : null,
   }
 }
 
-async function loadPointB(
-  sb: ReturnType<typeof createServerClient>,
-  subject: Subject,
-): Promise<PointBPdfInput | null> {
-  // The same inputs and computation as the client's own page and the share link (lib/point-b).
-  const inputs = await loadPointBInputs(sb, subject.userId, { companyId: subject.companyId })
-  const pointB = computePointB(inputs)
-  if (!pointB || !inputs.diagnostic) return null
-  const diag = inputs.diagnostic
-
-  // Persisted AI strategy bridge (point_b_analysis.ai_strategy), best-effort.
-  let aiStrategy: PointBStrategy | null = null
-  {
-    const { data: pb } = await sb
-      .from('point_b_analysis')
-      .select('ai_strategy, ai_status')
-      .eq('diagnostic_id', (diag as Record<string, unknown>).id as string)
-      .eq('is_current', true)
-      .maybeSingle()
-    if (pb?.ai_status === 'completed' && pb?.ai_strategy) {
-      aiStrategy = pb.ai_strategy as PointBStrategy
-    }
-  }
+async function loadPointB(subject: Subject): Promise<PointBPdfInput | null> {
+  // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan version
+  // (lib/point-b/report.ts), never the old V2 engine, never a draft. Service role: the caller (the owner, or an
+  // expert / admin of this client) is authorised above; the page state reads the plan tables the session cannot.
+  // The company the PDF is signed with is the company the numbers are of (R3-PB review L8: an owner of two companies).
+  const report = await loadPointBReport(createServiceClient(), subject.userId, { companyId: subject.companyId })
+  if (report.level === 0 && report.plan.status !== 'published') return null
 
   const meta: ReportMeta = {
     companyName: subject.companyName,
     industry: subject.industry,
     stage: subject.stage,
-    generatedAt: pointB.generated_at,
+    generatedAt: report.computedAt,
   }
-
-  const base = pointB.data_quality.base
-  return {
-    meta,
-    baseNote: base.stale ? `Период выручки: ${basePeriodLabel(base.period)} · данные устарели` : null,
-    goals: {
-      current_revenue_year: pointB.goals.current_revenue_year,
-      goal_12m_revenue_year: pointB.goals.goal_12m_revenue_year,
-      goal_3y_revenue_year: pointB.goals.goal_3y_revenue_year,
-      goal_12m_text: pointB.goals.goal_12m_text,
-      goal_3y_text: pointB.goals.goal_3y_text,
-      main_pain: pointB.goals.main_pain,
-    },
-    gap: pointB.gap.map((g) => ({
-      horizon: g.horizon,
-      current_revenue: g.current_revenue,
-      target_revenue: g.target_revenue,
-      multiplier: g.multiplier,
-      required_cagr: g.required_cagr,
-    })),
-    realism: pointB.realism
-      ? {
-          level: pointB.realism.level,
-          score: pointB.realism.score,
-          rationale: pointB.realism.rationale,
-          risk_factors: pointB.realism.risk_factors,
-          weak_blocks: pointB.realism.weak_blocks,
-        }
-      : null,
-    scenarios: pointB.scenarios.map((s) => ({
-      label: s.label,
-      target_revenue_12m: s.target_revenue_12m,
-      target_revenue_3y: s.target_revenue_3y,
-      confidence: s.confidence,
-    })),
-    top5Limits: pointB.top5_limits.map((t) => ({ rank: t.rank, title: t.title, severity: t.severity })),
-    growthDecomposition: pointB.growth_decomposition
-      ? {
-          required_multiplier: pointB.growth_decomposition.required_multiplier,
-          summary: pointB.growth_decomposition.summary,
-          steps: pointB.growth_decomposition.steps.map((s) => ({ label: s.label, note: s.note })),
-        }
-      : null,
-    aiStrategy: aiStrategy
-      ? {
-          strategic_bridge_summary: aiStrategy.strategic_bridge_summary,
-          gap_bridge: aiStrategy.gap_bridge,
-          milestones: aiStrategy.milestones,
-          risk_mitigations: aiStrategy.risk_mitigations,
-        }
-      : null,
-  }
+  return { meta, report }
 }
 
 async function loadSurvey(
@@ -498,7 +432,7 @@ export async function GET(req: NextRequest) {
         break
       }
       case 'point-b': {
-        const input = await loadPointB(sb, subject)
+        const input = await loadPointB(subject)
         if (!input) return NO_DATA
         pdf = await renderPointBPdf(input)
         break

@@ -8,13 +8,19 @@
  * (plan Ф6a Task 8): recommendations of the rules and the AI that wait for an expert, in the
  * same scope; a row opens the client's recommendations in User 360. And «Ежемесячная сверка» (plan Ф6b): the clients
  * with an approved plan and whether the «Факт за месяц» of the last month is there.
+ * On top (R3-SLA, migration 152) — «Ждут план»: Pro clients the SLA pass found waiting for a plan
+ * (plan_prep tasks, 48 h, escalation 24 h): «Взять себе» for Admin / Super Admin and
+ * «Собрать черновик плана» (the client's «Точка Б» in User 360).
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { RefreshCw } from 'lucide-react'
-import { RequirePermission } from '@/components/giga-panel/StaffContext'
+import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
-import { Badge, Button, DataTable, EmptyState, ErrorState, PageHeader, fmtDateTime, useGigaQuery, type Column } from '@/components/giga-panel/kit'
+import { Badge, Button, DataTable, EmptyState, ErrorState, PageHeader, fmtDateTime, gigaFetch, GigaApiError, useGigaQuery, type Column, type Tone } from '@/components/giga-panel/kit'
+import { STAGE_LABELS, slaTimerLabel, type SlaStage } from '@/lib/expert-sla/policy'
+import { planDraftHref } from '@/lib/expert-sla/links'
 import { QUEUE_STALE_DAYS, parseQueue, userPointBHref, waitingLabel, type QueueRow } from './pointBQueueModel'
 import { REC_KIND_LABEL, SOURCE_LABEL, parseRecsQueue, type RecQueueRow } from '@/components/giga-panel/user360/point-b/recommendationsController'
 import { ENTERED_BY_LABEL, parseReconciliation, type ReconciliationRow } from '@/components/giga-panel/user360/point-b/planFactPanelController'
@@ -222,8 +228,133 @@ export function ReconciliationView({ base, data, loading, error, onRetry }: Reco
   )
 }
 
+/** A plan_prep task as GET /api/giga-admin/expert-sla?view=open&source=plan_prep returns it (lib/expert-sla/store decorate). */
+export interface PlanPrepRow {
+  id: string
+  title: string
+  received_at: string
+  reaction_due_at: string
+  answer_due_at: string
+  first_response_at: string | null
+  closed_at: string | null
+  assignee_id: string | null
+  stage: SlaStage
+  client: { id: string; name: string }
+  assignee: { id: string; name: string } | null
+  takeable?: boolean
+}
+
+const PREP_TONE: Record<SlaStage, Tone> = { breached: 'red', escalated: 'red', due_soon: 'amber', ok: 'neutral', closed: 'green' }
+
+export function parsePlanPrepQueue(v: unknown): PlanPrepRow[] {
+  const rows = (v && typeof v === 'object' && Array.isArray((v as { data?: unknown }).data) ? (v as { data: unknown[] }).data : []) as PlanPrepRow[]
+  return rows.filter((r) => r && typeof r.id === 'string' && r.client && typeof r.client.id === 'string')
+}
+
+export interface PlanPrepQueueViewProps {
+  base: string
+  rows: PlanPrepRow[] | null
+  loading: boolean
+  error: { message: string; status?: number } | null
+  onRetry: () => void
+  /** The actor may take a plan (Admin / Super Admin): his id. */
+  takerId?: string | null
+  onTake?: (row: PlanPrepRow) => void
+  busyId?: string | null
+  now?: Date
+}
+
+/** «Ждут план» (152): clients whose data carries a plan, nobody approved one yet — 48 h to an approved version. */
+export function PlanPrepQueueView({ base, rows, loading, error, onRetry, takerId = null, onTake, busyId = null, now = new Date() }: PlanPrepQueueViewProps) {
+  const columns: Column<PlanPrepRow>[] = [
+    {
+      key: 'client',
+      header: 'Клиент',
+      render: (r) => (
+        <div className="min-w-0">
+          <Link href={userPointBHref(base, r.client.id)} className="font-medium text-blue-300 hover:underline">{r.client.name}</Link>
+          <p className="text-[11px] text-slate-500">ждёт с {fmtDateTime(r.received_at)}{r.first_response_at ? ' · черновик открыт' : ''}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'sla',
+      header: 'Срок плана',
+      render: (r) => (
+        <span title={`Одобренный план — до ${fmtDateTime(r.answer_due_at)}`} data-stage={r.stage}>
+          <Badge tone={PREP_TONE[r.stage] ?? 'neutral'}>{slaTimerLabel(r, now)}</Badge>
+          <span className="ml-1 text-[10px] text-slate-500">{STAGE_LABELS[r.stage]}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'who',
+      header: 'Готовит',
+      render: (r) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-slate-300">{r.assignee?.name ?? 'никто — очередь'}</span>
+          {takerId && onTake && r.assignee_id !== takerId && (
+            <Button size="sm" variant="ghost" loading={busyId === r.id} onClick={() => onTake(r)}>Взять себе</Button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'draft',
+      header: <span className="sr-only">Действие</span>,
+      className: 'text-right',
+      render: (r) => (
+        <Link href={planDraftHref(r.client.id, base)} className="text-[11px] font-medium text-teal-300 hover:underline" aria-label={`Собрать черновик плана: ${r.client.name}`}>
+          Собрать черновик плана
+        </Link>
+      ),
+    },
+  ]
+  return (
+    <section aria-labelledby="pb-plan-prep" className="space-y-2">
+      <div>
+        <h2 id="pb-plan-prep" className="text-sm font-semibold text-slate-200">
+          Ждут план{rows && rows.length > 0 && <Badge tone="amber" className="ml-2">{rows.length}</Badge>}
+        </h2>
+        <p className="mt-0.5 text-[11px] text-slate-500">Данных для плана достаточно, плана ещё нет. Срок — 48 ч до одобренной версии, без черновика 24 ч — эскалация. Клиент видит, кто готовит план и до какого срока.</p>
+      </div>
+      <ErrorState error={error} onRetry={onRetry} />
+      {!error && (
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03]">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            loading={loading}
+            skeletonRows={2}
+            empty={<EmptyState title="Никто не ждёт план" text="Клиенты Pro с целью по выручке и данными для расчёта появятся здесь, пока план не одобрен." />}
+          />
+        </div>
+      )}
+    </section>
+  )
+}
+
 function Inner() {
   const { base, label } = useWorkspace()
+  const { me } = useStaff()
+  const prep = useGigaQuery<unknown>('/api/giga-admin/expert-sla?view=open&source=plan_prep')
+  const prepRows = useMemo(() => (prep.data ? parsePlanPrepQueue(prep.data) : null), [prep.data])
+  const [taking, setTaking] = useState<string | null>(null)
+  const takerId = me && (me.role === 'admin' || me.role === 'super_admin') ? me.id : null
+  const take = async (row: PlanPrepRow) => {
+    if (!takerId) return
+    setTaking(row.id)
+    try {
+      await gigaFetch(`/api/giga-admin/expert-sla/${row.id}`, { method: 'PATCH', json: { assigneeId: takerId } })
+      toast.success(`План клиента «${row.client.name}» — ваш`)
+      void prep.reload()
+    } catch (e) {
+      toast.error(e instanceof GigaApiError ? e.message : 'Не удалось взять задачу')
+    } finally {
+      setTaking(null)
+    }
+  }
   const q = useGigaQuery<unknown>('/api/giga-admin/point-b/queue')
   const rq = useGigaQuery<unknown>('/api/giga-admin/point-b/recommendations/queue')
   const rows = useMemo(() => (q.data ? parseQueue(q.data) : null), [q.data])
@@ -232,7 +363,10 @@ function Inner() {
   const reconData = useMemo(() => (recon.data ? parseReconciliation(recon.data) : null), [recon.data])
   return (
     <>
-      <PointBQueueView base={base} label={label} rows={rows} loading={q.loading} error={q.error} onRetry={() => { void q.reload(); void rq.reload() }} />
+      <PointBQueueView base={base} label={label} rows={rows} loading={q.loading} error={q.error} onRetry={() => { void q.reload(); void rq.reload(); void prep.reload() }} />
+      <div className="mt-6">
+        <PlanPrepQueueView base={base} rows={prepRows} loading={prep.loading} error={prep.error} onRetry={() => void prep.reload()} takerId={takerId} onTake={(r) => void take(r)} busyId={taking} />
+      </div>
       <div className="mt-6">
         <RecsQueueView base={base} rows={recRows} loading={rq.loading} error={rq.error} onRetry={() => void rq.reload()} />
       </div>

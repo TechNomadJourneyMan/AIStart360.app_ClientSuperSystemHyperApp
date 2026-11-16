@@ -31,14 +31,15 @@ function fakeClient(name: string) {
     auth: { getUser: async () => ({ data: { user: h.user }, error: null }) },
     from(table: string) {
       const q: Call = { table, op: 'select', filters: [] }
-      const rows = () => (h.tables[table] ?? []).filter((r) => q.filters.every(([c, v]) => typeof v === 'string' && v.startsWith('like:') ? true : r[c] === v))
+      const rows = () => (h.tables[table] ?? []).filter((r) => q.filters.every(([c, v]) => typeof v === 'string' && v.startsWith('like:') ? true : v === null ? r[c] == null : r[c] === v))
       const run = async (single: boolean) => {
         h.calls.push({ client: name, ...q })
         if (q.op === 'update') {
           if (h.saveError && name === 'service' && 'ai_narrative' in (q.payload ?? {})) return { data: null, error: h.saveError }
           if (h.analysisSaveError && name === 'service' && 'ai_analysis' in (q.payload ?? {})) return { data: null, error: h.analysisSaveError }
-          for (const r of rows()) Object.assign(r, q.payload)
-          return { data: null, error: null }
+          const changed = rows()
+          for (const r of changed) Object.assign(r, q.payload)
+          return { data: changed.map((r) => ({ id: r.id })), error: null }
         }
         if (h.readError?.table === table) return { data: null, error: h.readError.error }
         const found = rows()
@@ -48,6 +49,7 @@ function fakeClient(name: string) {
         select: () => b,
         update: (p: Row) => { q.op = 'update'; q.payload = p; return b },
         eq: (c: string, v: unknown) => { q.filters.push([c, v]); return b },
+        is: (c: string, v: unknown) => { q.filters.push([c, v]); return b },
         like: (c: string, v: string) => { q.filters.push([c, `like:${v}`]); return b },
         maybeSingle: () => run(true),
         single: () => run(true),
@@ -278,7 +280,8 @@ describe('POST /api/v1/diagnostics/retry-ai', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')))
     const res = await retryRoute.POST(post('/api/v1/diagnostics/retry-ai', { diagnostic_id: DIAG }))
     expect(await res.json()).toMatchObject({ ok: true, ai_status: 'processing' })
-    expect(updates()).toEqual([{ client: 'service', table: 'diagnostics', op: 'update', payload: { ai_status: 'processing' }, filters: [['id', DIAG], ['user_id', USER]] }])
+    // R3-PA (ревью M1): one compare-and-swap claim from the state it was read in, with the start time.
+    expect(updates()).toEqual([{ client: 'service', table: 'diagnostics', op: 'update', payload: { ai_status: 'processing', ai_started_at: expect.any(String) }, filters: [['id', DIAG], ['user_id', USER], ['ai_status', 'failed'], ['ai_started_at', null]] }])
     expect(h.tables.diagnostics[0].ai_analysis).toEqual({ ...ANALYSIS, gri: { overall: 6 } })
     vi.unstubAllGlobals()
   })

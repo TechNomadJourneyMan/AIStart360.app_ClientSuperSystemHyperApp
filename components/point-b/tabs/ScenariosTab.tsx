@@ -4,14 +4,16 @@
  * components/point-b/tabs/ScenariosTab.tsx — the three paces of the plan (plan Phase 2
  * Task 8, spec §15.2): cards, a comparison table (a list of cards on a phone) and expandable
  * groups of risks, conditions and review points. Shows scenarios of the APPROVED plan version
- * only (the server never sends the others); without them — «Эксперт готовит сценарии».
- * Choosing a pace is the expert's job in Phase 2: there is no «Выбрать темп» here.
+ * only (the server never sends the others); without them — the honest state of the plan (R3: who works on it, or which
+ * data is missing — never «эксперт готовит» when nobody does). Choosing a pace is the team's job: no «Выбрать темп» here.
  */
 import { CARD, CARD_TITLE, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import type { ModelResult } from '@/lib/point-b/model/types'
 import CashChart from '../CashChart'
 import DataGapBanner from '../DataGapBanner'
+import PlanPrepNotice from '../PlanPrepNotice'
+import type { PlanPrepState } from '../planPrep'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import {
   TONE_CLASS, comparisonGroups, comparisonRows, fmtLongDate, scenarioCards, scenariosMode,
@@ -28,27 +30,28 @@ function Lines({ lines, tone }: { lines: string[]; tone?: Tone }) {
   return <span className={cn('block rounded-lg border px-2 py-1', TONE_CLASS[tone].border, TONE_CLASS[tone].bg, tone !== 'neutral' && '[&>span:first-child]:font-semibold', TONE_CLASS[tone].text)}>{body}</span>
 }
 
-export function ScenariosPreparing({ result }: { result: ModelResult | null }) {
-  const missing = result?.missing ?? []
+export function ScenariosPreparing({ result, prep = null }: { result: ModelResult | null; prep?: PlanPrepState | null }) {
+  // needs_data lists the inputs of the plan itself; the other states may still lack the money inputs (level 2).
+  const missing = prep?.kind === 'needs_data' ? (result?.missing ?? []).filter((m) => m.level !== 1) : (result?.missing ?? [])
   return (
     <div className="space-y-4">
-      <section aria-labelledby="pb-scn-prep" className={CARD}>
-        <div className="flex items-start gap-3">
-          <Icon name="hourglass_top" className="mt-0.5 text-2xl text-secondary" />
-          <div className="min-w-0">
-            <h2 id="pb-scn-prep" className="font-headline text-lg font-bold text-on-surface">Эксперт готовит сценарии</h2>
-            <p className="mt-1 text-sm text-on-surface-variant">
-              Три темпа движения к цели — осторожный, умеренный и ускоренный — появятся здесь после того, как эксперт проверит расчёт и одобрит план.
-              Пока ориентир — вкладка «Обзор» с автоматическим расчётом.
-            </p>
-            {missing.length === 0 && (
-              <p className="mt-2 text-xs text-on-surface-variant">От вас сейчас ничего не требуется.</p>
-            )}
+      {prep ? (
+        <PlanPrepNotice prep={prep} area="scenarios" />
+      ) : (
+        <section aria-labelledby="pb-scn-prep" className={CARD}>
+          <div className="flex items-start gap-3">
+            <Icon name="info" className="mt-0.5 text-2xl text-secondary" />
+            <div className="min-w-0">
+              <h2 id="pb-scn-prep" className="font-headline text-lg font-bold text-on-surface">Сценариев пока нет</h2>
+              <p className="mt-1 text-sm text-on-surface-variant">
+                Три темпа движения к цели появятся здесь после одобрения плана. Пока ориентир — вкладка «Обзор» с автоматическим расчётом.
+              </p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
       {/* What the owner can do meanwhile: the same list as on the overview. */}
-      <DataGapBanner missing={missing} title="Что поможет эксперту рассчитать сценарии точнее" />
+      <DataGapBanner missing={missing} title="Что сделает расчёт точнее" />
     </div>
   )
 }
@@ -222,11 +225,11 @@ export default function ScenariosTab({ snap, onRetry }: { snap: PointBStateSnaps
           <Icon name="info" className="mt-0.5 text-2xl text-secondary" />
           <div>
             <h2 className="font-headline text-lg font-bold text-on-surface">В одобренном плане сценариев нет</h2>
-            <p className="mt-1 text-sm text-on-surface-variant">Эксперт добавит их в следующей версии плана. Пока ориентир — вкладка «Обзор».</p>
+            <p className="mt-1 text-sm text-on-surface-variant">Сценарии появятся в следующей версии плана. Пока ориентир — вкладка «Обзор».</p>
           </div>
         </div>
       </section>
     )
   }
-  return <ScenariosPreparing result={snap.result} />
+  return <ScenariosPreparing result={snap.result} prep={snap.plan.prep} />
 }

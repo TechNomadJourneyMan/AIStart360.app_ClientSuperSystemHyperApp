@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
     const companyIds = rows.map((r) => r.company_id)
     const userIds = [...new Set(rows.map((r) => r.user_id))]
     const [facts, companies, profiles] = await Promise.all([
-      sb.from('pb_monthly_facts').select('company_id, entered_role, updated_at').eq('period', period).in('company_id', companyIds),
+      // Only «Факт за месяц» counts as the reconciliation, not a revenue month of «Финмодель» (R3-PB review L1).
+      sb.from('pb_monthly_facts').select('company_id, entered_role, updated_at').eq('period', period).eq('source', 'monthly_reconciliation').in('company_id', companyIds),
       sb.from('companies').select('id, name').in('id', companyIds),
       sb.from('profiles').select('id, full_name, email').in('id', userIds),
     ])

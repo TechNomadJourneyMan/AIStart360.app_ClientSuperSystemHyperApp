@@ -10,7 +10,6 @@
 //   ?planfact=empty    — «План-факт и история» of an approved plan without checkpoints yet (default: five months, the
 //                      verdict «отстаём» for September, the form for September, v2 approved + v1 superseded)
 import { notFound } from 'next/navigation'
-import PointBView from '@/components/point-b/PointBView'
 import FinmodelTab from '@/components/point-b/tabs/FinmodelTab'
 import OverviewTab from '@/components/point-b/tabs/OverviewTab'
 import PlanFactTab from '@/components/point-b/tabs/PlanFactTab'
@@ -23,7 +22,7 @@ import WhatIfTab from '@/components/point-b/tabs/WhatIfTab'
 import { isTabKey, type PlanStatus } from '@/components/point-b/overviewModel'
 import type { PointBStateSnapshot } from '@/components/point-b/pointBStateController'
 import {
-  fixtureFinmodel, fixtureFinmodelStatus, fixtureInvites, fixtureModelResult, fixtureNextStep, fixturePlanFact, fixturePointB, fixtureRecommendations, fixtureStrategy,
+  fixtureFinmodel, fixtureFinmodelStatus, fixtureInvites, fixtureModelResult, fixtureNextStep, fixturePlanFact, fixtureRecommendations, fixtureStrategy,
   fixtureWhatIf, fixtureWhatIfChanges, fixtureWhatIfSaved, isPointBFixtureVariant, POINT_B_FIXTURE_VARIANTS, type PointBFixtureVariant,
 } from '@/lib/point-b/fixtures'
 
@@ -67,6 +66,12 @@ function fixtureState(variant: PointBFixtureVariant, plan: PlanStatus, emptyStra
       scenarios: plan === 'published' ? result.scenarios : [],
       approvedAt: plan === 'published' ? '2026-10-14T10:00:00.000Z' : null,
       authorName: plan === 'published' ? 'Анна Ким' : null,
+      // R3: the honest state of the preparation — «preparing» shows a draft in the works; «none» the missing data.
+      prep: plan === 'published'
+        ? { kind: 'published', missing: [], since: null }
+        : plan === 'preparing'
+          ? { kind: 'in_work', missing: [], since: '2026-10-14T10:00:00.000Z' }
+          : { kind: 'needs_data', missing: result.missing.filter((m) => m.level === 1).map((m) => ({ key: m.key, label: m.label, actions: m.actions })), since: null },
     },
   }
 }
@@ -112,7 +117,6 @@ export default function PointBPreviewPage({ searchParams }: { searchParams?: { v
           whatif: <WhatIfTab state={snap} preview={{ result: fixtureWhatIf(variant), baseline: fixtureWhatIf(variant, []), saved: fixtureWhatIfSaved(variant), changes: fixtureWhatIfChanges(variant) }} />,
           // The form works on the fixture: a save is applied in memory, nothing leaves the page.
           finmodel: <FinmodelTab preview={fixtureFinmodel(variant)} />,
-          details: <PointBView pointB={fixturePointB(variant)} previewMode />,
         }}
       />
     </main>

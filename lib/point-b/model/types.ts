@@ -9,6 +9,7 @@
  * RUN-RATES: the goal is an annual revenue at the deadline and it is reached in the first month whose
  * (de-seasonalised) monthly run-rate × 12 is at least the goal.
  */
+import type { PlanPrep } from '../plan/waiting'
 import type { FinmodelKey } from '../finmodel/keys'
 import type { FinmodelState } from '../finmodel/store'
 import type { InviteView } from '../invites/types'
@@ -193,6 +194,11 @@ export interface PointBState {
     authorName: string | null
     /** Only from the approved version; null = there is none. An approved plan without a strategy has an empty one. */
     strategy: StrategyState | null
+    /**
+     * R3: where the plan honestly stands for the client (lib/point-b/plan/waiting.ts): published / the team works on a
+     * draft / it waits for approval / the data carries a plan and it waits for the team / data is missing (with what).
+     */
+    prep: PlanPrep
   }
   /**
    * Recommendations (plan Ф6a): ONLY expert-verified ones (and previously verified, now stale) with who / when /

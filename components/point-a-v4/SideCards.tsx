@@ -3,24 +3,31 @@
 import Link from 'next/link'
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { formatRelativeRuLong } from '@/components/point-a/executive-overview-model'
-import { CARD, CARD_TITLE, Icon, toneColor } from './ui'
+import { CARD, CARD_TITLE, Icon } from './ui'
 import { cn } from '@/lib/utils'
 import { formatAttributionDate, formatAuthorSummary } from '@/lib/survey/attribution-label'
+import { GRI_SCALE_MAX, formatGri, griColor } from '@/lib/format/gri'
 
-/** GRI — readiness for growth, a separate indicator (spec §4.6), on the same 0–100 scale. */
+/** «Ориентир не проверен экспертом» — the industry reference until an expert approves the thresholds (R3-PA). */
+export const BENCHMARKS_UNAPPROVED_NOTE = 'Ориентир не проверен экспертом — сравнение предварительное'
+
+/**
+ * GRI — readiness for growth, a separate indicator (spec §4.6), on ITS OWN
+ * scale 0–10 (lib/format/gri.ts, R-036; the page said «58 из 100» while /gri said 5.8).
+ */
 export function GriCard({ gri }: { gri: PointAPageState['gri'] }) {
   return (
     <section className={CARD} aria-labelledby="pa-gri">
       <p id="pa-gri" className={CARD_TITLE}>GRI — готовность к росту</p>
       <div className="mt-2 flex items-end gap-2">
-        <span className="font-mono text-3xl font-bold" style={{ color: toneColor(gri.index100) }}>{gri.index100 ?? '—'}</span>
-        <span className="mb-1 font-mono text-[10px] text-on-surface-variant">из 100</span>
+        <span className="font-mono text-3xl font-bold" style={{ color: griColor(gri.index) }}>{formatGri(gri.index, { empty: '—' })}</span>
+        <span className="mb-1 font-mono text-[10px] text-on-surface-variant">из {GRI_SCALE_MAX}</span>
       </div>
       <p className="mt-2 text-xs text-on-surface-variant">
-        Точка А — где бизнес сейчас. GRI — насколько он готов расти. Это разные показатели: сильная Точка А не гарантирует готовность к рывку.
+        Точка А — где бизнес сейчас (0–100). GRI — насколько он готов расти (0–10). Это разные показатели: сильная Точка А не гарантирует готовность к рывку.
       </p>
       <Link href="/gri" className="mt-3 inline-flex text-xs font-mono text-primary/80 hover:text-primary" suppressHydrationWarning>
-        {gri.index100 === null ? 'Пройти оценку GRI →' : `Оценка ${formatRelativeRuLong(gri.assessedAt)} · открыть →`}
+        {gri.index === null ? 'Пройти оценку GRI →' : `Оценка ${formatRelativeRuLong(gri.assessedAt)} · открыть →`}
       </Link>
     </section>
   )
@@ -32,6 +39,11 @@ export function BenchmarksCard({ benchmarks }: { benchmarks: PointAPageState['be
     <section className={CARD} aria-labelledby="pa-bench">
       <p id="pa-bench" className={CARD_TITLE}>Сравнение с отраслью</p>
       <p className="mt-1 text-[11px] text-on-surface-variant">{benchmarks.industry} · {benchmarks.source}</p>
+      {!benchmarks.approved && (
+        <p className="mt-1.5 flex items-start gap-1 text-[11px] text-amber-200/90" data-benchmarks-unapproved>
+          <Icon name="info" className="mt-px text-[13px]" />{BENCHMARKS_UNAPPROVED_NOTE}
+        </p>
+      )}
       <ul className="mt-3 space-y-2">
         {benchmarks.blocks.map((b) => (
           <li key={b.key} className="text-xs">
@@ -66,6 +78,14 @@ export function SourcesCard({ sources, viewerIsOwner = false }: { sources: Point
             {sources.documents.parsed} обработано{sources.documents.processing ? ` · ${sources.documents.processing} в работе` : ''}{sources.documents.failed ? ` · ${sources.documents.failed} с ошибкой` : ''}
           </Link>
         </li>
+        {/* R3-PA: a document stuck «в очереди» for days is not «в работе» — say so and how to fix it. */}
+        {(sources.documents.stale ?? 0) > 0 && (
+          <li className="-mt-1 text-[11px] text-amber-200/90" data-stale-documents>
+            <Link href="/client/onboarding/documents" className="hover:underline">
+              {sources.documents.stale} не {sources.documents.stale === 1 ? 'обработан' : 'обработаны'} — загрузите заново
+            </Link>
+          </li>
+        )}
         <li className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-2 text-on-surface"><Icon name="monitoring" className="text-[16px] text-primary/70" />Метрики</span>
           <Link href="/metrics" className="font-mono text-xs text-primary/80 hover:text-primary">{sources.metrics}</Link>

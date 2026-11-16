@@ -164,8 +164,14 @@ describe('«Стратегия»', () => {
     const render = (s: ReturnType<typeof snap>) => flat(renderToStaticMarkup(React.createElement(StrategyTab, { snap: s as never })))
 
     expect(strategyMode(snap({ strategy: null }))).toBe('preparing')
-    expect(render(snap({ strategy: null }))).toContain('Эксперт готовит стратегию')
-    expect(render(snap({ plan: { status: 'preparing' } }))).toContain('Эксперт готовит стратегию')
+    // R3: no promise without the page state; with it — who works on the plan (never «Эксперт готовит»)
+    expect(render(snap({ strategy: null }))).toContain('Стратегии пока нет')
+    const inWork = render(snap({ plan: { status: 'preparing', prep: { kind: 'in_work', missing: [], since: null } } }))
+    expect(inWork).toContain('План готовит команда AIStart360')
+    expect(inWork).toContain('Стратегии, инициативы и задачи появятся здесь после одобрения плана')
+    expect(inWork).not.toContain('Эксперт готовит')
+    // R3 (M3): the action plan (the client's tasks) moved here from the hidden «Подробности»
+    expect(inWork).toContain('id="pb-action-plan"')
 
     const emptyTree = { items: [], milestones: [], progress: {}, matrix: { points: [], unrated: 0 } }
     expect(strategyMode(snap({ plan: { status: 'published' }, strategy: emptyTree }))).toBe('empty')
@@ -289,7 +295,8 @@ describe('«Дорожная карта»', () => {
   it('RoadmapTab: preparing, empty and loading states', () => {
     const base = { phase: 'ready', error: null, result: fixtureModelResult('full'), plan: { status: 'none', version: null, selectedScenario: null, scenarios: [], approvedAt: null, authorName: null }, strategy: null }
     const render = (over: Record<string, unknown>) => flat(renderToStaticMarkup(React.createElement(RoadmapTab, { snap: { ...base, ...over } as never })))
-    expect(render({})).toContain('Эксперт готовит стратегию')
+    expect(render({})).toContain('Стратегии пока нет')
+    expect(render({ plan: { ...base.plan, status: 'preparing', prep: { kind: 'waiting', missing: [], since: null } } })).toContain('Дорожная карта с вехами и сроками появятся здесь')
     expect(render({ plan: { ...base.plan, status: 'published' } })).toContain('В плане пока нет стратегии')
     expect(render({ phase: 'loading' })).toContain('aria-busy="true"')
   })
@@ -299,8 +306,8 @@ describe('«Дорожная карта»', () => {
 
 describe('tabs and state', () => {
   it('tabs order includes Стратегия and Дорожная карта after Сценарии', () => {
-    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'План-факт и история', 'Что если', 'Финмодель', 'Подробности'])
-    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'history', 'whatif', 'finmodel', 'details'])
+    expect(POINT_B_TABS.map((t) => t.label)).toEqual(['Обзор', 'Сценарии', 'Стратегия', 'Дорожная карта', 'Рекомендации', 'План-факт и история', 'Что если', 'Финмодель'])
+    expect(POINT_B_TABS.map((t) => t.key)).toEqual(['overview', 'scenarios', 'strategy', 'roadmap', 'recs', 'history', 'whatif', 'finmodel'])
     expect(isTabKey('strategy')).toBe(true)
     expect(isTabKey('roadmap')).toBe(true)
     expect(isTabKey('nope')).toBe(false)

@@ -42,10 +42,28 @@ function harness(get: unknown, respond: { status: number; body: unknown } = { st
 const section = (snap: ClientPlanSnapshot, ctl: ClientPlanController) => renderToStaticMarkup(React.createElement(PlanWorkflowView, { snap, ctl }))
 
 describe('PlanStatusBanner', () => {
-  it('shows «Эксперт готовит план» while preparing', () => {
-    const html = renderToStaticMarkup(React.createElement(PlanStatusBanner, { status: 'preparing', version: null }))
-    expect(html).toContain('Эксперт готовит план')
-    expect(html).toContain('aria-label="Статус плана"')
+  it('R3: never promises «Эксперт готовит план» — it says honestly where the plan stands', () => {
+    const banner = (prep: unknown) => renderToStaticMarkup(React.createElement(PlanStatusBanner, { status: 'preparing', version: null, prep: prep as never }))
+    // the state is unknown (not loaded): no promise at all
+    expect(banner(null)).toBe('')
+    // a draft is open: the team works on it
+    const inWork = banner({ kind: 'in_work', missing: [], since: '2026-11-14T10:00:00Z' })
+    expect(inWork).toContain('План готовит команда AIStart360')
+    expect(inWork).toContain('aria-label="Статус плана"')
+    expect(banner({ kind: 'in_review', missing: [], since: null })).toContain('План на проверке перед публикацией')
+    // nobody has started: no «готовит», no «от вас ничего не требуется»
+    const waiting = banner({ kind: 'waiting', missing: [], since: null })
+    expect(waiting).toContain('Данных для плана достаточно')
+    expect(waiting).toContain('План подготовит команда AIStart360')
+    // data is missing: what, and where to add it
+    const needs = banner({ kind: 'needs_data', missing: [{ key: 'goal', label: 'Цель по выручке', actions: ['survey'] }], since: null })
+    expect(needs).toContain('Для плана нужны данные')
+    expect(needs).toContain('Цель по выручке')
+    expect(needs).toContain('href="/client/onboarding"')
+    for (const html of [inWork, waiting, needs]) {
+      expect(html).not.toContain('Эксперт готовит')
+      expect(html).not.toContain('ничего не требуется')
+    }
   })
 
   it('shows «План v{N} одобрен {дата}» once published', () => {
@@ -165,13 +183,17 @@ describe('PlanWorkflowView', () => {
     expect(parseClientPlan(null)).toBeNull()
   })
 
-  it('preparing shows the banner, a correction shows its card above it', async () => {
+  it('preparing shows the honest banner (from the page state), a correction shows its card above it', async () => {
     const t = harness(planBody('preparing', [review()]))
     await t.ctl.load()
-    const html = section(t.ctl.getSnapshot(), t.ctl)
-    expect(html).toContain('Эксперт готовит план')
+    const html = renderToStaticMarkup(React.createElement(PlanWorkflowView, { snap: t.ctl.getSnapshot(), ctl: t.ctl, prep: { kind: 'in_work', missing: [], since: null } }))
+    expect(html).toContain('План готовит команда AIStart360')
     expect(html).toContain('Эксперт предлагает изменить цель')
-    expect(html.indexOf('Эксперт предлагает')).toBeLessThan(html.indexOf('Эксперт готовит план'))
+    expect(html.indexOf('Эксперт предлагает')).toBeLessThan(html.indexOf('План готовит команда'))
+    // without the page state there is no banner at all — only the correction
+    const bare = section(t.ctl.getSnapshot(), t.ctl)
+    expect(bare).toContain('Эксперт предлагает изменить цель')
+    expect(bare).not.toContain('Статус плана')
   })
 
   it('a correction still shows when the status is none', async () => {

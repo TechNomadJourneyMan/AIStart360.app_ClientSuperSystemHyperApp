@@ -212,20 +212,36 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
   },
   {
     name: 'get_point_b',
-    description: 'Точка Б: целевое состояние, разрыв по выручке, требуемый темп, реалистичность цели и план по горизонтам.',
+    description: 'Точка Б: автоматический расчёт (разрыв до цели, прогноз при текущем ходе, вердикт, чего не хватает) и одобренный план (темп, сценарии, стратегия, проверенные рекомендации).',
     kind: 'read',
     input: z.object({}).strict(),
     async run(_a, t) {
-      // diagnostics has no created_at (the old order failed → always «not calculated»).
-      const { data: diags } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
-      const diag = (diags ?? [])[0] as { id: string } | undefined
-      if (!diag) return { status: 'not_calculated' }
-      const { data } = await t.sb.from('point_b_analysis').select('roadmap, calculated_at').eq('diagnostic_id', diag.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
-      const r = ((data ?? [])[0] as { roadmap?: Record<string, unknown> } | undefined)?.roadmap
-      // Point B is readable by the diagnostic's owner and staff only (RLS 029):
-      // for other members say so instead of «not calculated».
-      if (!r) return { status: t.ownerId && t.ownerId !== t.userId ? 'no_access' : 'not_calculated' }
-      return { gap: r.gap, realism: r.realism, target_overall: r.target_overall_score, horizons: r.horizons, levers: r.levers }
+      // R3 (M3): the same calculation as the client's page — the model and the APPROVED plan version
+      // (lib/point-b/report.ts), never the old V2 snapshot of point_b_analysis and never a draft.
+      const owner = t.ownerId ?? t.userId
+      // R3-PB review M2 — the rule of RLS (pb_plans / pb_plan_versions): the plan is read by the OWNER of the company
+      // and by staff inside their client scope (mayActOnUser: staff_roles / an active expert, the second factor, the
+      // assignment); a member of the company is not. The paywall is the asker's own decision: the tool is offered only
+      // when Точка Б is open for the asker (toolsFor ← resolveAccess in the route).
+      const [{ mayActOnUser }, { createServiceClient }, { loadPointBReport, pointBReportText }] = await Promise.all([
+        import('@/lib/api-identity'), import('@/lib/supabase-service'), import('@/lib/point-b/report'),
+      ])
+      if (!(await mayActOnUser(t.sb, t.userId, owner))) return { status: 'no_access' }
+      // Service role after that check: the tenant is this company (the route resolved it), its plan tables are read here.
+      const sb = createServiceClient()
+      const { data: company } = await sb.from('companies').select('id').eq('id', t.companyId).eq('user_id', owner).maybeSingle()
+      if (!company) return { status: 'not_calculated' }
+      const report = await loadPointBReport(sb, owner, { now: t.now, companyId: t.companyId })
+      return {
+        summary: pointBReportText(report),
+        level: report.level,
+        verdict: report.verdict,
+        gap: report.gap,
+        forecast: report.forecast,
+        missing: report.missing,
+        plan: report.plan,
+        recommendations: report.recommendations,
+      }
     },
   },
   {

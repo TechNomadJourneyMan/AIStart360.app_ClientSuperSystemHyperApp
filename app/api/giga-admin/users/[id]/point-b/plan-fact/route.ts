@@ -47,9 +47,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       })
       await auditPlan(ctx, req, {
         action: PLANFACT_AUDIT.factsSaved, entityType: 'company', entityId: ctx.company.id,
-        metadata: { period: r.period, saved: r.saved, cleared: r.cleared, via: 'giga' },
+        metadata: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, via: 'giga' },
       })
-      return json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
+      return json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
     } catch (err) {
       const failure = planFactFailure(err)
       if (failure) return failure

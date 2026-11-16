@@ -21,7 +21,7 @@ import {
   type PointAResolvedInputs,
 } from '@/lib/point-a-engine'
 import type { BlockScore, DiagnosticStage, PointA } from '@/types/onboarding'
-import { BLOCK_LIBRARY, overallAllowed, type BlockKey, type EffectiveBlock } from './config'
+import { BLOCK_LIBRARY, MIN_COVERAGE, overallAllowed, type BlockKey, type EffectiveBlock } from './config'
 import { answeredSteps, isAnswered } from './check-inputs'
 import { CHECK_LABELS } from './check-labels'
 import { productChecks, teamChecks } from './extra-blocks'
@@ -29,8 +29,8 @@ import { hashOf } from '../snapshot-diff'
 
 export const POINT_A_V4_ENGINE = 'engine:point_a_v4'
 
-/** Below this coverage a block has no score. */
-export const MIN_COVERAGE = 0.4
+/** Below this coverage a block has no score (defined in ./config — the browser-safe rules). */
+export { MIN_COVERAGE }
 const BASE_CONFIDENCE = 0.9
 const CONFLICT_PENALTY = 0.3
 

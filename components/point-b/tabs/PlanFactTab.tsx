@@ -23,9 +23,10 @@ import {
 } from '../planFactModel'
 import type { PointBStateSnapshot } from '../pointBStateController'
 import VersionCompare from '../VersionCompare'
+import PlanPrepNotice from '../PlanPrepNotice'
 import { SectionError, SectionSkeleton } from './OverviewTab'
 
-export const PLANFACT_EMPTY_NO_PLAN = 'План-факт появится после одобрения плана экспертом'
+export const PLANFACT_EMPTY_NO_PLAN = 'План-факт появится после одобрения плана'
 export const PLANFACT_NO_AGGREGATE = 'Единый процент выполнения не считаем: у каждой цели — доля пройденного пути и доля прошедшего времени.'
 
 function VerdictBar({ state }: { state: PlanFactState }) {
@@ -218,6 +219,8 @@ export function PlanFactView({ state, preview, onSaved, factUrl, audience = 'cli
           kpis={state.kpis}
           period={state.reconciliation.period}
           initial={state.reconciliation.values}
+          byExpert={state.reconciliation.byExpert}
+          months={state.reconciliation.months}
           done={state.reconciliation.done}
           audience={audience}
           url={factUrl}
@@ -248,6 +251,7 @@ export default function PlanFactTab({ snap, onRetry, onSaved, preview }: { snap:
   if (snap.phase === 'loading') return <SectionSkeleton label="Загружаем план-факт" />
   if (snap.phase === 'error') return <SectionError message={snap.error ?? 'Ошибка загрузки'} onRetry={onRetry} />
   if (snap.plan.status !== 'published') {
+    if (snap.plan.prep) return <PlanPrepNotice prep={snap.plan.prep} area="history" />
     return <Empty text={PLANFACT_EMPTY_NO_PLAN} sub="Когда план будет одобрен, здесь появятся сверки «план — факт» по месяцам, прогресс по целям и история версий." />
   }
   if (!snap.planFact) return <Empty text="План-факт готовится" sub="Сверки появятся после первого пересчёта плана." />

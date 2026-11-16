@@ -17,6 +17,8 @@ import { companyOfUser } from '../plan/flow'
 import { goalsSnapshotFrom, loadLatestReviews, snapshotGoals } from '../plan/goals'
 import { loadPlanBundle, type PlanBundle } from '../plan/store'
 import type { PlanGoalsSnapshot } from '../plan/types'
+import { planPrepState, withPlanTask } from '../plan/waiting'
+import { loadClientTaskNotice } from '@/lib/expert-sla/client-view'
 import { loadStrategyState } from '../strategy/load'
 import { listActiveInvites } from '../invites/store'
 import type { InviteView } from '../invites/types'
@@ -122,6 +124,21 @@ export async function loadModelForCompany(
 
 const EMPTY_BUNDLE: PlanBundle = { plan: null, versions: [], open: null, published: null }
 
+export class PointBCompanyError extends Error {
+  constructor() {
+    super('point-b state: the named company is not a company of this user')
+    this.name = 'PointBCompanyError'
+  }
+}
+
+/** The company `companyId` when `userId` owns it; null otherwise (never another owner's company). */
+async function ownCompany(sb: SupabaseClient, userId: string, companyId: string): Promise<{ id: string; name: string | null } | null> {
+  const { data, error } = await sb.from('companies').select('id, name').eq('id', companyId).eq('user_id', userId).maybeSingle()
+  if (error) throw new Error(`point-b state: company read failed (${error.code ?? 'unknown'})`)
+  const row = data as { id: string; name?: string | null } | null
+  return row ? { id: row.id, name: row.name ?? null } : null
+}
+
 /** The scenarios stored in an approved version; anything that is not a scenario object is dropped. */
 function storedScenarios(raw: unknown): ScenarioResult[] {
   return Array.isArray(raw) ? (raw.filter((s) => s && typeof s === 'object' && typeof (s as { key?: unknown }).key === 'string') as ScenarioResult[]) : []
@@ -133,9 +150,13 @@ function storedScenarios(raw: unknown): ScenarioResult[] {
  * a goal gets a level-0 result, not an error. Plan tables that are not there yet (migration 125) mean
  * «no plan».
  */
-export async function loadPointBState(sb: SupabaseClient, userId: string, opts: { now?: Date } = {}): Promise<PointBState> {
+export async function loadPointBState(sb: SupabaseClient, userId: string, opts: { now?: Date; companyId?: string | null } = {}): Promise<PointBState> {
   const now = opts.now ?? new Date()
-  const company = await companyOfUser(sb, userId)
+  // R3-PB review L8: a caller that knows the company (the PDF / share link of the chosen company, the chat of a tenant)
+  // names it; it counts only when it is a company OF this user. Otherwise the user's first company, as the page does.
+  const company = opts.companyId ? await ownCompany(sb, userId, opts.companyId) : await companyOfUser(sb, userId)
+  // A named company that is not the user's is refused outright — never «the user's other data» in its place.
+  if (opts.companyId && !company) throw new PointBCompanyError()
 
   // With the company known every read below starts at once (one wave, a second one only for what needs
   // the approved version): the page used to wait for eight round trips one after another.
@@ -158,7 +179,7 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       ]).then(([read, bundle]) => (read ? goalsSnapshotFrom(read[1], read[0], bundle.published?.goals?.primary ?? undefined) : null))
     : Promise.resolve(null)
 
-  const [bundle, goals, { inputs, pb }, strategy, recs, invites, planFact] = await Promise.all([
+  const [bundle, goals, { inputs, pb }, strategy, recs, invites, planFact, planTask] = await Promise.all([
     bundleP,
     goalsP,
     loadModelForCompany(sb, { userId, companyId: company?.id ?? null, goals: goalsP, now, readGoals: readGoals ?? undefined }),
@@ -170,6 +191,8 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
     company
       ? bundleP.then((b) => (b.published ? quietly('plan-fact', () => loadPlanFactState(sb, { companyId: company.id, published: b.published, versions: b.versions, audience: 'client', now }), null) : null))
       : Promise.resolve(null),
+    // R3-SLA: the plan_prep task (152) — «План готовит: <имя>, до <срок>» / «Назначаем ответственного».
+    company ? loadClientTaskNotice(sb, { source: 'plan_prep', clientId: userId, sourceId: company.id, now }).catch(() => null) : Promise.resolve(null),
   ])
   const result = computeModel(inputs)
 
@@ -188,6 +211,11 @@ export async function loadPointBState(sb: SupabaseClient, userId: string, opts: 
       approvedAt: published ? (published.approved_at ?? published.created_at) : null,
       authorName: published ? expertDisplayName(published.author_name) : null,
       strategy,
+      prep: withPlanTask(planPrepState({
+        published: !!published,
+        open: bundle.open ? { status: bundle.open.status, createdAt: bundle.open.created_at, submittedAt: bundle.open.submitted_at } : null,
+        result,
+      }), planTask ? { assignee: planTask.assignee, dueAt: planTask.dueAt, overdue: planTask.overdue } : null),
     },
     recommendations: clientView(recs),
     invites,

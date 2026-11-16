@@ -334,8 +334,7 @@ describe('computeRealityCheck — блоки без данных из снимк
     expect(honest.some((i) => i.blockId === 'overall')).toBe(false)
   })
 
-  it('реалистичность пересчитывается без блоков без данных (нет штрафа за «слабые» нули)', () => {
-    // ×1,3 за год: CAGR 30 % → ambitious; с ≥ 2 «слабыми» нулевыми блоками было бы aggressive.
+  it('R3-PB (ревью M3): реалистичность — из модели Точки Б, от блоков Точки А не зависит; без балла — без «N/100»', () => {
     const ctx = baseCtx({
       // Статусы «средне»: правила против Точки А молчат, проверяем только реалистичность.
       pointA: { has_diagnostic: true, health_index: 50, blocks: zeros().map((b) => ({ ...b, status: 'average' })) },
@@ -346,7 +345,15 @@ describe('computeRealityCheck — блоки без данных из снимк
     })
     const penalised = computeRealityCheck({ sectionAvgs: { 'business-model': 8 }, ctx })
     expect(penalised.find((i) => i.blockId === 'business-model')?.finding).toMatch(/агрессивная/)
+    // Блоки без данных убираются из сравнения с Точкой А, но реалистичность цели (вердикт модели) остаётся той же.
     const honest = computeRealityCheck({ sectionAvgs: { 'business-model': 8 }, ctx, quality: { blocksWithoutData: ['finance', 'sales', 'marketing', 'strategy'], v1Fallback: false } })
-    expect(honest.find((i) => i.blockId === 'business-model')).toBeUndefined()
+    expect(honest.find((i) => i.blockId === 'business-model')?.finding).toMatch(/агрессивная/)
+    const noScore = baseCtx({
+      pointA: { has_diagnostic: true, health_index: 50, blocks: zeros().map((b) => ({ ...b, status: 'average' })) },
+      pointB: { current_revenue_year: 100_000_000, goal_12m_revenue_year: 130_000_000, goal_3y_revenue_year: null, gap: { required_mom_growth: null }, realism: { level: 'aggressive', score: null } },
+    })
+    const finding = computeRealityCheck({ sectionAvgs: { 'business-model': 8 }, ctx: noScore }).find((i) => i.blockId === 'business-model')!.finding
+    expect(finding).toMatch(/агрессивная\.$/)
+    expect(finding).not.toMatch(/\/100/)
   })
 })

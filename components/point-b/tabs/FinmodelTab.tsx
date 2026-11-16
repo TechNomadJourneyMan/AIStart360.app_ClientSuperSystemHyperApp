@@ -7,6 +7,8 @@
  * with what it unlocks and the two ways to bring it: a file or the expert. Percent is typed as
  * percent and sent as a fraction (finmodelController); only changed fields are sent.
  *
+ * R3 (M2): above the money — «Выручка по месяцам» (RevenueHistorySection), before the plan is approved.
+ *
  * Project tokens only — the PO will replace the design. Every state is local: loading → skeleton,
  * failure → a retry card, 402 → the Pro placeholder.
  */
@@ -21,6 +23,7 @@ import {
 } from '../finmodelController'
 import { GAP_ACTIONS, TONE_CLASS } from '../overviewModel'
 import PointBPaywall from '../PointBPaywall'
+import RevenueHistorySection from '../RevenueHistorySection'
 import { useFinmodel } from '../useFinmodel'
 import { SectionSkeleton } from './OverviewTab'
 
@@ -198,7 +201,7 @@ export function FinmodelFormView({ snap, onField, onNote, onSave, onRetry }: Fin
 
 export default function FinmodelTab({ onSaved, preview }: { onSaved?: () => void; preview?: FinmodelStateView }) {
   const { ctl, snap } = useFinmodel({ onSaved, preview })
-  return (
+  const form = (
     <FinmodelFormView
       snap={snap}
       onField={(k, t) => ctl.setField(k, t)}
@@ -206,5 +209,14 @@ export default function FinmodelTab({ onSaved, preview }: { onSaved?: () => void
       onSave={() => void ctl.save()}
       onRetry={() => void ctl.load()}
     />
+  )
+  // The preview (/dev/point-b-preview) never reaches the network: the revenue table is a live section only.
+  if (preview) return form
+  return (
+    <div className="space-y-4">
+      {/* R3 (M2): the revenue by month BEFORE the plan — 12 months in a row give the overview its forecast. */}
+      <RevenueHistorySection onSaved={onSaved} />
+      {form}
+    </div>
   )
 }

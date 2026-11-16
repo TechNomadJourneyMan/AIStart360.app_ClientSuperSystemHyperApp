@@ -647,3 +647,439 @@ describe.skipIf(!dbTestsEnabled)('R2-B: исправления по ревью (
       expect(fresh.escalated_at).toBeNull()
     }))
 })
+
+// ─── R3-SLA (152): pa_ai_review and plan_prep ───────────────────────────────
+const AI_TEXT = {
+  executive_summary: 'ИИ: бизнес растёт', industry_context: 'норма отрасли',
+  strategic_priorities: [{ title: 'Повторные продажи', rationale: 'база есть', expected_impact: '+10 %' }],
+  growth_roadmap: [{ horizon: '30_days', actions: ['a'] }],
+  blocks: { finance: { diagnosis: 'маржа ок' } },
+}
+
+async function clock152(db: Db, iso = '2000-01-01T00:00:00Z') {
+  await db.query(
+    `INSERT INTO public.system_settings (key, value) VALUES ('expert_sla_clock_start_152', to_jsonb($1::text))
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [iso],
+  )
+}
+
+async function seedAnalysis(db: Db, userId: string, companyId: string | null, opts: {
+  status?: string; analysis?: unknown; generatedAt?: Date; reviewedAt?: Date | null; edits?: unknown
+} = {}): Promise<string> {
+  const { rows } = await db.query(
+    `INSERT INTO public.diagnostics (user_id, company_id, overall_score, ai_status, ai_analysis, ai_generated_at, ai_reviewed_at, ai_reviewed_by_name, ai_expert_edits)
+     VALUES ($1, $2, 61, $3, $4::jsonb, $5, $6, CASE WHEN $6::timestamptz IS NULL THEN NULL ELSE 'Эксперт' END, $7::jsonb) RETURNING id::text AS id`,
+    [userId, companyId, opts.status ?? 'completed', opts.analysis === undefined ? JSON.stringify(AI_TEXT) : JSON.stringify(opts.analysis),
+      opts.generatedAt ?? null, opts.reviewedAt ?? null, opts.edits === undefined ? null : JSON.stringify(opts.edits)],
+  )
+  return rows[0].id as string
+}
+
+async function seedPlan(db: Db, companyId: string, userId: string): Promise<string> {
+  return (await db.query(`INSERT INTO public.pb_plans (company_id, user_id) VALUES ($1, $2) RETURNING id`, [companyId, userId])).rows[0].id as string
+}
+
+async function planPrep(db: Db, now: Date, waiting: Array<{ company: string; client: string }>, dropped: Array<{ company: string; reason: string }> = []): Promise<SyncRow[]> {
+  return asService(db, async () => (await db.query(
+    `SELECT * FROM public.expert_sla_plan_prep($1, 24, 48, $2::jsonb, $3::jsonb, 200)`,
+    [now, JSON.stringify(waiting), JSON.stringify(dropped)],
+  )).rows as SyncRow[])
+}
+
+async function openAiReview(db: Db, diag: string, now: Date, claim: boolean, claimQueue: boolean): Promise<SyncRow[]> {
+  return asService(db, async () => (await db.query(
+    `SELECT * FROM public.expert_sla_open_ai_review($1, $2, 24, 48, 200, $3, $4)`, [diag, now, claim, claimQueue],
+  )).rows as SyncRow[])
+}
+
+describe.skipIf(!dbTestsEnabled)('R3-SLA: ИИ-разбор Точки А и план Точки Б (152)', () => {
+  afterAll(closeTestPool)
+
+  it('the source CHECK admits the two new sources and keeps the old ones', () =>
+    inRollback(async (db) => {
+      const client = await seedUser(db, { status: 'approved' })
+      for (const s of ['case', 'report_review', 'rec_review', 'plan_review', 'pa_ai_review', 'plan_prep']) {
+        await db.query(
+          `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, title, received_at, reaction_due_at, answer_due_at, closed_at)
+           VALUES ($1, $1 || '-x', $2, 't', now(), now(), now(), now())`, [s, client])
+      }
+      expect(await pgErrorCode(db.query(
+        `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, title, received_at, reaction_due_at, answer_due_at)
+         VALUES ('bogus', 'b', $1, 't', now(), now(), now())`, [client]))).toBe('23514')
+    }))
+
+  it('pa_ai_review: a ready / partial unchecked analysis opens a task for the responsible expert; nothing else does', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const mk = async () => { const u = await seedUser(db, { status: 'approved' }); return { u, c: await seedCompany(db, u) } }
+      const ready = await mk(); const partial = await mk(); const reviewed = await mk(); const processing = await mk()
+      const legacy = await mk(); const none = await mk(); const failedEmpty = await mk()
+      await assign(db, ready.u, expert)
+      const readyDiag = await seedAnalysis(db, ready.u, ready.c, { generatedAt: plus(t0, -1) })
+      await seedAnalysis(db, partial.u, partial.c, { status: 'failed', analysis: { ...AI_TEXT, partial: ['blocksB'] } })
+      await seedAnalysis(db, reviewed.u, reviewed.c, { reviewedAt: plus(t0, -0.5) })
+      await seedAnalysis(db, processing.u, processing.c, { status: 'processing' })
+      await seedAnalysis(db, legacy.u, legacy.c, { analysis: { strengths_text: 'старый v1' } })
+      await seedAnalysis(db, none.u, none.c, { status: 'none', analysis: null })
+      await seedAnalysis(db, failedEmpty.u, failedEmpty.c, { status: 'failed', analysis: null })
+      const all = [ready, partial, reviewed, processing, legacy, none, failedEmpty].map((x) => x.u)
+
+      const changes = (await sync(db, t0)).filter((c) => all.includes(c.r_client))
+      expect(changes.map((c) => `${c.r_source}:${c.r_change}`).sort()).toEqual(['pa_ai_review:new', 'pa_ai_review:new'])
+      const [r] = await tasksOf(db, ready.u)
+      expect(r).toMatchObject({ source: 'pa_ai_review', source_id: readyDiag, assignee_id: expert, assigned_via: 'client', first_response_at: null })
+      expect(r.received_at.getTime()).toBe(plus(t0, -1).getTime()) // the analysis' moment
+      expect(r.answer_due_at.getTime() - r.received_at.getTime()).toBe(48 * H)
+      const [p] = await tasksOf(db, partial.u)
+      expect(p).toMatchObject({ source: 'pa_ai_review', assignee_id: null })
+      expect((p as unknown as { title: string }).title).toContain('частичный')
+      for (const x of [reviewed, processing, legacy, none, failedEmpty]) expect(await tasksOf(db, x.u)).toEqual([])
+      // Idempotent: the next pass opens nothing.
+      expect((await sync(db, plus(t0, 0.1))).filter((c) => all.includes(c.r_client) && c.r_change === 'new')).toEqual([])
+    }))
+
+  it('pa_ai_review: saved corrections = reaction, confirmation = answer; thresholds stop', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const diag = await seedAnalysis(db, client, company, { generatedAt: t0 })
+      await sync(db, t0)
+      const [task] = await tasksOf(db, client)
+      expect((await claim(db, 'escalated', plus(t0, 23.9))).filter((x) => x.id === task.id)).toEqual([])
+
+      await db.query(`UPDATE public.diagnostics SET ai_expert_edits = '{"note":"Проверю"}'::jsonb WHERE id = $1`, [diag])
+      const reacted = (await sync(db, plus(t0, 5))).filter((c) => c.r_task === task.id)
+      expect(reacted.map((c) => c.r_change)).toEqual(['reacted'])
+      expect((await tasksOf(db, client))[0].first_response_at!.getTime()).toBe(plus(t0, 5).getTime())
+      expect((await claim(db, 'escalated', plus(t0, 30))).filter((x) => x.id === task.id)).toEqual([])
+
+      await db.query(`UPDATE public.diagnostics SET ai_reviewed_at = $2, ai_reviewed_by_name = 'Эксперт' WHERE id = $1`, [diag, plus(t0, 31)])
+      const closed = (await sync(db, plus(t0, 32))).filter((c) => c.r_task === task.id)
+      expect(closed.map((c) => c.r_change)).toEqual(['closed'])
+      const [done] = await tasksOf(db, client)
+      expect(done).toMatchObject({ close_reason: 'reviewed', answered: true })
+      expect(done.closed_at!.getTime()).toBe(plus(t0, 31).getTime())
+      expect((await claim(db, 'breached', plus(t0, 60))).filter((x) => x.id === task.id)).toEqual([])
+      // A confirmed analysis never reopens.
+      expect((await sync(db, plus(t0, 61))).filter((c) => c.r_client === client)).toEqual([])
+    }))
+
+  it('pa_ai_review: a recalculation (new current row) supersedes the task; the new analysis keeps the clock and the escalation', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const d1 = await seedAnalysis(db, client, company, { generatedAt: t0 })
+      await sync(db, t0)
+      expect((await claim(db, 'escalated', plus(t0, 25))).filter((x) => x.client_id === client)).toHaveLength(1)
+      // The nightly recalculation: a new current row; the AI analysis is generated later.
+      const d2 = await seedAnalysis(db, client, company, { status: 'processing', analysis: null })
+      await sync(db, plus(t0, 26))
+      let all = await tasksOf(db, client)
+      expect(all).toHaveLength(1)
+      expect(all[0]).toMatchObject({ source_id: d1, close_reason: 'superseded', answered: false })
+      await db.query(`UPDATE public.diagnostics SET ai_status = 'completed', ai_analysis = $2::jsonb, ai_generated_at = $3 WHERE id = $1`,
+        [d2, JSON.stringify(AI_TEXT), plus(t0, 27)])
+      await sync(db, plus(t0, 28))
+      all = await tasksOf(db, client)
+      const fresh = all.find((t) => t.closed_at === null)!
+      expect(fresh.source_id).toBe(d2)
+      expect(fresh.received_at.getTime()).toBe(t0.getTime()) // inherited
+      expect(fresh.escalated_at).not.toBeNull() // already escalated — not again
+      expect((await claim(db, 'escalated', plus(t0, 29))).filter((x) => x.client_id === client)).toEqual([])
+    }))
+
+  it('pa_ai_review: a regeneration of the same row keeps the task; nothing left to check closes it as failed', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const diag = await seedAnalysis(db, client, await seedCompany(db, client), { generatedAt: t0 })
+      await sync(db, t0)
+      await db.query(`UPDATE public.diagnostics SET ai_status = 'processing' WHERE id = $1`, [diag])
+      expect((await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)).toEqual([])
+      expect((await tasksOf(db, client))[0].closed_at).toBeNull()
+      await db.query(`UPDATE public.diagnostics SET ai_status = 'failed', ai_analysis = NULL WHERE id = $1`, [diag])
+      await sync(db, plus(t0, 2))
+      expect((await tasksOf(db, client))[0]).toMatchObject({ close_reason: 'failed', answered: false })
+    }))
+
+  it('pa_ai_review follows the client\'s responsible (realign); plan_prep never does', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const e1 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const e2 = await seedUser(db, { role: 'expert', status: 'approved' })
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await assign(db, client, e1)
+      await seedAnalysis(db, client, company, { generatedAt: t0 })
+      await sync(db, t0)
+      await planPrep(db, t0, [{ company, client }])
+      await assign(db, client, e2) // the trigger of 146 realigns at once
+      const by = Object.fromEntries((await tasksOf(db, client)).map((t) => [t.source, t]))
+      expect(by.pa_ai_review.assignee_id).toBe(e2)
+      expect(by.plan_prep.assignee_id).toBeNull()
+    }))
+
+  it('the immediate path: one row only, the announcement claimed at insert, no duplicate with the pass', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const a = await seedUser(db, { status: 'approved' })
+      const b = await seedUser(db, { status: 'approved' })
+      await assign(db, a, expert)
+      const da = await seedAnalysis(db, a, await seedCompany(db, a), { generatedAt: t0 })
+      const db2 = await seedAnalysis(db, b, await seedCompany(db, b), { generatedAt: t0 })
+      const ra = await openAiReview(db, da, t0, true, true)
+      expect(ra.map((r) => [r.r_client, r.r_change, r.r_assignee])).toEqual([[a, 'new', expert]])
+      expect(await tasksOf(db, b)).toEqual([]) // only the row asked for
+      expect((await tasksOf(db, a))[0].assign_notified_at!.getTime()).toBe(t0.getTime())
+      expect((await tasksOf(db, a))[0].queue_notified_at).toBeNull()
+      const rb = await openAiReview(db, db2, t0, true, true)
+      expect(rb.map((r) => r.r_assignee)).toEqual([null])
+      expect((await tasksOf(db, b))[0].queue_notified_at!.getTime()).toBe(t0.getTime())
+      // Repeated / the pass afterwards: nothing new.
+      expect(await openAiReview(db, da, plus(t0, 0.1), true, true)).toEqual([])
+      expect((await sync(db, plus(t0, 0.1))).filter((c) => [a, b].includes(c.r_client) && c.r_change === 'new')).toEqual([])
+      // Without the claim (the pass) the outbox announces it.
+      const c = await seedUser(db, { status: 'approved' })
+      await assign(db, c, expert)
+      await seedAnalysis(db, c, await seedCompany(db, c), { generatedAt: t0 })
+      await sync(db, plus(t0, 0.2))
+      expect((await tasksOf(db, c))[0].assign_notified_at).toBeNull()
+    }))
+
+  it('plan_prep: opened for a waiting client only, no assignee; a draft = reaction, an approval = answer', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const other = await seedUser(db, { status: 'approved' })
+      const busy = await seedUser(db, { status: 'approved' })
+      const busyCo = await seedCompany(db, busy)
+      await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status) VALUES ($1, 1, 'draft')`, [await seedPlan(db, busyCo, busy)])
+      const opened = await planPrep(db, t0, [{ company, client }, { company, client: other }, { company: busyCo, client: busy }])
+      expect(opened.map((r) => `${r.r_source}:${r.r_change}:${r.r_client}`)).toEqual([`plan_prep:new:${client}`])
+      const [task] = await tasksOf(db, client)
+      expect(task).toMatchObject({ source_id: company, assignee_id: null, first_response_at: null })
+      expect(task.received_at.getTime()).toBe(t0.getTime())
+      expect(task.answer_due_at.getTime()).toBe(plus(t0, 48).getTime())
+      expect(await planPrep(db, plus(t0, 0.1), [{ company, client }])).toEqual([]) // idempotent
+      expect(await tasksOf(db, busy)).toEqual([])
+
+      const plan = await seedPlan(db, company, client)
+      const v = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, created_at) VALUES ($1, 1, 'draft', $2) RETURNING id`, [plan, plus(t0, 3)])).rows[0].id
+      expect((await sync(db, plus(t0, 4))).filter((c) => c.r_task === task.id).map((c) => c.r_change)).toEqual(['reacted'])
+      expect((await tasksOf(db, client))[0].first_response_at!.getTime()).toBe(plus(t0, 3).getTime())
+      // The scan no longer lists him (a draft is open) — the task is kept while the plan is in work.
+      expect(await planPrep(db, plus(t0, 5), [], [{ company, reason: 'needs_data' }])).toEqual([])
+      expect((await tasksOf(db, client))[0].closed_at).toBeNull()
+
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'approved', approved_at = $2 WHERE id = $1`, [v, plus(t0, 10)])
+      expect((await sync(db, plus(t0, 11))).filter((c) => c.r_task === task.id).map((c) => c.r_change)).toEqual(['closed'])
+      const [done] = await tasksOf(db, client)
+      expect(done).toMatchObject({ close_reason: 'approved', answered: true })
+      expect(done.closed_at!.getTime()).toBe(plus(t0, 10).getTime())
+      // An approved plan: the scan's «waiting» cannot reopen it.
+      expect(await planPrep(db, plus(t0, 12), [{ company, client }])).toEqual([])
+    }))
+
+  it('plan_prep: thresholds 24 / 48 h; dropped without a version → closed without an answer; the company changing owner → gone', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const a = await seedUser(db, { status: 'approved' })
+      const ca = await seedCompany(db, a)
+      const b = await seedUser(db, { status: 'approved' })
+      const cb = await seedCompany(db, b)
+      await planPrep(db, t0, [{ company: ca, client: a }, { company: cb, client: b }])
+      const mine = (rows: TaskRow[]) => rows.filter((t) => t.client_id === a)
+      expect(mine(await claim(db, 'escalated', plus(t0, 23.9)))).toEqual([])
+      expect(mine(await claim(db, 'escalated', plus(t0, 24.1)))).toHaveLength(1)
+      expect(mine(await claim(db, 'breached', plus(t0, 48.5)))).toHaveLength(1)
+
+      expect((await planPrep(db, plus(t0, 49), [], [{ company: ca, reason: 'no_access' }])).map((r) => r.r_change)).toEqual(['closed'])
+      expect((await tasksOf(db, a))[0]).toMatchObject({ close_reason: 'no_access', answered: false })
+      // He waits again within the window: the clock (and the thresholds already sent) is inherited.
+      await planPrep(db, plus(t0, 50), [{ company: ca, client: a }])
+      const again = (await tasksOf(db, a)).find((t) => t.closed_at === null)!
+      expect(again.received_at.getTime()).toBe(t0.getTime())
+      expect(again.breached_at).not.toBeNull()
+
+      const other = await seedUser(db, { status: 'approved' })
+      await db.query(`UPDATE public.companies SET user_id = $2 WHERE id = $1`, [cb, other])
+      await sync(db, plus(t0, 51))
+      expect((await tasksOf(db, b))[0]).toMatchObject({ close_reason: 'gone', answered: false })
+    }))
+
+  it('PO: while plan_prep is open, a version sent for approval opens NO plan_review — one deadline, one escalation, answered by the approval', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await planPrep(db, t0, [{ company, client }])
+      const plan = await seedPlan(db, company, client)
+      const v1 = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, created_at, submitted_at) VALUES ($1, 1, 'in_review', $2, $3) RETURNING id`, [plan, plus(t0, 2), plus(t0, 3)])).rows[0].id
+      const opened = (await sync(db, plus(t0, 4))).filter((c) => c.r_client === client)
+      expect(opened.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['plan_prep:reacted']) // no plan_review:new
+      // Returned for changes and sent again — still the one task.
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'draft', rejected_at = $2, rejected_reason = 'нет темпа' WHERE id = $1`, [v1, plus(t0, 5)])
+      await sync(db, plus(t0, 6))
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'in_review', submitted_at = $2 WHERE id = $1`, [v1, plus(t0, 7)])
+      await sync(db, plus(t0, 8))
+      expect((await tasksOf(db, client)).map((t) => t.source)).toEqual(['plan_prep'])
+      // One escalation path: past 48 h only plan_prep is claimed.
+      expect((await claim(db, 'breached', plus(t0, 48.5))).filter((t) => t.client_id === client).map((t) => t.source)).toEqual(['plan_prep'])
+      // The approval answers plan_prep; nothing is opened for the approved version.
+      await db.query(`UPDATE public.pb_plan_versions SET status = 'approved', approved_at = $2 WHERE id = $1`, [v1, plus(t0, 49)])
+      const closed = (await sync(db, plus(t0, 50))).filter((c) => c.r_client === client)
+      expect(closed.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['plan_prep:closed'])
+      const all = await tasksOf(db, client)
+      expect(all).toHaveLength(1)
+      expect(all[0]).toMatchObject({ source: 'plan_prep', close_reason: 'approved', answered: true })
+    }))
+
+  it('without an open plan_prep (a plan started outside the queue, or the task closed) plan_review opens as before', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      // (a) never in the queue: the plan was started by staff directly.
+      const a = await seedUser(db, { status: 'approved' })
+      const ca = await seedCompany(db, a)
+      const va = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, submitted_at) VALUES ($1, 1, 'in_review', $2) RETURNING id`, [await seedPlan(db, ca, a), plus(t0, 1)])).rows[0].id
+      // (b) plan_prep closed without an answer (no Point B access, no version then), later a version is sent.
+      const b = await seedUser(db, { status: 'approved' })
+      const cb = await seedCompany(db, b)
+      await planPrep(db, t0, [{ company: cb, client: b }])
+      await planPrep(db, plus(t0, 1), [], [{ company: cb, reason: 'no_access' }])
+      const vb = (await db.query(`INSERT INTO public.pb_plan_versions (plan_id, version, status, submitted_at) VALUES ($1, 1, 'in_review', $2) RETURNING id`, [await seedPlan(db, cb, b), plus(t0, 2)])).rows[0].id
+      // (c) another company's open plan_prep does not hold this one's approval.
+      const c = await seedUser(db, { status: 'approved' })
+      await planPrep(db, t0, [{ company: await seedCompany(db, c), client: c }])
+
+      const changes = (await sync(db, plus(t0, 3))).filter((x) => [a, b].includes(x.r_client) && x.r_change === 'new')
+      expect(changes.map((x) => x.r_source)).toEqual(['plan_review', 'plan_review'])
+      const ra = (await tasksOf(db, a)).find((t) => t.source === 'plan_review')!
+      expect(ra).toMatchObject({ source_id: va, assignee_id: null })
+      expect(ra.received_at.getTime()).toBe(plus(t0, 1).getTime()) // the clock of 149: from the submission
+      expect((await tasksOf(db, b)).find((t) => t.source === 'plan_review')!.source_id).toBe(vb)
+    }))
+
+  it('the clock of 152: work that waited before the new sources counts from their clock start', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      await clock152(db, plus(t0, -2).toISOString())
+      const client = await seedUser(db, { status: 'approved' })
+      await seedAnalysis(db, client, await seedCompany(db, client), { generatedAt: plus(t0, -500) })
+      await sync(db, t0)
+      const [task] = await tasksOf(db, client)
+      expect(task.received_at.getTime()).toBe(plus(t0, -2).getTime())
+      expect((await claim(db, 'breached', t0)).filter((x) => x.client_id === client)).toEqual([])
+      // Written once, on the first call.
+      await db.query(`DELETE FROM public.system_settings WHERE key = 'expert_sla_clock_start_152'`)
+      await asService(db, () => db.query(`SELECT public.expert_sla_clock_152($1)`, [plus(t0, 1)]))
+      await asService(db, () => db.query(`SELECT public.expert_sla_clock_152($1)`, [plus(t0, 9)]))
+      const v = (await db.query(`SELECT value #>> '{}' AS v FROM public.system_settings WHERE key = 'expert_sla_clock_start_152'`)).rows[0].v
+      expect(new Date(v).getTime()).toBe(plus(t0, 1).getTime())
+    }))
+
+  it('RLS and rights: the client sees his new tasks, the expert his client\'s; the new functions are service-role only', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const expert = await seedUser(db, { role: 'expert', status: 'approved' })
+      const stranger = await seedUser(db, { role: 'expert', status: 'approved' })
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await assign(db, client, expert)
+      const diag = await seedAnalysis(db, client, company, { generatedAt: t0 })
+      await sync(db, t0)
+      await planPrep(db, t0, [{ company, client }])
+      const seen = (uid: string) => asUser(db, uid, async () =>
+        (await db.query(`SELECT source FROM public.expert_sla_tasks WHERE client_id = $1 ORDER BY source`, [client])).rows.map((r) => r.source as string))
+      expect(await seen(client)).toEqual(['pa_ai_review', 'plan_prep'])
+      expect(await seen(expert)).toEqual(['pa_ai_review', 'plan_prep'])
+      expect(await seen(stranger)).toEqual([])
+      for (const sql of [
+        [`SELECT * FROM public.expert_sla_open_ai_review($1::uuid, now(), 24, 48, 5, true, true)`, [diag]],
+        [`SELECT * FROM public.expert_sla_plan_prep(now(), 24, 48, '[]'::jsonb, '[]'::jsonb, 5)`, []],
+        [`SELECT public.expert_sla_clock_152(now())`, []],
+      ] as Array<[string, unknown[]]>) {
+        expect(await pgErrorCode(asUser(db, client, () => db.query(sql[0], sql[1])))).toBe('42501')
+        expect(await pgErrorCode(asUser(db, expert, () => db.query(sql[0], sql[1])))).toBe('42501')
+      }
+    }))
+
+  it('152 is idempotent; the rollback deletes the new-source rows, narrows the CHECK, restores 149 — and 152 applies again', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      await clock152(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      await seedAnalysis(db, client, company, { generatedAt: t0 })
+      const caseId = await seedCase(db, client)
+      const up = readFileSync(join(process.cwd(), 'supabase/migrations/152_expert_sla_ai_review_plan_prep.sql'), 'utf8')
+      const down = readFileSync(join(process.cwd(), 'supabase/migrations/rollback/152_expert_sla_ai_review_plan_prep.down.sql'), 'utf8')
+      await db.query(up) // a second application changes nothing
+      await sync(db, t0)
+      await planPrep(db, t0, [{ company, client }])
+      expect((await tasksOf(db, client)).map((t) => t.source).sort()).toEqual(['case', 'pa_ai_review', 'plan_prep'])
+
+      await db.query(down)
+      expect((await tasksOf(db, client)).map((t) => t.source)).toEqual(['case']) // the case task stays
+      await db.query('SAVEPOINT narrow')
+      expect(await pgErrorCode(db.query(
+        `INSERT INTO public.expert_sla_tasks (source, source_id, client_id, title, received_at, reaction_due_at, answer_due_at)
+         VALUES ('plan_prep', 'p', $1, 't', now(), now(), now())`, [client]))).toBe('23514')
+      await db.query('ROLLBACK TO SAVEPOINT narrow')
+      expect((await db.query(`SELECT to_regprocedure('public.expert_sla_plan_prep(timestamptz, int, int, jsonb, jsonb, int)') AS f`)).rows[0].f).toBeNull()
+      // 149's sync again: no AI-review task, the case still followed.
+      await db.query(`UPDATE public.expert_cases SET status = 'resolved' WHERE id = $1`, [caseId])
+      const after = (await sync(db, plus(t0, 1))).filter((c) => c.r_client === client)
+      expect(after.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['case:closed'])
+
+      await db.query(up)
+      const back = (await sync(db, plus(t0, 2))).filter((c) => c.r_client === client)
+      expect(back.map((c) => `${c.r_source}:${c.r_change}`)).toEqual(['pa_ai_review:new'])
+    }))
+
+  it('real Supabase grants: service_role cannot read auth.users — the pass and both 152 functions still work (staging 2026-11-15)', () =>
+    inRollback(async (db) => {
+      await clockStart(db)
+      const t0 = await txNow(db)
+      const client = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, client)
+      const diag = await seedAnalysis(db, client, company, { generatedAt: t0 })
+      // As on real Supabase: no SELECT on auth.users for service_role (nor through PUBLIC).
+      await db.query('REVOKE ALL ON auth.users FROM service_role')
+      await db.query('REVOKE ALL ON auth.users FROM PUBLIC')
+      const opened = await openAiReview(db, diag, t0, false, false)
+      expect(opened.map((r) => `${r.r_source}:${r.r_change}`)).toEqual(['pa_ai_review:new'])
+      await expect(planPrep(db, t0, [{ company, client }])).resolves.toBeDefined()
+      await expect(sync(db, plus(t0, 1))).resolves.toBeDefined()
+    }))
+})
+

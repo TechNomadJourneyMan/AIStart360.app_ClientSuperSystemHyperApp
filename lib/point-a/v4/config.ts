@@ -208,6 +208,8 @@ export const POINT_A_RULES_VERSION = 'r2'
  * следующий пересчёт каждой компании записывает новую Точку А.
  */
 export const MIN_OVERALL_WEIGHT_COVERAGE = 0.6
+/** Below this coverage a block has no score (lib/point-a/v4/engine.ts scoreBlock). */
+export const MIN_COVERAGE = 0.4
 /** ВРЕМЕННО (R-032): хотя бы один из этих блоков должен иметь балл. */
 export const OVERALL_REQUIRED_ANY_OF: readonly BlockKey[] = ['finance', 'sales']
 

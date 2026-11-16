@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  approveVersion, approveVersionDetailed, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, refreshGoals, rejectVersion, saveStrategy, submitVersion, updateDraft,
+  approveVersion as approveRaw, approveVersionDetailed as approveDetailedRaw, createDraft, getOrCreatePlan, loadPlanBundle, PlanError, refreshGoals, rejectVersion, saveStrategy, submitVersion, updateDraft,
 } from '@/lib/point-b/plan/store'
+import { REASON_NO_PACE, REASON_NO_SCENARIOS } from '@/lib/point-b/plan/status'
 import type { PlanStrategy } from '@/lib/point-b/strategy/types'
 import { StrategyError } from '@/lib/point-b/strategy/validate'
 import type { GoalReviewStatus, PlanGoalsSnapshot } from '@/lib/point-b/plan/types'
-import { pbDb } from './_pbdb'
+import { markCalculated, pbDb, type Row } from './_pbdb'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
 const COMPANY = 'company-1'
@@ -24,11 +25,18 @@ const draftInput = (over: Record<string, unknown> = {}) => ({
   goals: goals(), baseSnapshotId: null, author: EXPERT, changeReason: 'Первый план', ...over,
 })
 
+let currentDb: Record<string, Row[]> = {}
+
 async function setup() {
   const h = pbDb({ companies: [{ id: COMPANY, user_id: OWNER }] })
+  currentDb = h.db
   const plan = await getOrCreatePlan(h.sb, COMPANY, OWNER)
   return { ...h, plan }
 }
+
+// R3: the versions of these cases are calculated (scenarios + pace) before the approval; the R3 case below is not.
+const approveVersion: typeof approveRaw = (sb, id, actor, opts) => { markCalculated(currentDb, id); return approveRaw(sb, id, actor, opts) }
+const approveVersionDetailed: typeof approveDetailedRaw = (sb, id, actor, opts) => { markCalculated(currentDb, id); return approveDetailedRaw(sb, id, actor, opts) }
 
 /** A draft that went through submit. */
 async function inReview(h: Awaited<ReturnType<typeof setup>>, over: Record<string, unknown> = {}) {
@@ -303,5 +311,18 @@ describe('strategy in a plan version', () => {
     await saveStrategy(h.sb, v2.id, strategy('Новое название'))
     expect(h.db.pb_plan_versions[0].strategy).toEqual(strategy()) // the approved one is unchanged
     expect((h.db.pb_plan_versions[1].strategy as PlanStrategy).items[0].title).toBe('Новое название')
+  })
+
+  it('R3: a version without calculated scenarios or a chosen pace is not approved — not even by an exception', async () => {
+    const h = await setup()
+    const v = await inReview(h)
+    await expect(approveRaw(h.sb, v.id, ADMIN, { exceptionReason: 'Очень нужно опубликовать сегодня' }))
+      .rejects.toMatchObject({ code: 'conditions', reasons: [REASON_NO_SCENARIOS] })
+    const row = h.db.pb_plan_versions.find((r) => r.id === v.id)!
+    row.scenarios = [{ key: 'moderate' }]
+    await expect(approveRaw(h.sb, v.id, ADMIN)).rejects.toMatchObject({ code: 'conditions', reasons: [REASON_NO_PACE] })
+    expect(row.status).toBe('in_review')
+    row.selected_scenario = 'moderate'
+    expect(await approveRaw(h.sb, v.id, ADMIN)).toMatchObject({ status: 'approved', selected_scenario: 'moderate' })
   })
 })

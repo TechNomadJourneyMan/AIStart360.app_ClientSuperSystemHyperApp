@@ -7,7 +7,8 @@ import { isUpgradeRequired } from './pointBAccess'
 import type { PointBV2 } from '@/lib/point-b/engine'
 
 /**
- * The «Подробности» tab of Point B: the legacy page, unchanged (plan Phase 2 Task 8). Fetches
+ * The OLD «Подробности» view of Point B (plan Phase 2 Task 8) — R3 (M3, решение PO): no longer mounted for the
+ * client (the page shows one calculation, the model); the code stays until the PO says to remove V2. Fetches
  * the session-scoped, goal-driven plan from /api/v1/diagnostics/point-b (auth via session
  * cookie — no user_id param, so no cross-tenant read) and feeds {@link PointBView}, which owns
  * every loading/empty/error/insufficient/valid state. It is mounted when the tab is first
@@ -64,50 +65,8 @@ export default function PointBDetails() {
     load()
   }, [load])
 
-  // Kick off the async AI bridge then start polling. Triggered ONLY on demand —
-  // the manual "Сформировать/Обновить план" button, or the server-side fire from
-  // /recalculate when the диагностика is rebuilt. We deliberately do NOT call the
-  // LLM on page load: entering the page only READS the persisted strategy.
-  const generate = useCallback(async () => {
-    setAiStatus('processing')
-    try {
-      await fetch('/api/v1/diagnostics/point-b/ai-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          pointB?.diagnostic_id ? { diagnostic_id: pointB.diagnostic_id } : {},
-        ),
-      })
-    } catch {
-      // Network hiccup on kickoff — the poller below still reflects server truth.
-    }
-  }, [pointB?.diagnostic_id])
-
-  // Poll for AI status while processing (mirror app/client/point-a polling).
-  useEffect(() => {
-    if (aiStatus !== 'processing') return
-    const interval = setInterval(async () => {
-      try {
-        const qs = pointB?.diagnostic_id ? `?diagnostic_id=${pointB.diagnostic_id}` : ''
-        const res = await fetch(`/api/v1/diagnostics/point-b/ai-status${qs}`, { cache: 'no-store' })
-        const json = (await res.json()) as {
-          ok: boolean
-          data?: { ai_status: PointBV2['ai_status']; ai_strategy: Record<string, unknown> | null }
-        }
-        if (json.ok && json.data) {
-          const next = json.data.ai_status
-          setAiStatus(next)
-          setPointB((prev) =>
-            prev ? { ...prev, ai_status: next, ai_strategy: json.data!.ai_strategy } : prev,
-          )
-          if (next === 'completed' || next === 'failed') {
-            clearInterval(interval)
-          }
-        }
-      } catch {}
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [aiStatus, pointB?.diagnostic_id])
+  // R3 (S3, решение PO): the AI strategy of Точка Б is a draft for staff only — this client view never starts it
+  // and never polls it (the routes answer «none» to a client anyway). The old view shows no AI section action.
 
   const saveCurrentRevenue = useCallback(async (year: number) => {
     const res = await fetch('/api/v1/diagnostics/point-b/current-revenue', {
@@ -130,7 +89,6 @@ export default function PointBDetails() {
         error={error}
         reason={reason}
         onRecalculate={load}
-        onGenerate={generate}
         aiStatus={aiStatus}
         onSaveCurrentRevenue={saveCurrentRevenue}
         expertNote={expertNote}

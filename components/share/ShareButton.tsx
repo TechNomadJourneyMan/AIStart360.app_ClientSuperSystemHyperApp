@@ -43,6 +43,55 @@ interface ShareButtonProps {
   triggerLabel?: string | boolean
 }
 
+/**
+ * «Скачать PDF» of one report (blob download with the toasts of every
+ * outcome: 402 «в платном доступе», 404 «ещё не сформирован», 403, 401).
+ * Shared by the share dialog and the Point A page header (R3-PA).
+ */
+export async function downloadReportPdf(type: ShareReportType, companyId: string | null | undefined): Promise<void> {
+  try {
+    const url = `/api/export/report?type=${PDF_TYPE[type]}${
+      companyId ? `&companyId=${encodeURIComponent(companyId)}` : ''
+    }`
+    const res = await fetch(url)
+    if (!res.ok) {
+      // Read the error payload safely — distinguish "no report yet" / auth /
+      // permission from a genuine server fault so the user gets actionable copy.
+      let errCode: string | undefined
+      try {
+        const body = (await res.json()) as { error?: string }
+        errCode = body?.error
+      } catch {
+        errCode = undefined
+      }
+      if (res.status === 402 || errCode === 'upgrade_required') {
+        toast('PDF раздела — в платном доступе: оставьте заявку на доступ на странице раздела')
+      } else if (res.status === 404 || errCode === 'no_data') {
+        toast('Отчёт ещё не сформирован — заполните диагностику')
+      } else if (res.status === 403 || errCode === 'forbidden') {
+        toast.error('Недостаточно прав')
+      } else if (res.status === 401) {
+        toast.error('Войдите снова')
+      } else {
+        toast.error('Не удалось сформировать PDF')
+      }
+      return
+    }
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = `aistart360-${PDF_TYPE[type]}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // Revoke after a tick so the download has a chance to start.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  } catch {
+    toast.error('Не удалось сформировать PDF')
+  }
+}
+
 /** Extract the token out of a public link like `/r/<token>` or full URL. */
 function tokenFromUrl(url: string): string | null {
   const match = url.match(/\/r\/([^/?#]+)/)
@@ -167,45 +216,7 @@ export function ShareButton({
   const downloadPdf = async () => {
     setDownloading(true)
     try {
-      const url = `/api/export/report?type=${PDF_TYPE[type]}${
-        companyId ? `&companyId=${encodeURIComponent(companyId)}` : ''
-      }`
-      const res = await fetch(url)
-      if (!res.ok) {
-        // Read the error payload safely — distinguish "no report yet" / auth /
-        // permission from a genuine server fault so the user gets actionable copy.
-        let errCode: string | undefined
-        try {
-          const body = (await res.json()) as { error?: string }
-          errCode = body?.error
-        } catch {
-          errCode = undefined
-        }
-        if (res.status === 402 || errCode === 'upgrade_required') {
-          toast('PDF раздела — в платном доступе: оставьте заявку на доступ на странице раздела')
-        } else if (res.status === 404 || errCode === 'no_data') {
-          toast('Отчёт ещё не сформирован — заполните диагностику')
-        } else if (res.status === 403 || errCode === 'forbidden') {
-          toast.error('Недостаточно прав')
-        } else if (res.status === 401) {
-          toast.error('Войдите снова')
-        } else {
-          toast.error('Не удалось сформировать PDF')
-        }
-        return
-      }
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = objectUrl
-      a.download = `aistart360-${PDF_TYPE[type]}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      // Revoke after a tick so the download has a chance to start.
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
-    } catch {
-      toast.error('Не удалось сформировать PDF')
+      await downloadReportPdf(type, companyId)
     } finally {
       setDownloading(false)
     }

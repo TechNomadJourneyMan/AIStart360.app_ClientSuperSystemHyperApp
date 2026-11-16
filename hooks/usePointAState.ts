@@ -38,6 +38,22 @@ function isLocked(d: StateResponse | undefined): d is Locked {
   return !!d && 'locked' in d
 }
 
+/**
+ * How often the page re-reads its state (ms), or false. While the AI analysis
+ * is being prepared: every 10 s for the first 3 minutes, then every 30 s —
+ * and not for ever: after 15 min the server says «не завершился — Повторить»
+ * (lib/point-a/ai-claim.ts), the status is no longer 'processing' (ревью R3-PA H1).
+ */
+export function pollIntervalOf(d: StateResponse | undefined, now: number = Date.now()): number | false {
+  if (!d || isNoCompany(d) || isLocked(d)) return false
+  if (d.recalculation !== 'idle') return 5_000
+  if (d.aiAnalysis?.status === 'processing') {
+    const started = d.aiAnalysis.startedAt ? Date.parse(d.aiAnalysis.startedAt) : NaN
+    return Number.isFinite(started) && now - started > 3 * 60_000 ? 30_000 : 10_000
+  }
+  return 60_000
+}
+
 export function usePointAState(opts: { enabled?: boolean } = {}) {
   const query = useQuery({
     enabled: opts.enabled ?? true,
@@ -52,8 +68,9 @@ export function usePointAState(opts: { enabled?: boolean } = {}) {
       return body.data as PointAPageState
     },
     staleTime: 10_000,
-    // Poll only a company whose recalculation is under way (no company → never).
-    refetchInterval: (q) => (!q.state.data || isNoCompany(q.state.data) || isLocked(q.state.data) ? false : q.state.data.recalculation !== 'idle' ? 5_000 : 60_000),
+    // Poll only a company whose recalculation is under way (no company → never);
+    // while the AI analysis is being prepared — every 10 s (R3-PA).
+    refetchInterval: (q) => pollIntervalOf(q.state.data),
   })
   const raw = query.data
   const state: PointAPageState | undefined = raw && !isNoCompany(raw) && !isLocked(raw) ? (raw as PointAPageState) : undefined
@@ -85,6 +102,28 @@ export function useRecalculatePointA() {
   return useMutation({
     // Company-scoped (a member / admin recalculates the company, not their own questionnaire).
     mutationFn: async () => json<unknown>(await fetch('/api/v1/point-a/recalculate', { method: 'POST' })),
+    onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
+  })
+}
+
+/**
+ * «Повторить разбор» (R3-PA): POST /api/v1/diagnostics/retry-ai — owner or
+ * staff, its own rate limit and the paid-section gate; the AI budget is
+ * checked by the analysis itself. The page then polls the «готовится» state.
+ */
+export function useRetryAiAnalysis() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (diagnosticId: string) => {
+      const res = await fetch('/api/v1/diagnostics/retry-ai', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ diagnostic_id: diagnosticId }) })
+      const body = await res.json().catch(() => null)
+      // 409 «уже готовится / уже готов», 429 «повторить можно через N мин» — the server's own words.
+      const said = typeof body?.error === 'string' && /[а-яё]/i.test(body.error) ? body.error : null
+      if (res.status === 402 || body?.error === 'upgrade_required') throw new Error('Разбор ИИ — в платном доступе')
+      if (res.status === 429) throw new Error(said ?? 'Слишком много попыток — повторите через минуту')
+      if (!res.ok || !body?.ok) throw new Error(said ?? 'Не удалось перезапустить разбор')
+      return body as { ok: true; ai_status: string }
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
   })
 }

@@ -15,6 +15,8 @@ const s = vi.hoisted(() => ({
   expert: { ok: true, viewer: { id: 'x', role: 'expert', email: null } } as Record<string, unknown>,
   actor: { role: 'super_admin' as StaffRole, scope: 'all' as 'all' | 'assigned', id: 'x' },
   ai: [] as unknown[],
+  /** The session is staff (R3: only staff start the Point B AI strategy draft). */
+  staff: false,
 }))
 
 vi.mock('@/lib/supabase-server', () => ({
@@ -42,6 +44,8 @@ vi.mock('@/lib/api-identity', () => ({
   getSessionUser: async () => s.sessionUser,
   getSessionRole: async () => 'client',
   isStaffRole: () => false,
+  getSessionStaff: async (_sb: unknown, id: string) => (s.staff ? { id, role: 'admin' } : null),
+  mayActOnUser: async (_sb: unknown, caller: string, target: string) => caller === target || s.staff,
 }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/ai/budget', () => ({ guardAiBudget: async () => null }))
@@ -66,6 +70,7 @@ beforeEach(() => {
   s.expert = { ok: true, viewer: { id: EXPERT, role: 'expert', email: 'e@example.com' } }
   s.actor = { role: 'super_admin', scope: 'all', id: ADMIN }
   s.ai = []
+  s.staff = false
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network in this test') }))
 })
 
@@ -92,6 +97,15 @@ describe('client route', () => {
     expect(res.body.data.goals.current_revenue_year).toBe(60_000_000)
   })
 
+  it('R3 (S3): a stored AI strategy (a staff draft) never reaches the client', async () => {
+    s.admin = pointBSeed({ point_b_analysis: [{ id: 'pba-1', diagnostic_id: 'diag-1', is_current: true, ai_status: 'completed', ai_strategy: { strategic_bridge_summary: 'ЧЕРНОВИК-ИИ' } }] })
+    const res = await json(await clientRoute.GET(req()))
+    expect(res.status).toBe(200)
+    expect(res.body.data.ai_strategy).toBeNull()
+    expect(res.body.data.ai_status).toBe('none')
+    expect(JSON.stringify(res.body)).not.toContain('ЧЕРНОВИК-ИИ')
+  })
+
   it('persists the snapshot with the service client and keeps the AI fields', async () => {
     await clientRoute.GET(req())
     const writes = s.admin!.writes.filter((w) => w.table === 'point_b_analysis')
@@ -100,18 +114,33 @@ describe('client route', () => {
   })
 })
 
-describe('AI route', () => {
-  it('feeds the analyzer the same inputs (stale 2024 base included)', async () => {
-    const res = await json(await aiRoute.POST(new NextRequest('http://t/api', { method: 'POST', body: '{}' })))
+describe('AI route (R3, S3: the Point B AI strategy is a draft for staff only)', () => {
+  const post = (body: unknown) => aiRoute.POST(new NextRequest('http://t/api', { method: 'POST', body: JSON.stringify(body) }))
+
+  it('the client itself (no user_id, or its own) gets 403 staff_only — no model call, nothing read', async () => {
+    for (const body of [{}, { user_id: CLIENT }]) {
+      const res = await json(await post(body))
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('staff_only')
+    }
+    expect(s.ai).toEqual([])
+  })
+
+  it('staff acting on a client feeds the analyzer the same inputs (stale 2024 base included)', async () => {
+    s.sessionUser = { id: ADMIN }
+    s.staff = true
+    const res = await json(await post({ user_id: CLIENT }))
     expect(res.body).toMatchObject({ ok: true, ai_status: 'completed' })
     const pb = s.ai[0] as { data_quality: { base: { stale: boolean; period: string } }; goals: { current_revenue_year: number } }
     expect(pb.data_quality.base).toMatchObject({ stale: true, period: '2024' })
     expect(pb.goals.current_revenue_year).toBe(60_000_000)
   })
 
-  it('404 for a user without a diagnostic', async () => {
-    s.sessionUser = { id: OTHER_CLIENT }
-    expect((await json(await aiRoute.POST(new NextRequest('http://t/api', { method: 'POST', body: '{}' })))).status).toBe(404)
+  it('a non-staff session acting on another user is refused; staff on a client without a diagnostic → 404', async () => {
+    s.sessionUser = { id: ADMIN }
+    expect((await json(await post({ user_id: CLIENT }))).status).toBe(403)
+    s.staff = true
+    expect((await json(await post({ user_id: OTHER_CLIENT }))).status).toBe(404)
   })
 })
 
@@ -120,14 +149,19 @@ describe('expert route', () => {
     s.db = pointBSeed({ user_assignments: [{ user_id: CLIENT, assignee_id: EXPERT }] })
   })
 
-  it('no longer queries metrics?metric_key=eq.revenue: registry revenue fills the gap', async () => {
+  it('R3 (M3): the expert sees the client page state — the model (registry revenue as the base), not V2', async () => {
     const res = await json(await expertRoute.GET(req(), idParams(CLIENT)))
     expect(res.status).toBe(200)
     expect(fetch).not.toHaveBeenCalled()
-    const g12 = res.body.data.gap.find((g: { horizon: string }) => g.horizon === '12m')
-    expect(g12.current_revenue).toBe(60_000_000)
-    expect(g12.data_complete).toBe(true)
-    expect(res.body.data.data_quality.base).toMatchObject({ period: '2024', stale: true })
+    expect(res.body.data.access).toBe('ok')
+    expect(res.body.data.overview.labelledAutomatic).toBe(true)
+    expect(res.body.data.overview.result).toMatchObject({ modelVersion: 'pb-model-2' })
+    expect(res.body.data.overview.result.gap.baseAnnual).toBe(60_000_000)
+    expect(res.body.data.overview.result.gap.targetAnnual).toBe(120_000_000)
+    // no V2 fields
+    expect(res.body.data.gap).toBeUndefined()
+    expect(res.body.data.realism).toBeUndefined()
+    expect(res.body.data.plan.scenarios).toEqual([])
   })
 
   it('a client not assigned to the expert gets 403', async () => {
@@ -144,10 +178,11 @@ describe('expert route', () => {
     expect((await json(await expertRoute.GET(req(), idParams('not-a-uuid')))).status).toBe(400)
   })
 
-  it('no_diagnostic for an assigned client without Point A', async () => {
+  it('an assigned client without Point A still has the model state (the model does not need Point A)', async () => {
     s.db = pointBSeed({ diagnostics: [], user_assignments: [{ user_id: CLIENT, assignee_id: EXPERT }] })
     const res = await json(await expertRoute.GET(req(), idParams(CLIENT)))
-    expect(res.body).toEqual({ ok: true, data: null, reason: 'no_diagnostic' })
+    expect(res.status).toBe(200)
+    expect(res.body.data.overview.result.gap.baseAnnual).toBe(60_000_000)
   })
 
   it('an unauthenticated viewer is refused before any read', async () => {
@@ -157,11 +192,13 @@ describe('expert route', () => {
 })
 
 describe('GIGA route', () => {
-  it('returns the same Point B with a stale base', async () => {
+  it('R3 (M3): returns the client page state (the model + the approved plan only), the stale base as a warning', async () => {
     const res = await json(await gigaRoute.GET(req(), idParams(CLIENT)))
     expect(res.status).toBe(200)
-    expect(res.body.data.pointB.data_quality.base).toMatchObject({ period: '2024', stale: true })
-    expect(res.body.data.version).toBeNull()
+    expect(res.body.data.overview.result.gap.baseAnnual).toBe(60_000_000)
+    expect(res.body.data.overview.result.warnings.some((w: string) => /2024/.test(w))).toBe(true)
+    expect(res.body.data.pointB).toBeUndefined()
+    expect(res.body.version).toBeNull()
   })
 
   it('403 for an actor without access to the client (guardClientAccess)', async () => {
@@ -170,9 +207,10 @@ describe('GIGA route', () => {
     expect((await json(await gigaRoute.GET(req(), idParams(CLIENT)))).status).toBe(403)
   })
 
-  it('no_diagnostic keeps the old shape', async () => {
+  it('a client without Point A still has the model state', async () => {
     s.db = pointBSeed({ diagnostics: [] })
     const res = await json(await gigaRoute.GET(req(), idParams(CLIENT)))
-    expect(res.body.data).toEqual({ pointB: null, reason: 'no_diagnostic', version: null })
+    expect(res.status).toBe(200)
+    expect(res.body.data.access).toBe('ok')
   })
 })

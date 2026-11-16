@@ -29,7 +29,7 @@ describe('survey preview', () => {
     for (const variant of SURVEY_PREVIEW_VARIANTS) {
       for (let step = 1; step <= TOTAL_STEPS + 1; step++) {
         const html = renderToStaticMarkup(createElement(SurveyPreviewClient, { variant, step }))
-        expect(html, `${variant} / ${step}`).toContain('Минимум для Точки А')
+        expect(html, `${variant} / ${step}`).toContain('Ключевые вопросы Точки А')
       }
     }
     expect(errors).not.toHaveBeenCalled()
@@ -42,7 +42,7 @@ describe('survey preview', () => {
     expect(s9).toContain('aria-pressed="true"')
     const review = renderToStaticMarkup(createElement(SurveyPreviewClient, { variant: 'unknown', step: TOTAL_STEPS + 1 }))
     expect(review).toContain('Слепые зоны')
-    expect(review).toContain('Минимум для Точки А:')
+    expect(review).toContain('Ключевые вопросы Точки А:')
   })
 })
 

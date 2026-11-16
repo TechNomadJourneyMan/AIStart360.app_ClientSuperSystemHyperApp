@@ -12,7 +12,7 @@ import Link from 'next/link'
 import { useBlockDetail } from '@/hooks/usePointAState'
 import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { CHECK_LABELS } from '@/lib/point-a/v4/check-labels'
-import { CHIP, ConfidenceBar, Icon, toneColor } from './ui'
+import { BTN_PRIMARY, CHIP, ConfidenceBar, Icon, toneColor } from './ui'
 import { MetricRow } from './MetricParts'
 import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
@@ -150,6 +150,18 @@ function Body({ d, comments, preliminary, onClose, attribution, viewer }: { d: B
   )
 }
 
+/** R3-PA (B6, R-197): a failed load of the block says so AND offers «Повторить». */
+export function BlockLoadError({ onRetry, retrying = false }: { onRetry: () => void; retrying?: boolean }) {
+  return (
+    <div role="alert" data-block-error>
+      <p className="text-sm text-on-surface">Не удалось загрузить раздел.</p>
+      <button type="button" className={cn(BTN_PRIMARY, 'mt-3')} onClick={onRetry} disabled={retrying} aria-busy={retrying}>
+        <Icon name={retrying ? 'progress_activity' : 'refresh'} className={cn('text-[16px]', retrying && 'animate-spin')} />Повторить
+      </button>
+    </div>
+  )
+}
+
 export function BlockDetailPanel({ blockKey, title, onClose, preview, comments = [], preliminary = false, attribution = {}, viewer = {} }: { blockKey: string; title: string; onClose: () => void; preview?: BlockDetail; comments?: PointAComment[]; preliminary?: boolean; attribution?: Record<string, AnswerAttribution>; viewer?: AttributionViewer }) {
   const live = useBlockDetail(preview ? null : blockKey)
   const data = preview ?? live.data
@@ -168,7 +180,7 @@ export function BlockDetailPanel({ blockKey, title, onClose, preview, comments =
           <button type="button" onClick={onClose} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>
         </div>
         {data ? <Body d={data} comments={comments} preliminary={preliminary} onClose={onClose} attribution={attribution} viewer={viewer} /> : live.isError ? (
-          <p className="text-sm text-on-surface" role="alert">Не удалось загрузить раздел.</p>
+          <BlockLoadError onRetry={() => void live.refetch()} retrying={live.isFetching} />
         ) : (
           <div className="space-y-3" aria-busy="true">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] animate-pulse" />)}</div>
         )}

@@ -9,6 +9,7 @@
  */
 import { bandText, deseasonalise, monthOrdinal, trailingRun, volatilityBand } from './bands'
 import { fmtMoney, fmtPct } from './format'
+import { monthOrdinalInAlmaty } from '../period'
 import type { Forecast, ModelGoal, ModelInputs, ModelResult, Range } from './types'
 
 export const HISTORY_MIN_MONTHS = 12
@@ -30,7 +31,8 @@ export function describeHistory(history: ModelInputs['history'], nowIso: string)
   const sorted = history.filter((h) => monthOrdinal(h.period) !== null)
   const last = run.length ? monthOrdinal(run[run.length - 1].period) : null
   const now = new Date(nowIso)
-  const nowOrd = Number.isFinite(now.getTime()) ? now.getUTCFullYear() * 12 + now.getUTCMonth() : null
+  // The current month in Almaty (lib/point-b/period.ts): the same month the plan-fact and the revenue table count from.
+  const nowOrd = Number.isFinite(now.getTime()) ? monthOrdinalInAlmaty(now) : null
   return {
     points: new Set(sorted.map((h) => h.period)).size,
     run: run.length,

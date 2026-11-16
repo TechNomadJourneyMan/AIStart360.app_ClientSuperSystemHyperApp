@@ -1,10 +1,8 @@
 'use client'
 
-import { useEffect } from 'react'
-import PointBView from '@/components/point-b/PointBView'
-import type { PointBV2 } from '@/lib/point-b/engine'
+import { useCallback, useEffect, useState } from 'react'
+import StaffPointBView from '@/components/point-b/StaffPointBView'
 import type { PlanVersionRow } from '@/lib/point-b/plan/types'
-import { ErrorState, useGigaQuery } from '../kit'
 import { FinmodelPanel } from './point-b/FinmodelPanel'
 import { GoalReviewPanel } from './point-b/GoalReviewPanel'
 import { PlanFactPanel } from './point-b/PlanFactPanel'
@@ -14,7 +12,8 @@ import { WhatIfSavedPanel } from './point-b/WhatIfSavedPanel'
 import { usePlanController } from './point-b/usePlanController'
 
 /**
- * Точка Б клиента: тот же расчёт, что видит клиент, плюс работа эксперта по плану —
+ * Точка Б клиента: тот же расчёт, что видит клиент (R3, M3: состояние страницы клиента — модель и только одобренная
+ * версия плана; старый расчёт V2 здесь больше не показывается), плюс работа по плану —
  * проверка целей и версии плана (черновик → на одобрение → одобрена). Прямой записи
  * «корректировки» больше нет: любой текст эксперта — это версия плана, и клиент видит
  * его только после одобрения Admin / Super Admin. Работать с планом может только тот,
@@ -25,9 +24,6 @@ import { usePlanController } from './point-b/usePlanController'
  */
 
 const NO_VERSIONS: PlanVersionRow[] = []
-
-interface Version { id: string; expert_notes: string; author_name: string | null; is_approved: boolean; created_at: string }
-interface PointBData { pointB: PointBV2 | null; reason: string | null; version: Version | null }
 
 /** Goals + plan versions share one controller: a verified goal unlocks the approval. */
 function PlanWorkspace({ userId, onChanged }: { userId: string; onChanged: () => void }) {
@@ -45,8 +41,9 @@ function PlanWorkspace({ userId, onChanged }: { userId: string; onChanged: () =>
 }
 
 export function PointBTab({ userId, canReview }: { userId: string; canReview: boolean }) {
-  const { data, error, loading, reload } = useGigaQuery<{ data: PointBData }>(`/api/giga-admin/users/${userId}/point-b`)
-  const d = data?.data
+  // A published / returned version changes what the client sees: the view below is reloaded.
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   return (
     <div className="space-y-4">
@@ -57,17 +54,8 @@ export function PointBTab({ userId, canReview }: { userId: string; canReview: bo
       {canReview && <FinmodelPanel userId={userId} />}
       {/* What the client calculated and saved in «Что если», read-only; a proposal arrives as a message. */}
       {canReview && <WhatIfSavedPanel userId={userId} />}
-      <ErrorState error={error} onRetry={reload} />
-      {!error && (
-        <PointBView
-          pointB={d?.pointB ?? null}
-          loading={loading && !d}
-          reason={d?.reason ?? null}
-          onRecalculate={reload}
-          actionPlanUserId={userId}
-          expertNote={canReview ? null : d?.version ?? null}
-        />
-      )}
+      {/* What the client sees: the SAME state as /client/point-b (R3, M3). */}
+      <StaffPointBView url={`/api/giga-admin/users/${userId}/point-b`} reloadKey={reloadKey} actionPlanUserId={userId} />
     </div>
   )
 }

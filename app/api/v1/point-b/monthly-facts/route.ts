@@ -12,13 +12,15 @@ import { createServiceClient } from '@/lib/supabase-service'
 
 /**
  * PUT /api/v1/point-b/monthly-facts { period: 'YYYY-MM', values: { revenue?, leads?, conversion?, avg_check?, cash? }, note? }
- * — «Факт за месяц» of the monthly reconciliation, entered by the owner (spec §13). Only the KPIs of the APPROVED plan;
+ * — «Факт за месяц» of the monthly reconciliation, entered by the owner (spec §13), for the current month or any of the 24
+ * before it. Per KPI (R3-PB check N2): a value sent unchanged is not rewritten; a KPI an expert entered is not changed
+ * by the owner (400 with that KPI); the owner's other KPIs of the month are. Only the KPIs of the APPROVED plan;
  * revenue / average check / cash in ₸, leads per month, conversion in percent; null clears a value. Saved with the
  * source «ежемесячная сверка»; the checkpoints of the company are recalculated right after.
  * The user and the company come from the session only. Refused «от имени» (403: impersonation is read-only).
  * Point B is a PRO feature (402 for a free client while the access gates are on). 400 with the field / profanity,
  * 409 without an approved plan, 429 more often than 20 times an hour, 503 before migration 132.
- *   → { ok, data: { period, saved, cleared, checkpoint: { status, overall, reason } } }
+ *   → { ok, data: { period, saved, cleared, unchanged, checkpoint: { status, overall, reason } } }
  */
 export async function PUT(req: NextRequest) {
   const sb = createServerClient()
@@ -44,7 +46,7 @@ export async function PUT(req: NextRequest) {
       companyId: company.id, userId: user.id, body: { period: body.period, values: body.values, note: body.note },
       enteredBy: user.id, role: 'owner', now: new Date(),
     })
-    return NextResponse.json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
+    return NextResponse.json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
   } catch (err) {
     const failure = planFactFailure(err)
     if (failure) return failure

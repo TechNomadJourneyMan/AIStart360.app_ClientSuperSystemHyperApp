@@ -7,6 +7,8 @@ import { DEFAULT_KEY_METRICS, blockMetricIds, keyMetricCatalog, toMetricView, ty
 import type { BlockKey } from '@/lib/point-a/v4/config'
 import { summarizeAuthors, type AnswerAttribution } from '@/lib/survey/attribution-label'
 import { lastAnswerChange } from '@/lib/point-a/v4/answer-authors'
+import { pointAScorePath } from '@/lib/point-a/v4/score-path'
+import { aiAnalysisView } from '@/lib/point-a/ai-review'
 
 /** value, period, source, recent values (oldest first) */
 const VALUES: Record<string, [number, string, string, number[]]> = {
@@ -103,17 +105,18 @@ export function previewState(mode: 'full' | 'preliminary' = 'full'): PointAPageS
       ],
     }],
     goals: [{ goal, evaluation: evaluateGoal(goal, { value: 66_000_000, period: '2026-10' }, now) }],
-    gri: { index100: 58, assessedAt: iso(20) },
+    gri: { index: 5.8, assessedAt: iso(20) },
     benchmarks: {
       industry: 'Образование', stage: 'early', source: 'экспертная оценка, не статистика', overall: 55,
       blocks: (['finance', 'sales', 'operations', 'marketing', 'strategy'] as const).map((k) => {
         const b = v4.blocks.find((x) => x.key === k)
         return { key: k, title: BLOCK_LIBRARY[k].title, benchmark: 55, score: b?.score ?? null, rating: b?.score == null ? null : b.score >= 60 ? 'Выше среднего' : 'На уровне' }
       }),
+      approved: false,
     },
     sources: {
       survey: { percent: 58, completed: 7, total: 12, authors: summarizeAuthors(Object.keys(PREVIEW_ANSWERS), PREVIEW_ATTRIBUTION), lastChangedAt: lastAnswerChange(PREVIEW_ATTRIBUTION) },
-      documents: { parsed: 2, processing: 1, failed: 0 }, metrics: 41,
+      documents: { parsed: 2, processing: 1, failed: 0, stale: 1 }, metrics: 41,
     },
     recalculation: 'idle',
     config: { template: 'default', templateTitle: 'Универсальный', added: [], blocks: effectiveBlocks(DEFAULT_TEMPLATE).map((b) => ({ key: b.key, title: b.title, weight: b.weight, hiddenForClient: false, informational: b.informational, order: b.order })) },
@@ -126,5 +129,23 @@ export function previewState(mode: 'full' | 'preliminary' = 'full'): PointAPageS
       { id: 'c2', targetKind: 'overall', targetKey: null, body: 'Главный рычаг на квартал — повторные продажи: база есть, касаний нет.', authorName: 'Эксперт AIStart360', authorRole: 'super_expert', createdAt: new Date(Date.now() - 5 * 3600e3).toISOString() },
     ],
     review: { status: 'earlier', by: 'Эксперт AIStart360', at: new Date(Date.now() - 2 * 86400e3).toISOString() },
+    scorePath: pointAScorePath(calculatePointAV4({ answers: PREVIEW_ANSWERS, blocks: effectiveBlocks(DEFAULT_TEMPLATE), surveyComplete: true }).blocks, { surveySent: mode === 'full' }),
+    aiAnalysis: mode === 'full' && v4.overall !== null ? aiAnalysisView({
+      id: 'preview-diag', ai_status: 'completed', ai_model: 'anthropic/claude-haiku-4.5 + qwen3-8', ai_generated_at: iso(0.01),
+      ai_analysis: {
+        executive_summary: 'Онлайн-школа с растущей выручкой (66 млн ₸, +18 %) и хорошей маржой; узкое место — поток заявок и повторные продажи.',
+        industry_context: 'Для онлайн-образования ранней стадии в Казахстане маржа 20–25 % — норма; лидеры удерживают 30 %+ учеников на второй курс.',
+        strategic_priorities: [
+          { title: 'Повторные продажи', rationale: 'База учеников есть, касаний после курса нет.', expected_impact: '+10–15 % выручки за 2 квартала' },
+          { title: 'Канал заявок', rationale: 'Главная боль — нехватка заявок, бюджет маркетинга не измеряется.', expected_impact: 'Предсказуемый поток лидов' },
+        ],
+        growth_roadmap: [
+          { horizon: '30_days', actions: ['Посчитать CAC по каналам', 'Запустить письмо выпускникам'] },
+          { horizon: '90_days', actions: ['Курс-продолжение для выпускников', 'Еженедельный отчёт по воронке'] },
+          { horizon: '180_days', actions: ['Второй город офлайн-набора', 'Делегировать операционку руководителю'] },
+        ],
+        blocks: { finance: { diagnosis: 'Маржа 22 % при росте выручки — устойчиво.', benchmark_comparison: 'На уровне отрасли.', key_risk: 'Нет финансового плана на год.', top_recommendation: 'Помесячный бюджет доходов и расходов за 2 недели.' } },
+      },
+    }) : null,
   }
 }

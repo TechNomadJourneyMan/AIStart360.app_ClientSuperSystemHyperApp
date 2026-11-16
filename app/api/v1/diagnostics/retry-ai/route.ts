@@ -5,31 +5,45 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getSessionUser, mayActOnUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
+import { internalBaseUrl } from '@/lib/internal-auth'
 import { gatePaidSection } from '@/lib/access/gate'
+import { aiBudgetExceededResponse, assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
+import { claimAiAnalysis, claimRefusalText } from '@/lib/point-a/ai-claim'
+import { fireAiFanOut } from '@/lib/point-a/diagnostic-row'
+import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
 /**
- * POST /api/v1/diagnostics/retry-ai
- * Retries AI analysis for a diagnostic that previously failed.
- * Sets ai_status to 'processing' and fires the ai-analyze endpoint. The last
- * stored analysis (and keys other writers keep in ai_analysis) stays until the
- * new one replaces it — a failed retry no longer wipes it. The status is
- * written with the service role after the owner / staff check: `diagnostics`
- * has no UPDATE policy for API roles, so a session write changed nothing.
+ * POST /api/v1/diagnostics/retry-ai — «Повторить разбор».
+ * Body: { diagnostic_id, regenerate? }
  *
- * Body: { diagnostic_id }
+ * Who: the owner, or staff / an assigned expert within their client scope
+ * (mayActOnUser); the paid section (402 for Free); a per-user rate limit.
+ *
+ * Ревью R3-PA:
+ *   M1  never two paid analyses of one row: the row is CLAIMED with one
+ *       conditional UPDATE (lib/point-a/ai-claim.ts) — refused while an
+ *       analysis is in progress (409), right after the last start (429,
+ *       cooldown), or when it is complete (409; only staff may pass
+ *       `regenerate: true` — an explicit «перегенерировать», the cache is
+ *       skipped then). The AI budget is checked BEFORE the claim (429).
+ *   H1  the call goes through the fan-out (lib/point-a/diagnostic-row.ts
+ *       fireAiFanOut): the same timeout as the automatic start, tracked as
+ *       background work, and a call that fails (network, timeout, non-2xx)
+ *       marks the row failed with the reason — never «готовится» forever.
+ * The last stored analysis (and keys other writers keep in ai_analysis) stays
+ * until the new one replaces it. Writes use the service role after the checks:
+ * `diagnostics` has no UPDATE policy for API roles.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { diagnostic_id } = await req.json()
-    if (!diagnostic_id) {
+    const body = await req.json().catch(() => ({})) as { diagnostic_id?: unknown; regenerate?: unknown }
+    const diagnosticId = typeof body.diagnostic_id === 'string' ? body.diagnostic_id : ''
+    if (!diagnosticId) {
       return NextResponse.json({ ok: false, error: 'diagnostic_id required' }, { status: 400 })
     }
 
     const sb = createServerClient()
-
-    // SECURITY (audit 2026-07-02): require a session (this is called from the
-    // dashboard "retry" button) and throttle — it re-fires the paid AI fan-out.
+    // SECURITY (audit 2026-07-02): require a session and throttle — it re-fires a paid analysis.
     const user = await getSessionUser(sb)
     if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
     // Round 2 (R2-A): point_a is a paid section — 402 upgrade_required for an account without it (staff exempt).
@@ -39,56 +53,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
 
-    // Get the user_id from the diagnostic
-    const { data: diag, error: diagErr } = await sb
-      .from('diagnostics')
-      .select('user_id')
-      .eq('id', diagnostic_id)
-      .single()
-
-    if (diagErr || !diag) {
-      return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
-    }
-
+    const { data: diag, error: diagErr } = await sb.from('diagnostics').select('user_id').eq('id', diagnosticId).single()
+    if (diagErr || !diag) return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
+    const ownerId = String(diag.user_id)
     // Owner, or staff / an assigned expert within their client scope (SR-02).
-    if (!(await mayActOnUser(sb, user.id, diag.user_id as string | null))) {
+    if (!(await mayActOnUser(sb, user.id, ownerId))) {
       return NextResponse.json({ ok: false, error: 'Diagnostic not found' }, { status: 404 })
     }
+    // «Перегенерировать» a complete analysis: staff only (not the owner), explicitly.
+    const regenerate = body.regenerate === true && user.id !== ownerId
 
-    // Mark processing; keep the previous analysis until the new one arrives.
-    const { error: markErr } = await createServiceClient()
-      .from('diagnostics')
-      .update({ ai_status: 'processing' })
-      .eq('id', diagnostic_id)
-      .eq('user_id', diag.user_id)
-    if (markErr) {
-      console.error('[retry-ai] status update failed', markErr.code ?? '', markErr.message ?? '')
-      return NextResponse.json({ ok: false, error: 'Не удалось перезапустить анализ' }, { status: 500 })
+    // The analysis is billed to the owner: a spent budget is refused before anything changes.
+    try {
+      await assertAiBudget(ownerId, 'point_a_analysis')
+    } catch (err) {
+      if (isAiBudgetError(err)) return aiBudgetExceededResponse()
+      throw err
     }
 
-    // Fire AI analysis asynchronously (signed internal token — no cookies here),
-    // bound to the target path, user and diagnostic. The base URL comes from
-    // configuration, never the request Host in production.
+    // A trusted origin for the internal call (never the request Host in production).
     const baseUrl = internalBaseUrl(req)
     if (!baseUrl) {
       console.error('[retry-ai] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
-      await createServiceClient()
-        .from('diagnostics')
-        .update({ ai_status: 'failed' })
-        .eq('id', diagnostic_id)
-        .eq('user_id', diag.user_id)
-      return NextResponse.json({ ok: false, ai_status: 'failed', error: 'Не удалось перезапустить анализ' }, { status: 503 })
+      return NextResponse.json({ ok: false, error: 'Не удалось перезапустить анализ' }, { status: 503 })
     }
-    const analyzePath = '/api/v1/diagnostics/ai-analyze'
-    fetch(`${baseUrl}${analyzePath}`, {
-      method: 'POST',
-      headers: internalFetchHeaders({}, { path: analyzePath, userId: String(diag.user_id), diagnosticId: String(diagnostic_id) }),
-      body: JSON.stringify({ diagnostic_id, user_id: diag.user_id }),
-    }).catch(err => console.error('[retry-ai] Failed to fire ai-analyze:', err))
 
+    const db = createServiceClient()
+    const claim = await claimAiAnalysis(db, { diagnosticId, userId: ownerId }, { allowCompleted: regenerate })
+    if (!claim.ok) {
+      const r = claimRefusalText(claim)
+      return NextResponse.json({ ok: false, error: r.error, reason: claim.reason }, { status: r.status })
+    }
+
+    fireAiFanOut({
+      baseUrl, diagnosticId, userId: ownerId, locale: localeFromRequestCookie(req),
+      paths: ['/api/v1/diagnostics/ai-analyze'], ...(regenerate ? { regenerate: true } : {}),
+    })
     return NextResponse.json({ ok: true, ai_status: 'processing' })
   } catch (error) {
-    console.error('[retry-ai] Error:', error)
+    console.error('[retry-ai] Error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }
 }

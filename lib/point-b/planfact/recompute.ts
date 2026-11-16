@@ -32,7 +32,7 @@ import { readStoredStrategy } from '../strategy/load'
 import { loadActuals, withReconciledHistory } from './actuals'
 import { buildCheckpoint } from './checkpoint'
 import { planFactCandidates } from './insights'
-import { lastFinishedPeriod, periodOf } from './kpis'
+import { lastFinishedPeriod, PERIOD_RE, periodOf } from './kpis'
 import { notifyDeviation } from './notify'
 import { checkpointToRow, isMissingTable, readCheckpointHash, upsertCheckpoints, type MonthlyFactRow } from './store'
 import { DEFAULT_TOLERANCES, type Checkpoint, type PlanFactVerdict, type Tolerances } from './types'
@@ -51,6 +51,11 @@ export interface RecomputeInput {
   force?: boolean
   tolerances?: Tolerances
   budgetMs?: number
+  /**
+   * More months whose checkpoints are recalculated besides the last finished and the current one (R3-PB review M1: the
+   * months the owner changed in «Выручка по месяцам» that already have a checkpoint). At most 24, 'YYYY-MM' only.
+   */
+  extraPeriods?: string[]
 }
 
 export interface RecomputeOutcome {
@@ -116,7 +121,9 @@ async function recompute(sb: SupabaseClient, input: RecomputeInput): Promise<Rec
 
   const prev = lastFinishedPeriod(now)
   const cur = periodOf(now)
-  const periods = [prev, cur]
+  // The last finished month stays first: it is the month the outcome and the invites speak about.
+  const extra = [...new Set((input.extraPeriods ?? []).filter((p) => PERIOD_RE.test(p) && p !== prev && p !== cur))].sort().slice(-24)
+  const periods = [prev, cur, ...extra]
 
   const goals = await snapshotGoals(sb, companyId, published.goals?.primary ?? undefined)
   const [{ inputs: raw, pb }, actuals] = await Promise.all([

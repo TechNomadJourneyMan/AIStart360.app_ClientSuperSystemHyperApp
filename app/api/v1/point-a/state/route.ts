@@ -15,6 +15,7 @@ import { drainInBackground, requestPointARecalc } from '@/lib/point-a/recalc-que
 import { resolveFeature } from '@/lib/access/decision'
 import { upgradeRequiredResponse } from '@/lib/access/gate'
 import { expressPointASlice } from '@/lib/survey/snapshot'
+import { aiViewForViewer } from '@/lib/point-a/ai-review'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,7 +51,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       drainInBackground(tenant.tenant.companyId)
     }
     if (!access.allowed) return NextResponse.json({ ok: true, data: expressPointASlice(state), view: 'express' })
-    return NextResponse.json({ ok: true, data: { ...state, companyId: tenant.tenant.companyId, canManage: tenant.tenant.canManage, role: tenant.tenant.role } })
+    // Ревью R3-PA L4: the AI failure code and the model — for staff only.
+    const aiAnalysis = aiViewForViewer(state.aiAnalysis, tenant.tenant.role === 'staff')
+    return NextResponse.json({ ok: true, data: { ...state, aiAnalysis, companyId: tenant.tenant.companyId, canManage: tenant.tenant.canManage, role: tenant.tenant.role } })
   } catch (err) {
     console.error('[api/v1/point-a/state] read failed', err instanceof Error ? err.message : err)
     return apiError('Не удалось загрузить Точку А', 500)

@@ -79,6 +79,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
   // Restore last-viewed tab on mount
   useEffect(() => {
     try {
+      // A link from the queue («Разбор ИИ на проверке» → ?tab=point-a#ai-review) wins over the remembered tab.
+      const fromLink = new URLSearchParams(window.location.search).get('tab')
+      if (fromLink && isValidTab(fromLink)) { setActiveTab(fromLink); return }
       const saved = window.localStorage.getItem(`expert-client-tab:${params.id}`)
       if (saved && isValidTab(saved)) setActiveTab(saved)
     } catch { /* ignore */ }

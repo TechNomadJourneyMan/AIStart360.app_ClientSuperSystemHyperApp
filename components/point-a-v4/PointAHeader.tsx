@@ -8,6 +8,31 @@ import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
 import { PRELIMINARY_POINT_A_HINT, PRELIMINARY_POINT_A_LABEL, PRIMARY_POINT_A_HINT, PRIMARY_POINT_A_LABEL, isPrimaryPointA } from '@/lib/point-a/v4/primary'
 import Link from 'next/link'
+import { useState } from 'react'
+import { ShareButton, downloadReportPdf } from '@/components/share/ShareButton'
+import { SEND_SURVEY_HREF, SEND_SURVEY_LABEL } from './ScorePathCard'
+
+/**
+ * R3-PA (П6, R-025): PDF and «Поделиться» of Point A right on its page — for a
+ * scored Point A, to the owner and staff (the export / share routes check the
+ * same and keep the paid-section gate of Round 2).
+ */
+export function canExportPointA(state: Pick<PointAPageState, 'snapshot' | 'viewerIsOwner' | 'role'>): boolean {
+  const s = state.snapshot
+  return !!s && s.assessment !== 'preliminary' && s.overall !== null && (state.viewerIsOwner || state.role === 'staff')
+}
+
+function PdfButton({ companyId }: { companyId: string }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button" className={BTN_GHOST} disabled={busy} aria-busy={busy} data-point-a-pdf
+      onClick={async () => { setBusy(true); try { await downloadReportPdf('point_a', companyId) } finally { setBusy(false) } }}
+    >
+      <Icon name={busy ? 'progress_activity' : 'picture_as_pdf'} className={cn('text-[16px]', busy && 'animate-spin')} />{busy ? 'Готовим PDF…' : 'Скачать PDF'}
+    </button>
+  )
+}
 
 export function PointAHeader({
   state, onRecalc, recalcPending, customize, onCustomize,
@@ -50,6 +75,12 @@ export function PointAHeader({
                 {PRELIMINARY_POINT_A_HINT}.{' '}
                 {state.viewerIsOwner && <Link href="/client/onboarding" className="font-semibold text-primary hover:underline">Перейти к полной анкете →</Link>}
               </p>
+            )}
+            {/* R3-PA (П5): the way to the score is one visible button — the questionnaire's final step. */}
+            {preliminary && state.viewerIsOwner && (
+              <Link href={SEND_SURVEY_HREF} className={cn(BTN_PRIMARY, 'mt-2')} data-send-survey>
+                <Icon name="send" className="text-[16px]" />{SEND_SURVEY_LABEL}
+              </Link>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -99,6 +130,12 @@ export function PointAHeader({
             <button type="button" className={BTN_GHOST} onClick={onCustomize} aria-pressed={customize}>
               <Icon name="tune" className="text-[16px]" />{customize ? 'Готово' : 'Настроить блоки'}
             </button>
+          )}
+          {canExportPointA(state) && (
+            <>
+              <PdfButton companyId={state.companyId} />
+              <ShareButton type="point_a" companyId={state.companyId} className={BTN_GHOST} triggerLabel="Поделиться" />
+            </>
           )}
         </div>
       </div>

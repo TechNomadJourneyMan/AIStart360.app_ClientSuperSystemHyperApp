@@ -4,6 +4,7 @@
  */
 import { fmtMoney, fmtNum } from '../model/format'
 import type { PlanKpi } from './types'
+import { periodInAlmaty } from '../period'
 
 export interface KpiMeta {
   label: string
@@ -72,8 +73,9 @@ export function periodOrdinal(period: string | null | undefined): number | null 
   return m ? Number(m[1]) * 12 + Number(m[2]) - 1 : null
 }
 
+/** The month of `d` — in Almaty, the one rule of Точка Б (lib/point-b/period.ts, R3-PB review L5). */
 export function periodOf(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  return periodInAlmaty(d)
 }
 
 export function addPeriods(period: string, n: number): string {

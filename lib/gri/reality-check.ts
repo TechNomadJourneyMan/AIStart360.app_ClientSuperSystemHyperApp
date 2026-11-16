@@ -16,8 +16,8 @@
 //   - ctx.pointA.blocks  — статусы BlockStatus из types/onboarding.ts:
 //                          'critical' | 'weak' | 'average' | 'strong' | 'excellent',
 //                          score 0..100; health_index 0..100 (lib/point-a-engine.ts)
-//   - ctx.pointB.realism — lib/point-b/engine.ts:
-//                          'realistic' | 'ambitious' | 'aggressive' | 'unrealistic' | 'unknown'
+//   - ctx.pointB.realism — R3-PB (ревью M3): из той же модели Точки Б, что «Обзор» (lib/assistant/point-b.ts):
+//                          'realistic' | 'ambitious' | 'aggressive' | 'unrealistic' | 'unknown'; балла нет (null)
 //   - ctx.pointB.gap.required_mom_growth — требуемый % роста в месяц (12m горизонт)
 
 //
@@ -28,8 +28,6 @@
 // не сравниваются с самооценкой, реалистичность цели пересчитывается без них
 // (тот же assessRealism), индекс здоровья v1-фолбэка не сравнивается.
 
-import type { PointA } from '@/types/onboarding'
-import { assessRealism, computeGap } from '@/lib/point-b/engine'
 import { formatGri } from '@/lib/format/gri'
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
@@ -64,7 +62,7 @@ export interface RealityCheckContext {
     /** Есть в AssistantContext; нужен для пересчёта реалистичности без блоков без данных. */
     goal_3y_revenue_year?: number | null
     gap: { required_mom_growth: number | null }
-    realism: { level: string; score: number }
+    realism: { level: string; score: number | null }
   }
   metrics: { revenue: number | null }
 }
@@ -78,30 +76,17 @@ export interface RealityCheckInput {
 }
 
 /**
- * Контекст без v1-нулей: блоки без данных убраны, реалистичность пересчитана
- * без них, индекс здоровья v1-фолбэка скрыт. Без `quality` — как был.
+ * Контекст без v1-нулей: блоки без данных убраны, индекс здоровья v1-фолбэка скрыт. Без `quality` — как был.
+ * R3-PB (ревью M3): реалистичность цели — из модели Точки Б (вердикт «Обзора»), она от баллов блоков Точки А не
+ * зависит, поэтому больше не пересчитывается движком V2 без блоков без данных.
  */
 export function honestRealityContext(ctx: RealityCheckContext, quality?: RealityCheckInput['quality']): RealityCheckContext {
   if (!quality || (quality.blocksWithoutData.length === 0 && !quality.v1Fallback)) return ctx
   const without = new Set(quality.blocksWithoutData)
   const blocks = ctx.pointA.blocks.filter((b) => !without.has(b.key))
-  let realism = ctx.pointB.realism
-  if (without.size > 0) {
-    const pointA = { blocks: Object.fromEntries(ctx.pointA.blocks.map((b) => [b.key, { score: b.score }])) } as unknown as PointA
-    const cur = ctx.pointB.current_revenue_year
-    const r = assessRealism(
-      pointA,
-      computeGap(cur, ctx.pointB.goal_3y_revenue_year ?? null, 36),
-      [],
-      computeGap(cur, ctx.pointB.goal_12m_revenue_year, 12),
-      { blocksWithoutData: [...without] },
-    )
-    realism = { ...realism, level: r.level, score: r.score }
-  }
   return {
     ...ctx,
     pointA: { ...ctx.pointA, blocks, health_index: quality.v1Fallback ? null : ctx.pointA.health_index },
-    pointB: { ...ctx.pointB, realism },
   }
 }
 
@@ -284,7 +269,7 @@ function ruleGoalRealism(input: RealityCheckInput, blockId: string): RealityChec
   const finding =
     mom != null
       ? `Самооценка ${formatGri(self, { scale: true })}, но цель требует ~${fmt1(mom)}% роста в месяц — реалистичность по данным: ${levelRu}.`
-      : `Самооценка ${formatGri(self, { scale: true })}, но реалистичность цели по данным Точки B — ${levelRu} (${Math.round(realism.score)}/100).`
+      : `Самооценка ${formatGri(self, { scale: true })}, но реалистичность цели по данным Точки B — ${levelRu}${typeof realism.score === 'number' ? ` (${Math.round(realism.score)}/100)` : ''}.`
 
   return {
     blockId,

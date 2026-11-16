@@ -1,46 +1,21 @@
 'use client'
 
-// Expert view of a client's Точка Б — same goal-driven plan the client sees,
+// Expert view of a client's Точка Б — R3 (M3): the client's own page state (the model + the approved plan only),
 // plus an expert-correction editor. Saving writes a version of the client's PLAN (server-side, the
 // one write path of plan Task 6) and sends it for approval: the client sees it only after Admin /
 // Super Admin approves it. Goal verification and the version list live in the GIGA panel (User 360).
 
 import { useEffect, useState, useCallback } from 'react'
-import PointBView from '@/components/point-b/PointBView'
+import StaffPointBView from '@/components/point-b/StaffPointBView'
 import { PlanFactPanel } from '@/components/giga-panel/user360/point-b/PlanFactPanel'
-import type { PointBV2 } from '@/lib/point-b/engine'
 
 interface ExpertVersion { expert_notes: string; author_name?: string | null; created_at?: string; is_approved?: boolean }
 
 export function PointBTab({ clientId }: { clientId: string }) {
-  const [pointB, setPointB] = useState<PointBV2 | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [reason, setReason] = useState<string | null>(null)
-
   const [version, setVersion] = useState<ExpertVersion | null>(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/expert/clients/${clientId}/point-b`, { cache: 'no-store' })
-      const json = (await res.json()) as { ok: boolean; data?: PointBV2 | null; reason?: string; error?: string }
-      if (!res.ok || !json.ok) {
-        setError(json.error || `Ошибка ${res.status}`)
-        setPointB(null); setReason(null)
-      } else {
-        setPointB(json.data ?? null); setReason(json.reason ?? null)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сети')
-    } finally {
-      setLoading(false)
-    }
-  }, [clientId])
 
   const loadVersion = useCallback(async () => {
     try {
@@ -50,7 +25,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
     } catch { /* non-fatal */ }
   }, [clientId])
 
-  useEffect(() => { load(); loadVersion() }, [load, loadVersion])
+  useEffect(() => { void loadVersion() }, [loadVersion])
 
   const save = async () => {
     const notes = draft.trim()
@@ -111,7 +86,7 @@ export function PointBTab({ clientId }: { clientId: string }) {
       {/* Plan-fact of the approved plan, «Факт за месяц» and the button «Пересчитать» (the server checks the assignment). */}
       <PlanFactPanel userId={clientId} portal="expert" />
 
-      <PointBView pointB={pointB} loading={loading} error={error} reason={reason} onRecalculate={load} actionPlanUserId={clientId} expertNote={version} />
+      <StaffPointBView url={`/api/expert/clients/${clientId}/point-b`} actionPlanUserId={clientId} />
     </div>
   )
 }

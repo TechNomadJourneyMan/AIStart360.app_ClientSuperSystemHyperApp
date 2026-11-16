@@ -240,6 +240,21 @@ export class PlanController {
     return (await this.act('create', () => call(this.fetchFn, 'POST', `${this.base}/versions`, {}), 'Создан черновик новой версии')).ok
   }
 
+  /**
+   * R3 (M1): «Собрать черновик плана» — the server completes the open draft or creates one with the scenarios of
+   * the model, the pace «умеренный», a rule strategy reworded by the AI and pending recommendations. The notice
+   * says what was built and every warning of the server (AI not connected, a node kept as the rules wrote it…).
+   */
+  async quickDraft(): Promise<boolean> {
+    if (this.snap.busy) return false
+    this.set({ busy: 'quick', error: null, notice: null, scope: 'plan' })
+    const r = await call(this.fetchFn, 'POST', `${this.base}/quick-draft`, {})
+    if (!r.ok) { this.set({ busy: null, error: toUiError(r) }); return false }
+    this.set({ busy: null, notice: quickDraftNotice(r.body) })
+    await this.load()
+    return true
+  }
+
   async saveDraft(versionId: string, form: { expertNotes: string; changeReason: string }): Promise<boolean> {
     return (await this.act('save', () => call(this.fetchFn, 'PATCH', `${this.base}/versions/${versionId}`, {
       expertNotes: form.expertNotes.trim() || null,
@@ -316,6 +331,26 @@ export class PlanController {
       : 'Исправление отправлено владельцу и ждёт его согласия'
     return (await this.act(`goal:${input.metricKey}`, () => call(this.fetchFn, 'POST', `${this.base}/goals/${encodeURIComponent(input.metricKey)}/review`, body), done)).ok
   }
+}
+
+const PACE_LABEL: Record<string, string> = { cautious: 'осторожный', moderate: 'умеренный', aggressive: 'агрессивный' }
+
+/** The notice of a built draft: what is in it, then the warnings of the server. */
+export function quickDraftNotice(body: Record<string, unknown> | null): string {
+  const d = isObj(body) && isObj(body.data) ? body.data : {}
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const strategy = isObj(d.strategy) ? d.strategy : {}
+  const recs = isObj(d.recommendations) ? d.recommendations : {}
+  const pace = typeof d.selectedScenario === 'string' ? PACE_LABEL[d.selectedScenario] ?? 'не выбран' : 'не выбран'
+  const parts = [
+    `${d.created === false ? 'Черновик дополнен' : 'Черновик собран'}: сценариев — ${n(d.scenarios)}, темп — ${pace}`,
+    strategy.filled === true
+      ? `стратегия — направлений ${n(strategy.strategies)}, инициатив ${n(strategy.initiatives)}, задач ${n(strategy.tasks)}`
+      : 'стратегия не менялась (уже заполнена)',
+    `рекомендаций на проверку — ${n(recs.created)}`,
+  ]
+  const warnings = Array.isArray(d.warnings) ? d.warnings.filter((w): w is string => typeof w === 'string') : []
+  return [`${parts.join('; ')}. Проверьте цель и стратегию, затем отправьте на одобрение.`, ...warnings].join(' ')
 }
 
 // ── Formatting shared by the panels ─────────────────────────────────────

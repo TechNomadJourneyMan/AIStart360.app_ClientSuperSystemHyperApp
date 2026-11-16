@@ -198,7 +198,10 @@ export interface AssistantPointA {
   quick_wins: Array<{ action: string; timeline: string; area: string }>
 }
 
-/** Point B gap/realism slice (from calculatePointBV2 — never fabricated). */
+/**
+ * Point B gap/realism slice — R3-PB review M3: from the SAME calculation as «Обзор» (the model + the approved plan,
+ * lib/assistant/point-b.ts ← lib/point-b/report.ts), never the V2 engine and never fabricated.
+ */
 export interface AssistantPointB {
   has_goal: boolean
   current_revenue_year: number | null
@@ -212,7 +215,8 @@ export interface AssistantPointB {
   }
   realism: {
     level: string
-    score: number
+    /** null — the model gives no realism score (nothing is made up); a V2 snapshot of old code paths may carry one. */
+    score: number | null
     rationale: string[]
     weak_blocks: string[]
   }

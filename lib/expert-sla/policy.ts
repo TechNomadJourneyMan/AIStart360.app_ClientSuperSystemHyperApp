@@ -20,20 +20,40 @@
  * ('rec_review') под SLA не ставятся: они создаются автоматически и массово.
  * Источник остаётся в списке ради истории (закрытые задачи, close_reason
  * 'excluded'); строки «рекомендация» в определениях выше относятся к ним.
+ *
+ * Миграция 152 (R3-SLA) — два новых источника:
+ *   pa_ai_review  ИИ-разбор Точки А готов (целиком или частично) и не проверен
+ *                 экспертом (решение PO «гибрид»). Реакция — эксперт сохранил
+ *                 правки; ответ — эксперт подтвердил разбор («Проверено
+ *                 экспертом»). Экспертная работа: ответственный клиента, иначе
+ *                 авто-назначение наименее загруженному эксперту, иначе очередь.
+ *   plan_prep     клиент ждёт план Точки Б (lib/point-b/plan/waiting.ts).
+ *                 Реакция — открыт черновик версии плана; ответ — версия
+ *                 одобрена. Готовят и одобряют Admin / Super Admin: без
+ *                 авто-назначения, общая очередь + уведомление Admin / Super
+ *                 Admin, «Взять себе» в ГИГА.
  */
 import { SETTINGS } from '@/lib/settings/registry'
 
-export const EXPERT_SLA_SOURCES = ['case', 'report_review', 'rec_review', 'plan_review'] as const
+export const EXPERT_SLA_SOURCES = ['case', 'report_review', 'rec_review', 'plan_review', 'pa_ai_review', 'plan_prep'] as const
 export type ExpertSlaSource = (typeof EXPERT_SLA_SOURCES)[number]
 
-/** Работа эксперта — её назначают эксперту. План Точки Б одобряют Admin / Super Admin (очередь одобрения). */
-export const EXPERT_WORK_SOURCES: readonly ExpertSlaSource[] = ['case', 'report_review', 'rec_review']
+/**
+ * Работа эксперта — её назначают эксперту (ответственный клиента, авто-назначение,
+ * переназначение в ГИГА). План Точки Б (одобрение и подготовка) ведут Admin / Super Admin.
+ */
+export const EXPERT_WORK_SOURCES: readonly ExpertSlaSource[] = ['case', 'report_review', 'rec_review', 'pa_ai_review']
+
+/** План Точки Б: готовят / одобряют Admin и Super Admin (решение PO), не эксперты. */
+export const PLAN_SOURCES: readonly ExpertSlaSource[] = ['plan_review', 'plan_prep']
 
 export const SOURCE_LABELS: Record<ExpertSlaSource, string> = {
   case: 'Обращение клиента',
   report_review: 'Отчёт на проверке',
   rec_review: 'Рекомендации на проверке',
   plan_review: 'План Точки Б на одобрении',
+  pa_ai_review: 'Разбор ИИ Точки А на проверке',
+  plan_prep: 'Подготовить план Точки Б',
 }
 
 export function isExpertSlaSource(v: unknown): v is ExpertSlaSource {
@@ -42,6 +62,11 @@ export function isExpertSlaSource(v: unknown): v is ExpertSlaSource {
 
 export function isExpertWorkSource(v: unknown): boolean {
   return isExpertSlaSource(v) && EXPERT_WORK_SOURCES.includes(v)
+}
+
+/** План Точки Б (plan_review / plan_prep): «Взять себе» — только Admin / Super Admin. */
+export function isPlanSource(v: unknown): boolean {
+  return isExpertSlaSource(v) && PLAN_SOURCES.includes(v)
 }
 
 export interface ExpertSlaConfig {
@@ -135,6 +160,16 @@ export function hoursGenitive(n: number): string {
 export function clientPromiseText(answerHours: number = DEFAULT_EXPERT_SLA.answer_hours): string {
   const h = Math.max(1, Math.round(answerHours))
   return `Эксперт ответит в течение ${h} ${hoursGenitive(h)}.`
+}
+
+/** «17 ноября, 14:00» (Алматы) — срок задачи, как его читает клиент (152: «Эксперт проверит до …», «План готовит: …, до …»). */
+export function clientDueLabel(iso: string): string {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  // From parts: the joiner of ICU differs between runtimes («17 ноября в 14:00» / «17 ноября, 14:00»).
+  const parts = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Almaty', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d)
+  const part = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${part('day')} ${part('month')}, ${part('hour')}:${part('minute')}`
 }
 
 /** Колонки expert_sla_tasks, которые читают проход, ГИГА и кабинет эксперта. */

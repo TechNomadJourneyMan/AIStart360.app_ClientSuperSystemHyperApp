@@ -66,7 +66,7 @@ describe('chat UI', () => {
     const html = renderToStaticMarkup(createElement(QuestionPanel, { question: questionDTO(SURVEY_QUESTIONS.s5_usp), progress: { minimum: { done: 3, total: 15 }, depth: { answered: 10, total: 171, percent: 6 }, savedInChat: 2 } }))
     expect(html).toContain('Чем вы лучше конкурентов (УТП)')
     expect(html).toContain('Уникальное торговое предложение')
-    expect(html).toContain('Минимум для Точки А: <strong class="text-on-surface">3 из 15</strong>')
+    expect(html).toContain('Ключевые вопросы Точки А: <strong class="text-on-surface">3 из 15</strong>')
     expect(html).toContain('Записано в этой беседе: <strong class="text-on-surface">2</strong>')
   })
 

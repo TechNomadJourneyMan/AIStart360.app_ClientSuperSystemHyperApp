@@ -90,8 +90,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     })
     await recordAdminAction(actorOf(g.viewer), {
       action: PLANFACT_AUDIT.factsSaved, entityType: 'company', entityId: company.id, targetUserId: params.id,
-      metadata: { period: r.period, saved: r.saved, cleared: r.cleared, via: 'expert-portal' },
+      metadata: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, via: 'expert-portal' },
     }, req)
-    return NextResponse.json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
+    return NextResponse.json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
   })
 }

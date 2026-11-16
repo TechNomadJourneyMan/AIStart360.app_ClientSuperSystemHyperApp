@@ -168,5 +168,5 @@ export default function RoadmapTab({ snap, onRetry }: { snap: PointBStateSnapsho
   if (mode === 'loading') return <SectionSkeleton label="Загружаем дорожную карту" />
   if (mode === 'error') return <SectionError message={snap.error ?? 'Нет данных'} onRetry={onRetry} />
   if (mode === 'ready' && snap.strategy) return <RoadmapView strategy={snap.strategy} today={today} />
-  return mode === 'empty' ? <StrategyEmpty /> : <StrategyPreparing />
+  return mode === 'empty' ? <StrategyEmpty /> : <StrategyPreparing prep={snap.plan.prep} area="roadmap" />
 }

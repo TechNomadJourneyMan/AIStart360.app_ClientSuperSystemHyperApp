@@ -11,7 +11,7 @@ import { BTN_PRIMARY, CARD, CARD_TITLE, Icon } from '@/components/point-a-v4/ui'
 import { periodLabel } from '@/lib/point-b/planfact/kpis'
 import type { KpiValues, PlanKpi } from '@/lib/point-b/planfact/types'
 import { cn } from '@/lib/utils'
-import { CLIENT_FACTS_URL, MonthlyFactController, NOTE_MAX, type FactFormSnapshot } from './monthlyFactController'
+import { CLIENT_FACTS_URL, MonthlyFactController, NOTE_MAX, type FactFormMonth, type FactFormSnapshot } from './monthlyFactController'
 import { factFields } from './planFactModel'
 
 const IN_MEMORY: typeof fetch = async (_input, init) => {
@@ -28,9 +28,12 @@ export interface MonthlyFactFormViewProps {
   onValue?: (kpi: PlanKpi, raw: string) => void
   onNote?: (note: string) => void
   onSubmit?: () => void
+  /** R3-PB check N4: the months the form may correct (newest first); one or none — no choice is drawn. */
+  periods?: string[]
+  onPeriod?: (period: string) => void
 }
 
-export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNote, onSubmit }: MonthlyFactFormViewProps) {
+export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNote, onSubmit, periods = [], onPeriod }: MonthlyFactFormViewProps) {
   const fields = factFields(kpis, {})
   const month = periodLabel(snap.period)
   const saving = snap.phase === 'saving'
@@ -58,6 +61,22 @@ export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNot
           )}
         </div>
 
+        {periods.length > 1 && (
+          <div className="min-w-0 sm:max-w-xs">
+            <label htmlFor="pb-fact-period" className={CARD_TITLE}>Месяц</label>
+            <select
+              id="pb-fact-period"
+              value={snap.period}
+              onChange={(e) => onPeriod?.(e.target.value)}
+              disabled={saving}
+              className="mt-1 w-full min-w-0 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-base text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              {periods.map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
+            </select>
+            <p className="mt-0.5 text-xs text-on-surface-variant">Можно исправить любой из последних 24 месяцев.</p>
+          </div>
+        )}
+
         {fields.length === 0 ? (
           <p className="text-sm text-on-surface-variant">В одобренном плане нет показателей, которые сверяются по месяцам.</p>
         ) : (
@@ -65,6 +84,7 @@ export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNot
             {fields.map((f) => {
               const id = `pb-fact-${f.kpi}`
               const err = snap.field === f.kpi ? snap.error : null
+              const locked = (snap.locked ?? []).includes(f.kpi)
               return (
                 <div key={f.kpi} className="min-w-0">
                   <label htmlFor={id} className={CARD_TITLE}>{f.label}</label>
@@ -78,15 +98,18 @@ export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNot
                       onChange={(e) => onValue?.(f.kpi, e.target.value)}
                       aria-invalid={err ? true : undefined}
                       aria-describedby={`${id}-hint${err ? ` ${id}-err` : ''}`}
-                      disabled={saving}
+                      disabled={saving || locked}
+                      readOnly={locked}
                       className={cn(
-                        'w-full min-w-0 rounded-xl border bg-white/[0.03] px-3 py-2 text-base text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                        'w-full min-w-0 rounded-xl border bg-white/[0.03] px-3 py-2 text-base text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-70',
                         err ? 'border-error/60' : 'border-white/[0.1]',
                       )}
                     />
                     <span className="shrink-0 text-sm text-on-surface-variant">{f.suffix}</span>
                   </div>
-                  <p id={`${id}-hint`} className="mt-0.5 text-xs text-on-surface-variant">{f.hint}</p>
+                  <p id={`${id}-hint`} className="mt-0.5 text-xs text-on-surface-variant">
+                    {locked ? 'Внёс эксперт — изменить может он; если значение неверно, напишите ему в «Сообщениях».' : f.hint}
+                  </p>
                   {err && <p id={`${id}-err`} role="alert" className="mt-0.5 text-xs text-error">{err}</p>}
                 </div>
               )
@@ -118,7 +141,7 @@ export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNot
           <button type="submit" disabled={saving || fields.length === 0} className={cn(BTN_PRIMARY, 'disabled:opacity-60')}>
             {saving ? 'Сохраняем…' : 'Сохранить факт'}
           </button>
-          <p className="text-xs text-on-surface-variant">Источник значений: «ежемесячная сверка». Пустое поле — значение не меняется.</p>
+          <p className="text-xs text-on-surface-variant">Источник: «ежемесячная сверка». Сохраняются только изменённые значения; очищенное поле удаляет значение месяца.</p>
         </div>
       </form>
     </section>
@@ -126,7 +149,7 @@ export function MonthlyFactFormView({ snap, kpis, audience, done, onValue, onNot
 }
 
 export default function MonthlyFactForm({
-  kpis, period, initial, done, audience = 'client', url = CLIENT_FACTS_URL, onSaved, preview,
+  kpis, period, initial, done, audience = 'client', url = CLIENT_FACTS_URL, onSaved, preview, byExpert, months,
 }: {
   kpis: PlanKpi[]
   period: string
@@ -136,12 +159,18 @@ export default function MonthlyFactForm({
   url?: string
   onSaved?: () => void
   preview?: boolean
+  /** The KPIs of `period` an expert entered (read-only for the owner — check N2). */
+  byExpert?: PlanKpi[]
+  /** Months the form may correct (check N4). */
+  months?: FactFormMonth[]
 }) {
   const ctl = useMemo(
-    () => new MonthlyFactController(preview ? IN_MEMORY : (input, init) => fetch(input, init), { url, kpis, period, initial, onSaved }),
+    () => new MonthlyFactController(preview ? IN_MEMORY : (input, init) => fetch(input, init), {
+      url, kpis, period, initial, onSaved, byExpert, months, lockExpert: audience === 'client',
+    }),
     // A new month or a new plan starts the form over.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [url, period, kpis.join(','), preview],
+    [url, period, kpis.join(','), preview, audience],
   )
   const snap = useSyncExternalStore(ctl.subscribe, ctl.getSnapshot, ctl.getSnapshot)
   return (
@@ -149,10 +178,12 @@ export default function MonthlyFactForm({
       snap={snap}
       kpis={kpis}
       audience={audience}
-      done={done || snap.phase === 'saved'}
+      done={(done && snap.period === period) || snap.phase === 'saved'}
       onValue={(k, v) => ctl.setValue(k, v)}
       onNote={(n) => ctl.setNote(n)}
       onSubmit={() => void ctl.submit()}
+      periods={ctl.periods}
+      onPeriod={(p) => ctl.selectPeriod(p)}
     />
   )
 }

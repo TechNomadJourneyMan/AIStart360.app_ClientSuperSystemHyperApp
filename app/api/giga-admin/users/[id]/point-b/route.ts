@@ -5,15 +5,16 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { guardClientAccess } from '@/lib/admin/client-scope'
 import { createServiceClient } from '@/lib/supabase-service'
-import { loadPointBInputs } from '@/lib/point-b/inputs'
-import { computePointB } from '@/lib/point-b/compute'
+import { loadPointBState } from '@/lib/point-b/model/load'
 import { profanityResponse } from '@/lib/moderation/http'
 import { latestPlanVersionLegacy } from '@/lib/point-b/plan/flow'
 import { guarded, planContext, saveLegacyNotes } from '@/lib/point-b/plan/route-guard'
 
 /**
- * GET  /api/giga-admin/users/:id/point-b — Точка Б клиента (тот же расчёт, что
- *      видит клиент) + последняя экспертная корректировка.
+ * GET  /api/giga-admin/users/:id/point-b — Точка Б клиента: R3 (M3) — состояние страницы клиента
+ *      (loadPointBState: модель + только одобренная версия плана), в том же конверте, что
+ *      GET /api/v1/point-b/state, — персонал видит ровно тот расчёт, что и клиент (не V2);
+ *      `version` — последняя версия плана в прежнем формате.
  * POST /api/giga-admin/users/:id/point-b { expert_notes, change_reason? } —
  *      сохранить корректировку (право clients.review, только для клиентов).
  *
@@ -29,21 +30,14 @@ const bodySchema = z.object({
   change_reason: z.string().trim().max(1000, 'Не больше 1000 символов').nullable().optional(),
 })
 
-/** Последняя версия плана клиента в прежнем формате; прежняя строка point_b_versions, пока плана нет. */
-async function latestVersion(sb: ReturnType<typeof createServiceClient>, userId: string, diagnosticId: string) {
+/** Последняя версия плана клиента в прежнем формате; null, пока плана нет (или таблицы плана не читаются). */
+async function latestVersion(sb: ReturnType<typeof createServiceClient>, userId: string) {
   try {
-    const latest = await latestPlanVersionLegacy(sb, userId)
-    if (latest) return latest
+    return await latestPlanVersionLegacy(sb, userId)
   } catch (err) {
-    console.error('[giga/point-b] plan version not read, using the legacy one', err instanceof Error ? err.message : err)
+    console.error('[giga/point-b] plan version not read', err instanceof Error ? err.message : err)
+    return null
   }
-  const { data } = await sb
-    .from('point_b_versions')
-    .select('id, expert_notes, author_name, is_approved, created_at')
-    .eq('diagnostic_id', diagnosticId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-  return (data ?? [])[0] ?? null
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -53,18 +47,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (scopeDenied) return scopeDenied
 
   const sb = createServiceClient()
-  let inputs
   try {
-    inputs = await loadPointBInputs(sb, params.id)
+    const [state, version] = await Promise.all([
+      loadPointBState(sb, params.id),
+      latestVersion(sb, params.id).catch(() => null),
+    ])
+    return NextResponse.json({ ok: true, data: state, version })
   } catch (err) {
-    console.error('[giga/point-b] inputs not loaded', err instanceof Error ? err.message : err)
+    console.error('[giga/point-b] state not loaded', err instanceof Error ? err.message : err)
     return NextResponse.json({ ok: false, error: 'Не удалось загрузить данные Точки Б' }, { status: 500 })
   }
-  // The same inputs and computation as the client's own page (lib/point-b).
-  const pointB = computePointB(inputs)
-  if (!pointB || !inputs.diagnostic) return NextResponse.json({ ok: true, data: { pointB: null, reason: 'no_diagnostic', version: null } })
-
-  return NextResponse.json({ ok: true, data: { pointB, reason: null, version: await latestVersion(sb, params.id, String(inputs.diagnostic.id)) } })
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

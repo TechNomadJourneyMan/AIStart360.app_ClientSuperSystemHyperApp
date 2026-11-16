@@ -236,8 +236,12 @@ export const KIND_LABEL: Record<StrategyKind, string> = { strategy: 'Страт�
 export const TASK_STATUS_LABEL = { done: 'Выполнена', in_progress: 'В работе', open: 'Не начата', missing: 'Нет в плане действий' } as const
 export type TaskStatusKey = keyof typeof TASK_STATUS_LABEL
 
-/** The only place where the action plan is: the «Подробности» tab of this page. */
-export const ACTION_PLAN_TAB = 'details' as const
+/**
+ * The action plan («Карта роста», the client's tasks) — R3 (M3): «Подробности» is not a client tab any more, so the
+ * action plan lives at the bottom of the «Стратегия» tab; the link switches to it and scrolls to the anchor.
+ */
+export const ACTION_PLAN_TAB = 'strategy' as const
+export const ACTION_PLAN_ANCHOR = 'pb-action-plan'
 export const ACTION_PLAN_LINK_TEXT = 'Открыть в плане действий'
 
 // ── Progress ────────────────────────────────────────────────────────────

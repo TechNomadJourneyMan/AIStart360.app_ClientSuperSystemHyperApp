@@ -7,6 +7,11 @@
  *      выполненное (с ответом или без), перенести переназначенные кейсы,
  *      выровнять задачи по ответственному клиента, отметить реакции, открыть
  *      задачи для новой работы. Сбой — в журнал и одно уведомление в час.
+ *   1б. План Точки Б (152): скан «клиент ждёт план» (lib/point-b/plan/waiting.ts,
+ *      модель на каждого кандидата — свой бюджет ≤ 10 с и лимит) → RPC
+ *      expert_sla_plan_prep: открыть plan_prep ждущим, закрыть без ответа тем,
+ *      кто больше не ждёт и над чьим планом никто не работает. Сбой скана не
+ *      останавливает остальные шаги.
  *   2. Авто-назначение (настройка «Назначать автоматически»): открытые
  *      экспертные задачи без исполнителя, до 100 за проход, старейшие первыми.
  *      Только обычным клиентам без ответственного (п. 4 ревью) — наименее
@@ -15,7 +20,8 @@
  *   3. expert_sla_claim('breached') и ('escalated') — захват порогов в базе,
  *      каждая задача ровно одному проходу.
  *   4. Доставка (outbox, миграция 146): просрочки → эскалации → новые задачи
- *      исполнителям (одно сообщение на исполнителя) → очередь SuperExpert.
+ *      исполнителям (одно сообщение на исполнителя) → очередь SuperExpert →
+ *      план Точки Б без исполнителя — Admin / Super Admin (152).
  *      «Уведомлено» отмечается только после успешной доставки; неудача
  *      считает попытку (до 5) и повторяется следующим проходом.
  *
@@ -31,6 +37,7 @@ import { BATCH, createDefaultNotifier, type Delivery, type SlaNotifier, type Tas
 import {
   DEFAULT_EXPERT_SLA, EXPERT_WORK_SOURCES, MAX_NOTIFY_ATTEMPTS, TASK_COLUMNS, chunked, type ExpertSlaConfig,
 } from './policy'
+import type { WaitingScan, WaitingScanOptions } from '@/lib/point-b/plan/waiting'
 
 export { TASK_COLUMNS }
 
@@ -40,6 +47,13 @@ export const SLA_CLAIM_LIMIT = 50
 export const AUTO_ASSIGN_BATCH = 100
 export const DELIVERY_BATCH = 200
 export const SYSTEM_AUDIT_ACTOR = { id: 'system:expert-sla', kind: 'system' as const }
+/** Скан «клиент ждёт план» (152): не дольше и не больше этого за проход (модель на каждого кандидата). */
+export const PLAN_PREP_BUDGET_MS = 10_000
+export const PLAN_PREP_LIMIT = 30
+/** Сколько бюджета прохода оставить порогам и доставке после скана. */
+const PLAN_PREP_RESERVE_MS = 10_000
+
+export type PlanPrepScan = (sb: SlaRunDeps['sb'], opts: Pick<WaitingScanOptions, 'now' | 'limit' | 'budgetMs'>) => Promise<WaitingScan>
 
 export interface SlaRunDeps {
   sb: Pick<SupabaseClient, 'from' | 'rpc'>
@@ -52,6 +66,8 @@ export interface SlaRunDeps {
   audit?: (entry: AuditEntry) => Promise<boolean>
   /** Монотонные часы для бюджета (тесты). */
   clock?: () => number
+  /** Скан «клиент ждёт план» (по умолчанию listClientsWaitingForPlan). */
+  planPrepScan?: PlanPrepScan
 }
 
 export interface SlaRunReport {
@@ -70,6 +86,8 @@ export interface SlaRunReport {
   delivered: { assigned: number; queued: number; escalated: number; breached: number }
   failedDeliveries: number
   budgetExhausted: boolean
+  /** 152: скан «клиент ждёт план» этого прохода. */
+  planPrep: { checked: number; waiting: number; opened: number; dropped: number; truncated: boolean; error: string | null; skipped: boolean }
 }
 
 interface SyncRow { r_task: string; r_change: string; r_source: string; r_client: string; r_assignee: string | null; r_via: string | null }
@@ -88,6 +106,11 @@ async function defaultConfig(): Promise<ExpertSlaConfig> {
   } catch {
     return DEFAULT_EXPERT_SLA
   }
+}
+
+const defaultPlanPrepScan: PlanPrepScan = async (sb, opts) => {
+  const { listClientsWaitingForPlan } = await import('@/lib/point-b/plan/waiting')
+  return listClientsWaitingForPlan(sb as SupabaseClient, opts)
 }
 
 async function defaultAudit(entry: AuditEntry): Promise<boolean> {
@@ -114,6 +137,7 @@ export async function runExpertSla(deps: SlaRunDeps): Promise<SlaRunReport> {
   const report: SlaRunReport = {
     enabled: true, syncError: null, closed: 0, reacted: 0, reassigned: 0, unassigned: 0, created: 0, autoAssigned: 0, queued: 0,
     escalated: 0, breached: 0, delivered: { assigned: 0, queued: 0, escalated: 0, breached: 0 }, failedDeliveries: 0, budgetExhausted: false,
+    planPrep: { checked: 0, waiting: 0, opened: 0, dropped: 0, truncated: false, error: null, skipped: true },
   }
   const over = () => {
     if (clock() - started > budget) report.budgetExhausted = true
@@ -142,6 +166,20 @@ export async function runExpertSla(deps: SlaRunDeps): Promise<SlaRunReport> {
     report.syncError = msg(err)
     console.error('[expert-sla] sync failed:', report.syncError)
     await notifier.syncFailed(report.syncError, now)
+  }
+
+  // ── 1b. Point B: who waits for a plan (152). Its own budget; a failure stops nothing else ──
+  const scanBudget = budget - PLAN_PREP_RESERVE_MS >= 1_000
+    ? Math.min(PLAN_PREP_BUDGET_MS, budget - (clock() - started) - PLAN_PREP_RESERVE_MS)
+    : 0
+  if (scanBudget >= 1_000 && !over()) {
+    report.planPrep.skipped = false
+    try {
+      await planPrepStep(scanBudget)
+    } catch (err) {
+      report.planPrep.error = msg(err)
+      console.error('[expert-sla] plan_prep scan failed:', report.planPrep.error)
+    }
   }
 
   // ── 2. Auto-assignment; tasks with nobody to go to → the queue news ──
@@ -193,6 +231,16 @@ export async function runExpertSla(deps: SlaRunDeps): Promise<SlaRunReport> {
     await settle('queued', group, await notifier.queued(group))
   }
 
+  // 152: a Point B plan waits for Admin / Super Admin (never auto-assigned to an expert).
+  if (!over()) {
+    const plans = await pendingPlanQueue()
+    report.queued += plans.length
+    for (const group of deliveryGroups(plans)) {
+      if (over()) break
+      await settle('queued', group, await notifier.queued(group, 'admins'))
+    }
+  }
+
   over()
   return report
 
@@ -211,6 +259,51 @@ export async function runExpertSla(deps: SlaRunDeps): Promise<SlaRunReport> {
       return (data ?? []) as unknown as TaskRow[]
     } catch (err) {
       console.error('[expert-sla] outbox read failed:', msg(err))
+      return []
+    }
+  }
+
+  /** The scan «клиент ждёт план» → open plan_prep for the waiting, close for those who no longer wait (152). */
+  async function planPrepStep(scanBudget: number): Promise<void> {
+    const scan = await (deps.planPrepScan ?? defaultPlanPrepScan)(sb, { now, limit: PLAN_PREP_LIMIT, budgetMs: scanBudget })
+    report.planPrep.checked = scan.checked
+    report.planPrep.waiting = scan.waiting.length
+    report.planPrep.truncated = scan.truncated
+    const candidates = new Set(scan.candidates)
+    const dropped: Array<{ company: string; reason: string }> = scan.dropped.map((d) => ({ company: d.companyId, reason: d.reason }))
+    // An open task whose company is no longer a candidate: the goal is gone (or a version / the owner changed —
+    // the database keeps a task whose plan is in work, and closes an approved / ownerless one itself).
+    const { data: open, error: openErr } = await sb.from('expert_sla_tasks').select('source_id')
+      .eq('source', 'plan_prep').is('closed_at', null).limit(1000)
+    if (openErr) throw new Error(`open plan_prep: ${openErr.message?.slice(0, 200)}`)
+    for (const t of (open ?? []) as Array<{ source_id: string }>) {
+      if (!candidates.has(t.source_id)) dropped.push({ company: t.source_id, reason: 'no_goal' })
+    }
+    if (!scan.waiting.length && !dropped.length) return // nothing to open or drop: no round trip
+    const res = await sb.rpc('expert_sla_plan_prep', {
+      p_now: at, p_reaction_hours: cfg.reaction_hours, p_answer_hours: cfg.answer_hours,
+      p_waiting: scan.waiting.map((w) => ({ company: w.companyId, client: w.userId })),
+      p_dropped: dropped,
+      p_limit: deps.limit ?? SLA_SYNC_LIMIT,
+    })
+    if (res.error) throw new Error(`expert_sla_plan_prep: ${res.error.message?.slice(0, 200)}`)
+    for (const c of (res.data ?? []) as SyncRow[]) {
+      if (c.r_change === 'new') { report.planPrep.opened++; report.created++ }
+      else if (c.r_change === 'closed') { report.planPrep.dropped++; report.closed++ }
+    }
+  }
+
+  /** Open plan_prep tasks nobody holds and nobody was told about (Admin / Super Admin). */
+  async function pendingPlanQueue(): Promise<TaskRow[]> {
+    try {
+      const { data, error } = await sb.from('expert_sla_tasks').select(TASK_COLUMNS)
+        .eq('source', 'plan_prep').is('closed_at', null).is('assignee_id', null).is('queue_notified_at', null)
+        .lt('info_attempts', MAX_NOTIFY_ATTEMPTS)
+        .order('received_at', { ascending: true }).limit(DELIVERY_BATCH)
+      if (error) throw new Error(error.message?.slice(0, 200))
+      return (data ?? []) as unknown as TaskRow[]
+    } catch (err) {
+      console.error('[expert-sla] plan queue read failed:', msg(err))
       return []
     }
   }

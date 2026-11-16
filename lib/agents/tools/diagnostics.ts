@@ -21,6 +21,7 @@ import { activeFindings, replaceFindings, replaceRecommendations } from '@/lib/d
 import { companyProfile, diagnosticById, NoSurveyDataError, scoreCompany } from '@/lib/diagnostics/scoring'
 import { loadQualityInputs } from '@/lib/diagnostics/quality'
 import { diagnosticsIO } from '@/lib/diagnostics/io'
+import { llmGateDecision } from '@/lib/diagnostics/llm-gate'
 import { prisma } from '@/lib/db'
 
 function company(ctx: ToolContext): string {
@@ -313,6 +314,34 @@ registerTool({
     }
   },
   summarize: (r: { diagnostic_id: string | null }) => (r.diagnostic_id ? 'расчёт найден' : 'расчёта нет'),
+})
+
+registerTool({
+  name: 'diagnostics.llm_gate',
+  description: 'Можно ли этапу вызвать модель в этой сессии: автоматический запуск — только при официальной оценке, открытой Точке А владельца и не чаще раза в 6 ч; ручной запуск персоналом — как раньше.',
+  permission: 'READ_CLIENT_DATA',
+  companyScoped: true,
+  args: z.object({}).strict(),
+  handler: async (ctx) => {
+    const companyId = company(ctx)
+    const stage = ownStage(ctx)
+    const s = await getSession(session(ctx))
+    const trigger = s?.trigger ?? null
+    if (trigger === 'manual') return { allowed: true, reason: null }
+    const diag = s?.diagnostic_id ? await diagnosticById(companyId, s.diagnostic_id) : null
+    const profile = await companyProfile(companyId)
+    const ownerPaid = profile?.ownerId ? await diagnosticsIO().ownerPaidPointA(profile.ownerId).catch(() => false) : false
+    // The last REAL model call of this stage for the company (a cache hit does not count).
+    const [last] = await prisma.$queryRaw<Array<{ at: Date | null }>>`
+      SELECT max((stages -> ${stage} ->> 'finished_at')::timestamptz) AS at
+      FROM public.diagnostic_sessions
+      WHERE company_id = ${companyId} AND id <> ${session(ctx)}::uuid
+        AND stages -> ${stage} ->> 'llm' = 'done'
+        AND coalesce(stages -> ${stage} ->> 'cached', 'false') <> 'true'`
+    const d = llmGateDecision({ trigger, officialState: diag?.official.state ?? null, ownerPaid, lastModelRunAt: last?.at ?? null, now: new Date() })
+    return d.allowed ? { allowed: true, reason: null } : { allowed: false, reason: d.reason }
+  },
+  summarize: (r: { allowed: boolean; reason: string | null }) => (r.allowed ? 'модель можно вызвать' : `модель не вызывается: ${r.reason}`),
 })
 
 registerTool({

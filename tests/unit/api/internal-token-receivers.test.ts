@@ -45,7 +45,6 @@ const req = (path: string, bind: { path?: string; userId?: string; diagnosticId?
 
 describe.each([
   ['ai-analyze', ANALYZE, analyze.POST],
-  ['point-b/ai-generate', POINT_B, pointB.POST],
 ] as const)('%s', (_name, path, POST) => {
   it('accepts the token bound to its path, user and diagnostic', async () => {
     const res = await POST(req(path, { path, userId: USER, diagnosticId: DIAG }))
@@ -59,6 +58,13 @@ describe.each([
     ['another path', { path: '/api/v1/other' }],
   ])('refuses a token bound to %s', async (_what, override) => {
     const res = await POST(req(path, { path, userId: USER, diagnosticId: DIAG, ...override }))
+    expect(res.status).toBe(401)
+  })
+})
+
+describe('point-b/ai-generate (R3, S3: a staff draft only)', () => {
+  it('refuses even a valid internal token: the fan-out no longer runs it and no session = no staff', async () => {
+    const res = await pointB.POST(req(POINT_B, { path: POINT_B, userId: USER, diagnosticId: DIAG }))
     expect(res.status).toBe(401)
   })
 })

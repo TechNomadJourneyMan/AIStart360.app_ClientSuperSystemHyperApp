@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSetting } from '@/lib/settings/store'
 import { SOURCE_LABELS, clientPromiseText, isExpertSlaSource, isExpertWorkSource } from '@/lib/expert-sla/policy'
+import { createServiceClient } from '@/lib/supabase-service'
+import { authorNames } from '@/lib/expert-review/server'
 
 /**
  * GET /api/v1/expert-sla — открытые задачи эксперта ПО САМОМУ клиенту (R2-B).
@@ -15,6 +17,10 @@ import { SOURCE_LABELS, clientPromiseText, isExpertSlaSource, isExpertWorkSource
  * SLA включено, таблица задач читается (миграция есть) и у клиента есть
  * открытая работа ЭКСПЕРТА (не одобрение плана Admin-ом), срок ответа по
  * которой ещё не прошёл. Просроченной задаче нового обещания не даём.
+ *
+ * 152: подготовка плана Точки Б (plan_prep) — клиенту видно, КТО готовит план
+ * (`assignee` — имя из профиля, никогда email; null — «Назначаем ответственного»)
+ * и до какого срока. Имена других задач не отдаются.
  */
 export async function GET() {
   const sb = createServerClient()
@@ -31,16 +37,19 @@ export async function GET() {
 
   const { data, error } = await sb
     .from('expert_sla_tasks')
-    .select('id, source, received_at, answer_due_at, first_response_at')
+    .select('id, source, received_at, answer_due_at, first_response_at, assignee_id')
     .eq('client_id', user.id)
     .is('closed_at', null)
     .order('received_at', { ascending: true })
     .limit(50)
   if (error) return NextResponse.json({ ok: true, data: [], promise: null, unavailable: true })
 
-  const rows = ((data ?? []) as Array<{ id: string; source: string; received_at: string; answer_due_at: string; first_response_at: string | null }>)
+  const rows = ((data ?? []) as Array<{ id: string; source: string; received_at: string; answer_due_at: string; first_response_at: string | null; assignee_id?: string | null }>)
     .filter((r) => isExpertSlaSource(r.source))
   const now = Date.now()
+  // The name of who prepares the plan (staff profiles are not readable by the client: the service role, own rows only).
+  const planHolders = rows.filter((r) => r.source === 'plan_prep' && r.assignee_id).map((r) => r.assignee_id as string)
+  const names = planHolders.length ? await authorNames(createServiceClient(), planHolders).catch(() => new Map<string, string>()) : new Map<string, string>()
   const promised = rows.some((r) => isExpertWorkSource(r.source) && new Date(r.answer_due_at).getTime() > now)
   return NextResponse.json({
     ok: true,
@@ -52,6 +61,7 @@ export async function GET() {
       answerDueAt: r.answer_due_at,
       inProgress: !!r.first_response_at,
       overdue: new Date(r.answer_due_at).getTime() <= now,
+      ...(r.source === 'plan_prep' ? { assignee: (r.assignee_id && names.get(r.assignee_id)) || null } : {}),
     })),
     promise: promised ? clientPromiseText(cfg.answer_hours) : null,
   })

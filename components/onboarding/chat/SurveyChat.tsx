@@ -7,6 +7,7 @@
  * the scope choice («быстрый набор» / «вся анкета», PO §18.3 item 1), quick
  * buttons, cards «Записать», «Позвать эксперта». Not «Гри»: its own surface.
  */
+import { POINT_A_KEY_QUESTIONS_LABEL } from '@/lib/survey/point-a-minimum'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -140,7 +141,7 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
 function ProgressLine({ progress }: { progress: ChatProgressDTO }) {
   return (
     <div className="mx-auto flex max-w-6xl flex-wrap gap-x-4 gap-y-1 px-4 pb-2 text-[11px] text-on-surface-variant">
-      <span>Минимум для Точки А: {progress.minimum.done} из {progress.minimum.total}</span>
+      <span>{POINT_A_KEY_QUESTIONS_LABEL}: {progress.minimum.done} из {progress.minimum.total}</span>
       <span>Глубина: {progress.depth.percent} %</span>
       <span>Записано в этой беседе: {progress.savedInChat}</span>
     </div>
@@ -174,7 +175,7 @@ export function QuestionPanel({ question, progress, onRestart }: { question: Cha
       </section>
       {progress && (
         <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-on-surface-variant">
-          <p>Минимум для Точки А: <strong className="text-on-surface">{progress.minimum.done} из {progress.minimum.total}</strong></p>
+          <p>{POINT_A_KEY_QUESTIONS_LABEL}: <strong className="text-on-surface">{progress.minimum.done} из {progress.minimum.total}</strong></p>
           <p className="mt-1">Глубина анкеты: <strong className="text-on-surface">{progress.depth.percent} %</strong></p>
           <p className="mt-1">Записано в этой беседе: <strong className="text-on-surface">{progress.savedInChat}</strong></p>
         </section>

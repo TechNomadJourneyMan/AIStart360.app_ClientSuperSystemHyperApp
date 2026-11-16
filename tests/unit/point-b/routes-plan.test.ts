@@ -7,7 +7,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import type { StaffRole } from '@/lib/admin/rbac'
-import { pbDb } from './_pbdb'
+import { markCalculated, pbDb } from './_pbdb'
+import { REASON_NO_SCENARIOS } from '@/lib/point-b/plan/status'
 
 const REVENUE = 'biz.finansy.vyruchka_god'
 const CLIENT = 'cccccccc-0000-4000-8000-000000000001'
@@ -124,7 +125,11 @@ const verifyGoal = async (user = CLIENT) => {
   expect(r.status, JSON.stringify(r.body)).toBe(200)
 }
 const submit = async (versionId: string, user = CLIENT) => json(await submitRoute.POST(body('POST', {}), vp(user, versionId)))
-const approve = async (versionId: string, b: unknown = {}, user = CLIENT) => json(await approveRoute.POST(body('POST', b), vp(user, versionId)))
+// R3: the versions are calculated (scenarios + pace) before the approval — the rule has its own cases (plan-status, plan-store).
+const approve = async (versionId: string, b: unknown = {}, user = CLIENT) => {
+  markCalculated(s.h!.db, versionId)
+  return json(await approveRoute.POST(body('POST', b), vp(user, versionId)))
+}
 /** A draft with a verified primary goal and a reason, sent for approval. */
 const inReview = async (reason = 'Новая цель') => {
   await verifyGoal()
@@ -610,6 +615,11 @@ describe('legacy routes → plan versions', () => {
     expect(refused.body.reasons).toContain('Главная цель не проверена экспертом')
 
     await verifyGoal()
+    // R3: the notes alone are not a plan — without calculated scenarios and a pace the version is not published.
+    const noScenarios = await json(await legacyApprove.POST(body('POST', { versionId: id }), idp(CLIENT)))
+    expect(noScenarios.status).toBe(409)
+    expect(noScenarios.body.reasons).toEqual([REASON_NO_SCENARIOS])
+    markCalculated(s.h!.db, id)
     const ok = await json(await legacyApprove.POST(body('POST', { versionId: id }), idp(CLIENT)))
     expect(ok.status).toBe(200)
     expect(ok.body.data).toMatchObject({ id, is_approved: true, status: 'approved' })

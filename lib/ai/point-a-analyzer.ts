@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { generateObjectViaOpenRouter } from './structured'
-import { OPENROUTER_MODELS, hasOpenRouterKey } from './openrouter'
+import { generateObjectViaOpenRouter, type StructuredDiagnostics } from './structured'
+import { hasOpenRouterKey } from './openrouter'
 import type { PointA, AIAnalysis, Company } from '@/types/onboarding'
 import type { Locale } from '@/lib/i18n/locale'
+import { ANALYSIS_PARTS, MIN_PARTS_FOR_PARTIAL, aiModelOf, type AnalysisPart, type PartOutcome, type PointAAnalysisReport } from '@/lib/point-a/ai-review'
 
 // GRI expert note type for prompt enrichment
 export interface GriExpertNotes {
@@ -422,6 +423,15 @@ Return ONLY one valid JSON object (no markdown, no commentary):
 }
 Rule: "growth_roadmap" must have exactly 3 items with horizons "30_days","90_days","180_days" in that order; each "actions" has 2-5 short items.`
 
+/**
+ * A stored analysis may be PARTIAL (R3-PA): when at least MIN_PARTS_FOR_PARTIAL
+ * of the 4 parts came, the result carries `partial` = the parts that did not
+ * (ai-analyze stores it with ai_status 'failed' and the reason in ai_error, so
+ * the client sees what is ready and «повторить», and the input cache never
+ * reuses it). Fewer parts → null (nothing to show).
+ */
+export type PointAAnalysisResult = AIAnalysis & { partial?: AnalysisPart[] }
+
 export async function analyzePointA(
   answers: Record<string, unknown>,
   pointA: PointA,
@@ -430,12 +440,23 @@ export async function analyzePointA(
   locale: Locale = 'ru',
   /** Keys of the blocks the official Point A has no data for (their PointA block is a placeholder). */
   blocksWithoutData: readonly string[] = [],
-): Promise<AIAnalysis | null> {
+  /** R3-PA: what happened to each part (ai_error / ai_model / ai_generated_at). */
+  onReport?: (report: PointAAnalysisReport) => void,
+): Promise<PointAAnalysisResult | null> {
+  const startedAt = new Date().toISOString()
+  const outcomes = {} as Record<AnalysisPart, PartOutcome>
+  for (const p of ANALYSIS_PARTS) outcomes[p] = { ok: false, failure: 'not_run', model: null }
+  const report = () => {
+    try { onReport?.({ parts: outcomes, startedAt, finishedAt: new Date().toISOString() }) } catch { /* never breaks the analysis */ }
+  }
   // Skip if no API key (honest degradation — no fabrication without an LLM)
   if (!hasOpenRouterKey()) {
     console.warn('[point-a-analyzer] No OPENROUTER_API_KEY — skipping AI analysis')
+    for (const p of ANALYSIS_PARTS) outcomes[p] = { ok: false, failure: 'no_key', model: null }
+    report()
     return null
   }
+  const track = (part: AnalysisPart) => (d: StructuredDiagnostics) => { outcomes[part] = { ok: d.ok, failure: d.failure, model: d.model } }
 
   try {
     const context = buildPrompt(answers, pointA, company, expertNotes, blocksWithoutData)
@@ -450,6 +471,7 @@ export async function analyzePointA(
         schema: summarySchema,
         system,
         user: context + SUMMARY_FORMAT,
+        onDiagnostics: track('summary'),
       }),
       generateObjectViaOpenRouter({
         feature: 'point_a_analysis',
@@ -459,6 +481,7 @@ export async function analyzePointA(
         schema: prioritiesSchema,
         system,
         user: context + PRIORITIES_FORMAT,
+        onDiagnostics: track('priorities'),
       }),
       generateObjectViaOpenRouter({
         feature: 'point_a_analysis',
@@ -468,6 +491,7 @@ export async function analyzePointA(
         schema: blocksASchema,
         system,
         user: context + BLOCKS_A_FORMAT,
+        onDiagnostics: track('blocksA'),
       }),
       generateObjectViaOpenRouter({
         feature: 'point_a_analysis',
@@ -477,31 +501,41 @@ export async function analyzePointA(
         schema: blocksBSchema,
         system,
         user: context + BLOCKS_B_FORMAT,
+        onDiagnostics: track('blocksB'),
       }),
     ])
+    // A part that returned nothing without reporting (a stubbed generator) is a failure, one that returned is ok.
+    const got: Record<AnalysisPart, unknown> = { summary, priorities, blocksA, blocksB }
+    for (const p of ANALYSIS_PARTS) {
+      if (got[p] && !outcomes[p].ok) outcomes[p] = { ...outcomes[p], ok: true, failure: null }
+      if (!got[p] && outcomes[p].ok) outcomes[p] = { ...outcomes[p], ok: false, failure: 'error' }
+    }
+    report()
 
-    // Honest fallback: if any part failed, we don't fabricate a partial analysis.
-    if (!summary || !priorities || !blocksA || !blocksB) return null
+    const missing = ANALYSIS_PARTS.filter((p) => !got[p])
+    // Honest fallback: nothing is invented for a part that did not come; too few parts → no analysis.
+    if (ANALYSIS_PARTS.length - missing.length < MIN_PARTS_FOR_PARTIAL) return null
 
-    const blocks = {
-      finance: blocksA.finance,
-      sales: blocksA.sales,
-      operations: blocksA.operations,
-      marketing: blocksB.marketing,
-      strategy: blocksB.strategy,
+    const blocks: Record<string, import('@/types/onboarding').AIBlockAnalysis> = {
+      ...(blocksA ? { finance: blocksA.finance, sales: blocksA.sales, operations: blocksA.operations } : {}),
+      ...(blocksB ? { marketing: blocksB.marketing, strategy: blocksB.strategy } : {}),
     }
 
     return {
-      executive_summary: summary.executive_summary,
-      industry_context: summary.industry_context,
-      strategic_priorities: priorities.strategic_priorities,
-      growth_roadmap: blocksB.growth_roadmap,
-      blocks: blocks as unknown as Record<string, import('@/types/onboarding').AIBlockAnalysis>,
-      model_used: `${OPENROUTER_MODELS.sonnet} + ${OPENROUTER_MODELS.haiku} (auto)`,
+      executive_summary: summary?.executive_summary ?? '',
+      industry_context: summary?.industry_context ?? '',
+      strategic_priorities: priorities?.strategic_priorities ?? [],
+      growth_roadmap: blocksB?.growth_roadmap ?? [],
+      blocks,
+      // The models that really answered (Haiku for the summary / priorities, the light tier for the blocks).
+      model_used: aiModelOf({ parts: outcomes, startedAt, finishedAt: startedAt }) ?? 'unknown',
       generated_at: new Date().toISOString(),
+      ...(missing.length ? { partial: missing } : {}),
     }
   } catch (error) {
-    console.error('[point-a-analyzer] AI analysis failed:', error)
+    console.error('[point-a-analyzer] AI analysis failed:', error instanceof Error ? error.message : error)
+    for (const p of ANALYSIS_PARTS) if (!outcomes[p].ok && outcomes[p].failure === 'not_run') outcomes[p] = { ok: false, failure: 'error', model: null }
+    report()
     return null
   }
 }

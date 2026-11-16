@@ -56,7 +56,6 @@ const { default: PointBPaywall } = await import('@/components/point-b/PointBPayw
 
 const sb = {} as never
 const req = () => new NextRequest('http://t/api/v1/diagnostics/point-b')
-const post = () => new NextRequest('http://t/api/v1/diagnostics/point-b/ai-generate', { method: 'POST', body: '{}' })
 
 beforeEach(() => {
   s.gates = false
@@ -152,16 +151,17 @@ describe('diagnostics/point-b and ai-generate', () => {
     expect((await pointBRoute.GET(req())).status).toBe(401)
   })
 
-  it('ai-generate is gated the same way and reads no inputs when denied', async () => {
+  it('R3 (S3): ai-generate is a staff draft — a client (Free or Pro, own user_id or none) gets 403 and nothing is read', async () => {
     s.gates = true
-    const denied = await aiRoute.POST(post())
-    expect(denied.status).toBe(402)
+    for (const tier of ['free', 'pro'] as const) {
+      s.tier = tier
+      for (const body of ['{}', JSON.stringify({ user_id: 'u-1' })]) {
+        const r = await aiRoute.POST(new NextRequest('http://t/api/v1/diagnostics/point-b/ai-generate', { method: 'POST', body }))
+        expect(r.status).toBe(403)
+        expect((await r.json()).code).toBe('staff_only')
+      }
+    }
     expect(s.inputsCalls).toBe(0)
-
-    s.tier = 'pro'
-    const ok = await aiRoute.POST(post())
-    expect(ok.status).toBe(404) // past the gate: the double has no diagnostic
-    expect(s.inputsCalls).toBe(1)
   })
 })
 
