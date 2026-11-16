@@ -224,7 +224,7 @@ describe('M-5: «Назначить Pro» on a request for paid access', () => {
     }) as unknown as typeof fetch
     const r = await m.sendAssignPro(ok, 'req-1', { months: 3 })
     expect(calls).toEqual([{ url: '/api/giga-admin/requests/req-1/assign-pro', body: { months: 3 } }])
-    expect(r).toEqual({ ok: true, text: 'Pro назначен, заявка закрыта как одобренная, клиент получил уведомление «Доступ открыт».' })
+    expect(r).toEqual({ ok: true, text: 'Pro назначен, заявка закрыта как одобренная, клиент получил уведомление «Доступ открыт» (лента, почта и Telegram, если привязан).' })
     const denied = (async () => new Response(JSON.stringify({ ok: false, error: 'Недостаточно прав' }), { status: 403 })) as unknown as typeof fetch
     expect(await m.sendAssignPro(denied, 'req-1', {})).toEqual({ ok: false, text: 'Недостаточно прав' })
     // verify (Info): already open-ended — no false «Pro назначен»

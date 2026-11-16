@@ -437,3 +437,12 @@ describe('migration 154: comments match the code', () => {
     }
   })
 })
+
+describe('R4 wave 2: every cron of the scheduler has a human label', () => {
+  it('no CRON_JOBS path falls back to the bare path', async () => {
+    const { CRON_JOBS } = await import('@/lib/cron/schedule')
+    const { jobLabel } = await import('@/lib/ops/job-watchdog')
+    const bare = CRON_JOBS.map((j) => j.path).filter((p) => jobLabel(p) === p)
+    expect(bare).toEqual([])
+  })
+})

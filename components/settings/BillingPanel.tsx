@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { PAYMENT_NOTE, readAccessRequest, sendAccessRequest } from '@/components/access/paywall-model'
 import {
   PLAN_SOURCE_LABEL,
   PLAN_STATUS_LABEL,
@@ -70,7 +70,7 @@ export function BillingPlanView({ plan }: { plan: BillingPlan }) {
             ? plan.source === 'system'
               ? 'Срок прошлого тарифа закончился — открыт бесплатный доступ.'
               : 'Прошлый тариф завершён — открыт бесплатный доступ.'
-            : 'Тариф не подключён. Чтобы открыть полную диагностику и сопровождение роста, выберите тариф.'}
+            : 'Тариф не подключён. Точка А, Точка Б и полный GRI открываются в платном доступе — оставьте заявку ниже.'}
         </p>
       </div>
     )
@@ -93,7 +93,7 @@ export function BillingPlanView({ plan }: { plan: BillingPlan }) {
       </dl>
       {plan.status === 'expired' && (
         <p className="text-xs text-error">
-          Срок тарифа закончился. Доступ будет переведён на бесплатный — чтобы продлить, обратитесь к администратору.
+          Срок тарифа закончился. Доступ будет переведён на бесплатный — чтобы продлить, оставьте заявку ниже.
         </p>
       )}
       {plan.source === 'admin' && plan.status !== 'expired' && (
@@ -107,6 +107,76 @@ export function BillingPlanView({ plan }: { plan: BillingPlan }) {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/**
+ * R4 (N4B-4): «Сменить или оформить тариф» — та же заявка менеджеру, что в
+ * пейволле (POST /api/v1/upgrade-request, раздел 'pro'), а не бесплатный
+ * мини-GRI. Цен и сравнения тарифов на сайте нет — и не обещаем.
+ *   'connect' — бесплатный доступ: подключить платный;
+ *   'renew'   — платный со сроком (или срок уже истёк): продлить;
+ *   null      — платный бессрочно: просить нечего.
+ */
+export type BillingRequestMode = 'connect' | 'renew'
+
+export function billingRequestMode(plan: Pick<BillingPlan, 'tier' | 'status' | 'periodEnd'>): BillingRequestMode | null {
+  if (plan.tier === 'free') return 'connect'
+  if (plan.periodEnd || plan.status === 'expired' || plan.status === 'trialing') return 'renew'
+  return null
+}
+
+export type BillingRequestState = 'checking' | 'idle' | 'sending' | 'sent' | 'error' | 'impersonation'
+
+/** The request block, stateless (rendered by tests with react-dom/server). */
+export function BillingRequestView({ mode, state, onRequest }: { mode: BillingRequestMode; state: BillingRequestState; onRequest?: () => void }) {
+  const title = mode === 'connect' ? 'Подключить платный доступ' : 'Продлить доступ'
+  const lead = mode === 'connect'
+    ? 'Точка А, Точка Б и полный GRI. Оставьте заявку — менеджер свяжется с вами, расскажет об условиях и откроет доступ.'
+    : 'Оставьте заявку на продление — менеджер свяжется с вами и продлит срок.'
+  const label = state === 'sending' ? 'Отправляем…' : state === 'sent' ? 'Заявка отправлена' : mode === 'connect' ? 'Оставить заявку на доступ' : 'Оставить заявку на продление'
+  return (
+    <div className="bg-surface-container rounded-xl p-6 flex flex-wrap items-center justify-between gap-4" data-billing-request={mode}>
+      <div className="min-w-0 flex-1">
+        <h4 className="text-sm font-semibold text-on-surface">{title}</h4>
+        <p className="text-xs text-on-surface-variant mt-1">{lead}</p>
+        <p className="text-[11px] text-on-surface-variant/70 mt-1">{PAYMENT_NOTE}</p>
+        <p role="status" aria-live="polite" className="text-xs mt-1">
+          {state === 'sent' && <span className="text-primary">Заявка у менеджера, с вами свяжутся.</span>}
+          {state === 'error' && <span className="text-error">Не удалось отправить заявку. Попробуйте ещё раз.</span>}
+          {state === 'impersonation' && <span className="text-on-surface-variant">В режиме «от имени» заявку оставляет сам клиент.</span>}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onRequest}
+        disabled={state !== 'idle' && state !== 'error'}
+        data-track="pro-upgrade-request"
+        data-feature="pro"
+        className="inline-flex items-center gap-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold px-5 py-2.5 rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all disabled:opacity-60 disabled:hover:scale-100"
+      >
+        <span className="material-symbols-outlined text-base">{state === 'sent' ? 'check_circle' : 'mail'}</span>
+        {label}
+      </button>
+    </div>
+  )
+}
+
+function BillingRequest({ mode }: { mode: BillingRequestMode }) {
+  const [state, setState] = useState<BillingRequestState>('checking')
+  useEffect(() => {
+    let cancelled = false
+    // Any open request is already with the manager: no second one from here.
+    void readAccessRequest(fetch).then((info) => {
+      if (!cancelled) setState((s) => (s === 'checking' ? (info?.open ? 'sent' : 'idle') : s))
+    })
+    return () => { cancelled = true }
+  }, [])
+  const request = async () => {
+    if (state !== 'idle' && state !== 'error') return
+    setState('sending')
+    setState(await sendAccessRequest(fetch, 'pro'))
+  }
+  return <BillingRequestView mode={mode} state={state} onRequest={() => void request()} />
 }
 
 export function BillingPanel() {
@@ -146,6 +216,7 @@ export function BillingPanel() {
       </div>
     )
   }
+  const requestMode = billingRequestMode(plan)
 
   return (
     <div className="space-y-6">
@@ -160,22 +231,8 @@ export function BillingPanel() {
         <BillingPlanView plan={plan} />
       </div>
 
-      {/* Online payment is not connected yet: the plan is assigned by an administrator. */}
-      <div className="bg-surface-container rounded-xl p-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h4 className="text-sm font-semibold text-on-surface">Сменить или оформить тариф</h4>
-          <p className="text-xs text-on-surface-variant mt-1">
-            Пилот · Pro · Enterprise — сравнение и стоимость. Пока онлайн-оплата подключается, тариф назначает администратор.
-          </p>
-        </div>
-        <Link
-          href="/gri-free"
-          className="inline-flex items-center gap-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold px-5 py-2.5 rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all"
-        >
-          <span className="material-symbols-outlined text-base">upgrade</span>
-          Выбрать тариф
-        </Link>
-      </div>
+      {/* Online payment is not connected yet (intentional stub): the request goes to a manager. */}
+      {requestMode && <BillingRequest mode={requestMode} />}
 
       <div className="bg-surface-container-low rounded-xl p-5 border border-white/[0.04]">
         <p className="text-[11px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Скоро</p>

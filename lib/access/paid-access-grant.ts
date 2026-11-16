@@ -13,10 +13,11 @@
  *   1. every OPEN request of the client for paid access (admin_requests type
  *      'access', source 'paywall' — incl. the «pilot» section — or the old
  *      'upgrade_modal') is closed as approved, each with an audit entry;
- *   2. the client gets ONE notice «Доступ открыт» in the notification feed —
- *      when the access was actually opened (Free before, paid now) or a request
- *      of his was closed. Coming from a request, the request id is the dedupe
- *      key, so the same request never notifies twice.
+ *   2. the client gets ONE notice «Доступ открыт» — feed + e-mail + Telegram if
+ *      linked (R4 N4B-2, PO 2026-11-16) — when the access was actually opened
+ *      (Free before, paid now) or a request of his was closed (then, with paid
+ *      access before, «Доступ продлён»). Coming from a request, the request id
+ *      is the dedupe key, so the same request never notifies twice.
  * Registration requests are never touched (other type / source).
  * Never throws: the plan is already changed when this runs.
  */
@@ -138,7 +139,7 @@ export async function completePaidAccessGrant(args: {
   const key = args.requestId ?? [...closed].sort()[0] ?? null
   let notified = false
   try {
-    const res = await notifyPaidAccessOpened(args.userId, { periodEnd: args.after.periodEnd ?? null, dedupeKey: key ? `paid_access_opened:${key}` : null })
+    const res = await notifyPaidAccessOpened(args.userId, { periodEnd: args.after.periodEnd ?? null, dedupeKey: key ? `paid_access_opened:${key}` : null, renewed: !opened })
     notified = res.delivered.inApp
   } catch (err) {
     console.error('[paid-access-grant] notice failed:', err instanceof Error ? err.message : err)

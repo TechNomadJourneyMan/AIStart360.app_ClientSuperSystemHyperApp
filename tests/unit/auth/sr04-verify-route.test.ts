@@ -56,6 +56,13 @@ describe('SR-04: /auth/verify', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/auth/reset-password')
   })
 
+  it('R-029: ссылка входа без next ведёт в кабинет по роли (/login → middleware), не в старый /dashboard', async () => {
+    const res = await visit('token_hash=th&type=magiclink')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
+    const invite = await visit('token_hash=th&type=invite')
+    expect(new URL(invite.headers.get('location')!).pathname).toBe('/auth/reset-password')
+  })
+
   it('SR-04: обычное принятие ведёт по next', async () => {
     s.result = { accepted: true, staffRole: 'admin', secured: false }
     const res = await visit('token_hash=th&type=invite&next=/auth/reset-password&invite=tok-abc')

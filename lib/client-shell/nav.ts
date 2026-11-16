@@ -50,11 +50,59 @@ export const CLIENT_NAV_DEFS: readonly ItemDef[] = [
   { key: 'documents', label: 'Документы', href: '/client/onboarding/documents', icon: 'cloud_upload', openBeforeApproval: true },
 ]
 
+/** R-096: the notification feed — the bell of the cabinet bar («Доступ открыт», replies, reminders). */
+export const NOTIFICATIONS_HREF = '/notifications'
+
 /**
  * Pages an expert account cannot open (middleware ADMIN_PATHS send an expert
  * to /expert/dashboard). Kept in sync by tests/unit/client-shell.
  */
-export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market']
+export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market', NOTIFICATIONS_HREF]
+
+const isExpertProfile = (role: string | null | undefined) => role === 'expert' || role === 'manager' || role === 'analyst'
+
+/** The bell: where the feed is and how many entries are unread (server count). */
+export interface ClientNotificationsLink {
+  href: string
+  unread: number
+}
+
+/**
+ * R-096: the bell of the cabinet bar, or null when the account cannot open the
+ * feed — an expert profile (middleware sends it to /expert/dashboard) or the
+ * feed switched off in GIGA-CRM. Open before approval (middleware
+ * OPEN_BEFORE_APPROVAL): a pending client learns the decision there too.
+ */
+export function clientNotificationsLink(input: { profileRole?: string | null; hiddenPaths: readonly string[]; unread?: number }): ClientNotificationsLink | null {
+  if (isExpertProfile(input.profileRole)) return null
+  if (hiddenByPlatform(NOTIFICATIONS_HREF, input.hiddenPaths)) return null
+  return { href: NOTIFICATIONS_HREF, unread: Math.max(0, Math.floor(Number(input.unread) || 0)) }
+}
+
+/**
+ * `href` with the query of the page being left (Next.js `searchParams`), so a
+ * redirect from an old address keeps e.g. `?tab=` (R-094: /point-a → /client/point-a).
+ */
+export function hrefWithQuery(href: string, searchParams?: Readonly<Record<string, string | string[] | undefined>>): string {
+  const qs = new URLSearchParams()
+  for (const [key, value] of Object.entries(searchParams ?? {})) {
+    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) qs.append(key, v)
+  }
+  const query = qs.toString()
+  return query ? `${href}?${query}` : href
+}
+
+/**
+ * R-028: who gets the cabinet bar on the pages of the old (dashboard) shell
+ * (/dashboard, /gri, /settings…) instead of the staff sidebar: a client —
+ * profiles.role 'client' (or the legacy 'owner') that is not staff
+ * (user_segment_facts.is_staff: a staff_roles row or an admin / super_admin
+ * profile). Unknown facts → false: the old shell, as before.
+ */
+export function usesClientShell(facts: { role?: string | null; is_staff?: boolean } | null | undefined): boolean {
+  if (!facts || facts.is_staff) return false
+  return facts.role === 'client' || facts.role === 'owner'
+}
 
 export interface BuildClientNavInput {
   /** profiles.status === 'approved'. */
@@ -87,7 +135,7 @@ function hiddenByPlatform(href: string, hiddenPaths: readonly string[]): boolean
 }
 
 export function buildClientNav(input: BuildClientNavInput): ClientNavItem[] {
-  const expert = input.profileRole === 'expert' || input.profileRole === 'manager' || input.profileRole === 'analyst'
+  const expert = isExpertProfile(input.profileRole)
   const unread = Math.max(0, Math.floor(Number(input.unreadMessages) || 0))
   return CLIENT_NAV_DEFS
     .filter((d) => input.approved || d.openBeforeApproval)

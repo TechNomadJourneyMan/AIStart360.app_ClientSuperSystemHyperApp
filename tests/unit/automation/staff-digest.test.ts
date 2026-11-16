@@ -7,6 +7,11 @@ import type { StaffTask } from '@/lib/automation/data'
 
 const h = vi.hoisted(() => ({
   pending: [] as Array<{ userId: string; createdAt: string }>,
+  paid: [] as Array<{ userId: string; createdAt: string }>,
+  ending: [] as Array<{ userId: string; endsAt: string }>,
+  ended: [] as Array<{ userId: string; endsAt: string }>,
+  endingRange: [] as string[],
+  endedSince: '' as string,
   tasks: [] as StaffTask[],
   counts: { registrations: 0, surveysCompleted: 0, griCompleted: 0 },
   sends: [] as Array<{ dedupeKey: string | null }>,
@@ -18,6 +23,15 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/automation/data', () => ({
   fetchPendingRequests: async () => h.pending,
+  fetchOpenPaidRequests: async () => h.paid,
+  fetchProEnding: async (from: string, to: string) => {
+    h.endingRange = [from, to]
+    return h.ending
+  },
+  fetchProEndedSince: async (since: string) => {
+    h.endedSince = since
+    return h.ended
+  },
   fetchOverdueStaffTasks: async () => h.tasks,
   fetchDayCounts: async (from: string, to: string) => {
     h.countsRange = [from, to]
@@ -67,6 +81,9 @@ const task = (id: string, assigneeId: string | null, dueHoursAgo: number, client
 
 beforeEach(() => {
   h.pending = []
+  h.paid = []
+  h.ending = []
+  h.ended = []
   h.tasks = []
   h.counts = { registrations: 0, surveysCompleted: 0, griCompleted: 0 }
   h.sends = []
@@ -114,8 +131,10 @@ describe('runStaffDigest', () => {
     expect(h.admins).toHaveBeenCalledTimes(1)
     const [type, data] = h.admins.mock.calls[0] as [string, { lines: string[]; title: string }]
     expect(type).toBe('staff_digest')
-    expect(data.title).toContain('1 заявка ждёт')
-    expect(data.lines.join('\n')).toContain('Самая старая — 10 часов')
+    // R4 (N4B-1): a pending REGISTRATION is called a registration, not a request for access.
+    expect(data.title).toContain('1 регистрация ждёт одобрения')
+    expect(data.lines.join('\n')).toContain('Регистрации ждут одобрения — дольше 4 ч: 1 из 1. Самая старая — 10 часов')
+    expect(data.lines.join('\n')).not.toContain('Заявки на оплату')
     expect(data.lines.join('\n')).toContain('без исполнителя: 1')
     expect(data.lines.join('\n')).toContain('регистраций — 3')
     // «Вчера» — сутки по Алматы: 23.09 00:00 (UTC+5) … 24.09 00:00.
@@ -129,6 +148,31 @@ describe('runStaffDigest', () => {
     await runStaffDigest(NOW)
     expect(h.email).toHaveBeenCalledTimes(1)
     expect(h.admins).toHaveBeenCalledTimes(1)
+  })
+
+  it('R4 (N4B-1): заявки на ОПЛАТУ — отдельной строкой и в заголовке; регистрации — своей', async () => {
+    h.paid = [{ userId: 'c1', createdAt: hoursAgo(30) }, { userId: 'c2', createdAt: hoursAgo(2) }]
+    h.pending = [{ userId: 'p1', createdAt: hoursAgo(1) }]
+    const stats = await runStaffDigest(NOW)
+    expect(stats).toMatchObject({ paidPending: 2, paidOverSla: 1, pending: 1, pendingOverSla: 0 })
+    const [, data] = h.admins.mock.calls[0] as [string, { lines: string[]; title: string }]
+    expect(data.title).toBe('Утренняя сводка: 1 заявка на оплату ждёт')
+    expect(data.lines[0]).toBe('💳 Заявки на оплату — дольше 4 ч: 1 из 2. Самая старая — 30 часов.')
+    expect(data.lines[1]).toBe('Регистрации ждут одобрения: 1 (все моложе 4 ч).')
+  })
+
+  it('R4 (N4B-10): у кого Pro кончается за 7 дней и у кого закончился за сутки — с именами', async () => {
+    h.ending = [{ userId: 'c1', endsAt: '2026-09-30T23:59:59.000Z' }]
+    h.ended = [{ userId: 'c2', endsAt: '2026-09-23T23:59:59.000Z' }]
+    const stats = await runStaffDigest(NOW)
+    expect(stats).toMatchObject({ proEnding: 1, proEnded: 1, adminSummarySent: true })
+    // окно — следующие 7 суток; «закончился» — за последние сутки
+    expect(h.endingRange).toEqual([NOW.toISOString(), new Date(NOW.getTime() + 7 * 24 * 3_600_000).toISOString()])
+    expect(h.endedSince).toBe(new Date(NOW.getTime() - 24 * 3_600_000).toISOString())
+    const [, data] = h.admins.mock.calls[0] as [string, { lines: string[] }]
+    const text = data.lines.join('\n')
+    expect(text).toContain('Платный доступ кончается в ближайшие 7 дней: 1 — Клиент c1 (30 сентября)')
+    expect(text).toContain('Платный доступ закончился за сутки, кабинет переведён на бесплатный: 1 — Клиент c2 (23 сентября)')
   })
 
   it('тихий день — без сводки админам', async () => {

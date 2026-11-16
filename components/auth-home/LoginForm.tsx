@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { safeInternalPath } from '@/lib/safe-redirect'
-import { postLoginPath } from '@/lib/role-landing'
+import { CABINET_ENTRY_PATH, postLoginPath } from '@/lib/role-landing'
 import { loginNotice } from '@/lib/auth/login-links'
 
 /**
@@ -38,7 +38,8 @@ export function LoginForm({ footer }: { footer?: React.ReactNode }) {
   const searchParams = useSearchParams()
   // Only honour internal `from` targets — never redirect off-origin.
   const rawFrom = searchParams.get('from')
-  const from = safeInternalPath(rawFrom, '/dashboard')
+  // R-029: the e-mail sign-in link returns to the cabinet by role (CABINET_ENTRY_PATH).
+  const from = safeInternalPath(rawFrom, CABINET_ENTRY_PATH)
   // Why the user was sent back here (expired email link, blocked account).
   const notice = loginNotice(searchParams)
 

@@ -14,6 +14,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
 
+// R-029: the cabinet's home page — the one landing of a client (lib/role-landing.ts).
+const CABINET_HOME = '/client/home'
+
 // Route each vertical sends the user to after selection (anketa path)
 const ANKETA_ROUTE: Record<VerticalId, string> = {
   generic:   '/client/onboarding',
@@ -87,9 +90,9 @@ export default function WelcomePage() {
         ])
         if (cancelled) return
 
-        // 2a. Onboarding already done → straight to dashboard (existing users)
+        // 2a. Onboarding already done → straight to the cabinet (existing users)
         if (companyRes.data && companyRes.data.length > 0) {
-          router.replace('/dashboard')
+          router.replace(CABINET_HOME)
           return
         }
 
@@ -125,7 +128,7 @@ export default function WelcomePage() {
     )
   }
 
-  // ── Step 2: path picker (anketa / files / dashboard) ──
+  // ── Step 2: path picker (anketa / files / cabinet) ──
   if (step === 'path') {
     const anketaHref = chosenVertical ? ANKETA_ROUTE[chosenVertical] : '/client/onboarding'
     const verticalLabel = chosenVertical
@@ -150,7 +153,7 @@ export default function WelcomePage() {
               Как начнём?
             </h1>
             <p className="text-on-surface-variant mt-3 max-w-lg mx-auto text-sm">
-              Выберите путь — все три ведут к одному дашборду. Можно потом сделать остальные.
+              Выберите путь — все три ведут в ваш кабинет. Можно потом сделать остальные.
             </p>
           </div>
 
@@ -196,10 +199,10 @@ export default function WelcomePage() {
               </span>
             </button>
 
-            {/* Path 3: dashboard — full sidebar cabinet (shared (dashboard) layout) */}
+            {/* Path 3: the cabinet's home page (R-029: not the old /dashboard shell) */}
             <button
               type="button"
-              onClick={() => router.replace('/dashboard')}
+              onClick={() => router.replace(CABINET_HOME)}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-purple-500/40 hover:bg-purple-500/5 transition-all p-5"
             >
               <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/25 flex items-center justify-center mb-3 group-hover:bg-purple-500/25 transition-colors">
@@ -207,10 +210,10 @@ export default function WelcomePage() {
               </div>
               <h3 className="font-headline text-base font-bold text-on-surface mb-1">Просто посмотрю</h3>
               <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
-                Открыть пустой дашборд. Заполнить данные в любой момент позже из меню.
+                Открыть кабинет. Заполнить данные можно в любой момент позже из меню.
               </p>
               <span className="inline-flex items-center gap-1 text-xs text-purple-300 font-medium">
-                Открыть дашборд
+                Открыть кабинет
                 <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
               </span>
             </button>

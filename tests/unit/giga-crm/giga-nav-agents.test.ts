@@ -39,9 +39,14 @@ describe('группа «ИИ и автоматизация»', () => {
     expect(group('Коммуникации')!.items.some((i) => i.href.endsWith('/moderation'))).toBe(false)
   })
 
-  it('счётчик ожидающих одобрений — только у «Одобрений» (и счётчик эскалаций у «Эскалаций»)', () => {
+  it('счётчик ожидающих одобрений — только у «Одобрений» (и эскалаций у «Эскалаций», заявок на оплату у «Заявок», «Ждут план» у очереди Точки Б — R4)', () => {
     const withBadge = GIGA_NAV.flatMap((g) => g.items).filter((i) => i.badge)
-    expect(withBadge.map((i) => [i.label, i.badge])).toEqual([['Эскалации', 'cases'], ['Одобрения', 'pendingApprovals']])
+    expect(withBadge.map((i) => [i.label, i.badge])).toEqual([
+      ['Заявки', 'accessRequests'],
+      ['Эскалации', 'cases'],
+      ['Точка Б — на одобрении', 'planWaiting'],
+      ['Одобрения', 'pendingApprovals'],
+    ])
   })
 
   it('«Уведомления» доступны каждому сотруднику панели', () => {

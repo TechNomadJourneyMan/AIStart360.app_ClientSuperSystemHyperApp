@@ -8,9 +8,13 @@ import { describe, expect, it } from 'vitest'
 import {
   CLIENT_NAV_DEFS,
   EXPERT_BLOCKED_HREFS,
+  NOTIFICATIONS_HREF,
   activeClientNavKey,
   buildClientNav,
+  clientNotificationsLink,
   clientShellMode,
+  hrefWithQuery,
+  usesClientShell,
 } from '@/lib/client-shell/nav'
 
 const keys = (items: { key: string }[]) => items.map((i) => i.key)
@@ -111,5 +115,51 @@ describe('clientShellMode', () => {
     ['/client/journey', 'none'],
   ])('%s → %s', (path, mode) => {
     expect(clientShellMode(path)).toBe(mode)
+  })
+})
+
+describe('R-096: the bell of the cabinet bar (clientNotificationsLink)', () => {
+  it('leads to the notification feed — a real page — with the unread count', () => {
+    expect(clientNotificationsLink({ hiddenPaths: [], unread: 3 })).toEqual({ href: '/notifications', unread: 3 })
+    expect(() => readFileSync(resolve(process.cwd(), 'app/(dashboard)/notifications/page.tsx'))).not.toThrow()
+    expect(clientNotificationsLink({ hiddenPaths: [], unread: Number.NaN })?.unread).toBe(0)
+    expect(clientNotificationsLink({ hiddenPaths: [], unread: -2 })?.unread).toBe(0)
+  })
+
+  it('is open before approval (middleware OPEN_BEFORE_APPROVAL lists the feed)', () => {
+    const src = readFileSync(resolve(process.cwd(), 'middleware.ts'), 'utf8')
+    const start = src.indexOf('const OPEN_BEFORE_APPROVAL')
+    const block = src.slice(start, src.indexOf('\n]', start))
+    expect(block).toContain(`'${NOTIFICATIONS_HREF}'`)
+  })
+
+  it('no bell for an expert profile (middleware sends it away from /notifications) or a feed hidden in GIGA-CRM', () => {
+    for (const role of ['expert', 'manager', 'analyst']) expect(clientNotificationsLink({ profileRole: role, hiddenPaths: [] }), role).toBeNull()
+    expect(EXPERT_BLOCKED_HREFS).toContain(NOTIFICATIONS_HREF)
+    expect(clientNotificationsLink({ hiddenPaths: ['/notifications'] })).toBeNull()
+    expect(clientNotificationsLink({ profileRole: 'client', hiddenPaths: [] })).not.toBeNull()
+  })
+})
+
+describe('R-028: who gets the cabinet bar in the old (dashboard) shell (usesClientShell)', () => {
+  it('a client (and a legacy owner) that is not staff', () => {
+    expect(usesClientShell({ role: 'client', is_staff: false })).toBe(true)
+    expect(usesClientShell({ role: 'owner', is_staff: false })).toBe(true)
+  })
+
+  it('staff, experts, admins and unknown facts keep the old shell', () => {
+    expect(usesClientShell({ role: 'client', is_staff: true })).toBe(false) // role only in staff_roles
+    for (const role of ['super_admin', 'admin', 'expert', 'manager']) expect(usesClientShell({ role, is_staff: role === 'admin' || role === 'super_admin' }), role).toBe(false)
+    expect(usesClientShell(null)).toBe(false)
+    expect(usesClientShell(undefined)).toBe(false)
+  })
+})
+
+describe('hrefWithQuery (R-094: /point-a → /client/point-a keeps the query)', () => {
+  it('keeps every parameter, repeated ones too', () => {
+    expect(hrefWithQuery('/client/point-a')).toBe('/client/point-a')
+    expect(hrefWithQuery('/client/point-a', {})).toBe('/client/point-a')
+    expect(hrefWithQuery('/client/point-a', { tab: 'risks', a: ['1', '2'], skip: undefined })).toBe('/client/point-a?tab=risks&a=1&a=2')
+    expect(hrefWithQuery('/client/point-a', { q: 'a b&c' })).toBe('/client/point-a?q=a+b%26c')
   })
 })

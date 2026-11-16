@@ -101,7 +101,8 @@ describe('POST /api/giga-admin/invites', () => {
     expect(s.sent[0].input.existingAccount).toBe(true)
     const url = new URL(s.sent[0].input.url as string)
     expect(url.searchParams.get('type')).toBe('magiclink')
-    expect(url.searchParams.get('next')).toBe('/dashboard')
+    // R-029: «в кабинет» по роли (/login → middleware), а не в старый /dashboard
+    expect(url.searchParams.get('next')).toBe('/login')
   })
 
   it('кладёт сообщение пригласившего и компанию в письмо', async () => {

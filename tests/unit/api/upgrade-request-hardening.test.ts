@@ -29,6 +29,8 @@ vi.mock('@/lib/rate-limit', () => ({
   rateLimitResponse: () => new Response('{"ok":false}', { status: 429 }),
 }))
 vi.mock('@/lib/impersonation/server', () => ({ activeImpersonation: async () => null }))
+// R4 (N4B-1): the staff notice after a stored request — covered in tests/unit/access/request-notices.test.ts.
+vi.mock('@/lib/access/request-notices', () => ({ notifyStaffAccessRequested: async () => 'sent' }))
 
 const { POST } = await import('@/app/api/v1/upgrade-request/route')
 

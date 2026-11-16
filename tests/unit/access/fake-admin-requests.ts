@@ -17,6 +17,8 @@ export interface FakeRequestsDb {
   failInsert?: boolean
   /** Runs once right before the next UPDATE is applied — a concurrent writer. */
   beforeUpdateOnce?: (rows: Row[]) => void
+  /** Any other table read by the code under test (staff_roles, notification_events, …). */
+  extra?: Record<string, Row[]>
 }
 
 export function newRequestsDb(): FakeRequestsDb {
@@ -34,7 +36,7 @@ export function fakeService(db: FakeRequestsDb) {
   return {
     from(table: string) {
       const st = { op: 'select' as 'select' | 'insert' | 'update', payload: null as unknown, eq: [] as Array<[string, unknown]>, in: [] as Array<[string, unknown[]]>, single: false }
-      const source = () => (table === 'admin_requests' ? db.rows : table === 'profiles' ? db.profiles : table === 'companies' ? db.companies : [])
+      const source = () => (table === 'admin_requests' ? db.rows : table === 'profiles' ? db.profiles : table === 'companies' ? db.companies : (db.extra?.[table] ?? []))
       const matches = (r: Row) => st.eq.every(([c, v]) => field(r, c) === v) && st.in.every(([c, vs]) => vs.includes(field(r, c)))
       const exec = async () => {
         if (st.op === 'insert') {

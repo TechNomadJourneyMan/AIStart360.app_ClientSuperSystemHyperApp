@@ -148,7 +148,8 @@ describe('«Назначить Pro» from a request', () => {
 
     expect(s.audits.filter((a) => a.action === 'request.approved')).toHaveLength(3)
     expect(s.audits[0]).toMatchObject({ performedBy: STAFF, diff: expect.objectContaining({ kind: 'paid_access', via: 'request', userId: CLIENT }) })
-    expect(s.notices).toEqual([{ userId: CLIENT, input: { periodEnd: expect.any(String), dedupeKey: 'paid_access_opened:req-1' } }])
+    // R4 (N4B-2): Free → Pro is «Доступ открыт», not «продлён».
+    expect(s.notices).toEqual([{ userId: CLIENT, input: { periodEnd: expect.any(String), dedupeKey: 'paid_access_opened:req-1', renewed: false } }])
   })
 
   it('no period → Pro without an end date; the default note names the sections', async () => {

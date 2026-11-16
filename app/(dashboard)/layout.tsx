@@ -8,9 +8,11 @@ import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { ChatHost } from '@/components/ai-chat/ChatHost'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
 import AnnouncementBar from '@/components/platform/AnnouncementBar'
+import { ClientNav } from '@/components/client/ClientNav'
 import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
 import { getRequestUser } from '@/lib/request-user'
 import { visibleSectionsFor } from '@/lib/platform/sections'
+import { clientShellData, loadDashboardClientShell } from '@/lib/client-shell/server'
 
 export default async function DashboardLayout({
   children,
@@ -22,8 +24,38 @@ export default async function DashboardLayout({
   // getRequestUser / visibleSectionsFor are memoised per request: the page
   // below reuses these reads instead of repeating the Auth round trip.
   const user = await getRequestUser()
-  const { sections, hiddenPaths } = await visibleSectionsFor(user?.id ?? null)
+  const [{ sections, hiddenPaths }, client] = await Promise.all([
+    visibleSectionsFor(user?.id ?? null),
+    // R-028: is the viewer a client (not staff)? Then the cabinet bar.
+    loadDashboardClientShell(user),
+  ])
   const initial = { sections: sections.map((s) => ({ key: s.key, title: s.title, description: s.description, icon: s.icon, href: s.nav_href })), hiddenPaths }
+
+  // R-028 (quick step of one shell): a client on /dashboard, /gri, /settings,
+  // /notifications… gets the SAME bar as in /client/* — «Главная», «Анкета»,
+  // «Сообщения», the bell — on the phone too, instead of the staff sidebar,
+  // header and bottom bar. Staff keep the old shell below, unchanged.
+  if (client) {
+    const shell = clientShellData(client.account, hiddenPaths, client.lockedKeys)
+    return (
+      <PlatformSectionsProvider initial={initial}>
+      <div className="min-h-screen bg-background">
+        <ActivityTracker />
+        <ImpersonationBanner />
+        <ClientNav items={shell.items} panel={shell.panel} email={shell.email} notifications={shell.notifications} />
+        <main>
+          {/* pb reserves space for the floating assistant FAB (bottom-6). */}
+          <div className="px-4 md:px-6 lg:px-8 pt-6 pb-24 max-w-[1600px] mx-auto">
+            <AnnouncementBar className="mb-4" />
+            {children}
+          </div>
+        </main>
+        <MascotLauncher />
+        <ChatHost />
+      </div>
+      </PlatformSectionsProvider>
+    )
+  }
 
   return (
     <PlatformSectionsProvider initial={initial}>

@@ -17,6 +17,12 @@
  *
  * Оплата — намеренная заглушка: заявка ничего не покупает и тариф не меняет;
  * тариф назначает персонал (User 360 → Биллинг, lib/payments/billing.ts).
+ *
+ * R4 (N4B-1, решение PO 2026-11-16): новая заявка и новый раздел к открытой
+ * заявке сразу сообщаются Admin и Super Admin (лента персонала + Telegram, если
+ * привязан) — lib/access/request-notices.ts, в фоне, после записи. Повтор того
+ * же раздела ничего не шлёт. Так уведомляют ВСЕ писатели заявки (пейволл, меню,
+ * «Настройки → Биллинг», пилот без самообслуживания в /api/checkout).
  * Все функции получают SERVICE-ROLE клиент: таблица закрыта для anon/authenticated (083/084).
  */
 
@@ -44,6 +50,8 @@ const FEATURES: Record<string, { key: string; label: string }> = {
   benchmarks: { key: 'benchmarks', label: 'Бенчмарки отрасли' },
   // R2-A (ревью H-1): пилот при выключенном pilot_self_service — тоже заявка.
   pilot: { key: 'pilot', label: 'Пилот (полный доступ на 30 дней)' },
+  // R4 (N4B-4): «Настройки → Биллинг» — подключить или продлить тариф целиком.
+  pro: { key: 'pro', label: 'Тариф Pro (подключить или продлить)' },
 }
 
 /** Ключ раздела из того, что прислал UI (id фичи или href меню). Неизвестное — как есть. */
@@ -75,6 +83,13 @@ export interface OpenAccessRequest {
   payload: Record<string, unknown>
   /** Version of the row for the compare-and-swap update ("updatedAt"). */
   updatedAt: string | null
+  /** When the request was left ("createdAt"): the answer deadline counts from it (N4B-1). */
+  createdAt: string | null
+}
+
+/** Sections of a request (payload.features, or the single featureKey of an old row). */
+export function requestFeatures(payload: Record<string, unknown> | null | undefined): string[] {
+  return featuresOf(payload ?? {})
 }
 
 function featuresOf(payload: Record<string, unknown>): string[] {
@@ -87,7 +102,7 @@ function featuresOf(payload: Record<string, unknown>): string[] {
 export async function findOpenAccessRequest(service: SupabaseClient, userId: string): Promise<OpenAccessRequest | null> {
   const { data, error } = await service
     .from('admin_requests')
-    .select('id, payload, updatedAt')
+    .select('id, payload, updatedAt, createdAt')
     .eq('type', 'access')
     .in('source', [...ACCESS_REQUEST_SOURCES])
     .in('status', [...OPEN_REQUEST_STATUSES])
@@ -95,10 +110,10 @@ export async function findOpenAccessRequest(service: SupabaseClient, userId: str
     .order('createdAt', { ascending: false })
     .limit(1)
   if (error) throw new Error(`admin_requests read failed: ${error.message}`)
-  const row = (data as Array<{ id: string; payload: Record<string, unknown> | null; updatedAt?: string | null }> | null)?.[0]
+  const row = (data as Array<{ id: string; payload: Record<string, unknown> | null; updatedAt?: string | null; createdAt?: string | null }> | null)?.[0]
   if (!row) return null
   const payload = row.payload ?? {}
-  return { id: row.id, features: featuresOf(payload), payload, updatedAt: row.updatedAt ?? null }
+  return { id: row.id, features: featuresOf(payload), payload, updatedAt: row.updatedAt ?? null, createdAt: row.createdAt ?? null }
 }
 
 function texts(person: { name: string; email: string }, features: string[]) {
@@ -116,9 +131,17 @@ export interface SubmitResult {
   /** false — заявка уже была открыта, новая строка не создана. */
   created: boolean
   features: string[]
+  /** Раздел, который этот вызов дописал в уже открытую заявку; null — ничего нового (N4B-1). */
+  added: string | null
 }
 
-async function readPerson(service: SupabaseClient, userId: string): Promise<{ name: string; email: string; company: string | null }> {
+export interface RequestPerson {
+  name: string
+  email: string
+  company: string | null
+}
+
+async function readPerson(service: SupabaseClient, userId: string): Promise<RequestPerson> {
   const [{ data: profile }, { data: company }] = await Promise.all([
     service.from('profiles').select('full_name, email').eq('id', userId).maybeSingle(),
     service.from('companies').select('name').eq('user_id', userId).limit(1).maybeSingle(),
@@ -144,7 +167,7 @@ async function tryMerge(service: SupabaseClient, open: OpenAccessRequest, featur
   if (open.updatedAt) q = q.eq('updatedAt', open.updatedAt)
   const { data, error } = await q.select('id')
   if (error) throw new Error(`admin_requests update failed: ${error.message}`)
-  return Array.isArray(data) && data.length > 0 ? { id: open.id, created: false, features } : null
+  return Array.isArray(data) && data.length > 0 ? { id: open.id, created: false, features, added: feature } : null
 }
 
 /** Insert a new open request; 'conflict' when a parallel one won (unique index of migration 144). */
@@ -162,7 +185,7 @@ async function tryInsert(service: SupabaseClient, userId: string, feature: strin
     createdAt: now,
     updatedAt: now,
   })
-  if (!error) return { id, created: true, features }
+  if (!error) return { id, created: true, features, added: null }
   if ((error as { code?: string }).code === '23505') return 'conflict'
   throw new Error(`admin_requests insert failed: ${error.message}`)
 }
@@ -180,13 +203,42 @@ export async function submitAccessRequest(service: SupabaseClient, args: { userI
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const open = await findOpenAccessRequest(service, args.userId)
     if (open) {
-      if (open.features.includes(feature)) return { id: open.id, created: false, features: open.features }
+      // The same section again: nothing new — no row, no notice.
+      if (open.features.includes(feature)) return { id: open.id, created: false, features: open.features, added: null }
       const merged = await tryMerge(service, open, feature, person)
-      if (merged) return merged
+      if (merged) {
+        tellStaff(service, merged, args.userId, person, open.createdAt)
+        return merged
+      }
       continue // lost the compare-and-swap: read again
     }
     const inserted = await tryInsert(service, args.userId, feature, person)
-    if (inserted !== 'conflict') return inserted
+    if (inserted !== 'conflict') {
+      tellStaff(service, inserted, args.userId, person, null)
+      return inserted
+    }
   }
   throw new Error('admin_requests: the request could not be stored (concurrent changes)')
+}
+
+/**
+ * N4B-1: tell Admin / Super Admin about a new request or a new section — in the
+ * background, after the row is stored (the client's answer never waits for
+ * Telegram, a failed notice never fails the request). Idempotent by the
+ * notice's dedupe key (lib/access/request-notices.ts).
+ */
+function tellStaff(service: SupabaseClient, result: SubmitResult, userId: string, person: RequestPerson, createdAt: string | null): void {
+  void import('@/lib/background')
+    .then(({ runInBackground }) => runInBackground('access-request-notice', async () => {
+      const { notifyStaffAccessRequested } = await import('./request-notices')
+      await notifyStaffAccessRequested(service, {
+        requestId: result.id,
+        userId,
+        person,
+        features: result.features,
+        added: result.added,
+        createdAt,
+      })
+    }))
+    .catch(() => undefined)
 }

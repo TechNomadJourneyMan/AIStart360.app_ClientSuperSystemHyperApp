@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 
 export const metadata = { title: 'Страница не найдена' }
 
@@ -20,11 +21,13 @@ export default function NotFound() {
           Возможно, ссылка устарела или страница была перемещена.
         </p>
         <div className="mt-8 flex gap-3 justify-center">
+          {/* R-029: the cabinet by role (a client's /client/home, staff — their
+              panel, a guest — the sign-in form), not the old /dashboard shell. */}
           <Link
-            href="/dashboard"
+            href={CABINET_ENTRY_PATH}
             className="px-6 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-transform"
           >
-            На дашборд
+            В кабинет
           </Link>
           <Link
             href="/"

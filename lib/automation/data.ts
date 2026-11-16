@@ -266,7 +266,7 @@ export interface PendingRequest {
   createdAt: string
 }
 
-/** Клиенты, ждущие одобрения (profiles.status = pending_approval). */
+/** Регистрации: клиенты, ждущие одобрения (profiles.status = pending_approval). */
 export async function fetchPendingRequests(): Promise<PendingRequest[]> {
   const { data, error } = await createServiceClient()
     .from('profiles')
@@ -277,6 +277,43 @@ export async function fetchPendingRequests(): Promise<PendingRequest[]> {
     .limit(QUERY_LIMIT)
   if (error) throw new Error(`pending requests: ${error.message}`)
   return ((data ?? []) as Array<{ id: string; created_at: string }>).map((r) => ({ userId: r.id, createdAt: r.created_at }))
+}
+
+/**
+ * R4 (N4B-1): открытые заявки на ОПЛАТУ (admin_requests type 'access' из пейволла /
+ * старого окна «Pro»), старые первыми. Это не регистрации: их считают отдельно.
+ */
+export async function fetchOpenPaidRequests(): Promise<PendingRequest[]> {
+  const { loadOpenPaidRequests } = await import('@/lib/access/request-notices')
+  const rows = await loadOpenPaidRequests(createServiceClient(), QUERY_LIMIT)
+  return rows.map((r) => ({ userId: r.userId ?? '', createdAt: r.createdAt }))
+}
+
+export interface ProEndingRow {
+  userId: string
+  endsAt: string
+}
+
+/** R4 (N4B-10): у кого платный доступ кончается в (from, to]. Ошибка — пусто (сводка не падает). */
+export async function fetchProEnding(fromIso: string, toIso: string): Promise<ProEndingRow[]> {
+  try {
+    const { findPlansEnding } = await import('@/lib/payments/expiry-notices')
+    const rows = await findPlansEnding(createServiceClient(), new Date(fromIso), new Date(toIso))
+    return rows.map((r) => ({ userId: r.userId, endsAt: r.endsAt }))
+  } catch {
+    return []
+  }
+}
+
+/** R4 (N4B-10): кого ночной крон перевёл с платного на бесплатный начиная с `sinceIso`. */
+export async function fetchProEndedSince(sinceIso: string): Promise<ProEndingRow[]> {
+  try {
+    const { findPlansEndedSince } = await import('@/lib/payments/expiry-notices')
+    const rows = await findPlansEndedSince(createServiceClient(), new Date(sinceIso))
+    return rows.map((r) => ({ userId: r.userId, endsAt: r.endsAt }))
+  } catch {
+    return []
+  }
 }
 
 export interface StaffTask {

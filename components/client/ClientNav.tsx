@@ -6,9 +6,12 @@
  * page, messages and documents all keep the same menu instead of opening an
  * isolated screen.
  *
- * Desktop: logo · sections · «Вернуться в панель» (staff only) · profile menu.
- * Phone: the same single row — the sections scroll sideways (the active one is
- * scrolled into view), the panel button moves into the profile menu. The bar
+ * Desktop: logo · sections · «Вернуться в панель» (staff only) · bell ·
+ * profile menu. Phone: the same single row — the sections scroll sideways (the
+ * active one is scrolled into view), the panel button moves into the profile
+ * menu. R-096: the bell opens the notification feed («Доступ открыт», replies,
+ * reminders) with the unread count; R-028: the old (dashboard) shell draws this
+ * same bar for a client (app/(dashboard)/layout.tsx). The bar
  * sits at the TOP on purpose: the bottom corners belong to «Гри» and the
  * expert pop-ups (components/popups/PopupLayer), which a bottom bar would cover.
  *
@@ -21,14 +24,18 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useId, useRef, useState } from 'react'
 import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import { trackLogout } from '@/lib/events/client'
-import { activeClientNavKey, clientShellMode, type ClientNavItem } from '@/lib/client-shell/nav'
+import { activeClientNavKey, clientShellMode, type ClientNavItem, type ClientNotificationsLink } from '@/lib/client-shell/nav'
 import type { PanelLink } from '@/lib/client-shell/staff-links'
 import { cn } from '@/lib/utils'
+import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
+import { useNotificationsStore } from '@/stores/notifications.store'
 
 export interface ClientNavProps {
   items: ClientNavItem[]
   panel: PanelLink | null
   email: string | null
+  /** R-096: the bell — null when the account cannot open the feed (an expert profile). */
+  notifications?: ClientNotificationsLink | null
 }
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60'
@@ -125,7 +132,45 @@ function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string 
   )
 }
 
-export function ClientNav({ items, panel, email }: ClientNavProps) {
+/**
+ * R-096: the bell. First paint shows the server count; NotificationsBellSync
+ * then keeps it fresh (light poll, refetch when the tab is back) — the layout
+ * itself is not re-rendered on client navigation. On the feed page itself the
+ * number is not repeated (the page shows it).
+ */
+function NotificationsBell({ link, pathname }: { link: ClientNotificationsLink; pathname: string }) {
+  const live = useNotificationsStore((s) => s.unreadCount)
+  // The store holds a real count only after the first sync; until then — the server's.
+  const [synced, setSynced] = useState(false)
+  useEffect(() => useNotificationsStore.subscribe(() => setSynced(true)), [])
+  const current = pathname === link.href || pathname.startsWith(`${link.href}/`)
+  const unread = current ? 0 : synced ? live : link.unread
+  return (
+    <>
+      <NotificationsBellSync />
+      <Link
+        href={link.href}
+        aria-current={current ? 'page' : undefined}
+        aria-label={unread > 0 ? `Уведомления, непрочитанных: ${unread}` : 'Уведомления'}
+        title="Уведомления"
+        className={cn(
+          'relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+          current ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface',
+          FOCUS,
+        )}
+      >
+        <span className="material-symbols-outlined text-[22px]" aria-hidden>notifications</span>
+        {unread > 0 && (
+          <span aria-hidden className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-bold leading-4 text-on-primary tabular-nums">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </Link>
+    </>
+  )
+}
+
+export function ClientNav({ items, panel, email, notifications = null }: ClientNavProps) {
   const pathname = usePathname() ?? ''
   const mode = clientShellMode(pathname)
   const active = activeClientNavKey(pathname, items)
@@ -207,6 +252,8 @@ export function ClientNav({ items, panel, email }: ClientNavProps) {
             {panel.label}
           </Link>
         )}
+
+        {notifications && <NotificationsBell link={notifications} pathname={pathname} />}
 
         <ProfileMenu panel={panel} email={email} />
       </div>

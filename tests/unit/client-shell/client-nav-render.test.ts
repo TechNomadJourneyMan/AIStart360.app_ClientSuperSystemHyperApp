@@ -3,6 +3,7 @@
  * button only when the server passed one, no bar on gate / full-screen flows;
  * and the server loader that decides who is staff.
  */
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -13,6 +14,9 @@ const s = vi.hoisted(() => ({
   staffRow: null as null | { role: string },
   thread: null as null | { unread_user: number },
   staffReads: 0,
+  unreadNotifications: 0 as number | null,
+  notificationsFail: false,
+  accessReads: 0,
 }))
 
 vi.mock('next/navigation', () => ({ usePathname: () => s.pathname }))
@@ -27,14 +31,24 @@ vi.mock('@/lib/supabase-service', () => ({
 }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: s.thread, error: null }) }) }) }),
+    from: (table: string) => {
+      if (table === 'app_notifications') {
+        // count of the own unread entries: select(head) .eq(user) .eq(is_read) .is(archived_at)
+        const q = { eq: () => q, is: async () => { if (s.notificationsFail) throw new Error('db down'); return { count: s.unreadNotifications, error: null } } }
+        return { select: () => q }
+      }
+      return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: s.thread, error: null }) }) }) }
+    },
   }),
+}))
+vi.mock('@/lib/access/request-access', () => ({
+  getRequestAccess: async () => { s.accessReads++; return { sections: { point_a: false, point_b: false, market: false, gri_full: true } } },
 }))
 
 const { ClientNav } = await import('@/components/client/ClientNav')
 const { buildClientNav } = await import('@/lib/client-shell/nav')
 const { staffPanelLink } = await import('@/lib/client-shell/staff-links')
-const { clientShellData, loadClientShellAccount } = await import('@/lib/client-shell/server')
+const { clientShellData, loadClientShellAccount, loadDashboardClientShell } = await import('@/lib/client-shell/server')
 
 const items = buildClientNav({ approved: true, hiddenPaths: [], unreadMessages: 2 })
 const render = (panel: ReturnType<typeof staffPanelLink> = null) => renderToStaticMarkup(createElement(ClientNav, { items, panel, email: 'owner@example.kz' }))
@@ -45,6 +59,9 @@ beforeEach(() => {
   s.staffRow = null
   s.thread = null
   s.staffReads = 0
+  s.unreadNotifications = 0
+  s.notificationsFail = false
+  s.accessReads = 0
 })
 
 describe('ClientNav markup', () => {
@@ -143,5 +160,96 @@ describe('loadClientShellAccount (server)', () => {
   it('no user → no panel, no badge', async () => {
     const acc = await loadClientShellAccount(null)
     expect(acc).toMatchObject({ panel: null, unreadMessages: 0, approved: false })
+  })
+})
+
+describe('R-096: the bell in the cabinet bar', () => {
+  const bell = (unread: number) => ({ href: '/notifications', unread })
+  const withBell = (notifications: ReturnType<typeof bell> | null) =>
+    renderToStaticMarkup(createElement(ClientNav, { items, panel: null, email: 'owner@example.kz', notifications }))
+
+  it('links to the feed with the unread count — for the eye and for a screen reader', () => {
+    const html = withBell(bell(3))
+    expect(html).toMatch(/<a[^>]*href="\/notifications"[^>]*aria-label="Уведомления, непрочитанных: 3"|<a[^>]*aria-label="Уведомления, непрочитанных: 3"[^>]*href="\/notifications"/)
+    expect(html).toMatch(/aria-hidden="true"[^>]*>3<\/span>/)
+    expect(withBell(bell(250))).toContain('99+')
+  })
+
+  it('no number when nothing is unread, and none on the feed page itself', () => {
+    expect(withBell(bell(0))).toContain('aria-label="Уведомления"')
+    s.pathname = '/notifications'
+    const html = withBell(bell(5))
+    expect(html).not.toContain('непрочитанных: 5')
+    expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*href="\/notifications"/)
+  })
+
+  it('no bell when the server gave none (an expert profile); none on gate flows', () => {
+    expect(withBell(null)).not.toContain('/notifications')
+    expect(render()).not.toContain('/notifications') // the prop is optional
+    s.pathname = '/client/waiting-room'
+    expect(withBell(bell(2))).toBe('')
+  })
+
+  it('the client layout passes the bell to the bar', () => {
+    expect(readFileSync('app/client/layout.tsx', 'utf8')).toContain('notifications={shell.notifications}')
+  })
+})
+
+describe('R-096: the server count of the bell (loadClientShellAccount / clientShellData)', () => {
+  const user = { id: 'u-1', email: 'owner@example.kz' }
+
+  it('reads the own unread notifications and hands the bell to the bar', async () => {
+    s.facts = { role: 'client', status: 'approved', is_staff: false }
+    s.unreadNotifications = 2
+    const acc = await loadClientShellAccount(user)
+    expect(acc.unreadNotifications).toBe(2)
+    expect(clientShellData(acc, []).notifications).toEqual({ href: '/notifications', unread: 2 })
+  })
+
+  it('a pending client gets the bell too (the decision arrives in the feed)', async () => {
+    s.facts = { role: 'client', status: 'pending_approval', is_staff: false }
+    expect(clientShellData(await loadClientShellAccount(user), []).notifications).not.toBeNull()
+  })
+
+  it('an expert profile gets no bell; a failed count is «no badge», never an error', async () => {
+    s.facts = { role: 'expert', status: 'approved', is_staff: false }
+    expect(clientShellData(await loadClientShellAccount(user), []).notifications).toBeNull()
+    s.facts = { role: 'client', status: 'approved', is_staff: false }
+    s.notificationsFail = true
+    const acc = await loadClientShellAccount(user)
+    expect(acc.unreadNotifications).toBe(0)
+  })
+})
+
+describe('R-028: loadDashboardClientShell — the cabinet bar for a client in the old shell', () => {
+  const user = { id: 'u-1', email: 'owner@example.kz' }
+
+  it('a client: the cabinet menu (with «Главная», «Анкета», «Сообщения»), the locks of the closed sections and the bell', async () => {
+    s.facts = { role: 'client', status: 'approved', is_staff: false }
+    s.unreadNotifications = 1
+    const shell = await loadDashboardClientShell(user)
+    expect(shell).not.toBeNull()
+    const data = clientShellData(shell!.account, [], shell!.lockedKeys)
+    expect(data.items.map((i) => i.key)).toEqual(expect.arrayContaining(['home', 'survey', 'messages', 'documents']))
+    expect(data.items.find((i) => i.key === 'point_a')?.locked).toBe(true)
+    expect(data.items.find((i) => i.key === 'gri')?.locked).toBeUndefined()
+    expect(data.notifications?.unread).toBe(1)
+    expect(data.panel).toBeNull()
+  })
+
+  it('staff (also with profiles.role client), experts, admins, no user and unknown facts keep the old shell', async () => {
+    for (const facts of [
+      { role: 'client', status: 'approved', is_staff: true },
+      { role: 'super_admin', status: 'approved', is_staff: true },
+      { role: 'admin', status: 'approved', is_staff: true },
+      { role: 'expert', status: 'approved', is_staff: false },
+    ]) {
+      s.facts = facts
+      expect(await loadDashboardClientShell(user), facts.role).toBeNull()
+    }
+    s.facts = null
+    expect(await loadDashboardClientShell(user)).toBeNull()
+    expect(await loadDashboardClientShell(null)).toBeNull()
+    expect(s.accessReads).toBe(0)
   })
 })

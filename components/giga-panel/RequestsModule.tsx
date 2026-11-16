@@ -17,7 +17,11 @@ import {
   RefreshCw,
   Loader2,
   Crown,
+  AlarmClock,
+  UserRound,
+  MessageCircle,
 } from 'lucide-react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
@@ -34,9 +38,14 @@ import {
   assignProBody,
   assignProPeriodText,
   isTariffRequest,
+  OPEN_CLIENT_LABEL,
+  requestClientLinks,
+  requestSlaView,
   sendAssignPro,
+  WRITE_CLIENT_LABEL,
   type AssignProForm,
 } from './assign-pro-model'
+import { NAV_BADGES_CHANGED } from './agents/model'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -95,6 +104,9 @@ export function RequestCard({
   const isPending = request.status === 'pending'
   const tariff = isTariffRequest(request)
   const assignBlocked = assignProBlockedReason(canAssignPro && !!onAssignPro, request)
+  // R4 (N4B-1 / N4B-9): the answer deadline (4 h) and the way to the client.
+  const sla = tariff ? requestSlaView(request) : null
+  const links = tariff ? requestClientLinks(request.userId) : null
 
   const initials = request.userName
     .split(' ')
@@ -179,6 +191,32 @@ export function RequestCard({
                 <span className="text-[10px] text-slate-500">{formattedDate}</span>
               </div>
             </div>
+
+            {sla && (
+              <p
+                data-request-sla={sla.overdue ? 'overdue' : 'due'}
+                className={cx(
+                  'mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium',
+                  sla.overdue ? 'border border-red-500/30 bg-red-500/15 text-red-200' : 'border border-white/[0.06] bg-white/[0.03] text-slate-400',
+                )}
+              >
+                <AlarmClock size={12} aria-hidden />
+                {sla.text}
+              </p>
+            )}
+
+            {links && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]" data-request-links>
+                <Link href={links.user360} className="inline-flex items-center gap-1 text-blue-300 hover:text-blue-200 hover:underline">
+                  <UserRound size={12} aria-hidden />
+                  {OPEN_CLIENT_LABEL}
+                </Link>
+                <Link href={links.messages} className="inline-flex items-center gap-1 text-blue-300 hover:text-blue-200 hover:underline">
+                  <MessageCircle size={12} aria-hidden />
+                  {WRITE_CLIENT_LABEL}
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
@@ -318,7 +356,7 @@ export function AssignProDialog({ target, form, setForm, busy, onClose, onConfir
         text={
           <div className="space-y-1">
             <p>Тариф Pro назначается так же, как в User 360 → Биллинг: запись в журнал до изменения, оплата не списывается.</p>
-            <p>Заявка закроется как одобренная, клиент получит уведомление «Доступ открыт» в ленте кабинета.</p>
+            <p>Заявка закроется как одобренная, клиент получит уведомление «Доступ открыт»: в ленте кабинета, на почту и в Telegram, если он его привязал.</p>
             {target?.subject && <p className="text-slate-300">{target.subject}</p>}
           </div>
         }
@@ -399,6 +437,8 @@ export function RequestsModule() {
       }
       const data = await res.json()
       setRequests(data.requests ?? [])
+      // The «Заявки» badge in the menu follows the list (R4 N4B-1).
+      window.dispatchEvent(new Event(NAV_BADGES_CHANGED))
     } catch (err) {
       setRequestsError(err instanceof Error ? err.message : 'Неизвестная ошибка')
     } finally {

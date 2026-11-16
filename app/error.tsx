@@ -1,5 +1,7 @@
 'use client'
 
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
+
 export default function Error({
   error,
   reset,
@@ -27,8 +29,9 @@ export default function Error({
           >
             Повторить
           </button>
+          {/* R-029: the cabinet by role, not the old /dashboard shell. */}
           <a
-            href="/dashboard"
+            href={CABINET_ENTRY_PATH}
             className="px-5 py-2.5 border border-outline-variant/40 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-colors"
           >
             На главную

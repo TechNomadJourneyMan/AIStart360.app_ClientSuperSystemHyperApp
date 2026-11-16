@@ -8,7 +8,7 @@ import { safeInternalPath } from '@/lib/safe-redirect'
 import { requestOrigin } from '@/lib/site-url'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
-import { roleLandingPath } from '@/lib/role-landing'
+import { CABINET_ENTRY_PATH, roleLandingPath } from '@/lib/role-landing'
 import type { UserRole } from '@/types'
 
 export async function GET(request: NextRequest) {
@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   // Guard against open redirect: `next` is attacker-controllable on this
   // unauthenticated endpoint, so only allow internal paths.
-  const next = safeInternalPath(searchParams.get('next'), '/dashboard')
+  // R-029: no fixed cabinet page as the fallback — /login sends a signed-in
+  // user to the landing of their role (a failed exchange shows the form).
+  const next = safeInternalPath(searchParams.get('next'), CABINET_ENTRY_PATH)
   const explicitNext = Boolean(searchParams.get('next'))
 
   if (code) {

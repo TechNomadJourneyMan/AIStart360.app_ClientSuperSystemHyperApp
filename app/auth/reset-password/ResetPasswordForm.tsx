@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 import { PASSWORD_MIN, passwordPolicyError, passwordUpdateErrorText } from '@/lib/auth/password-policy'
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 
 // The form of /auth/reset-password (page.tsx renders it only for a session
 // that is not an impersonation — SR-07b).
@@ -91,10 +92,11 @@ export default function ResetPasswordForm() {
     }
 
     setIsDone(true)
-    // The recovery session stays signed in: /login sends it to the user's own
-    // cabinet (middleware picks the landing by role).
+    // The recovery / invitation session stays signed in: CABINET_ENTRY_PATH
+    // sends it to the user's own cabinet (R-029: middleware picks the landing
+    // by role — a client's /client/home, not the old /dashboard).
     setTimeout(() => {
-      router.replace('/login')
+      router.replace(CABINET_ENTRY_PATH)
     }, 1200)
   }
 
@@ -123,7 +125,7 @@ export default function ResetPasswordForm() {
       <div className="glass-card rounded-2xl p-8 shadow-modal text-center">
         <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Пароль обновлён</h1>
         <p className="text-sm text-on-surface-variant mb-6">Новый пароль сохранён. Сейчас откроется ваш кабинет.</p>
-        <Link href="/login" className="text-primary text-sm hover:underline">
+        <Link href={CABINET_ENTRY_PATH} className="text-primary text-sm hover:underline">
           Перейти в кабинет
         </Link>
       </div>

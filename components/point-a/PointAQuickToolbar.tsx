@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { POINT_A_OVERVIEW_QUERY_KEY, recalcErrorMessage } from '@/hooks/usePointAOverview'
 import { useHrefVisible } from '@/hooks/usePlatformSections'
 import { DocumentUploadDialog } from '@/components/documents/DocumentUploadDialog'
-import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
+import { CLIENT_DOCUMENT_ACCEPT, CLIENT_DOCUMENTS_HREF } from '@/lib/documents/client-upload'
 
 /**
  * PointAQuickToolbar — sticky multifunction action bar at the top of Точка А.
@@ -105,7 +105,7 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         <DocumentUploadDialog
           file={pickedFile}
           onClose={() => setPickedFile(null)}
-          documentsHref="/point-a#files"
+          documentsHref={CLIENT_DOCUMENTS_HREF}
           onUploaded={onUploaded}
         />
 

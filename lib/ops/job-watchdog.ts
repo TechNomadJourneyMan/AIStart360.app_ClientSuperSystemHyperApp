@@ -152,6 +152,7 @@ const JOB_LABELS: Record<string, string> = {
   '/api/cron/ai-discovery': 'обнаружение моделей ИИ',
   '/api/cron/backup-freshness': 'сторож бэкапов',
   '/api/cron/expert-sla': 'SLA экспертов',
+  '/api/cron/access-requests': 'срок заявок на оплату',
   '/api/cron/ops-watchdog': 'сторож задач',
   '/api/cron/ops-crosswatch': 'перекрёстный сторож',
   '/api/cron/agents': 'обслуживание очереди агентов',

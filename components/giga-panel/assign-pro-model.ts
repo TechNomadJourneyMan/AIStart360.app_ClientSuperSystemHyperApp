@@ -10,6 +10,7 @@
  * closes as approved, the client gets «Доступ открыт» in the feed.
  */
 import { PLAN_TIER_LABEL } from '@/lib/payments/plan-state'
+import { GIGA_BASE } from '@/lib/admin/nav'
 
 export const ASSIGN_PRO_LABEL = 'Назначить Pro'
 /** RBAC of the action — the same as the plan editor (lib/admin/rbac.ts). */
@@ -90,9 +91,57 @@ export async function sendAssignPro(fetchFn: typeof fetch, requestId: string, bo
     }
     const parts = [d.extended ? 'Оплаченный период продлён' : 'Pro назначен']
     parts.push(d.requestClosed ? 'заявка закрыта как одобренная' : ASSIGN_PRO_NOT_CLOSED)
-    if (d.notified) parts.push('клиент получил уведомление «Доступ открыт»')
+    if (d.notified) parts.push('клиент получил уведомление «Доступ открыт» (лента, почта и Telegram, если привязан)')
     return { ok: true, text: `${parts.join(', ')}.` }
   } catch {
     return { ok: false, text: 'Нет связи с сервером' }
+  }
+}
+
+// ─── R4: срок ответа и ссылки на клиента в карточке заявки ───────────────────
+
+const HOUR_MS = 3_600_000
+
+function almaty(iso: string): string {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return iso
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(d)
+}
+
+function lateLabel(hours: number): string {
+  const h = Math.max(1, Math.floor(hours))
+  if (h < 48) return `${h} ч`
+  return `${Math.floor(h / 24)} дн.`
+}
+
+export interface RequestSlaView {
+  overdue: boolean
+  text: string
+}
+
+/**
+ * N4B-1 (решение PO 2026-11-16): срок ответа на заявку на оплату — 4 ч (настройка
+ * request_sla_hours). Карточка ожидающей заявки показывает «Ответить до …», а
+ * после срока — «Срок ответа прошёл … — просрочено на …» (подсвечено).
+ */
+export function requestSlaView(r: { status?: string | null; slaDueAt?: string | null }, now: Date = new Date()): RequestSlaView | null {
+  if (r.status !== 'pending' || !r.slaDueAt) return null
+  const due = Date.parse(r.slaDueAt)
+  if (!Number.isFinite(due)) return null
+  if (due <= now.getTime()) {
+    return { overdue: true, text: `Срок ответа прошёл ${almaty(r.slaDueAt)} (Алматы) — просрочено на ${lateLabel((now.getTime() - due) / HOUR_MS)}` }
+  }
+  return { overdue: false, text: `Ответить до ${almaty(r.slaDueAt)} (Алматы)` }
+}
+
+export const OPEN_CLIENT_LABEL = 'Открыть клиента (User 360)'
+export const WRITE_CLIENT_LABEL = 'Написать в «Сообщения»'
+
+/** N4B-9: из карточки заявки — к клиенту (User 360) и в его переписку («Сообщения»). */
+export function requestClientLinks(userId: string | null | undefined): { user360: string; messages: string } | null {
+  if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) return null
+  return {
+    user360: `${GIGA_BASE}/users/${userId}`,
+    messages: `${GIGA_BASE}/messages?user=${userId}`,
   }
 }

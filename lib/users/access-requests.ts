@@ -13,7 +13,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { canManageTarget, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
-import { isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
+import { isTariffAccessRequest, OPEN_REQUEST_STATUSES, requestFeatures } from '@/lib/access/upgrade-requests'
+import { notifyAccessRequestRejected } from '@/lib/notifications/product'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
@@ -89,11 +90,13 @@ export async function decideAccessRequest(
   // would close it with nothing opened — it is refused. Reject (with a reason)
   // and archive stay.
   let paidAccess = false
+  let paidFeatures: string[] = []
   if (arRow) {
     const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null; type?: string | null; source?: string | null }
     const payload = row.payload ?? {}
     userId = row.userId ?? (typeof payload.userId === 'string' ? payload.userId : null)
     paidAccess = isTariffAccessRequest(row)
+    if (paidAccess) paidFeatures = requestFeatures(payload)
   }
 
   // Orphaned registration: the request id is the profile UUID.
@@ -141,6 +144,12 @@ export async function decideAccessRequest(
       })
     } catch (auditErr) {
       console.error('[access-requests] audit failed:', auditErr)
+    }
+    // R4 (N4B-9): the client learns about a refusal — feed + e-mail + Telegram if
+    // linked, with the reason when given (one notice per request). Archive is
+    // internal housekeeping and tells nobody. notifyClient never throws.
+    if (args.action === 'reject') {
+      await notifyAccessRequestRejected(userId, { requestId: args.requestId, features: paidFeatures, reason: args.reason ?? null })
     }
     return { ok: true, status: requestStatus, userId }
   }

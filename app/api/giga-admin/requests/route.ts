@@ -10,6 +10,7 @@ import { scopedClientIds } from '@/lib/admin/client-scope'
 import { parseJsonBody } from '@/lib/validation/http'
 import { GigaAdminRequestBody } from '@/lib/validation/schemas'
 import { ACCESS_REQUEST_SOURCES, isTariffAccessRequest } from '@/lib/access/upgrade-requests'
+import { requestSlaDueAt, requestSlaHours } from '@/lib/access/request-notices'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -40,6 +41,8 @@ export async function GET(req: NextRequest) {
     // Service-role: giga cookie has no Supabase session; anon client hits RLS
     // and returns [] for both profiles and admin_requests. authz is on isGigaSuperAdmin().
     const sb = createServiceClient()
+    // R4 (N4B-1): the answer deadline of a request for paid access (request_sla_hours, 4 h by default).
+    const slaHours = await requestSlaHours()
 
     // 1. Try admin_requests table first
     const { data: adminRows, error: arError } = await sb
@@ -123,6 +126,10 @@ export async function GET(req: NextRequest) {
         // (as User 360 → Биллинг); a pending request of a client outside it is
         // still listed (intake queue), but the button is inactive with the reason.
         assignable: !allowed || (!!uid && allowed.includes(uid)),
+        // R4 (N4B-1 / N4B-9): the card shows the answer deadline (highlighted when
+        // passed) and links to the client's User 360 and «Сообщения».
+        userId: uid ?? null,
+        slaDueAt: status === 'pending' ? requestSlaDueAt(r.createdAt, slaHours) : null,
       })
     }
 
@@ -153,7 +160,7 @@ export async function GET(req: NextRequest) {
     // Sort by date desc
     requests.sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime())
 
-    return NextResponse.json({ requests })
+    return NextResponse.json({ requests, slaHours })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error('[giga-admin/requests] GET error:', msg)

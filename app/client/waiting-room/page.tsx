@@ -237,10 +237,12 @@ export default function WaitingRoomPage() {
                 <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Заполнить анкету</span>
                 <span className="text-[10px] text-on-surface-variant text-center">Ускорьте процесс проверки</span>
               </Link>
-              <Link href="/client/my-data" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
+              {/* N4B-5: «Мои ответы» анкеты открыты и до одобрения (/client/my-data —
+                  нет: middleware вернул бы на «Главную», а у Free там пейволл Точки А). */}
+              <Link href="/client/onboarding/answers" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">person_book</span>
                 <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Мои данные</span>
-                <span className="text-[10px] text-on-surface-variant text-center">Просмотр введённых данных</span>
+                <span className="text-[10px] text-on-surface-variant text-center">Ответы анкеты</span>
               </Link>
               <Link href="/client/onboarding/documents" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">upload_file</span>

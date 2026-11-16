@@ -52,6 +52,10 @@ export interface GigaRequest {
   source?: string | null
   /** R2-C: a request for paid access whose client is inside the actor's scope («Назначить Pro» possible). */
   assignable?: boolean
+  /** R4 (N4B-9): the client of a request for paid access (links to User 360 and «Сообщения»). */
+  userId?: string | null
+  /** R4 (N4B-1): when the answer deadline of a pending request for paid access passes (ISO). */
+  slaDueAt?: string | null
   surveyData?: {
     answers: Record<string, unknown>
     company: Record<string, unknown> | null

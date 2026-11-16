@@ -45,6 +45,9 @@ export const CRON_JOBS: readonly CronJob[] = [
   // Сторож задач (R4-A1): каждые 10 минут, в :03, :13, … — журнал ops_job_runs против расписания,
   // очередь Точки А, проверки мониторинга без ИИ, демо-аккаунты; ретенция журналов (lib/ops/job-watchdog.ts).
   { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
+  // Срок ответа на заявку на оплату (R4, N4B-1): каждые 15 минут, в :08, :23, :38, :53 — открытая заявка
+  // старше request_sla_hours (4 ч) получает одно напоминание Admin / Super Admin (lib/access/request-notices.ts).
+  { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
   // Перекрёстный сторож (R4-A1): сервис агентов раз в 3 минуты проверяет портал и базу, тревога —
   // напрямую в Telegram без базы (lib/ops/crosswatch.ts). Только при отдельном сервисе агентов.
   { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },

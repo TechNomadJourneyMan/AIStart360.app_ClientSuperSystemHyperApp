@@ -18,7 +18,9 @@ export const NOTIFICATION_TYPES = {
   expert_case_updated: 'Кейс эксперта обновлён',
   expert_comment_edited: 'Комментарий эксперта изменён',
   expert_comment_deleted: 'Комментарий эксперта удалён',
-  staff_digest: 'Утренняя сводка (08:00): заявки, регистрации, анкеты, GRI',
+  staff_digest: 'Утренняя сводка (08:00): заявки на оплату, регистрации, окончание Pro, анкеты, GRI',
+  // R4 (N4B-1): лента ГИГА + Telegram Admin / Super Admin (если привязан): новая заявка, новый раздел, одна эскалация по просрочке.
+  access_requested: 'Заявка на оплату: новая, новый раздел, просрочка срока ответа',
 } as const
 export type AdminNotificationType = keyof typeof NOTIFICATION_TYPES
 
@@ -200,7 +202,7 @@ export const SETTINGS = {
   },
   admin_notifications: {
     group: 'notifications', label: 'Уведомления администраторам',
-    help: 'Какие события отправляются в Telegram и на почту администраторов.',
+    help: 'Какие события отправляются в Telegram и на почту администраторов. «Заявка на оплату» — в ленту ГИГА и в Telegram тем Admin и Super Admin, кто привязал Telegram к аккаунту.',
     schema: z.object(notificationShape),
     default: Object.fromEntries((Object.keys(NOTIFICATION_TYPES) as AdminNotificationType[]).map((k) => [k, true])) as Record<AdminNotificationType, boolean>,
     critical: false,
@@ -223,7 +225,7 @@ export const SETTINGS = {
   },
   request_sla_hours: {
     group: 'automation', label: 'Срок ответа на заявку, часов',
-    help: 'Заявки на доступ, которые ждут дольше этого срока, попадают в утреннюю сводку администраторам (08:00 Алматы) с числом и возрастом самой старой.',
+    help: 'Срок ответа на заявку на оплату (платный доступ): виден в карточке заявки, просрочка подсвечивается; по просроченной заявке Admin и Super Admin получают одно напоминание (лента ГИГА + Telegram, если привязан). В утренней сводке (08:00 Алматы) — отдельно заявки на оплату и регистрации, ждущие дольше этого срока, с возрастом самой старой.',
     schema: z.number().int().min(1).max(168), default: 4, critical: false,
   },
   // ── Автоматизация ИИ-агентов (lib/agents/automation.ts, lifecycle.ts, digest.ts) ──

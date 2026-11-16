@@ -317,6 +317,9 @@ export interface ExpiryReport {
  * Downgrade every trial / paid period that has ended to free. Idempotent: a
  * downgraded row is 'canceled' and no longer due; each row is re-checked under
  * its lock, so an extension made meanwhile wins.
+ * R4 (N4B-10): the client of each downgraded row gets «Платный доступ
+ * закончился» (feed + e-mail, one per subscription and end date) right after
+ * the downgrade; a failed notice never fails the downgrade.
  */
 export async function expireDuePlans(opts: { now?: Date; limit?: number } = {}, svc: Svc = createServiceClient()): Promise<ExpiryReport> {
   const now = opts.now ?? new Date()
@@ -338,8 +341,15 @@ export async function expireDuePlans(opts: { now?: Date; limit?: number } = {}, 
         note: row.status === 'trialing' ? 'Пробный период закончился' : 'Оплаченный период закончился',
         meta: { expired_tier: row.tier, expired_status: row.status, ends_at: row.ends_at },
       }, svc)
-      if (r.applied) report.downgraded++
-      else report.skipped++
+      if (r.applied) {
+        report.downgraded++
+        const userId = r.userId ?? row.user_id
+        if (userId) {
+          await import('./expiry-notices')
+            .then((m) => m.notifyPlanEnded({ orgId: row.org_id, userId, endsAt: row.ends_at, trial: row.status === 'trialing' || row.tier === 'pilot' }))
+            .catch((err) => console.error('[billing/expiry] ended notice failed:', row.org_id, err instanceof Error ? err.message : err))
+        }
+      } else report.skipped++
     } catch (err) {
       report.failed++
       console.error('[billing/expiry] downgrade failed:', row.org_id, err instanceof Error ? err.message : err)

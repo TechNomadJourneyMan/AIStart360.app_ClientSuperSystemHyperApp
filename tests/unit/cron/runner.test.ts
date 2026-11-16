@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/cron/schedule', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/cron/schedule')>()
   // The job watchdog ('3-59/10') and the cross-watch of the agents service ('*/3') are left out for the same reason.
-  const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla', '/api/cron/ops-watchdog', '/api/cron/ops-crosswatch']
+  // The answer deadline of paid-access requests ('8-59/15', R4 N4B-1) likewise.
+  const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla', '/api/cron/ops-watchdog', '/api/cron/ops-crosswatch', '/api/cron/access-requests']
   const jobs = real.CRON_JOBS.filter((job) => !frequent.includes(job.path))
   return {
     ...real,

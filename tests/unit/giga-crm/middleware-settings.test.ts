@@ -123,8 +123,16 @@ describe('no shared-password entry', () => {
   it('a signed-in non-staff user is sent to /giga-login (which only links to the personal /login)', async () => {
     s.role = 'client'
     expect(loc(await get('/admin-giga-panel'))).toContain('/giga-login')
+    // R-002: a super_admin profile WITH a staff_roles row goes on to the panel…
     s.role = 'super_admin'
+    s.staffRow = { role: 'super_admin' }
     expect(loc(await get('/giga-login'))).toMatch(/\/admin-giga-panel$/)
+    // …without it /giga-login stays: the panel would send it back here (the loop
+    // /giga-login ↔ /admin-giga-panel this test used to encode).
+    s.staffRow = null
+    const r = await get('/giga-login')
+    expect(r.status).toBe(200)
+    expect(loc(r)).toBe('')
   })
 })
 
