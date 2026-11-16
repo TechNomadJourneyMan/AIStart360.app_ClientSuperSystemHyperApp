@@ -27,6 +27,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isClientProfileRole } from '@/lib/profiles/client-roles'
 
 /** Источники заявок на тариф (оба — заявки на платный доступ, не на регистрацию). */
 export const ACCESS_REQUEST_SOURCES = ['paywall', 'upgrade_modal'] as const
@@ -73,8 +74,8 @@ export function featureLabel(key: string): string {
 }
 
 /**
- * R4 (ревью WB-6): заявку на оплату оставляет только КЛИЕНТ — профиль с ролью
- * 'client' без строки staff_roles. У сотрудников и экспертов доступ к разделам
+ * R4 (ревью WB-6): заявку на оплату оставляет только КЛИЕНТ — профиль с клиентской
+ * ролью ('client' или старая 'owner' — lib/profiles/client-roles.ts) без строки staff_roles. У сотрудников и экспертов доступ к разделам
  * по роли; их «заявка» только отвлекала бы Admin и Super Admin. Ошибка чтения —
  * исключение (вызывающий отвечает 500, а не пропускает).
  */
@@ -84,7 +85,7 @@ export async function isClientAccount(service: Pick<SupabaseClient, 'from'>, use
     service.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
   ])
   if (error || staffError) throw new Error('profile role unavailable')
-  return (profile as { role?: string | null } | null)?.role === 'client' && !staff
+  return isClientProfileRole((profile as { role?: string | null } | null)?.role) && !staff
 }
 
 /** Тариф-заявка (а не регистрация): решение по ней не меняет profiles.status. */

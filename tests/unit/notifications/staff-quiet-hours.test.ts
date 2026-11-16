@@ -111,3 +111,15 @@ describe('WB-1: a request for paid access reaches Telegram at once, also in the 
     expect(skipped(other)).toEqual(['quiet_hours', 'quiet_hours'])
   })
 })
+
+describe('R4 (verify WB-2): a client without a name — the e-mail the registration put into «name» stays out of staff texts', () => {
+  it('title and body show «Клиент без имени», never the e-mail', () => {
+    const n = accessRequestNotice(
+      { requestId: 'r-x', userId: 'client-2', person: { name: 'anon.client@mail.kz', email: 'anon.client@mail.kz', company: 'ТОО Ромашка' }, features: ['point_a'], added: null, createdAt: null },
+      { slaHours: 4, now: new Date('2026-11-16T10:00:00Z'), audience: ['admin-1'] },
+    )
+    const text = JSON.stringify(n)
+    expect(text).not.toContain('anon.client@mail.kz')
+    expect(n.title).toContain('Клиент без имени · ТОО Ромашка')
+  })
+})

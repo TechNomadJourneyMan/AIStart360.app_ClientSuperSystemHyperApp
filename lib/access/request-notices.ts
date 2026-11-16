@@ -132,7 +132,10 @@ export interface AccessRequestInfo {
 }
 
 function who(person: RequestPerson): string {
-  return `${person.name}${person.company ? ` · ${person.company}` : ''}`
+  // R4 (проверка WB-2): у клиента без имени регистрация кладёт в «имя» его e-mail — в ленту персонала он не идёт.
+  const raw = (person.name ?? '').trim()
+  const name = !raw || raw.includes('@') || raw === person.email ? 'Клиент без имени' : raw
+  return `${name}${person.company ? ` · ${person.company}` : ''}`
 }
 
 /** Уведомление персоналу о новой заявке / новом разделе (чистая функция). */
