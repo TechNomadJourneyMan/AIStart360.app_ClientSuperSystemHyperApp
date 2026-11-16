@@ -260,9 +260,9 @@ describe('admin queue', () => {
 describe('navigation entry', () => {
   const entry = GIGA_NAV.flatMap((g) => g.items).find((i) => i.href === `${GIGA_BASE}/point-b-queue`)
 
-  it('is «Точка Б — на одобрении» behind clients.review, with no live badge', () => {
+  it('is «Точка Б — на одобрении» behind clients.review, with the «Ждут план» badge (R4 N4B-12)', () => {
     expect(entry).toMatchObject({ label: 'Точка Б — на одобрении', permission: 'clients.review' })
-    expect(entry?.badge).toBeUndefined()
+    expect(entry?.badge).toBe('planWaiting')
     expect(gigaSectionTitle(`${GIGA_BASE}/point-b-queue`)).toBe('Точка Б — на одобрении')
   })
 

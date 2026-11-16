@@ -148,7 +148,8 @@ describe('«Назначить Pro» from a request', () => {
 
     expect(s.audits.filter((a) => a.action === 'request.approved')).toHaveLength(3)
     expect(s.audits[0]).toMatchObject({ performedBy: STAFF, diff: expect.objectContaining({ kind: 'paid_access', via: 'request', userId: CLIENT }) })
-    expect(s.notices).toEqual([{ userId: CLIENT, input: { periodEnd: expect.any(String), dedupeKey: 'paid_access_opened:req-1' } }])
+    // R4 (N4B-2): Free → Pro is «Доступ открыт», not «продлён».
+    expect(s.notices).toEqual([{ userId: CLIENT, input: { periodEnd: expect.any(String), dedupeKey: 'paid_access_opened:req-1', renewed: false } }])
   })
 
   it('no period → Pro without an end date; the default note names the sections', async () => {
@@ -164,7 +165,16 @@ describe('«Назначить Pro» from a request', () => {
     expect(s.setPlan).toHaveLength(0)
     expect(statusOf('req-1')).toBe('new')
     expect(s.notices).toHaveLength(0)
+  })
+
+  it('R4 (WB-9, PO): a request for paid access is decided by Admin / Super Admin only — a CRM manager (users.manage) gets 403', async () => {
     s.role = 'crm_manager'
+    const denied = await assign('req-1', { months: 1 })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: 'paid_deciders_only', message: 'Заявки на оплату разбирают Admin и Super Admin' })
+    expect(s.setPlan).toHaveLength(0)
+    expect(statusOf('req-1')).toBe('new')
+    s.role = 'admin'
     expect((await assign('req-1', { months: 1 })).status).toBe(200)
   })
 

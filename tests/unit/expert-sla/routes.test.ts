@@ -209,6 +209,28 @@ describe('GET /api/expert/sla-tasks', () => {
     expect((await (await GET()).json()).data.map((t: { id: string }) => t.id).sort()).toEqual([T(1), T(4)])
   })
 
+  it('R4 N4B-12: the plan of Point B of his client is not in the expert queue or its count; a staff holder still sees it', async () => {
+    s.world = slaDb({
+      profiles: [{ id: E1, role: 'expert', status: 'approved', full_name: 'Эксперт 1' }],
+      staff_roles: [],
+      expert_sla_tasks: [
+        task(1, C1, { assignee_id: E1 }),
+        task(2, C1, { source: 'plan_prep', source_id: 'co1' }),
+        task(3, C1, { source: 'plan_review', source_id: 'v1' }),
+        task(4, C1, { source: 'plan_prep', source_id: 'co2', assignee_id: E1 }),
+      ],
+    })
+    const { GET } = await import('@/app/api/expert/sla-tasks/route')
+    s.expertViewer = { id: E1, role: 'expert' }
+    s.expertClients = [C1]
+    const body = await (await GET()).json()
+    expect(body.data.map((t: { id: string }) => t.id)).toEqual([T(1)])
+    expect(body.summary).toMatchObject({ open: 1, mine: 1 })
+
+    s.expertViewer = { id: E1, role: 'admin' }
+    expect((await (await GET()).json()).data.map((t: { id: string }) => t.id).sort()).toEqual([T(1), T(4)])
+  })
+
   it('not an expert → refused', async () => {
     const { GET } = await import('@/app/api/expert/sla-tasks/route')
     expect((await GET()).status).toBe(403)

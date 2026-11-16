@@ -89,15 +89,16 @@ describe('страница нового пароля после ссылки и�
   })
 
   it('страницы входа по-прежнему уводят вошедшего в его кабинет', async () => {
-    expect(loc(await get('/login'))).toMatch(/\/dashboard$/)
-    expect(loc(await get('/forgot-password'))).toMatch(/\/dashboard$/)
+    // R-029: клиент — в новый кабинет, не в старый /dashboard
+    expect(loc(await get('/login'))).toMatch(/\/client\/home$/)
+    expect(loc(await get('/forgot-password'))).toMatch(/\/client\/home$/)
     s.role = 'super_admin'
     s.staffRow = { role: 'super_admin' }
     expect(loc(await get('/login'))).toMatch(/\/admin-giga-panel$/)
     // R-002: без строки staff_roles legacy super_admin — не персонал, и вход
     // не уводит его в панель (иначе панель вернула бы его сюда же — петля).
     s.staffRow = null
-    expect(loc(await get('/login'))).toMatch(/\/dashboard$/)
+    expect(loc(await get('/login'))).toMatch(/\/client\/home$/)
   })
 })
 

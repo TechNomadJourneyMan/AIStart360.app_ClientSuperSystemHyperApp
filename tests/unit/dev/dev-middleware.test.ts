@@ -167,9 +167,10 @@ describe('who may open what stays exactly as it was', () => {
     r = await dev('/super-expert')
     expect(r.status).toBe(307)
     expect(loc(r)).toContain('/super-expert/login?denied=1')
-    expect(loc(await dev('/expert/dashboard'))).toMatch(/\/dashboard$/)
-    expect(loc(await dev('/clients'))).toMatch(/\/dashboard$/)
-    expect(loc(await dev('/ai-scanner'))).toMatch(/\/dashboard$/)
+    // R-029: bounced to the client's own cabinet (was the old /dashboard shell)
+    expect(loc(await dev('/expert/dashboard'))).toMatch(/\/client\/home$/)
+    expect(loc(await dev('/clients'))).toMatch(/\/client\/home$/)
+    expect(loc(await dev('/ai-scanner'))).toMatch(/\/client\/home$/)
 
     // An expert stays out of the admin pages and the panel.
     signIn('expert')

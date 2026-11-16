@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 
 // Self-scoped in-app notification feed (app_notifications). RLS also enforces
 // user_id = auth.uid(). GET lists (optionally unread-only) + returns unread count;
-// PATCH marks all as read.
+// GET ?count=1 returns ONLY the unread count (the bell, WA-5: one head request,
+// no rows); PATCH marks all as read.
 export const dynamic = 'force-dynamic'
 
 const SELECT = 'id, category, priority, title, body, link, is_read, created_at'
@@ -13,7 +14,25 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-  const filter = new URL(request.url).searchParams.get('filter')
+  const params = new URL(request.url).searchParams
+  const unreadCount = () => supabase
+    .from('app_notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .eq('is_read', false)
+    .is('archived_at', null)
+
+  // WA-5: the bell polls this — the number only, no entries.
+  if (params.get('count') === '1') {
+    const { count, error } = await unreadCount()
+    if (error) {
+      console.error('[api/v1/notifications GET count]', error)
+      return NextResponse.json({ ok: false, error: 'load_failed' }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, unread: count ?? 0 })
+  }
+
+  const filter = params.get('filter')
 
   let query = supabase
     .from('app_notifications')
@@ -30,12 +49,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: 'load_failed' }, { status: 500 })
   }
 
-  const { count } = await supabase
-    .from('app_notifications')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .eq('is_read', false)
-    .is('archived_at', null)
+  const { count } = await unreadCount()
 
   return NextResponse.json({ ok: true, data: data ?? [], unread: count ?? 0 })
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { BillingError, expireDuePlans } from '@/lib/payments/billing'
+import { sendExpiryWarnings, type ExpiryWarningsReport } from '@/lib/payments/expiry-notices'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -16,6 +17,12 @@ export const maxDuration = 60
  * перепроверяется под блокировкой, так что продление, сделанное
  * администратором в ту же секунду, не теряется.
  *
+ * R4 (N4B-10, решение PO 2026-11-16): клиент, чей тариф снижен, сразу получает
+ * «Платный доступ закончился»; после снижения — предупреждения тем, у кого срок
+ * кончается в ближайшие 7 суток (за 7 дней и за сутки), лента + письмо,
+ * идемпотентно (lib/payments/expiry-notices.ts). Сбой предупреждений не
+ * отменяет снижение: ответ `warnings: null`, следующий прогон повторит.
+ *
  * Auth: Vercel Cron присылает `Authorization: Bearer ${CRON_SECRET}`.
  */
 export async function GET(req: NextRequest) {
@@ -25,7 +32,13 @@ export async function GET(req: NextRequest) {
   }
   try {
     const report = await expireDuePlans()
-    return NextResponse.json({ ok: true, ...report })
+    let warnings: ExpiryWarningsReport | null = null
+    try {
+      warnings = await sendExpiryWarnings()
+    } catch (e) {
+      console.error('[cron/billing-expiry] warnings failed:', e instanceof Error ? e.message : e)
+    }
+    return NextResponse.json({ ok: true, ...report, warnings })
   } catch (e) {
     if (e instanceof BillingError && e.code === 'migration_106_required') {
       return NextResponse.json({ ok: false, error: 'migration_106_required' }, { status: 503 })

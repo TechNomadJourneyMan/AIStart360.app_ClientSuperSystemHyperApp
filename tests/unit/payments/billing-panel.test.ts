@@ -38,6 +38,7 @@ describe('GET /api/v1/settings/billing', () => {
     const body = await (await GET()).json()
     expect(body).toEqual({
       ok: true,
+      canRequestAccess: false,
       data: { tier: 'enterprise', status: 'active', periodEnd: '2099-03-01T00:00:00.000Z', source: 'admin', provider: null, accessTier: 'pro' },
     })
     expect(JSON.stringify(body)).not.toContain('скидка')
@@ -47,6 +48,16 @@ describe('GET /api/v1/settings/billing', () => {
     db.tables.profiles[0].tier = 'pro'
     const body = await (await GET()).json()
     expect(body.data).toMatchObject({ tier: 'pro', status: 'active', source: 'admin', periodEnd: null })
+  })
+
+  it('R4 review WB-6: the «Оставить заявку» block is offered to a client only — not to staff or an expert', async () => {
+    db.tables.profiles[0].role = 'client'
+    expect((await (await GET()).json()).canRequestAccess).toBe(true)
+    db.tables.staff_roles = [{ user_id: USER, role: 'support' }]
+    expect((await (await GET()).json()).canRequestAccess).toBe(false)
+    db.tables.staff_roles = []
+    db.tables.profiles[0].role = 'expert'
+    expect((await (await GET()).json()).canRequestAccess).toBe(false)
   })
 
   it('a free client reads as free; anonymous is 401', async () => {

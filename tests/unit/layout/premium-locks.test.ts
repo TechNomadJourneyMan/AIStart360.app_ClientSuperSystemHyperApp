@@ -21,9 +21,10 @@ describe('R-030 isSectionLocked', () => {
     expect(isSectionLocked('/point-b', 'client', access({ point_b: true }))).toBe(false)
   })
 
-  it('gates on: Метрики follow the tier (no right of their own)', () => {
-    expect(isSectionLocked('/metrics', 'client', access({ tier: 'free' }))).toBe(true)
+  it('R4 (N4B-7): Метрики are never locked — the page is open to everyone and has no server gate', () => {
+    expect(isSectionLocked('/metrics', 'client', access({ tier: 'free' }))).toBe(false)
     expect(isSectionLocked('/metrics', 'client', access({ tier: 'pro' }))).toBe(false)
+    expect(premiumSectionOf('/metrics')).toBeNull()
   })
 
   it('Round 2: Точка А / Рынок / полный GRI follow the server decision of their section', () => {

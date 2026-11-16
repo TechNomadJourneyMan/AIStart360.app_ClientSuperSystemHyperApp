@@ -266,7 +266,7 @@ export interface PendingRequest {
   createdAt: string
 }
 
-/** Клиенты, ждущие одобрения (profiles.status = pending_approval). */
+/** Регистрации: клиенты, ждущие одобрения (profiles.status = pending_approval). */
 export async function fetchPendingRequests(): Promise<PendingRequest[]> {
   const { data, error } = await createServiceClient()
     .from('profiles')
@@ -277,6 +277,56 @@ export async function fetchPendingRequests(): Promise<PendingRequest[]> {
     .limit(QUERY_LIMIT)
   if (error) throw new Error(`pending requests: ${error.message}`)
   return ((data ?? []) as Array<{ id: string; created_at: string }>).map((r) => ({ userId: r.id, createdAt: r.created_at }))
+}
+
+/**
+ * R4 (N4B-1): открытые заявки на ОПЛАТУ (admin_requests type 'access' из пейволла /
+ * старого окна «Pro»), старые первыми. Это не регистрации: их считают отдельно.
+ */
+export async function fetchOpenPaidRequests(): Promise<PendingRequest[]> {
+  const { loadOpenPaidRequests } = await import('@/lib/access/request-notices')
+  const rows = await loadOpenPaidRequests(createServiceClient(), QUERY_LIMIT)
+  return rows.map((r) => ({ userId: r.userId ?? '', createdAt: r.createdAt }))
+}
+
+export type ProNoticeStage = 'd7' | 'd1' | 'ended'
+
+export interface ProNoticeRow {
+  userId: string
+  stage: ProNoticeStage
+  endsAt: string
+}
+
+/**
+ * R4 (N4B-10, ревью WB-3): какие предупреждения об окончании платного доступа
+ * клиенты получили начиная с `sinceIso` — по журналу automation_sends, куда
+ * notifyClient пишет каждое отправленное уведомление (event paid_access_expiring /
+ * paid_access_ended, ключ pro_expiry:<этап>:<подписка>:<дата>). Каждое
+ * предупреждение уходит клиенту один раз — значит, и в сводку персонала оно
+ * попадает один раз: за 7 дней, за сутки и в день окончания. Ошибка — пусто
+ * (сводка не падает).
+ */
+export async function fetchProNoticesSince(sinceIso: string): Promise<ProNoticeRow[]> {
+  try {
+    const { data, error } = await createServiceClient()
+      .from('automation_sends')
+      .select('user_id, kind, metadata, sent_at')
+      .in('kind', ['paid_access_expiring', 'paid_access_ended'])
+      .gte('sent_at', sinceIso)
+      .order('sent_at', { ascending: true })
+      .limit(QUERY_LIMIT)
+    if (error) return []
+    const out: ProNoticeRow[] = []
+    for (const r of (data ?? []) as Array<{ user_id: string | null; kind: string; metadata: Record<string, unknown> | null }>) {
+      const m = r.metadata ?? {}
+      const stage = r.kind === 'paid_access_ended' ? 'ended' : m.stage === 'd1' ? 'd1' : m.stage === 'd7' ? 'd7' : null
+      if (!r.user_id || !stage || typeof m.endsAt !== 'string') continue
+      out.push({ userId: r.user_id, stage, endsAt: m.endsAt })
+    }
+    return out
+  } catch {
+    return []
+  }
 }
 
 export interface StaffTask {

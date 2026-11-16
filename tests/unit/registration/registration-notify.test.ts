@@ -10,6 +10,7 @@ const s = vi.hoisted(() => ({
   status: 'pending_approval' as string,
   existingProfile: null as { id: string; status: string; role?: string } | null,
   staff: null as { role: string } | null,
+  noUser: false,
 }))
 
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notify }))
@@ -49,7 +50,7 @@ vi.mock('@/lib/supabase-server', () => ({
 }))
 vi.mock('@supabase/ssr', () => ({
   createServerClient: () => ({
-    auth: { exchangeCodeForSession: async () => ({ data: { user: { id: 'u-2', email: 'g@corp.kz', user_metadata: { full_name: 'Гуля' } } } }) },
+    auth: { exchangeCodeForSession: async () => ({ data: { user: s.noUser ? null : { id: 'u-2', email: 'g@corp.kz', user_metadata: { full_name: 'Гуля' } } } }) },
   }),
 }))
 
@@ -61,6 +62,7 @@ beforeEach(() => {
   s.status = 'pending_approval'
   s.existingProfile = null
   s.staff = null
+  s.noUser = false
 })
 
 const body = { userId: 'u-1', email: 'a@corp.kz', name: 'Айдар', company: 'ТОО Ромашка' }
@@ -95,6 +97,7 @@ describe('registration notifications (GAP-20)', () => {
 
   it('a returning Google sign-in without ?next lands by role; an explicit ?next wins', async () => {
     s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    s.staff = { role: 'super_admin' }
     let res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
     expect(res.headers.get('location')).toBe('http://localhost/admin-giga-panel')
 
@@ -105,15 +108,29 @@ describe('registration notifications (GAP-20)', () => {
 
     s.staff = null
     res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
-    expect(new URL(res.headers.get('location') ?? '').pathname).not.toBe('/admin-giga-panel')
+    // R-029: an approved client lands in the new cabinet, not in the old /dashboard
+    expect(new URL(res.headers.get('location') ?? '').pathname).toBe('/client/home')
 
     s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
     res = await callback(new NextRequest('http://localhost/auth/callback?code=abc&next=/metrics'))
     expect(res.headers.get('location')).toBe('http://localhost/metrics')
   })
 
+  it('R-002: a legacy super_admin profile WITHOUT a staff_roles row lands as a client, not in the panel (which bounces it)', async () => {
+    s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    const res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
+    expect(new URL(res.headers.get('location') ?? '').pathname).toBe('/client/home')
+  })
+
+  it('R-029: a failed code exchange falls back to /login (the form), not to the old /dashboard', async () => {
+    s.noUser = true
+    const res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
+    expect(new URL(res.headers.get('location') ?? '').pathname).toBe('/login')
+  })
+
   it('behind `next start -H 0.0.0.0` (Railway) sends the browser back to the domain it used, not 0.0.0.0', async () => {
     s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    s.staff = { role: 'super_admin' }
     const res = await callback(new NextRequest('https://0.0.0.0:8080/auth/callback?code=abc', { headers: { host: 'portal.aistart360.app' } }))
     expect(res.headers.get('location')).toBe('https://portal.aistart360.app/admin-giga-panel')
   })

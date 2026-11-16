@@ -96,6 +96,13 @@ export interface StaffNotification {
    * for this notification. Mute, quiet hours and cooldown still apply.
    */
   telegramMinLevel?: OrderedLevel | null
+  /**
+   * Deliver in Telegram / WhatsApp during the quiet hours too: something a
+   * person has to act on soon, not noise — a client's request for paid access
+   * (R4 WB-1, PO 2026-11-16: «уведомление сразу»). Level thresholds, a
+   * personal mute and the cooldown still apply.
+   */
+  quietHoursExempt?: boolean
 }
 
 export interface NotifyResult {
@@ -229,7 +236,7 @@ export async function notifyStaff(n: StaffNotification, opts: {
   // ── Telegram ──
   const bot = staffBot()
   const text = formatTelegram(n)
-  const quiet = inQuietHours(n.level, cfg, opts.now)
+  const quiet = n.quietHoursExempt === true ? false : inQuietHours(n.level, cfg, opts.now)
   const cooled = n.skipCooldown ? false : await inCooldown(n, eventId)
   const staff = await linkedStaff(event.duplicate ? event.createdAt : null)
   const isApproval = n.level === 'APPROVAL_REQUIRED'

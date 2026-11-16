@@ -149,6 +149,12 @@ const CLIENT_DASHBOARD_PATHS = [
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']
+/**
+ * X-1: staff pages an expert DOES open — the own account settings, the only
+ * place to enrol in 2FA. With «2FA для персонала обязательна» the gate sends
+ * an expert there; bouncing it back to /expert/dashboard made an endless loop.
+ */
+const EXPERT_ACCOUNT_PATHS = ['/settings']
 
 /** R-052: statuses of a client account that is not admitted yet. */
 const NOT_APPROVED_STATUSES = new Set(['pending_approval', 'requires_clarification', 'rejected'])
@@ -557,8 +563,13 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   const e2eSeam = await verifyE2eSeamEdge(request.cookies.get(E2E_SEAM_COOKIE_NAME)?.value)
 
   if (isGigaLogin) {
-    if (hasApprovedPersonalGigaAccess || e2eSeam !== null) {
-      return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
+    if (e2eSeam !== null) return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
+    // R-002: the panel admits a super_admin profile only with a staff_roles row
+    // (the gate below). Without it, sending the legacy profile on to the panel
+    // bounced it straight back here — an endless redirect loop.
+    if (hasApprovedPersonalGigaAccess && user) {
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      if (isStaffRole(staffRow?.role)) return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // the page sends staff to the personal /login
   }
@@ -576,12 +587,11 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    let allowed = role === 'super_admin' && resolved?.status === 'approved'
-    if (!allowed) {
-      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
-      const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
-      allowed = !!staffRole && SUPER_EXPERT_ROLES.has(staffRole) && resolved?.status === 'approved'
-    }
+    // X-2 / R-002: by the staff_roles row only — a legacy profiles.role
+    // 'super_admin' without one is not staff here either (as in GIGA).
+    const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+    const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+    const allowed = !!staffRole && SUPER_EXPERT_ROLES.has(staffRole) && resolved?.status === 'approved'
     if (!allowed) {
       return NextResponse.redirect(new URL(`${SUPER_EXPERT_LOGIN_PATH}?denied=1`, request.url))
     }
@@ -633,13 +643,12 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
       const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
       staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
     }
-    // R-002: a legacy profiles.role 'super_admin' without a staff_roles row is
-    // not staff — landing it in the panel would bounce it back here (loop).
-    const landingRole = role === 'super_admin' && !staffRole ? 'client' : role
-    const dest = staffRole
-      ? roleLandingPath(role, resolved?.status, staffRole)
-      : landingRole === 'client' ? '/dashboard' : roleLandingPath(landingRole, resolved?.status)
-    return NextResponse.redirect(new URL(dest, request.url))
+    // R-029: one landing rule (lib/role-landing.ts) — an approved client in the
+    // cabinet (/client/home), a pending one in the waiting room, staff in their
+    // panel. R-002: a legacy profiles.role 'super_admin' without a staff_roles
+    // row (staffRole null) is not staff and lands as a client — the panel would
+    // bounce it back here (loop).
+    return NextResponse.redirect(new URL(roleLandingPath(role, resolved?.status, staffRole), request.url))
   }
 
   // Not authenticated, accessing protected page → redirect to login.
@@ -727,19 +736,16 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   if (user) {
     // Removed legacy screens → their replacement.
     if (matchesAny(pathname, RETIRED_PATHS)) {
-      // A legacy profiles.role 'admin' opens the panel only with a staff_roles
-      // row (migration 099); otherwise the panel gate would bounce it back.
-      let panel = role === 'super_admin'
-      if (role === 'admin') {
-        const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
-        panel = isStaffRole(staffRow?.role)
-      }
-      const dest = panel ? GIGA_PANEL_PATH : role === 'expert' ? '/expert/dashboard' : '/dashboard'
-      return NextResponse.redirect(new URL(dest, request.url))
+      // R-029: the same landing as after sign-in. A legacy profiles.role
+      // 'admin' / 'super_admin' opens the panel only with a staff_roles row
+      // (migration 099, R-002); otherwise the panel gate would bounce it back.
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+      return NextResponse.redirect(new URL(roleLandingPath(role, resolved?.status, staffRole), request.url))
     }
 
-    // Expert trying to access admin-only pages
-    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
+    // Expert trying to access admin-only pages (its own settings excepted — X-1)
+    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS) && !matchesAny(pathname, EXPERT_ACCOUNT_PATHS)) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
 
@@ -753,9 +759,13 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
       if (matchesAny(pathname, CLIENT_DASHBOARD_PATHS)) {
         return response
       }
-      // If it's not a client portal path, redirect to the cabinet (sidebar dashboard)
+      // Not a client page: to the cabinet by the landing rule (R-029) — a
+      // client to /client/home (pending: the waiting room); staff whose
+      // profiles.role is 'client' (the role lives in staff_roles) to their panel.
       if (!matchesRoute(pathname, '/client')) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
+        const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+        const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+        return NextResponse.redirect(new URL(roleLandingPath(role, resolved?.status, staffRole), request.url))
       }
     }
 

@@ -197,6 +197,8 @@ describe('POST /api/giga-admin/users/bulk — ранг и частичный у�
     expect(s.plans[0].actor).toMatchObject({ id: s.actorId })
     expect(s.grants.map((g) => g.userId)).toEqual([C1, C2])
     expect(s.grants[0]).toMatchObject({ via: 'bulk', after: { accessTier: 'pro' } })
+    // R4 review WB-5: «Доступ открыт» of a bulk change leaves from the queue of client notices.
+    expect(s.grants.every((g) => g.queueNotice === true)).toBe(true)
     expect(s.updates.filter((u) => u.table === 'profiles' && 'tier' in u.patch)).toEqual([])
   })
 

@@ -5,6 +5,7 @@ import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { requestOrigin } from '@/lib/site-url'
 import { acceptInvitation } from '@/lib/admin/invites'
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 
 /**
  * GET /auth/verify — приземление ссылки, отправленной нами (см.
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
   const raw = searchParams.get('type')
   const type = raw === 'recovery' ? 'recovery' : raw === 'invite' ? 'invite' : 'magiclink'
   // Приглашённый ещё без пароля — ведём его на страницу, где он его задаёт.
-  const fallback = type === 'magiclink' ? '/dashboard' : '/auth/reset-password'
+  // Вход по ссылке без адреса возврата (R-029) — в кабинет по роли: /login
+  // сам отправит вошедшего туда (middleware, lib/role-landing.ts).
+  const fallback = type === 'magiclink' ? CABINET_ENTRY_PATH : '/auth/reset-password'
   const next = safeInternalPath(searchParams.get('next'), fallback)
 
   if (!tokenHash) {

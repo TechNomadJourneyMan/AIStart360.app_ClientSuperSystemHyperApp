@@ -14,7 +14,7 @@ import { parseJsonBody } from '@/lib/validation/http'
 import { CheckoutBody } from '@/lib/validation/schemas'
 import { getSetting } from '@/lib/settings/store'
 import { createServiceClient } from '@/lib/supabase-service'
-import { submitAccessRequest } from '@/lib/access/upgrade-requests'
+import { isClientAccount, submitAccessRequest } from '@/lib/access/upgrade-requests'
 import { activeImpersonation } from '@/lib/impersonation/server'
 
 /** pilot_self_service (GIGA → Настройки). A read failure is «off»: no self-granted access. */
@@ -36,6 +36,10 @@ async function requestPilotAccess(userId: string): Promise<NextResponse> {
     )
   }
   try {
+    // R4 (проверка WB-6): заявку на пилот, как и на любой платный раздел, оставляет только клиент.
+    if (!(await isClientAccount(createServiceClient(), userId))) {
+      return NextResponse.json({ error: 'Заявку на доступ оставляет клиент.', code: 'not_client' }, { status: 403 })
+    }
     const r = await submitAccessRequest(createServiceClient(), { userId, featureKey: 'pilot' })
     return NextResponse.json(
       {

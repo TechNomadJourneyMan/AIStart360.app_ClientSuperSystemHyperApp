@@ -146,6 +146,17 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
 }
 
 /**
+ * R4 (ревью WB-9, решение PO 2026-11-16): заявку на ОПЛАТУ (платный доступ) разбирают
+ * Admin и Super Admin — «Назначить Pro», «Отклонить», «Архив». SuperExpert, CRM-менеджер
+ * и поддержка держат users.approve / users.manage для регистраций, но не для оплаты.
+ */
+export const PAID_REQUEST_DECIDERS: ReadonlySet<StaffRole> = new Set<StaffRole>(['admin', 'super_admin'])
+
+export function decidesPaidRequests(role: StaffRole | null | undefined): boolean {
+  return !!role && PAID_REQUEST_DECIDERS.has(role)
+}
+
+/**
  * Какие клиенты видны сотруднику.
  *
  * 'all'      — все клиенты платформы (по умолчанию);

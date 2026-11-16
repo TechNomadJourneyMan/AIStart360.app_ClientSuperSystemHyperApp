@@ -12,14 +12,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
-import { canManageTarget, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
-import { isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
+import { canManageTarget, decidesPaidRequests, isStaffRole, targetRoleOf, type StaffRole } from '@/lib/admin/rbac'
+import { isTariffAccessRequest, OPEN_REQUEST_STATUSES, requestFeatures } from '@/lib/access/upgrade-requests'
+import { notifyAccessRequestRejected } from '@/lib/notifications/product'
+import { enqueueClientNotice } from '@/lib/notifications/client-notice-queue'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
 export type AccessDecisionResult =
   | { ok: true; status: 'approved' | 'rejected' | 'archived'; userId: string }
-  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided'; userId: string }
+  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided' | 'paid_deciders_only'; userId: string }
 
 /**
  * Valid transitions of profiles.status for a decision on a request (R-007),
@@ -89,11 +91,13 @@ export async function decideAccessRequest(
   // would close it with nothing opened — it is refused. Reject (with a reason)
   // and archive stay.
   let paidAccess = false
+  let paidFeatures: string[] = []
   if (arRow) {
     const row = arRow as { userId?: string | null; payload?: Record<string, unknown> | null; type?: string | null; source?: string | null }
     const payload = row.payload ?? {}
     userId = row.userId ?? (typeof payload.userId === 'string' ? payload.userId : null)
     paidAccess = isTariffAccessRequest(row)
+    if (paidAccess) paidFeatures = requestFeatures(payload)
   }
 
   // Orphaned registration: the request id is the profile UUID.
@@ -114,6 +118,8 @@ export async function decideAccessRequest(
   if ((targetIsStaff && role !== 'super_admin') || !canManageTarget(role, { staffRole: target.staffRole, profileRole: target.role })) {
     return { ok: false, reason: 'forbidden', userId }
   }
+  // R4 (review WB-9, PO): a request for PAID access is decided by Admin / Super Admin only.
+  if (paidAccess && !decidesPaidRequests(role)) return { ok: false, reason: 'paid_deciders_only', userId }
   if (paidAccess && args.action === 'approve') return { ok: false, reason: 'assign_plan_required', userId }
   if (paidAccess) {
     // R2-C (review L-4): only an OPEN request changes. A request decided meanwhile
@@ -141,6 +147,16 @@ export async function decideAccessRequest(
       })
     } catch (auditErr) {
       console.error('[access-requests] audit failed:', auditErr)
+    }
+    // R4 (N4B-9): the client learns about a refusal — feed + e-mail + Telegram if
+    // linked, with the reason when given (one notice per request). Archive is
+    // internal housekeeping and tells nobody. Review WB-5: sent from the queue of
+    // client notices (≤ 2 at a time, outside the request) — a bulk «Отклонить»
+    // does not wait for Resend per client. notifyClient never throws.
+    if (args.action === 'reject') {
+      const target = userId
+      const notice = { requestId: args.requestId, features: paidFeatures, reason: args.reason ?? null }
+      void enqueueClientNotice('access-request-rejected', () => notifyAccessRequestRejected(target, notice))
     }
     return { ok: true, status: requestStatus, userId }
   }

@@ -13,7 +13,9 @@ describe('Header quick actions by role', () => {
     const h = hrefs('client')
     expect(h).not.toContain('/insights')
     expect(h).not.toContain('/reports')
-    expect(h).toContain('/point-a#files')
+    // N4B-6: «Мои документы» — the free documents page, not the paid Point A
+    expect(h).toContain('/client/onboarding/documents')
+    expect(h).not.toContain('/point-a#files')
     expect(h).toContain('/metrics')
   })
 

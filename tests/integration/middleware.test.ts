@@ -116,7 +116,8 @@ describe('RBAC Middleware', () => {
     const req = createRequest('/clients', 'client')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+    // R-029: to the client's cabinet, not the old /dashboard shell
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/home')
   })
 
   // GRI Pulse is client-facing (CLIENT_DASHBOARD_PATHS) — its API scopes data
@@ -131,13 +132,16 @@ describe('RBAC Middleware', () => {
     const req = createRequest('/ai-scanner', 'client')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/home')
   })
 
   it('the removed /users and /admin screens send staff to the GIGA panel, others to their home', async () => {
     for (const path of ['/users', '/admin', '/admin/requests']) {
-      expect(location(await middleware(createRequest(path, 'client')))).toBe('/dashboard')
-      expect(location(await middleware(createRequest(path, 'super_admin')))).toBe('/admin-giga-panel')
+      // R-029: a client to the new cabinet (was the old /dashboard shell)
+      expect(location(await middleware(createRequest(path, 'client')))).toBe('/client/home')
+      expect(location(await middleware(createRequest(path, 'super_admin', 'super_admin')))).toBe('/admin-giga-panel')
+      // R-002: a legacy super_admin profile without a staff_roles row is not staff — the panel would bounce it back
+      expect(location(await middleware(createRequest(path, 'super_admin')))).toBe('/client/home')
       expect(location(await middleware(createRequest(path, 'admin', 'admin')))).toBe('/admin-giga-panel')
       // Legacy profiles.role 'admin' without a staff_roles row has no panel
       // access (099): no redirect into a gate that would bounce it back.
@@ -147,9 +151,10 @@ describe('RBAC Middleware', () => {
   })
 
   it('the legacy owner role is a client: no owner cabinet, no staff pages', async () => {
-    expect(location(await middleware(createRequest('/owner/dashboard', 'owner')))).toBe('/dashboard')
-    expect(location(await middleware(createRequest('/clients', 'owner')))).toBe('/dashboard')
-    expect(location(await middleware(createRequest('/login', 'owner')))).toBe('/dashboard')
+    // R-029: the client's landing — the new cabinet
+    expect(location(await middleware(createRequest('/owner/dashboard', 'owner')))).toBe('/client/home')
+    expect(location(await middleware(createRequest('/clients', 'owner')))).toBe('/client/home')
+    expect(location(await middleware(createRequest('/login', 'owner')))).toBe('/client/home')
     expect((await middleware(createRequest('/point-a', 'owner'))).status).toBe(200)
     expect((await middleware(createRequest('/owner/dashboard', 'owner'))).headers.get('location')).not.toContain('/owner/')
   })
@@ -190,10 +195,11 @@ describe('RBAC Middleware', () => {
     expect(location(await middleware(createRequest('/login', 'admin', 'admin')))).toBe('/admin-giga-panel')
   })
 
-  it('redirects authenticated client from /login to /dashboard', async () => {
+  // R-029: one landing for a client — the new cabinet, not the old /dashboard shell
+  it('redirects authenticated client from /login to /client/home', async () => {
     const req = createRequest('/login', 'client')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/home')
   })
 })

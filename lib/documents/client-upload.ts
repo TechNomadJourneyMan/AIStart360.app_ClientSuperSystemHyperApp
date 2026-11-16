@@ -20,6 +20,13 @@ import { fileHref, isSafeObjectPath, LEGACY_DOCUMENTS_BUCKET, ownerFolderOf } fr
 
 export type { ClientDocument } from './status-view'
 
+/**
+ * N4B-6: the page with the client's documents (free, open before approval) —
+ * where «Мои документы» leads after an upload. Not /point-a#files: Point A is a
+ * paid section, a Free client got its paywall instead of the list.
+ */
+export const CLIENT_DOCUMENTS_HREF = '/client/onboarding/documents'
+
 /** The private bucket new uploads must use (server: lib/documents/storage.ts UPLOAD_BUCKET). */
 export const CLIENT_DOCUMENT_BUCKET = 'client-documents'
 

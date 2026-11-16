@@ -31,6 +31,8 @@ vi.mock('@/lib/rate-limit', () => ({
   rateLimitResponse: () => new Response('{"ok":false}', { status: 429 }),
 }))
 vi.mock('@/lib/impersonation/server', () => ({ activeImpersonation: async () => (s.impersonating ? { uid: 'x' } : null) }))
+// R4 (N4B-1): the staff notice after a stored request — covered in tests/unit/access/request-notices.test.ts.
+vi.mock('@/lib/access/request-notices', () => ({ notifyStaffAccessRequested: async () => 'sent' }))
 
 const lib = await import('@/lib/access/upgrade-requests')
 const route = await import('@/app/api/v1/upgrade-request/route')
@@ -46,7 +48,7 @@ beforeEach(() => {
   s.impersonating = false
   s.rlKeys = []
   s.db = newRequestsDb()
-  s.db.profiles.push({ id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz' })
+  s.db.profiles.push({ id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz', role: 'client' })
   s.db.companies.push({ user_id: ME, name: 'ТОО Ромашка' })
 })
 
@@ -197,5 +199,25 @@ describe('POST / GET /api/v1/upgrade-request (R-225 checks: tests/unit/api/upgra
     expect(await (await route.GET()).json()).toMatchObject({ ok: true, requested: true, features: ['market'] })
     s.user = null
     expect((await route.GET()).status).toBe(401)
+  })
+})
+
+describe('R4 (verify NV2-1): isClientAccount — both client profile roles, never staff', () => {
+  function service(role: string | null, staffRole: string | null) {
+    const table = (name: string) => {
+      const row = name === 'profiles' ? (role === null ? null : { role }) : (staffRole === null ? null : { role: staffRole })
+      const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: row, error: null }) }
+      return q
+    }
+    return { from: table } as never
+  }
+  it('client and the legacy owner role are clients; expert, admin, a client profile with a staff row are not', async () => {
+    const { isClientAccount } = await import('@/lib/access/upgrade-requests')
+    expect(await isClientAccount(service('client', null), 'u')).toBe(true)
+    expect(await isClientAccount(service('owner', null), 'u')).toBe(true)
+    expect(await isClientAccount(service('expert', null), 'u')).toBe(false)
+    expect(await isClientAccount(service('admin', null), 'u')).toBe(false)
+    expect(await isClientAccount(service('client', 'super_admin'), 'u')).toBe(false)
+    expect(await isClientAccount(service(null, null), 'u')).toBe(false)
   })
 })

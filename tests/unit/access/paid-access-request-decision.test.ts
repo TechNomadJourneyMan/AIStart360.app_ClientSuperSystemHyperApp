@@ -14,6 +14,7 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => ({
   apply: vi.fn(),
   audit: vi.fn(),
+  rejected: vi.fn(),
   listRows: [] as Array<Record<string, unknown>>,
   tariffRows: [] as Array<Record<string, unknown>>,
   scope: null as string[] | null,
@@ -21,6 +22,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/users/approval', () => ({ applyApprovalDecision: h.apply }))
 vi.mock('@/lib/audit', () => ({ logAudit: h.audit }))
+// R4 (N4B-9): the client's notice about a refusal (its channels: tests/unit/notifications/paid-access-notices.test.ts).
+vi.mock('@/lib/notifications/product', () => ({ notifyAccessRequestRejected: h.rejected }))
 
 const { decideAccessRequest } = await import('@/lib/users/access-requests')
 
@@ -69,6 +72,7 @@ const paidRow = { userId: null, type: 'access', source: 'paywall', payload: { us
 beforeEach(() => {
   h.apply.mockReset().mockResolvedValue({ affected: 1, profile: null, emailSent: false })
   h.audit.mockReset().mockResolvedValue(undefined)
+  h.rejected.mockReset().mockResolvedValue({ ok: true, delivered: { inApp: true, email: true, telegram: false } })
 })
 
 describe('decision on a paid-access request', () => {
@@ -97,6 +101,60 @@ describe('decision on a paid-access request', () => {
     expect(r).toMatchObject({ ok: true, status: 'rejected' })
     expect(sb.updates[0]).toMatchObject({ status: 'rejected', rejectionReason: 'не целевой' })
     expect(h.apply).not.toHaveBeenCalled()
+  })
+
+  it('R4 (N4B-9): a refusal tells the client — the request, its sections and the reason; once per decision', async () => {
+    const sb = stub({ ...paidRow, payload: { userId: CLIENT, features: ['point_a', 'market'] } }, 'approved')
+    const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action: 'reject', reason: 'Не смогли дозвониться', actor: { id: ACTOR, kind: 'session' } })
+    expect(r).toMatchObject({ ok: true, status: 'rejected' })
+    // Review WB-5: sent from the queue of client notices, outside the request.
+    await vi.waitFor(() => expect(h.rejected).toHaveBeenCalledTimes(1))
+    expect(h.rejected).toHaveBeenCalledWith(CLIENT, { requestId: 'req-1', features: ['point_a', 'market'], reason: 'Не смогли дозвониться' })
+  })
+
+  it('R4 (N4B-9): archive, a request decided meanwhile, a refused bare approve and a registration send the client nothing about paid access', async () => {
+    await decideAccessRequest(stub(paidRow, 'approved') as never, { requestId: 'req-1', action: 'archive', actor: { id: ACTOR, kind: 'session' } })
+    await decideAccessRequest(stub({ ...paidRow, status: 'rejected' }, 'approved') as never, { requestId: 'req-1', action: 'reject', reason: 'x', actor: { id: ACTOR, kind: 'session' } })
+    await decideAccessRequest(stub(paidRow, 'approved') as never, { requestId: 'req-1', action: 'approve', actor: { id: ACTOR, kind: 'session' } })
+    await decideAccessRequest(stub({ userId: null, type: 'registration', source: 'register', payload: { userId: CLIENT } }, 'pending_approval') as never, { requestId: 'req-2', action: 'reject', reason: 'x', actor: { id: ACTOR, kind: 'session' } })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(h.rejected).not.toHaveBeenCalled()
+  })
+
+  it('review WB-5: the decision does not wait for the client\'s e-mail (Resend) — a slow notice never holds the request', async () => {
+    let finish: () => void = () => {}
+    h.rejected.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+    const sb = stub(paidRow, 'approved')
+    const decided = decideAccessRequest(sb as never, { requestId: 'req-1', action: 'reject', reason: 'x', actor: { id: ACTOR, kind: 'session' } })
+    const outcome = await Promise.race([decided.then(() => 'decided'), new Promise((r) => setTimeout(() => r('waiting for the e-mail'), 200))])
+    expect(outcome).toBe('decided')
+    await vi.waitFor(() => expect(h.rejected).toHaveBeenCalledTimes(1))
+    finish()
+  })
+
+  it('review WB-9 (PO): a request for PAID access is decided by Admin / Super Admin only; a registration keeps users.approve', async () => {
+    for (const role of ['super_expert', 'crm_manager', 'support'] as const) {
+      for (const action of ['reject', 'archive'] as const) {
+        const sb = stub(paidRow, 'approved')
+        const r = await decideAccessRequest(sb as never, { requestId: 'req-1', action, reason: 'x', actor: { id: ACTOR, kind: 'session', role } })
+        expect(r, `${role} ${action}`).toEqual({ ok: false, reason: 'paid_deciders_only', userId: CLIENT })
+        expect(sb.updates).toHaveLength(0)
+      }
+    }
+    for (const role of ['admin', 'super_admin'] as const) {
+      const r = await decideAccessRequest(stub(paidRow, 'approved') as never, { requestId: 'req-1', action: 'reject', reason: 'x', actor: { id: ACTOR, kind: 'session', role } })
+      expect(r, role).toMatchObject({ ok: true, status: 'rejected' })
+    }
+    // A registration: the SuperExpert still decides it (unchanged).
+    const reg = await decideAccessRequest(stub({ userId: null, type: 'registration', source: 'register', payload: { userId: CLIENT } }, 'pending_approval') as never, { requestId: 'req-2', action: 'reject', reason: 'x', actor: { id: ACTOR, kind: 'session', role: 'super_expert' } })
+    expect(reg).toMatchObject({ ok: true, status: 'rejected' })
+    // The HTTP answer (single PATCH and bulk) names the rule: 403.
+    vi.resetModules()
+    vi.doMock('@/lib/supabase-service', () => ({ createServiceClient: () => stub(paidRow, 'approved') }))
+    const { decideRequest } = await import('@/lib/admin/request-decision')
+    expect(await decideRequest({ id: ACTOR, kind: 'session', role: 'crm_manager' }, 'req-1', 'reject', 'x'))
+      .toEqual({ ok: false, httpStatus: 403, error: 'Заявки на оплату разбирают Admin и Super Admin', userId: CLIENT })
+    vi.doUnmock('@/lib/supabase-service')
   })
 
   it('a registration request keeps the old path (profiles.status through applyApprovalDecision)', async () => {
@@ -167,6 +225,11 @@ describe('GIGA «Заявки» lists paid-access requests', () => {
     expect(body.requests.some((r: { id: string; category: string }) => r.id === CLIENT && r.category === 'registration')).toBe(true)
     // verify L-3: scope «all» → «Назначить Pro» possible
     expect(paid.assignable).toBe(true)
+    // R4 (N4B-1 / N4B-9): the 4 h answer deadline from "createdAt" (UTC) and the client for the links
+    expect(paid).toMatchObject({ userId: CLIENT, slaDueAt: '2026-11-14T13:00:00.000Z' })
+    // R4 staging: "createdAt" (timestamp without zone, UTC) goes out with «Z» — the card shows the same moment as the deadline
+    expect(paid.createdAt).toBe('2026-11-14T09:00:00.000Z')
+    expect(body.slaHours).toBe(4)
   })
 
   it('verify L-3: a staff member with scope «свои клиенты» sees the pending request (intake queue) but cannot assign Pro to a client outside it', async () => {

@@ -82,7 +82,8 @@ describe('шлагбаум кабинета SuperExpert', () => {
   })
 
   it('Super Admin проходит тоже', async () => {
-    state.staffRole = null
+    // X-2 / R-002: Super Admin — по строке staff_roles (legacy профиль без неё не пускает)
+    state.staffRole = 'super_admin'
     const res = await go('/super-expert', 'super_admin')
     expect(res.status).toBe(200)
   })

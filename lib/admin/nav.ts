@@ -3,9 +3,12 @@ import type { Permission } from './rbac'
 /** GIGA-CRM navigation. Items the actor lacks permission for are hidden. */
 /**
  * Live counters the sidebar may show next to an item (fetched only when the item is visible):
- * 'pendingApprovals' — agent actions awaiting a decision; 'cases' — open/overdue escalations.
+ * 'pendingApprovals' — agent actions awaiting a decision; 'cases' — open/overdue escalations;
+ * 'accessRequests' — open requests for paid access, red when one waits past the answer deadline
+ * (R4 N4B-1, 4 h); 'planWaiting' — clients waiting for a Point B plan (open plan_prep tasks, N4B-12).
+ * The last two come from GET /api/giga-admin/nav-badges.
  */
-export type GigaNavBadge = 'pendingApprovals' | 'cases'
+export type GigaNavBadge = 'pendingApprovals' | 'cases' | 'accessRequests' | 'planWaiting'
 export interface GigaNavItem { href: string; label: string; icon: string; permission: Permission; exact?: boolean; badge?: GigaNavBadge }
 export interface GigaNavGroup { label: string; items: GigaNavItem[] }
 
@@ -19,13 +22,14 @@ export const GIGA_NAV: GigaNavGroup[] = [
   ] },
   { label: 'Пользователи', items: [
     { href: `${GIGA_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
-    { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
+    { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view', badge: 'accessRequests' },
     { href: `${GIGA_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
     { href: `${GIGA_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
     // Expert work with the 24 h reaction / 48 h answer clock (R2-B, lib/expert-sla): overdue, queue, re-assignment.
     { href: `${GIGA_BASE}/expert-sla`, label: 'SLA экспертов', icon: 'listchecks', permission: 'clients.review' },
     // Plan versions the experts sent for approval (pb_plan_versions in_review); the API scopes the list to the actor.
-    { href: `${GIGA_BASE}/point-b-queue`, label: 'Точка Б — на одобрении', icon: 'stamp', permission: 'clients.review' },
+    // Badge «Ждут план» (N4B-12): open plan_prep tasks in the actor's client scope.
+    { href: `${GIGA_BASE}/point-b-queue`, label: 'Точка Б — на одобрении', icon: 'stamp', permission: 'clients.review', badge: 'planWaiting' },
     { href: `${GIGA_BASE}/experts`, label: 'Эксперты', icon: 'experts', permission: 'experts.manage' },
     { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },
@@ -77,6 +81,37 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/mcp`, label: 'MCP-доступ', icon: 'terminal', permission: 'dashboard.view' },
   ] },
 ]
+
+/** What GET /api/giga-admin/nav-badges answers (a badge the actor may not see is absent). */
+export interface WorkBadges {
+  accessRequests?: { open: number; overdue: number; slaHours: number }
+  planWaiting?: { open: number; overdue: number }
+}
+
+export interface WorkBadgeView {
+  count: number
+  /** Something waits past its deadline: the badge is red. */
+  urgent: boolean
+  /** Tooltip / accessible name. */
+  title: string
+}
+
+/** How a work badge looks; null — nothing to show (no data or zero). */
+export function workBadgeView(badge: GigaNavBadge, data: WorkBadges | null | undefined): WorkBadgeView | null {
+  if (badge === 'accessRequests') {
+    const v = data?.accessRequests
+    if (!v || v.open <= 0) return null
+    const late = v.overdue > 0 ? `, ждут дольше ${v.slaHours} ч: ${v.overdue}` : ''
+    return { count: v.open, urgent: v.overdue > 0, title: `Заявки на оплату: ${v.open}${late}` }
+  }
+  if (badge === 'planWaiting') {
+    const v = data?.planWaiting
+    if (!v || v.open <= 0) return null
+    const late = v.overdue > 0 ? `, срок прошёл: ${v.overdue}` : ''
+    return { count: v.open, urgent: v.overdue > 0, title: `Ждут план Точки Б: ${v.open}${late}` }
+  }
+  return null
+}
 
 export const SUPER_EXPERT_BASE = '/super-expert'
 

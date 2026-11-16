@@ -7,8 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { fakeClient, fakeDb, sqlModel, type FakeDb } from './_fake-supabase'
 
-const state = vi.hoisted(() => ({ client: null as unknown }))
+const state = vi.hoisted(() => ({ client: null as unknown, notices: [] as Array<{ userId: string; stage: string }> }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => state.client }))
+// R4 (N4B-10): the client notices of the job (their texts and channels: tests/unit/notifications/paid-access-notices.test.ts).
+vi.mock('@/lib/notifications/product', () => ({
+  notifyProExpiry: async (userId: string, input: { stage: string }) => {
+    state.notices.push({ userId, stage: input.stage })
+    return { ok: true, delivered: { inApp: true, email: true, telegram: false } }
+  },
+}))
 
 import { GET } from '@/app/api/cron/billing-expiry/route'
 
@@ -22,6 +29,7 @@ describe('billing expiry cron', () => {
   const saved = process.env.CRON_SECRET
   beforeEach(() => {
     process.env.CRON_SECRET = SECRET
+    state.notices = []
     db = fakeDb({
       profiles: [{ id: USER, tier: 'pro' }],
       companies: [],
@@ -44,14 +52,17 @@ describe('billing expiry cron', () => {
 
   it('downgrades an ended period once; the next run is a no-op', async () => {
     const first = await (await call(`Bearer ${SECRET}`)).json()
-    expect(first).toEqual({ ok: true, due: 1, downgraded: 1, skipped: 0, failed: 0 })
+    expect(first).toEqual({ ok: true, due: 1, downgraded: 1, skipped: 0, failed: 0, warnings: { due: 0, sent: 0, duplicate: 0, failed: 0 } })
+    // R4 (N4B-10): the client of the downgraded plan is told once.
+    expect(state.notices).toEqual([{ userId: USER, stage: 'ended' }])
     expect(db.tables.subscriptions[0]).toMatchObject({ status: 'canceled', source: 'system' })
     expect(db.tables.profiles[0].tier).toBe('free')
     expect(db.tables.admin_audit_log).toEqual([expect.objectContaining({ actor_id: 'system:billing-expiry', actor_kind: 'system', action: 'billing.plan_expired', target_user_id: USER })])
 
     const second = await (await call(`Bearer ${SECRET}`)).json()
-    expect(second).toEqual({ ok: true, due: 0, downgraded: 0, skipped: 0, failed: 0 })
+    expect(second).toMatchObject({ ok: true, due: 0, downgraded: 0, skipped: 0, failed: 0 })
     expect(db.tables.admin_audit_log).toHaveLength(1)
+    expect(state.notices).toHaveLength(1)
   })
 
   it('without a journal nothing is downgraded (retried next run)', async () => {
@@ -59,6 +70,8 @@ describe('billing expiry cron', () => {
     const body = await (await call(`Bearer ${SECRET}`)).json()
     expect(body).toMatchObject({ due: 1, downgraded: 0, failed: 1 })
     expect(db.tables.profiles[0].tier).toBe('pro')
+    // Not downgraded → not told it ended.
+    expect(state.notices).toEqual([])
   })
 
   it('503 when migration 106 is missing', async () => {

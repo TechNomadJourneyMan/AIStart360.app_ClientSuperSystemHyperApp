@@ -57,7 +57,15 @@ describe('POST /api/v1/auth/email-link', () => {
   it('не позволяет увести пользователя на чужой сайт через next', async () => {
     await post({ email: 'user@example.com', purpose: 'login', next: 'https://evil.example/steal' })
     const url = new URL(s.sent[0].ctaUrl as string)
-    expect(url.searchParams.get('next')).toBe('/dashboard')
+    // R-029: the fallback is the cabinet by role (/login → middleware), not the old /dashboard
+    expect(url.searchParams.get('next')).toBe('/login')
+  })
+
+  it('R-029: без адреса возврата ссылка ведёт в кабинет по роли, а не в старый /dashboard', async () => {
+    await post({ email: 'user@example.com', purpose: 'login' })
+    expect(new URL(s.sent[0].ctaUrl as string).searchParams.get('next')).toBe('/login')
+    await post({ email: 'user@example.com', purpose: 'login', next: '/client/point-b' })
+    expect(new URL(s.sent[1].ctaUrl as string).searchParams.get('next')).toBe('/client/point-b')
   })
 
   it('не раскрывает, существует ли аккаунт', async () => {

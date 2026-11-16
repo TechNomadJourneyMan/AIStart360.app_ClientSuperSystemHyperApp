@@ -58,7 +58,7 @@ export const NOTIFY_CATEGORY_UI: ReadonlyArray<{ key: NotifyCategory; label: str
   { key: 'digest', label: 'Еженедельный дайджест', desc: 'По понедельникам: динамика GRI, задачи плана на неделю, новые материалы, главный следующий шаг' },
   { key: 'crm', label: 'CRM-дайджест', desc: 'Утром: кому звонить + слабый блок GRI' },
   { key: 'team', label: 'Задачи команды', desc: 'Для сотрудников: утренний список просроченных задач' },
-  { key: 'security', label: 'Аккаунт и безопасность', desc: 'Доступ открыт, вход, смена пароля. Отключить нельзя' },
+  { key: 'security', label: 'Аккаунт и безопасность', desc: 'Доступ открыт или продлён, ответ по заявке на доступ, окончание платного доступа, вход, смена пароля. Отключить нельзя' },
 ]
 
 export function isNotifyCategory(v: unknown): v is NotifyCategory {

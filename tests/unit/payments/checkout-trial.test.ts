@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   impersonating: false,
   requests: [] as Array<{ userId: string; featureKey: string }>,
   requestFails: false,
+  isClient: true,
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => state.client }))
 vi.mock('@/lib/settings/store', () => ({
@@ -25,6 +26,7 @@ vi.mock('@/lib/settings/store', () => ({
   },
 }))
 vi.mock('@/lib/access/upgrade-requests', () => ({
+  isClientAccount: async () => state.isClient,
   submitAccessRequest: async (_sb: unknown, args: { userId: string; featureKey: string }) => {
     if (state.requestFails) throw new Error('insert failed')
     const duplicate = state.requests.some((r) => r.userId === args.userId)
@@ -100,6 +102,15 @@ describe('R2-A H-1: pilot with pilot_self_service OFF (the default) — no self-
     state.impersonating = false
     state.requests = []
     state.requestFails = false
+    state.isClient = true
+  })
+
+  it('R4 (verify WB-6): a staff member or an expert cannot file the pilot request — 403, nothing stored', async () => {
+    state.isClient = false
+    const res = await trial()
+    expect(res.status).toBe(403)
+    expect((await res.json()).code).toBe('not_client')
+    expect(state.requests).toEqual([])
   })
 
   it('a Free client does NOT get Pro: no billing call, tier stays free; an access request is created and the answer is honest', async () => {

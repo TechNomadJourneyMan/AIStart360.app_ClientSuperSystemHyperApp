@@ -9,7 +9,7 @@ import {
   Lightbulb, ListChecks, LogOut, Mail, MessageCircle, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, SlidersHorizontal, Sparkles, Stamp,
   Terminal, Users2, X, Zap, Siren, Sun, UserCheck, UserRound, Megaphone, BookOpen, type LucideIcon,
 } from 'lucide-react'
-import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
+import { activeNavHref, visibleNav, workBadgeView, type GigaNavBadge, type GigaNavGroup, type WorkBadges } from '@/lib/admin/nav'
 import { useWorkspace } from './WorkspaceContext'
 import { createClient } from '@/lib/supabase/client'
 import { useStaff } from './StaffContext'
@@ -72,6 +72,29 @@ function useCasesBadge(enabled: boolean): { open: number; overdue: number } | nu
   return v
 }
 
+/**
+ * R4 (N4B-1 / N4B-12): «Заявки» — открытые заявки на оплату (красный, если какая-то
+ * ждёт дольше срока ответа), «Точка Б — на одобрении» — сколько клиентов ждут план.
+ * Один запрос на оба счётчика; ошибка — бейджей нет.
+ */
+function useWorkBadges(enabled: boolean, pathname: string): WorkBadges | null {
+  const [v, setV] = useState<WorkBadges | null>(null)
+  useEffect(() => {
+    if (!enabled) { setV(null); return }
+    let alive = true
+    const load = () => fetch('/api/giga-admin/nav-badges', { credentials: 'include', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive) setV(d?.ok ? (d as WorkBadges) : null) })
+      .catch(() => {})
+    void load()
+    const id = setInterval(load, BADGE_REFRESH_MS)
+    window.addEventListener(NAV_BADGES_CHANGED, load)
+    return () => { alive = false; clearInterval(id); window.removeEventListener(NAV_BADGES_CHANGED, load) }
+    // Re-count after navigation: deciding on a request changes the number.
+  }, [enabled, pathname])
+  return v
+}
+
 interface GigaSidebarProps { isOpen?: boolean; onClose?: () => void }
 
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
@@ -91,6 +114,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   // (server-verified staff); hidden while impersonating (lib/client-shell/staff-links).
   const cabinet = gigaCabinetLink(me)
   const casesBadge = useCasesBadge(!loading && nav.some((g) => g.items.some((i) => i.badge === 'cases' && can(i.permission))))
+  const workBadges = useWorkBadges(groups.some((g) => g.items.some((i) => i.badge === 'accessRequests' || i.badge === 'planWaiting')), pathname)
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
@@ -143,6 +167,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
                   const Icon = ICONS[item.icon] ?? LayoutDashboard
                   const active = item.href === activeHref
                   const count = item.badge ? badges[item.badge] ?? 0 : 0
+                  const work = item.badge ? workBadgeView(item.badge, workBadges) : null
                   return (
                     <li key={item.href}>
                       <Link
@@ -162,6 +187,19 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
                             aria-label={`ожидают решения: ${count}`}
                           >
                             {count > 99 ? '99+' : count}
+                          </span>
+                        )}
+                        {work && (
+                          <span
+                            title={work.title}
+                            aria-label={work.title}
+                            data-work-badge={item.badge}
+                            className={cx(
+                              'ml-auto rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
+                              work.urgent ? 'bg-red-500/80 text-white' : 'border border-amber-500/30 bg-amber-500/20 text-amber-200',
+                            )}
+                          >
+                            {work.count > 99 ? '99+' : work.count}
                           </span>
                         )}
                         {item.badge === 'cases' && casesBadge && casesBadge.open > 0 && (

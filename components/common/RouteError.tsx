@@ -1,19 +1,33 @@
 'use client'
 
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
+
 /**
  * Shared route-segment error boundary UI (FE-08).
  *
  * Re-exported as the default from each route group's `error.tsx` so a thrown
  * error renders INSIDE that group's layout (keeping its nav/chrome) instead of
  * bubbling to the root `app/error.tsx` and blanking the whole shell.
+ *
+ * R-102: «На главную» leads to the home of the section the error happened in
+ * (`homeHref` — the cabinet, the GIGA panel, the SuperExpert workspace…). The
+ * default is the cabinet by role (CABINET_ENTRY_PATH): a guest sees the sign-in
+ * form, a signed-in user lands in their own cabinet — never the bare `/`.
  */
+export interface RouteErrorProps {
+  error: Error & { digest?: string }
+  reset: () => void
+  /** Where «На главную» leads; the section's home page. */
+  homeHref?: string
+  homeLabel?: string
+}
+
 export default function RouteError({
   error,
   reset,
-}: {
-  error: Error & { digest?: string }
-  reset: () => void
-}) {
+  homeHref = CABINET_ENTRY_PATH,
+  homeLabel = 'На главную',
+}: RouteErrorProps) {
   return (
     <div className="flex items-center justify-center min-h-[60vh] p-4">
       <div className="text-center max-w-md">
@@ -35,10 +49,10 @@ export default function RouteError({
             Повторить
           </button>
           <a
-            href="/"
+            href={homeHref}
             className="px-5 py-2.5 border border-outline-variant/40 text-on-surface-variant text-sm rounded-lg hover:bg-surface-container transition-colors"
           >
-            На главную
+            {homeLabel}
           </a>
         </div>
       </div>

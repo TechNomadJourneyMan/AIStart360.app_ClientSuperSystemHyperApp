@@ -53,10 +53,29 @@ export const ACCESS_ME_KEY = ['access-me'] as const
  * R-030: platform sections the old menus (Sidebar, MobileNav) mark «Pro» for a
  * client. The key is the section root; deeper paths belong to it.
  * Round 2: Точка А, Точка Б, Рынок и полный GRI — платные разделы (решение
- * фаундера); Метрики — как раньше, по тарифу (своего права и серверного гейта нет).
+ * фаундера). R4 (N4B-7): Метрики — НЕ платный раздел: страница открыта всем и
+ * серверного гейта у неё нет, поэтому и замка в меню нет (замок совпадает с
+ * реальным доступом).
  */
-export const PREMIUM_SECTIONS = ['/metrics', '/market', '/point-a', '/point-b', '/gri'] as const
+export const PREMIUM_SECTIONS = ['/market', '/point-a', '/point-b', '/gri'] as const
 export type PremiumSection = (typeof PREMIUM_SECTIONS)[number]
+
+/**
+ * R4 (N4B-7): the lock of a menu item opens THE paywall of its section
+ * (components/access/Paywall.tsx) — the same text and request as on the page.
+ */
+export const PREMIUM_SECTION_FEATURE: Record<PremiumSection, 'market' | 'point_a' | 'point_b' | 'gri_full'> = {
+  '/market': 'market',
+  '/point-a': 'point_a',
+  '/point-b': 'point_b',
+  '/gri': 'gri_full',
+}
+
+/** The paywall feature of a locked menu href; null — not a paid section. */
+export function paywallFeatureOf(href: string): 'market' | 'point_a' | 'point_b' | 'gri_full' | null {
+  const section = premiumSectionOf(href)
+  return section ? PREMIUM_SECTION_FEATURE[section] : null
+}
 
 /** The «Pro» section an href belongs to, or null. */
 export function premiumSectionOf(href: string): PremiumSection | null {
@@ -68,8 +87,8 @@ export function premiumSectionOf(href: string): PremiumSection | null {
  * - only a client is ever locked (staff see everything);
  * - gates off (access_gates, the fail-safe default) or still loading (OPEN) → nothing is locked;
  * - gates on → the server's decision for the paid sections (the API answers 402
- *   by exactly the same rule): Точка А / Б, Рынок, полный GRI. Метрики have no
- *   right of their own and no server gate, so they follow the account tier as before.
+ *   by exactly the same rule): Точка А / Б, Рынок, полный GRI. Nothing else
+ *   (Метрики included, N4B-7) is ever locked.
  */
 export function isSectionLocked(href: string, role: string | null | undefined, access: AccessMe): boolean {
   if (role !== 'client' || !access.gatesEnabled || access.staff) return false
@@ -78,8 +97,7 @@ export function isSectionLocked(href: string, role: string | null | undefined, a
   if (section === '/point-b') return !access.point_b
   if (section === '/point-a') return !access.point_a
   if (section === '/market') return !access.market
-  if (section === '/gri') return !access.gri_full
-  return access.tier !== 'pro'
+  return !access.gri_full
 }
 
 /** Снимок прав или OPEN (гейты выключены / ответ не ok). Ошибка сети — исключение. */

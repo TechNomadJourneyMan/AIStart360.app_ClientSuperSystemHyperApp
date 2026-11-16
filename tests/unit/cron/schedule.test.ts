@@ -36,6 +36,8 @@ const RAILWAY_ADDED = [
   { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
   // The job watchdog (R4-A1, lib/ops/job-watchdog.ts): every 10 minutes, off the :00/:05 minutes.
   { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
+  // The answer deadline of a request for paid access (R4, N4B-1): every 15 minutes, off the :00/:05 minutes.
+  { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
 ]
 /** What one process for everything schedules: the Vercel schedule plus the Railway additions. */
 const PORTAL_SCHEDULE = [...VERCEL_SCHEDULE, ...RAILWAY_ADDED]
@@ -56,6 +58,7 @@ describe('CRON_JOBS', () => {
       { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
       { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
       { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
+      { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
       { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },
     ]
     expect([...CRON_JOBS].sort(byPath)).toEqual(expected.sort(byPath))

@@ -8,7 +8,7 @@ import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
 import { DocumentUploadDialog } from '@/components/documents/DocumentUploadDialog'
-import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
+import { CLIENT_DOCUMENT_ACCEPT, CLIENT_DOCUMENTS_HREF } from '@/lib/documents/client-upload'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -35,7 +35,8 @@ export const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
     title: 'Файлы',
     items: [
       { label: 'Загрузить файл', icon: 'upload_file', href: '#upload' },
-      { label: 'Мои документы',  icon: 'folder_open', href: '/point-a#files' },
+      // N4B-6: documents are free — their own page, not the paid Point A.
+      { label: 'Мои документы',  icon: 'folder_open', href: CLIENT_DOCUMENTS_HREF },
     ],
   },
   {
@@ -240,7 +241,7 @@ export function Header() {
         <DocumentUploadDialog
           file={pickedFile}
           onClose={() => setPickedFile(null)}
-          documentsHref="/point-a#files"
+          documentsHref={CLIENT_DOCUMENTS_HREF}
         />
 
         {/* Отчёты — открывает клиентский отчёт (Точка А + цели + данные анкеты) */}

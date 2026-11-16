@@ -4,6 +4,7 @@ import { adminResetUserMfa } from '@/lib/mfa/store'
 import { logActivity } from '@/lib/activity/log'
 import { sendPortalInvitationEmail } from '@/lib/email'
 import { getSiteUrl } from '@/lib/site-url'
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 import { STAFF_ROLE_LABELS, type StaffRole } from '@/lib/admin/rbac'
 import { normalizeEmail, type InviteResult } from './invite-shared'
 
@@ -167,7 +168,8 @@ export async function sendPlatformInvite(input: InviteInput): Promise<InviteResu
   // Новый человек сначала задаёт пароль; уже знакомый попадает сразу в кабинет
   // (если приглашение отбирает у аккаунта пароль — /auth/verify отправит
   // задать новый, см. acceptInvitation).
-  const next = input.next || (existing ? '/dashboard' : '/auth/reset-password')
+  // R-029: «в кабинет» = по роли (middleware на /login), а не старый /dashboard.
+  const next = input.next || (existing ? CABINET_ENTRY_PATH : '/auth/reset-password')
   const url = new URL('/auth/verify', getSiteUrl())
   url.searchParams.set('token_hash', tokenHash)
   url.searchParams.set('type', type)

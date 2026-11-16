@@ -7,6 +7,7 @@ import { sendNotificationEmail } from '@/lib/email'
 import { getSiteUrl } from '@/lib/site-url'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 
 /**
  * POST /api/v1/auth/email-link — вход и восстановление пароля по ссылке,
@@ -36,7 +37,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Укажите корректный email' }, { status: 422 })
   }
   const { email, purpose } = parsed.data
-  const next = safeInternalPath(parsed.data.next ?? null, purpose === 'recovery' ? '/auth/reset-password' : '/dashboard')
+  // R-029: without an explicit return path the sign-in link leads to the
+  // cabinet by role (middleware on /login), not to the old /dashboard.
+  const next = safeInternalPath(parsed.data.next ?? null, purpose === 'recovery' ? '/auth/reset-password' : CABINET_ENTRY_PATH)
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
   const limited = await Promise.all([

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { publishOneRead, publishUnreadCount } from './unread-sync'
 
 interface Notif {
   id: string
@@ -45,6 +46,8 @@ export function NotificationsFeed() {
       if (!json.ok || !Array.isArray(json.data)) throw new Error('bad')
       setItems(json.data)
       setUnread(json.unread ?? 0)
+      // WA-4: the bell shows the same number as the page.
+      publishUnreadCount(json.unread ?? 0)
     } catch {
       setError(true)
     } finally {
@@ -58,6 +61,7 @@ export function NotificationsFeed() {
     const prev = items
     setItems(items.map((n) => ({ ...n, is_read: true })))
     setUnread(0)
+    publishUnreadCount(0) // on failure load() below publishes the real count again
     try {
       const r = await fetch('/api/v1/notifications', { method: 'PATCH', credentials: 'include' })
       if (!r.ok) throw new Error()
@@ -71,6 +75,7 @@ export function NotificationsFeed() {
   const markOne = (id: string) => {
     setItems((arr) => arr.map((n) => (n.id === id ? { ...n, is_read: true } : n)))
     setUnread((u) => Math.max(0, u - 1))
+    publishOneRead()
     fetch(`/api/v1/notifications/${id}`, { method: 'PATCH', credentials: 'include' }).catch(() => {})
   }
 

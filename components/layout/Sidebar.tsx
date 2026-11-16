@@ -9,8 +9,9 @@ import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
-import { useEntitlements, isSectionLocked, premiumSectionOf } from '@/hooks/useEntitlements'
+import { useEntitlements, isSectionLocked, paywallFeatureOf, premiumSectionOf } from '@/hooks/useEntitlements'
 import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
+import Paywall from '@/components/access/Paywall'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -20,17 +21,10 @@ export function Sidebar() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
   const [premiumItem, setPremiumItem] = useState<string | null>(null)
-  const [requestState, setRequestState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const { access } = useEntitlements()
   const hiddenPaths = useHiddenSectionPaths()
-
-  const PREMIUM_FEATURE_LABELS: Record<string, string> = {
-    '/metrics': 'Метрики',
-    '/point-a': 'Точка А',
-    '/gri':     'Полный GRI',
-    '/market':  'Рынок',
-    '/point-b': 'Точка Б',
-  }
+  // R4 (N4B-7): a lock opens THE paywall of its section (same text and request as on the page).
+  const premiumFeature = premiumItem ? paywallFeatureOf(premiumItem) : null
 
   const handleLogout = () => {
     logout()
@@ -67,26 +61,10 @@ export function Sidebar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
-  async function requestUpgrade() {
-    if (!premiumItem || requestState === 'sending') return
-    setRequestState('sending')
-    try {
-      const res = await fetch('/api/v1/upgrade-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ featureKey: premiumItem }),
-      })
-      setRequestState(res.ok ? 'sent' : 'error')
-    } catch {
-      setRequestState('error')
-    }
-  }
-
   // R-030: closing the window leaves the user where they are (it used to
   // navigate to the locked section first and then bounce to /dashboard).
   function closePremiumModal() {
     setPremiumItem(null)
-    setRequestState('idle')
   }
 
   const toggleSubMenu = (href: string, e: React.MouseEvent) => {
@@ -241,7 +219,7 @@ export function Sidebar() {
             return (
               <button
                 key={item.href}
-                title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
+                title={sidebarCollapsed ? `${item.label} — платный доступ` : undefined}
                 onClick={() => setPremiumItem(lockedKey)}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
@@ -438,52 +416,28 @@ export function Sidebar() {
       </div>
     </aside>
 
-    {/* ── Premium upgrade modal (portal-like fixed overlay) ── */}
-    {premiumItem && (
+    {/* ── Locked section: THE paywall of the section in an overlay (R4 N4B-7) ── */}
+    {premiumItem && premiumFeature && (
       <>
         <div
           className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-md"
           onClick={closePremiumModal}
         />
-        <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[340px] rounded-3xl bg-[#13151c] border border-amber-500/20 shadow-2xl overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
-              </div>
-              <div>
-                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro тариф</p>
-                <p className="text-base font-bold text-on-surface">
-                  {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-              Раздел входит в тариф <span className="text-amber-400 font-medium">Pro</span>. Оставьте заявку — менеджер свяжется с вами и откроет доступ.
-            </p>
-            {requestState === 'sent' && (
-              <p className="mb-4 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary">Заявка отправлена. Мы скоро свяжемся с вами.</p>
-            )}
-            {requestState === 'error' && (
-              <p className="mb-4 text-xs text-error">Не удалось отправить заявку. Попробуйте ещё раз.</p>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={closePremiumModal}
-                className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
-              >
-                Закрыть
-              </button>
-              <button
-                onClick={requestUpgrade}
-                disabled={requestState === 'sending' || requestState === 'sent'}
-                data-track="pro-upgrade-request"
-                className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm transition-colors"
-              >
-                {requestState === 'sending' ? 'Отправляем…' : requestState === 'sent' ? 'Отправлено' : 'Оставить заявку'}
-              </button>
-            </div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Раздел в платном доступе"
+          data-menu-paywall={premiumFeature}
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[min(420px,calc(100vw-32px))] rounded-2xl bg-[#13151c] shadow-2xl"
+        >
+          <Paywall feature={premiumFeature} variant="compact" />
+          <div className="flex justify-end px-4 pb-4">
+            <button
+              onClick={closePremiumModal}
+              className="rounded-xl border border-white/[0.08] px-4 py-2 text-sm text-on-surface-variant transition-colors hover:bg-white/[0.04]"
+            >
+              Закрыть
+            </button>
           </div>
         </div>
       </>

@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { activeImpersonation } from '@/lib/impersonation/server'
-import { findOpenAccessRequest, isKnownRequestFeature, submitAccessRequest } from '@/lib/access/upgrade-requests'
+import { findOpenAccessRequest, isClientAccount, isKnownRequestFeature, submitAccessRequest } from '@/lib/access/upgrade-requests'
 
 /** R-225: featureKey is a feature id ('point_a') or a nav href ('/point-b') — short text, never an arbitrary blob. */
 const bodySchema = z.object({ featureKey: z.string().trim().min(1).max(100) })
@@ -50,7 +50,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const result = await submitAccessRequest(createServiceClient(), { userId, featureKey: parsed.data.featureKey })
+    const service = createServiceClient()
+    // R4 (review WB-6): only a client asks for paid access; staff and experts have their sections by role.
+    if (!(await isClientAccount(service, userId))) {
+      return NextResponse.json(
+        { ok: false, error: 'not_client', message: 'Заявку на платный доступ оставляет клиент: у сотрудников и экспертов разделы открыты по роли.' },
+        { status: 403 },
+      )
+    }
+
+    const result = await submitAccessRequest(service, { userId, featureKey: parsed.data.featureKey })
     return NextResponse.json({ ok: true, requested: true, duplicate: !result.created, features: result.features })
   } catch (error) {
     console.error('[upgrade-request] POST error:', error instanceof Error ? error.message : error)
