@@ -38,6 +38,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # R4-A4 (R-019): no new migration number twice (the 15 old repeats are listed by file name),
+      # every migration from 140 has rollback/<name>.down.sql. Reads only the folder; runs first, no deps.
+      - name: Migration numbers and rollbacks
+        run: node scripts/deploy/check-migrations.mjs
       - run: npm ci
       - run: npm --prefix services/whatsapp-web-bridge ci
       - name: Typecheck

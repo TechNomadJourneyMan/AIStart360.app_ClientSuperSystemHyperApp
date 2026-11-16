@@ -12,6 +12,7 @@ import { GigaAdminRequestBody } from '@/lib/validation/schemas'
 import { ACCESS_REQUEST_SOURCES, isTariffAccessRequest } from '@/lib/access/upgrade-requests'
 import { utcIso } from '@/lib/payments/plan-state'
 import { requestSlaDueAt, requestSlaHours } from '@/lib/access/request-notices'
+import { INVITE_REQUEST_SOURCE, isInviteRequestRow } from '@/lib/registration/invite-request-shared'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -65,6 +66,8 @@ export async function GET(req: NextRequest) {
     const seenRequestIds = new Set<string>()
     if (!arError && adminRows) {
       for (const r of adminRows) {
+        // R4 B3: a request for an invitation is listed by 2c below (contact, masking).
+        if (isInviteRequestRow(r)) continue
         const payload = (r.payload ?? {}) as Record<string, string>
         const uid = payload.userId
         // A request for paid access is not a registration: the client's own
@@ -133,6 +136,48 @@ export async function GET(req: NextRequest) {
         // passed) and links to the client's User 360 and «Сообщения».
         userId: uid ?? null,
         slaDueAt: status === 'pending' ? requestSlaDueAt(r.createdAt, slaHours) : null,
+      })
+    }
+
+    // 2c. R4 B3 (N4B-3): requests for an invitation («Запросить приглашение»
+    //     while registration is by invitation). No account yet ("userId" NULL),
+    //     so neither the profiles below nor a person-based decision cover them;
+    //     read with the real columns of the Prisma-owned table. Tab
+    //     «Регистрация», card «Запрос приглашения»: «Отправить приглашение»
+    //     (POST /requests/:id/invite) or reject / archive. E-mail and contact
+    //     only with users.sensitive (WB-2 / R-133).
+    const { data: inviteRows, error: inviteError } = await sb
+      .from('admin_requests')
+      .select('id, type, status, priority, source, payload, rejectionReason, createdAt')
+      .eq('type', 'registration')
+      .eq('source', INVITE_REQUEST_SOURCE)
+      .order('createdAt', { ascending: false })
+      .limit(500)
+    if (inviteError) console.error('[giga-admin/requests] invitation requests read failed:', inviteError.message)
+    for (const r of (inviteRows ?? []) as Array<Record<string, unknown>>) {
+      if (seenRequestIds.has(String(r.id))) continue
+      seenRequestIds.add(String(r.id))
+      const payload = (r.payload ?? {}) as Record<string, unknown>
+      const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+      const contact = str(payload.contact)
+      requests.push({
+        id: r.id,
+        category: 'registration',
+        status: mapStatus(String(r.status ?? '')),
+        userName: str(payload.name) ?? 'Без имени',
+        userEmail: email(str(payload.email)),
+        subject: str(payload.subject) ?? 'Запрос приглашения',
+        description: str(payload.description) ?? '',
+        createdAt: utcIso(r.createdAt) ?? r.createdAt,
+        company: str(payload.company),
+        rejectionReason: str(r.rejectionReason),
+        priority: str(r.priority) ?? 'medium',
+        assignedAdmin: null,
+        source: INVITE_REQUEST_SOURCE,
+        userId: null,
+        contact: contact ? (sensitive ? contact : 'скрыт') : null,
+        accountExists: payload.accountExists === true,
+        repeats: typeof payload.repeats === 'number' ? payload.repeats : 1,
       })
     }
 

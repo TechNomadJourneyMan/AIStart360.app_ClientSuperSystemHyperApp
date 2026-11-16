@@ -7,13 +7,12 @@ import { useRouter } from 'next/navigation'
 import SurveyProgressHeader from '@/components/onboarding/SurveyProgressHeader'
 import SaveStatusChip from '@/components/onboarding/SaveStatusChip'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
+import { useSurveyModes } from '@/components/onboarding/modes/SurveyModesContext'
 import { track } from '@/lib/events/client'
-import { enabledSurveyModes, type SurveyMode, type SurveyPreference } from '@/lib/survey/modes'
+import type { SurveyMode, SurveyPreference } from '@/lib/survey/modes'
 import { loadSurveyPreference, patchSurveyPreference, switchSurveyMode } from '@/lib/survey/mode-switch'
 import { surveyQuestion } from '@/lib/survey/questions'
 import type { UseSurveyAnswers } from '@/hooks/useSurveyAnswers'
-
-const ENABLED = enabledSurveyModes()
 
 /**
  * The frame of the «Экспресс + блоки» screens: logo, the mode switch
@@ -28,6 +27,8 @@ export function ModeTwoChrome({ survey, current, children }: {
   children: ReactNode
 }) {
   const router = useRouter()
+  // The modes switched on in GIGA (server → SurveyModesContext, R4-B4).
+  const { enabled } = useSurveyModes()
   const [pref, setPref] = useState<SurveyPreference>({})
   const [switchError, setSwitchError] = useState<string | null>(null)
   useEffect(() => { void loadSurveyPreference().then(setPref) }, [])
@@ -58,7 +59,7 @@ export function ModeTwoChrome({ survey, current, children }: {
             <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} className="opacity-80" />
           </Link>
           <div className="flex items-center gap-2">
-            <SurveyModeSwitch current="express" enabled={ENABLED} onSwitch={(m) => void onSwitch(m)} />
+            <SurveyModeSwitch current="express" enabled={enabled} onSwitch={(m) => void onSwitch(m)} />
             <SaveStatusChip state={survey.saveState} savedAt={survey.savedAt} />
           </div>
         </div>
@@ -67,6 +68,12 @@ export function ModeTwoChrome({ survey, current, children }: {
           {tab('express', '/client/onboarding/express', 'Экспресс')}
           {tab('snapshot', '/client/onboarding/snapshot', 'Снимок бизнеса')}
           {tab('blocks', '/client/onboarding/blocks', 'Блоки')}
+          {/* R4-B4: the way to the full questionnaire is always in sight (it is always on). */}
+          <button type="button" onClick={() => void onSwitch('full')} data-to-full
+            className="ml-auto inline-flex min-h-[36px] items-center gap-1 rounded-lg px-3 text-xs text-on-surface-variant hover:text-primary">
+            <span className="material-symbols-outlined text-[15px]" aria-hidden="true">assignment</span>
+            Перейти к полной анкете
+          </button>
         </nav>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-6">

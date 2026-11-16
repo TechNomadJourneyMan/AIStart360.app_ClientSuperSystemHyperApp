@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { DEFAULT_RECOMPUTE_CRON, isValidRecomputeCron } from '@/lib/point-b/planfact/cron'
+import { SURVEY_MODES, SURVEY_MODES_SETTING_DEFAULT } from '@/lib/survey/modes'
 
 export const NOTIFICATION_TYPES = {
   user_registered: 'Новая регистрация',
@@ -21,6 +22,8 @@ export const NOTIFICATION_TYPES = {
   staff_digest: 'Утренняя сводка (08:00): заявки на оплату, регистрации, окончание Pro, анкеты, GRI',
   // R4 (N4B-1): лента ГИГА + Telegram Admin / Super Admin (если привязан): новая заявка, новый раздел, одна эскалация по просрочке.
   access_requested: 'Заявка на оплату: новая, новый раздел, просрочка срока ответа',
+  // R4 (B3): форма «Запросить приглашение» в режиме «по приглашению» — лента ГИГА + Telegram Admin / Super Admin.
+  invite_requested: 'Запрос приглашения с формы входа',
 } as const
 export type AdminNotificationType = keyof typeof NOTIFICATION_TYPES
 
@@ -55,7 +58,7 @@ export const SETTINGS = {
   },
   registration_mode: {
     group: 'registration', label: 'Режим регистрации',
-    help: 'Открытая — вход сразу; по подтверждению — после одобрения (или авто-одобрения); по приглашению — регистрация закрыта.',
+    help: 'Открытая — вход сразу; по подтверждению — после одобрения (или авто-одобрения); по приглашению — регистрации нет, вместо неё форма «Запросить приглашение» (заявка в «Заявки» → «Регистрация», уведомление «Запрос приглашения»); вход через Google и по ссылке на почту новых аккаунтов не создаёт.',
     schema: z.enum(['open', 'approval', 'invite']), default: 'approval' as const, critical: true,
   },
   auto_approve_clients: {
@@ -100,13 +103,26 @@ export const SETTINGS = {
     help: 'То же для персонала платформы (эксперты, администраторы).',
     schema: z.number().min(0).max(1000), default: 20, critical: false,
   },
+  // R4-B4 (R-027, решение PO Раунда 4): способы заполнения анкеты — настройка ГИГА, а не флаг
+  // сборки NEXT_PUBLIC_SURVEY_MODES. Полная анкета включена всегда; беседа с ИИ — это
+  // survey_chat_enabled ниже (здесь не дублируется). Читает lib/survey/modes-server.ts.
+  survey_modes: {
+    group: 'survey', label: 'Способы заполнения анкеты',
+    help: 'Полная анкета включена всегда. «Экспресс + блоки» — 15 коротких экранов до первичной Точки А, снимок бизнеса и блоки; выключено — эти экраны недоступны, клиент продолжает в полной анкете, ответы сохраняются. Беседа с ИИ включается переключателем «ИИ-помощник анкеты». «Новым клиентам первым» — способ, который клиент без ответов и без выбора видит первым с пометкой «Рекомендуем»; кто уже выбрал способ или начал полную анкету, остаётся в своём. Действует через несколько секунд, без пересборки.',
+    schema: z.object({
+      express: z.boolean(),
+      default_mode: z.enum(SURVEY_MODES),
+    }),
+    default: { ...SURVEY_MODES_SETTING_DEFAULT },
+    critical: false,
+  },
   survey_chat_enabled: {
-    group: 'content', label: 'ИИ-помощник анкеты',
-    help: 'Беседа с ИИ при заполнении анкеты и кнопка «Помощник» у вопросов. Выключено — объяснения вопросов и «где взять цифру» остаются (без ИИ), ответы — только в форме.',
+    group: 'survey', label: 'ИИ-помощник анкеты',
+    help: 'Беседа с ИИ при заполнении анкеты (способ «Беседа с ИИ») и кнопка «Помощник» у вопросов. Выключено — способа «Беседа» нет; объяснения вопросов и «где взять цифру» остаются (без ИИ), ответы — только в форме.',
     schema: z.boolean(), default: true, critical: false,
   },
   survey_ai_budget_usd_per_client: {
-    group: 'content', label: 'Потолок ИИ-помощника анкеты на клиента (Free), $',
+    group: 'survey', label: 'Потолок ИИ-помощника анкеты на клиента (Free), $',
     help: 'Сколько долларов ИИ может потратить помощник анкеты на одного нового или бесплатного клиента за всё время. PRO — без потолка, пока полная анкета не отправлена; после — обычный дневной лимит PRO.',
     schema: z.number().min(0).max(100), default: 0.5, critical: false,
   },
@@ -361,6 +377,7 @@ export const SETTING_GROUPS = {
   point_a: { label: 'Точка А', icon: 'target' },
   comm: { label: 'Общение', icon: 'messages' },
   point_b: { label: 'Точка Б', icon: 'target' },
+  survey: { label: 'Анкета', icon: 'clipboard' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {

@@ -20,7 +20,7 @@
  *                        latest Point A) — everything from the user is fenced
  *                        as untrusted. The model answers, or asks for handoff /
  *                        a request. No model / an error → handoff.
- *   handoff          «Позову эксперта — он ответит, как только освободится»
+ *   handoff          «Передаю ваш вопрос команде AIStart360 — ответим здесь…» (HANDOFF_TEXT)
  *                    (or the request confirmation), an expert_cases request
  *                    linked to the user and the conversation (comm_thread_id,
  *                    122), the thread → waiting_staff with a new reply
@@ -81,7 +81,7 @@ export interface BotDeps {
   deadline?: () => Promise<ReplyDeadlineConfig>
   slaDueAt?: (now: Date) => Promise<string | null>
   /**
-   * «Эксперт ответит в течение N часов.» for a NEW request that is really queued (expert SLA, R2-B);
+   * «Команда AIStart360 ответит в течение N часов.» for a NEW request that is really queued (expert SLA, R2-B);
    * null — SLA off, the SLA ledger missing (migration 145 not applied / rolled back) or unreadable →
    * no promise. Default: the setting expert_sla + a read of expert_sla_tasks.
    */

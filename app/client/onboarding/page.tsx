@@ -17,7 +17,8 @@ import { recalcAfterSubmit } from '@/lib/survey/recalc-after-submit'
 import { useScorePath } from '@/hooks/useScorePath'
 import { SurveyModeGate } from '@/components/onboarding/modes/SurveyModeGate'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
-import { enabledSurveyModes, type SurveyMode } from '@/lib/survey/modes'
+import { useSurveyModes } from '@/components/onboarding/modes/SurveyModesContext'
+import { withoutSwitchedOff, type SurveyMode } from '@/lib/survey/modes'
 import { loadSurveyPreference, patchSurveyPreference, switchSurveyMode } from '@/lib/survey/mode-switch'
 import { track } from '@/lib/events/client'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
@@ -90,6 +91,9 @@ const AFTER_SURVEY_PATH = '/client/home'
 function OnboardingPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  // The modes switched on in GIGA (server → SurveyModesContext, R4-B4); `?off=` drops a
+  // mode whose page has just sent the client back (the layout may hold the older list).
+  const surveyModes = withoutSwitchedOff(useSurveyModes(), searchParams.get('off')).enabled
   const [currentStep, setCurrentStep] = useState(1)
   // Full view of the answers: server copy + unsaved local edits on top.
   const [stepData, setStepData] = useState<Record<string, unknown>>({})
@@ -525,7 +529,7 @@ function OnboardingPageInner() {
           </Link>
           <div className="flex items-center gap-3">
             {/* Modes + «Мои ответы» (spec 2026-10-23 §5.2): switching saves first, then opens the mode. */}
-            <SurveyModeSwitch current="full" enabled={SURVEY_MODES_ENABLED} onSwitch={(m) => void switchMode(m)} />
+            <SurveyModeSwitch current="full" enabled={surveyModes} onSwitch={(m) => void switchMode(m)} />
             <SaveStatusChip state={saveState} savedAt={savedAt} />
             <span className="text-[10px] font-mono text-on-surface-variant whitespace-nowrap">
               {isReview ? 'Проверка' : `Шаг ${currentStep} из ${TOTAL_STEPS}`}
@@ -654,7 +658,7 @@ function OnboardingPageInner() {
               {/* F-076: answers found in the user's documents — accept = normal field change + autosave */}
               {hasDocs && <DocumentSuggestions step={currentStep} answers={stepData} onApply={applySuggestion} />}
               {StepForm && (
-                <FieldHelperLayer onApply={applyHelper} enabled={SURVEY_MODES_ENABLED.includes('chat')}>
+                <FieldHelperLayer onApply={applyHelper} enabled={surveyModes.includes('chat')}>
                   <SurveyFieldLayer attribution={attribution} viewer={{ viewerId: userId, viewerIsOwner: true }} onOpenEditor={openEditor}>
                     <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
                   </SurveyFieldLayer>
@@ -720,8 +724,6 @@ function OnboardingPageInner() {
     </div>
   )
 }
-
-const SURVEY_MODES_ENABLED = enabledSurveyModes()
 
 // useSearchParams (for the `?step=N` deep link) needs a Suspense boundary.
 export default function OnboardingPage() {

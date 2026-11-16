@@ -83,6 +83,8 @@ describe('GET /api/giga-admin/nav-badges', () => {
     expect(await call()).toEqual({
       ok: true,
       accessRequests: { open: 2, overdue: 1, slaHours: 4 },
+      // R4 B3: requests for an invitation share the «Заявки» badge (none here: r4 is a registration).
+      inviteRequests: { open: 0 },
       planWaiting: { open: 2, overdue: 1 },
     })
   })

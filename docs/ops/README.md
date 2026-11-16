@@ -14,6 +14,7 @@
 | Готовность для внешней проверки | `GET /api/health` (`lib/health/platform.ts`); `GET /api/healthz` — только «процесс жив» (проверка деплоя Railway) |
 | ГИГА | Настройки → «Состояние системы» → «Задачи по расписанию и тревоги» |
 | Чистка истории Inngest | `scripts/ops/inngest-history-prune.sql` (запуск вручную, см. §6) |
+| Выкатка и откат, «Inngest упал», «workflow-db упала» | [docs/deploy/runbook.md](../deploy/runbook.md) |
 
 ## 1. Как это работает
 

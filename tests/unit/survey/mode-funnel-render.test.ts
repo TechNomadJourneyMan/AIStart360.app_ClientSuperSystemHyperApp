@@ -43,7 +43,18 @@ describe('SurveyModesFunnelView', () => {
   it('an empty cohort explains where the choice comes from', () => {
     const html = render({ ...data, cohort: 0, stuck: [], pending: [] })
     expect(html).toContain('За период никто не выбирал способ заполнения')
-    expect(html).toContain('NEXT_PUBLIC_SURVEY_MODES')
+    // R4-B4: a GIGA setting now, not the build flag
+    expect(html).not.toContain('NEXT_PUBLIC_SURVEY_MODES')
+    expect(html).toContain('href="/admin-giga-panel/settings"')
+    expect(html).toContain('«Настройки → Анкета»')
+  })
+
+  it('R4-B4: what clients get now; the SuperExpert cabinet gets the text without a link to the GIGA settings', () => {
+    const html = render({ ...data, modes: { enabled: ['full', 'express'], defaultMode: 'express' } })
+    expect(html).toContain('Сейчас у клиентов: полная анкета · экспресс + блоки; новым первым — экспресс + блоки.')
+    const se = renderToStaticMarkup(createElement(SurveyModesFunnelView, { data, base: '/super-expert' }))
+    expect(se).toContain('«Настройки → Анкета» в GIGA-CRM')
+    expect(se).not.toContain('/admin-giga-panel/settings')
   })
 
   it('the fallback source is said out loud', () => {

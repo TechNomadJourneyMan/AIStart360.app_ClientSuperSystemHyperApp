@@ -30,14 +30,16 @@ export interface BotJob {
 
 export const BOT_NAME = 'Бот AIStart360'
 export const BOT_INTRO = 'Здравствуйте! Это бот AIStart360.'
-export const HANDOFF_TEXT = 'Позову эксперта — он ответит, как только освободится.'
-export const CASE_TEXT = 'Оформил заявку — эксперт свяжется с вами, как только освободится.'
-/** The request is in the expert queue with an SLA (R2-B): «Оформил заявку. Эксперт ответит в течение 48 часов.» */
+// R4 (R-024, решение PO): в «Сообщениях» отвечает команда AIStart360, а не «эксперт»
+// (одобренных экспертов на проде нет — отвечает персонал).
+export const HANDOFF_TEXT = 'Передаю ваш вопрос команде AIStart360 — ответим здесь, как только освободимся.'
+export const CASE_TEXT = 'Оформил заявку — команда AIStart360 свяжется с вами, как только освободится.'
+/** The request is in the queue with an SLA (R2-B): «Оформил заявку. Команда AIStart360 ответит в течение 48 часов.» */
 export function caseQueuedText(promise: string): string {
   return `Оформил заявку. ${promise}`.trim()
 }
 /** The conversation already has an open request (it is reused): no new promise of an answer time. */
-export const CASE_REUSED_TEXT = 'Ваша заявка уже у эксперта — ответ придёт в этот диалог.'
+export const CASE_REUSED_TEXT = 'Ваша заявка уже у команды AIStart360 — ответ придёт в этот диалог.'
 /** At most this many bot replies per conversation per hour. */
 export const BOT_REPLIES_PER_HOUR = 10
 export const BOT_MIN_DELAY_MS = 2_000
@@ -210,7 +212,7 @@ export function buildBotPrompt(input: BotPromptInput): { system: string; user: s
       ? 'Это твоё ПЕРВОЕ сообщение в этом диалоге: начни ответ с того, что ты бот AIStart360 (например: «Здравствуйте! Это бот AIStart360.»).'
       : null,
     input.askedIfHuman
-      ? 'Пользователь спрашивает, человек ты или бот: прямо ответь, что ты бот AIStart360, и предложи позвать эксперта, если нужен человек.'
+      ? 'Пользователь спрашивает, человек ты или бот: прямо ответь, что ты бот AIStart360, и предложи позвать сотрудника команды AIStart360, если нужен человек.'
       : 'На любой вопрос «вы человек?/вы бот?» прямо отвечай, что ты бот AIStart360.',
   ].filter(Boolean).join('\n')
 

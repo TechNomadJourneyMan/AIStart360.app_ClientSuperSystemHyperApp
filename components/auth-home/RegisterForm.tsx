@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth.store'
 import { roleLandingPath } from '@/lib/role-landing'
 import { SymbolIcon } from '@/components/ui/SymbolIcon'
 import { GoogleMark, LinkedInMark } from '@/components/auth-home/LoginForm'
+import { InviteRequestForm } from '@/components/auth-home/InviteRequestForm'
+import { registrationWaitText, type EntryRegistrationMode } from '@/lib/registration/wait-text'
 
 const INPUT_CLASS =
   'w-full h-12 text-base bg-surface-container-high/60 border border-outline rounded-xl pl-12 text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 transition-colors placeholder:text-on-surface-variant'
@@ -24,8 +26,25 @@ const ICON_CLASS =
  * связаны с полями, autoComplete, шрифт полей 16px (без зума на iOS).
  *
  * `footer` заменяет строку «Уже есть аккаунт? Войти».
+ *
+ * R4 B3 (N4B-3, R-104): режим регистрации читает СЕРВЕР страницы и передаёт
+ * сюда. В режиме «по приглашению» формы регистрации нет (API ответил бы 403) —
+ * вместо неё «Регистрация по приглашению» и «Запросить приглашение».
+ * `waitText` — один текст ожидания от режима и авто-одобрения
+ * (lib/registration/wait-text.ts) вместо «1 рабочего дня» и «уведомления по email».
  */
-export function RegisterForm({ footer }: { footer?: React.ReactNode }) {
+export function RegisterForm({ footer, mode = 'approval', waitText, notice }: {
+  footer?: React.ReactNode
+  mode?: EntryRegistrationMode
+  waitText?: string
+  /** Пометка над формой запроса приглашения (/register?notice=…). */
+  notice?: string | null
+}) {
+  if (mode === 'invite') return <InviteRequestForm footer={footer} notice={notice} />
+  return <SelfRegisterForm footer={footer} waitText={waitText ?? registrationWaitText(mode, false)} />
+}
+
+function SelfRegisterForm({ footer, waitText }: { footer?: React.ReactNode; waitText: string }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [organization, setOrganization] = useState('')
@@ -212,8 +231,8 @@ export function RegisterForm({ footer }: { footer?: React.ReactNode }) {
         {/* Info */}
         <div className="flex items-start gap-3 p-4 bg-primary/5 border border-primary/10 rounded-xl">
           <SymbolIcon name="info" className="text-primary text-lg mt-0.5" />
-          <p className="text-sm text-on-surface-variant leading-relaxed">
-            После регистрации ваша заявка будет рассмотрена администратором в течение 1 рабочего дня. Вы получите уведомление по email.
+          <p data-register-wait className="text-sm text-on-surface-variant leading-relaxed">
+            {waitText}
           </p>
         </div>
       </form>

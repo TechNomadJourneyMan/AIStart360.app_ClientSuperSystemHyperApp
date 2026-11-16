@@ -9,6 +9,14 @@ import { requestOrigin } from '@/lib/site-url'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
 import { CABINET_ENTRY_PATH, roleLandingPath } from '@/lib/role-landing'
+import {
+  INVITE_ONLY_PATH,
+  inviteOnlyDecision,
+  inviteOnlyRedirect,
+  isSignupBlocked,
+  isSignupDisabledError,
+  markSignupBlocked,
+} from '@/lib/auth/invite-only-gate'
 import type { UserRole } from '@/types'
 
 export async function GET(request: NextRequest) {
@@ -63,6 +71,30 @@ export async function GET(request: NextRequest) {
       const justSignedUp =
         !existingProfile ||
         (existingProfile.status === 'pending_approval' && Number.isFinite(createdMs) && Date.now() - createdMs < 10 * 60_000)
+
+      // R4 B3 (N4B-3 / N4B-14): registration is by invitation — Google is not a
+      // way around it. In 'invite' mode a NEW person without an invitation gets
+      // no request, no staff notice and no waiting room: marked, signed out,
+      // sent to «Регистрация по приглашению» with the request form. The mark
+      // keeps a later Google sign-in (past the 10-minute window above) out too,
+      // until the person is invited or a staff member approves the account.
+      // Existing accounts, invited people, staff and the other modes — as before.
+      // The GoTrue user and its profile are NOT deleted (PO): see lib/auth/invite-only-gate.ts.
+      // «New» here also needs a fresh GoTrue user: a failed profile read of an
+      // old (approved) account must never turn it back.
+      const freshAccount = Number.isFinite(createdMs) && Date.now() - createdMs < 10 * 60_000
+      const newcomer = freshAccount && (!existingProfile || existingProfile.status === 'pending_approval')
+      const markedPending = existingProfile?.status === 'pending_approval' && isSignupBlocked(user)
+      if ((newcomer || markedPending) && (await inviteOnlyDecision(supabaseAdmin, user)) === 'block') {
+        if (!isSignupBlocked(user)) await markSignupBlocked(supabaseAdmin, user.id)
+        try {
+          await supabase.auth.signOut()
+        } catch (e) {
+          console.warn('[auth/callback] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
+        }
+        console.info('[auth/callback] invite-only: a new Google sign-in without an invitation was turned back', user.id)
+        return inviteOnlyRedirect(origin, request, response)
+      }
 
       if (justSignedUp) {
         // First time Google OAuth user — create profile with pending_approval
@@ -136,6 +168,12 @@ export async function GET(request: NextRequest) {
     }
 
     return response
+  }
+
+  // R4 B3: with GOTRUE_DISABLE_SIGNUP=true GoTrue refuses a NEW Google user and
+  // comes back here without a code — show «Регистрация по приглашению», not a bare form.
+  if (isSignupDisabledError(searchParams)) {
+    return NextResponse.redirect(new URL(INVITE_ONLY_PATH, origin))
   }
 
   return NextResponse.redirect(new URL('/login', origin))

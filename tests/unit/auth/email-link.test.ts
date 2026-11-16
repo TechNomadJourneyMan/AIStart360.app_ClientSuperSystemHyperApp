@@ -11,10 +11,23 @@ const s = vi.hoisted(() => ({
   sent: [] as Array<{ to: string; subject: string; ctaUrl?: string }>,
   limited: false,
   sendResult: undefined as unknown,
+  account: true,
 }))
 
 vi.mock('@/lib/supabase-service', () => ({
-  createServiceClient: () => ({ auth: { admin: { generateLink: async () => s.link } } }),
+  createServiceClient: () => ({
+    auth: { admin: { generateLink: async () => s.link } },
+    // R4 B3: the link (generateLink creates a GoTrue user for an unknown address)
+    // is made only for an existing account — the profile lookup answers here.
+    from: () => {
+      const q: Record<string, unknown> = {}
+      Object.assign(q, {
+        select: () => q, ilike: () => q, limit: () => q,
+        maybeSingle: async () => ({ data: s.account ? { id: 'u-1' } : null, error: null }),
+      })
+      return q
+    },
+  }),
 }))
 vi.mock('@/lib/email', () => ({
   sendNotificationEmail: async (o: { to: string; subject: string; ctaUrl?: string }) => { s.sent.push(o); return s.sendResult },
@@ -33,6 +46,7 @@ beforeEach(() => {
   s.sent = []
   s.limited = false
   s.sendResult = { data: { id: 'msg-1' }, error: null }
+  s.account = true
 })
 
 describe('POST /api/v1/auth/email-link', () => {

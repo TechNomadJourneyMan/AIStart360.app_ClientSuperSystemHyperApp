@@ -16,12 +16,13 @@ import { canManageTarget, decidesPaidRequests, isStaffRole, targetRoleOf, type S
 import { isTariffAccessRequest, OPEN_REQUEST_STATUSES, requestFeatures } from '@/lib/access/upgrade-requests'
 import { notifyAccessRequestRejected } from '@/lib/notifications/product'
 import { enqueueClientNotice } from '@/lib/notifications/client-notice-queue'
+import { isInviteRequestRow } from '@/lib/registration/invite-request-shared'
 
 export type AccessAction = 'approve' | 'reject' | 'archive'
 
 export type AccessDecisionResult =
   | { ok: true; status: 'approved' | 'rejected' | 'archived'; userId: string }
-  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided' | 'paid_deciders_only'; userId: string }
+  | { ok: false; reason: 'profile_not_found' | 'forbidden' | 'invalid_transition' | 'assign_plan_required' | 'already_decided' | 'paid_deciders_only' | 'send_invite_required'; userId: string }
 
 /**
  * Valid transitions of profiles.status for a decision on a request (R-007),
@@ -90,6 +91,14 @@ export async function decideAccessRequest(
   // (lib/access/paid-access-grant.ts). A bare «approve» here (single, bulk, bot)
   // would close it with nothing opened — it is refused. Reject (with a reason)
   // and archive stay.
+  // R4 B3 (N4B-3): a request for an INVITATION has no account yet — nothing to
+  // approve on profiles. It is closed by «Отправить приглашение»
+  // (POST /api/giga-admin/requests/:id/invite → lib/admin/invites.ts); here only
+  // reject (with a reason) and archive. Nobody is e-mailed: there is no account.
+  if (arRow && isInviteRequestRow(arRow as { type?: string | null; source?: string | null })) {
+    return decideInviteRequest(sb, args, requestStatus)
+  }
+
   let paidAccess = false
   let paidFeatures: string[] = []
   if (arRow) {
@@ -228,4 +237,40 @@ export async function decideAccessRequest(
   }
 
   return { ok: true, status: requestStatus, userId }
+}
+
+/** Reject / archive a request for an invitation (approve → «Отправить приглашение»). */
+async function decideInviteRequest(
+  sb: Sb,
+  args: { requestId: string; action: AccessAction; reason?: string; actor: { id: string; kind: string; role?: StaffRole }; ipAddress?: string },
+  requestStatus: 'approved' | 'rejected' | 'archived',
+): Promise<AccessDecisionResult> {
+  const role = await actorRole(sb, args.actor)
+  if (!role) return { ok: false, reason: 'forbidden', userId: '' }
+  if (args.action === 'approve') return { ok: false, reason: 'send_invite_required', userId: '' }
+  const { data: changed, error } = await sb
+    .from('admin_requests')
+    .update({
+      status: requestStatus,
+      ...(args.action === 'reject' && args.reason ? { rejectionReason: args.reason } : {}),
+      updatedAt: new Date().toISOString(),
+    })
+    .eq('id', args.requestId)
+    .in('status', [...OPEN_REQUEST_STATUSES])
+    .select('id')
+  if (error) throw new Error(`access-requests: invitation request not updated (${error.message})`)
+  if (!Array.isArray(changed) || changed.length === 0) return { ok: false, reason: 'already_decided', userId: '' }
+  try {
+    await logAudit({
+      entityType: 'request',
+      entityId: args.requestId,
+      action: 'request.status_changed',
+      performedBy: args.actor.id,
+      diff: { action: args.action, status: requestStatus, kind: 'invite_request', actorKind: args.actor.kind, ...(args.reason ? { reason: args.reason } : {}) },
+      ipAddress: args.ipAddress,
+    })
+  } catch (auditErr) {
+    console.error('[access-requests] audit failed:', auditErr)
+  }
+  return { ok: true, status: requestStatus, userId: '' }
 }

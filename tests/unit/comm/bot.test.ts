@@ -228,7 +228,7 @@ describe('runBotReply', () => {
     expect(reply.body).toBe(`${BOT_INTRO} Нет, но могу позвать эксперта.`)
   })
 
-  it('«позовите человека» → «Позову эксперта…», a request linked to the user and the thread, waiting_staff with a deadline, staff notified — no LLM', async () => {
+  it('«позовите человека» → «Передаю ваш вопрос команде AIStart360…», a request linked to the user and the thread, waiting_staff with a deadline, staff notified — no LLM', async () => {
     const { sb, db } = seed({
       messages: [{ id: 'm-in', thread_id: 't-1', group_id: 'g', direction: 'in', channel: 'app', author_kind: 'user', body: 'Позовите человека, пожалуйста', status: 'delivered', created_at: '2026-10-16T09:59:00.000Z', metadata: {} }],
     })
@@ -319,7 +319,7 @@ describe('runBotReply', () => {
       settings.expertSla = { enabled: true, reaction_hours: 24, answer_hours: 48, auto_assign: true }
       const on = seed({ messages: [msg] })
       await runBotReply(JOB, botDeps(on.sb).d)
-      expect(on.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${caseQueuedText('Эксперт ответит в течение 48 часов.')}`)
+      expect(on.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${caseQueuedText('Команда AIStart360 ответит в течение 48 часов.')}`)
 
       // Migration 145 not applied / rolled back: the ledger read fails → no promise.
       const missing = seed({ messages: [msg] })

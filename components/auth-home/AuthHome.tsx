@@ -6,6 +6,7 @@ import { Logo } from '@/components/ui/Logo'
 import { LoginForm } from '@/components/auth-home/LoginForm'
 import { RegisterForm } from '@/components/auth-home/RegisterForm'
 import { PRODUCT_SITE_URL, type HomeTab } from '@/components/auth-home/home-routing'
+import { INVITE_ONLY_TITLE, registrationWaitText, type EntryRegistrationMode } from '@/lib/registration/wait-text'
 
 const TABS: ReadonlyArray<{ id: HomeTab; label: string }> = [
   { id: 'login', label: 'Вход' },
@@ -18,8 +19,26 @@ const panelId = (t: HomeTab) => `auth-home-panel-${t}`
 /**
  * Главная портала: компактное окно «Вход / Регистрация».
  * Формы — те же, что на /login и /register (components/auth-home/*Form).
+ *
+ * R4 B3: всё, что зависит от режима регистрации, считает сервер (app/page.tsx,
+ * lib/registration/entry.ts) — в режиме «по приглашению» вкладка «Регистрация»
+ * показывает «Запросить приглашение», демо-кнопки нет, пока демо закрыто, а
+ * ссылка «О платформе» скрыта, пока сайт продукта недоступен (402).
  */
-export function AuthHome({ initialTab = 'login' }: { initialTab?: HomeTab }) {
+export function AuthHome({
+  initialTab = 'login',
+  registrationMode = 'approval',
+  demoOpen = false,
+  waitText,
+  showProductSite = false,
+}: {
+  initialTab?: HomeTab
+  registrationMode?: EntryRegistrationMode
+  demoOpen?: boolean
+  waitText?: string
+  showProductSite?: boolean
+}) {
+  const inviteOnly = registrationMode === 'invite'
   const [tab, setTab] = useState<HomeTab>(initialTab)
   const tabRefs = useRef<Record<HomeTab, HTMLButtonElement | null>>({ login: null, register: null })
 
@@ -63,7 +82,7 @@ export function AuthHome({ initialTab = 'login' }: { initialTab?: HomeTab }) {
         <header className="mb-6 text-center">
           <Logo className="min-h-11 min-w-11" />
           <h1 className="mt-4 text-2xl font-headline font-extrabold text-on-surface">
-            {tab === 'login' ? 'Вход в AIStart360' : 'Регистрация в AIStart360'}
+            {tab === 'login' ? 'Вход в AIStart360' : inviteOnly ? INVITE_ONLY_TITLE : 'Регистрация в AIStart360'}
           </h1>
           <p className="mt-2 text-base text-on-surface-variant">
             Диагностика бизнеса и план роста — ИИ и эксперты на одной платформе.
@@ -103,24 +122,35 @@ export function AuthHome({ initialTab = 'login' }: { initialTab?: HomeTab }) {
           <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)}>
             {tab === 'login' ? (
               <Suspense fallback={<p role="status" className="text-base text-on-surface-variant">Загружаем форму входа…</p>}>
-                <LoginForm footer={switchLink('register', 'Нет аккаунта?', 'Создать аккаунт')} />
+                <LoginForm
+                  demoOpen={demoOpen}
+                  registrationMode={registrationMode}
+                  footer={switchLink('register', 'Нет аккаунта?', inviteOnly ? 'Запросить приглашение' : 'Создать аккаунт')}
+                />
               </Suspense>
             ) : (
-              <RegisterForm footer={switchLink('login', 'Уже есть аккаунт?', 'Войти')} />
+              <RegisterForm
+                mode={registrationMode}
+                waitText={waitText ?? registrationWaitText(registrationMode, false)}
+                footer={switchLink('login', inviteOnly ? 'Уже есть аккаунт или приглашение?' : 'Уже есть аккаунт?', 'Войти')}
+              />
             )}
           </div>
         </section>
 
         <footer className="mt-6">
           <nav aria-label="Информация" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0 text-sm text-on-surface-variant">
-            <a
-              href={PRODUCT_SITE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-11 items-center hover:text-primary hover:underline"
-            >
-              О платформе<span className="sr-only"> (откроется в новой вкладке)</span>
-            </a>
+            {/* N4B-3: the product site answers 402 now — the link is back with PRODUCT_SITE_LINK=on. */}
+            {showProductSite && (
+              <a
+                href={PRODUCT_SITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-11 items-center hover:text-primary hover:underline"
+              >
+                О платформе<span className="sr-only"> (откроется в новой вкладке)</span>
+              </a>
+            )}
             <Link href="/gri-free" className="inline-flex min-h-11 items-center hover:text-primary hover:underline">
               Бесплатная проверка GRI
             </Link>

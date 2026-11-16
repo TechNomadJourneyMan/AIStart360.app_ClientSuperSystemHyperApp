@@ -60,11 +60,12 @@ describe('expert SLA policy', () => {
     expect(hoursLeft(t, at(50))).toBe(-2)
   })
 
-  it('client promise: «Эксперт ответит в течение 48 часов.» with the right Russian form', () => {
-    expect(clientPromiseText()).toBe('Эксперт ответит в течение 48 часов.')
-    expect(clientPromiseText(24)).toBe('Эксперт ответит в течение 24 часов.')
-    expect(clientPromiseText(21)).toBe('Эксперт ответит в течение 21 часа.')
-    expect(clientPromiseText(1)).toBe('Эксперт ответит в течение 1 часа.')
+  // R4 (R-024, PO): «команда AIStart360», not «эксперт» — no approved experts on production.
+  it('client promise: «Команда AIStart360 ответит в течение 48 часов.» with the right Russian form', () => {
+    expect(clientPromiseText()).toBe('Команда AIStart360 ответит в течение 48 часов.')
+    expect(clientPromiseText(24)).toBe('Команда AIStart360 ответит в течение 24 часов.')
+    expect(clientPromiseText(21)).toBe('Команда AIStart360 ответит в течение 21 часа.')
+    expect(clientPromiseText(1)).toBe('Команда AIStart360 ответит в течение 1 часа.')
     expect(hoursGenitive(11)).toBe('часов')
     expect(hoursGenitive(101)).toBe('часа')
   })

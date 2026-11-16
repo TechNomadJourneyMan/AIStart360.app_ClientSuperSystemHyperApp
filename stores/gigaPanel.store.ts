@@ -56,6 +56,12 @@ export interface GigaRequest {
   userId?: string | null
   /** R4 (N4B-1): when the answer deadline of a pending request for paid access passes (ISO). */
   slaDueAt?: string | null
+  /** R4 B3: a request for an invitation — phone / Telegram («скрыт» without users.sensitive). */
+  contact?: string | null
+  /** R4 B3: an account with this e-mail already exists (the invitation comes as a sign-in link). */
+  accountExists?: boolean
+  /** R4 B3: how many times the same e-mail asked while the request was open. */
+  repeats?: number
   surveyData?: {
     answers: Record<string, unknown>
     company: Record<string, unknown> | null

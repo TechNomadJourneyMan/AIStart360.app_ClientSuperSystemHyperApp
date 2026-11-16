@@ -5,13 +5,11 @@ import { useSearchParams } from 'next/navigation'
 import { useSurveyAnswers } from '@/hooks/useSurveyAnswers'
 import { track } from '@/lib/events/client'
 import { recommendedBlocks } from '@/lib/survey/blocks'
-import { enabledSurveyModes } from '@/lib/survey/modes'
 import { recommendationInput } from '@/lib/survey/snapshot'
+import { useSurveyModes } from '@/components/onboarding/modes/SurveyModesContext'
 import { BusinessSnapshot } from './BusinessSnapshot'
 import { ModeTwoChrome } from './ModeTwoChrome'
 import { usePointAView } from './usePointAView'
-
-const CHAT_ENABLED = enabledSurveyModes().includes('chat')
 
 /**
  * «Снимок бизнеса» page: numbers and calculations at once (in the browser),
@@ -20,6 +18,8 @@ const CHAT_ENABLED = enabledSurveyModes().includes('chat')
  */
 export function SnapshotScreen() {
   const survey = useSurveyAnswers('express')
+  // «Продолжить в беседе» only while the chat is on in GIGA (server → SurveyModesContext, R4-B4).
+  const chatEnabled = useSurveyModes().enabled.includes('chat')
   const params = useSearchParams()
   const fresh = Number(params.get('fresh')) || null
   const pointA = usePointAView(fresh, (view) => track('SURVEY_SNAPSHOT_VIEWED', { metadata: { point_a_ready: view.state === 'ready' } }))
@@ -31,7 +31,7 @@ export function SnapshotScreen() {
 
   return (
     <ModeTwoChrome survey={survey} current="snapshot">
-      <BusinessSnapshot answers={survey.answers} pointA={pointA} recommended={recommended} chatEnabled={CHAT_ENABLED} />
+      <BusinessSnapshot answers={survey.answers} pointA={pointA} recommended={recommended} chatEnabled={chatEnabled} />
     </ModeTwoChrome>
   )
 }

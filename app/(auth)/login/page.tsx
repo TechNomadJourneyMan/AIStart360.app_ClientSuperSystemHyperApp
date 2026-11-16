@@ -1,10 +1,26 @@
-'use client'
-
 import React, { Suspense } from 'react'
+import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
 import { LoginForm } from '@/components/auth-home/LoginForm'
+import { loadAuthEntry } from '@/lib/registration/entry'
+import type { RegistrationMode } from '@/lib/settings/system-settings'
 
-function LoginContent() {
+// R4 B3: демо-кнопка и строка «Нет аккаунта?» зависят от режима регистрации —
+// его читает сервер при каждом заходе (не при сборке).
+export const dynamic = 'force-dynamic'
+
+/**
+ * R-107: слева — только проверяемое: разделы, которые есть на платформе, и
+ * бесплатная проверка GRI. Без придуманных чисел («500+», «27 отраслей») и без
+ * отзыва компании, которого нет.
+ */
+const LOGIN_FACTS: ReadonlyArray<string> = [
+  'Диагностика GRI',
+  'Точка А — где бизнес сейчас',
+  'Точка Б — план к вашей цели',
+]
+
+function LoginContent({ demoOpen, registrationMode }: { demoOpen: boolean; registrationMode: RegistrationMode }) {
   return (
     <main className="min-h-screen bg-background text-on-surface">
       <div className="mx-auto flex min-h-screen max-w-7xl">
@@ -46,30 +62,24 @@ function LoginContent() {
             Платформа диагностики и масштабирования бизнеса нового поколения
           </p>
 
-          {/* Stats badges */}
-          <div className="flex flex-wrap justify-center gap-2 mt-6">
-            {[['500+', 'диагностик'], ['27', 'отраслей'], ['СНГ и Ближний Восток', '']].map(([val, label], i) => (
-              <div key={i} className="px-4 py-2 bg-surface-container/40 border border-white/[0.05] rounded-full">
-                <span className="text-xs font-mono text-on-surface-variant">
-                  {val}{label ? ` · ${label}` : ''}
-                </span>
-              </div>
+          {/* What the platform has (R-107: no invented numbers) */}
+          <ul className="flex flex-wrap justify-center gap-2 mt-6" aria-label="Что есть на платформе">
+            {LOGIN_FACTS.map((fact) => (
+              <li key={fact} className="px-4 py-2 bg-surface-container/40 border border-white/[0.05] rounded-full">
+                <span className="text-xs font-mono text-on-surface-variant">{fact}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
 
-        {/* Testimonial */}
+        {/* A first step anyone can check (R-107: instead of a testimonial) */}
         <div className="relative z-10 bg-surface-container/30 border border-white/[0.05] rounded-2xl p-5">
-          <p className="text-base text-on-surface-variant italic leading-relaxed">
-            &ldquo;AIStart360 помогла нам вырасти в 3 раза за 12 месяцев. GRI-диагностика — это не просто отчёт, это навигатор.&rdquo;
+          <p className="text-base text-on-surface-variant leading-relaxed">
+            Хотите сначала посмотреть, как устроена диагностика? Пройдите бесплатную проверку GRI — без регистрации.
           </p>
-          <div className="flex items-center gap-3 mt-3">
-            <div aria-hidden="true" className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">ВЛ</div>
-            <div>
-              <p className="text-sm font-bold text-on-surface">Вортекс Лабс</p>
-              <p className="text-xs text-on-surface-variant">Раунд А · финансовые технологии</p>
-            </div>
-          </div>
+          <Link href="/gri-free" className="inline-flex min-h-11 items-center mt-2 text-sm font-bold text-primary hover:underline">
+            Бесплатная проверка GRI
+          </Link>
         </div>
       </div>
 
@@ -90,7 +100,7 @@ function LoginContent() {
           <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">Войти в систему</h1>
           <p className="text-base text-on-surface-variant mb-6">Введите свои данные для входа</p>
 
-          <LoginForm />
+          <LoginForm demoOpen={demoOpen} registrationMode={registrationMode} />
         </div>
       </div>
       </div>
@@ -98,10 +108,11 @@ function LoginContent() {
   )
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const entry = await loadAuthEntry()
   return (
     <Suspense fallback={<main className="min-h-screen bg-background flex items-center justify-center"><p role="status" className="text-base text-on-surface-variant">Загружаем форму входа…</p></main>}>
-      <LoginContent />
+      <LoginContent demoOpen={entry.demoOpen} registrationMode={entry.mode} />
     </Suspense>
   )
 }

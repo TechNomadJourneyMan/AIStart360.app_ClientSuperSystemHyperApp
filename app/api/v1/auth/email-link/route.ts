@@ -19,6 +19,13 @@ import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
  * ведёт на наш /auth/verify — настройки Supabase на это не влияют.
  *
  * Ответ всегда одинаковый: существование адреса не раскрываем.
+ *
+ * R4 B3 (N4B-14): generateLink({ type: 'magiclink' }) для НЕЗНАКОМОЙ почты сам
+ * создаёт пользователя GoTrue (так устроен служебный API; GOTRUE_DISABLE_SIGNUP
+ * его не останавливает). «Войти по ссылке на почту» с любым адресом заводило
+ * аккаунт «на одобрении» в обход регистрации — и режима «по приглашению».
+ * Теперь ссылка создаётся только для почты, у которой уже есть аккаунт
+ * (профиль), ответ прежний.
  */
 const bodySchema = z.object({
   email: z.string().email().max(200),
@@ -51,7 +58,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await createServiceClient().auth.admin.generateLink({
+    const admin = createServiceClient()
+    if (!(await accountExists(admin, email))) return OK
+    const { data, error } = await admin.auth.admin.generateLink({
       type: purpose === 'recovery' ? 'recovery' : 'magiclink',
       email,
     })
@@ -86,5 +95,29 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error('[auth/email-link]', e instanceof Error ? e.message : e)
     return OK
+  }
+}
+
+/**
+ * Есть ли аккаунт с этой почтой (профиль создаётся вместе с пользователем GoTrue).
+ * Ошибка чтения — нет (ссылку не создаём: иначе generateLink завёл бы аккаунт).
+ */
+async function accountExists(admin: ReturnType<typeof createServiceClient>, rawEmail: string): Promise<boolean> {
+  const email = rawEmail.trim().toLowerCase()
+  try {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('id')
+      .ilike('email', email.replace(/[\\%_]/g, (c) => `\\${c}`))
+      .limit(1)
+      .maybeSingle()
+    if (error) {
+      console.error('[auth/email-link] account lookup failed:', String(error.message ?? '').slice(0, 160))
+      return false
+    }
+    return !!data
+  } catch (e) {
+    console.error('[auth/email-link] account lookup failed:', e instanceof Error ? e.message : e)
+    return false
   }
 }

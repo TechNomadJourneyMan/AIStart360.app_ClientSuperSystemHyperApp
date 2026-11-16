@@ -21,6 +21,8 @@
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",
     "ocr:file": "tsx scripts/ocr/ocr-file.ts",
     "ocr:check": "tsx scripts/ocr/check-ocr.ts",
+    "deploy:preflight": "node scripts/deploy/preflight.mjs",
+    "smoke:prod": "node scripts/smoke/post-deploy.mjs --base-url https://portal.aistart360.app",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -115,4 +115,9 @@ describe('GET /api/giga-admin/surveys/modes', () => {
     expect(body.data.submissionsSource).toBe('events')
     expect(s.ranges).toContainEqual([1000, 1999])
   })
+
+  it('R4-B4: tells what clients get now — the GIGA setting (no stored row → full + express + chat, express first)', async () => {
+    const { body } = await get()
+    expect(body.data.modes).toEqual({ enabled: ['full', 'express', 'chat'], defaultMode: 'express' })
+  })
 })

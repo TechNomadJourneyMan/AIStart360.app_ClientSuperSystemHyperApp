@@ -12,19 +12,20 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CHAT_HONEST_LINE } from '@/lib/survey/chat/ask'
-import { enabledSurveyModes, SURVEY_MODE_INFO, type SurveyMode, type SurveyPreference } from '@/lib/survey/modes'
+import { SURVEY_MODE_INFO, type SurveyMode, type SurveyPreference } from '@/lib/survey/modes'
 import { loadSurveyPreference, patchSurveyPreference, switchSurveyMode } from '@/lib/survey/mode-switch'
 import { track } from '@/lib/events/client'
 import { SurveyModeSwitch } from '@/components/onboarding/modes/SurveyModeSwitch'
+import { useSurveyModes } from '@/components/onboarding/modes/SurveyModesContext'
 import type { ChatButton, ChatMessageDTO, ChatQuestionDTO, ChatProgressDTO } from '@/lib/survey/chat/types'
 import { ChatInput, ChatMessages, QuickActions } from './ChatMessages'
 import { useSurveyChat, type ChatTransport } from './useSurveyChat'
 
-const MODES = enabledSurveyModes()
-
 export function SurveyChat({ transport }: { transport?: ChatTransport }) {
   const chat = useSurveyChat({ transport })
   const router = useRouter()
+  // The modes switched on in GIGA (server → SurveyModesContext, R4-B4).
+  const modes = useSurveyModes().enabled
   const [draft, setDraft] = useState('')
   const [panel, setPanel] = useState(false)
   const [online, setOnline] = useState(true)
@@ -75,7 +76,7 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
             <h1 className="truncate text-base font-bold text-on-surface">{SURVEY_MODE_INFO.chat.title}</h1>
           </div>
           <div className="hidden sm:block">
-            <SurveyModeSwitch current="chat" enabled={MODES} onSwitch={switchMode} />
+            <SurveyModeSwitch current="chat" enabled={modes} onSwitch={switchMode} />
           </div>
           <button type="button" onClick={() => setPanel((v) => !v)} aria-expanded={panel} aria-controls="survey-chat-panel"
             className="flex h-10 items-center gap-1 rounded-lg border border-white/[0.08] px-3 text-xs text-on-surface-variant lg:hidden">
@@ -84,7 +85,7 @@ export function SurveyChat({ transport }: { transport?: ChatTransport }) {
         </div>
         {/* Phone: the switch under the title (spec §5.2 — the mode menu in the header). */}
         <div className="mx-auto max-w-6xl px-4 pb-2 sm:hidden">
-          <SurveyModeSwitch current="chat" enabled={MODES} onSwitch={switchMode} />
+          <SurveyModeSwitch current="chat" enabled={modes} onSwitch={switchMode} />
         </div>
         {chat.progress && <ProgressLine progress={chat.progress} />}
       </header>

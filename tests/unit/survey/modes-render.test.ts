@@ -11,23 +11,29 @@ import { SurveyModesBanner } from '@/components/onboarding/modes/SurveyModesBann
 const noop = () => undefined
 
 describe('SurveyModeChooser', () => {
-  it('three cards with PO names and time; unavailable modes are «Скоро» and disabled', () => {
-    const html = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full'], recommended: 'full', onChoose: noop }))
+  // R4-B4: a mode switched off in GIGA is not «coming soon» — it is not shown (was: «Скоро», disabled).
+  it('cards of the modes that are on, with PO names and time; nothing «Скоро», nothing disabled', () => {
+    const html = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full', 'express', 'chat'], recommended: 'express', onChoose: noop }))
     expect(html).toContain('Расширенная полная анкета')
     expect(html).toContain('Экспресс + блоки')
     expect(html).toContain('Диагностическая беседа с ИИ')
     expect(html).toContain('~1,5 ч чистого ввода')
     expect(html).toContain('7–9 мин до первичной Точки А')
-    expect(html.match(/Скоро/g)).toHaveLength(2)
-    expect(html.match(/disabled=""/g)).toHaveLength(2)
+    expect(html).not.toContain('Скоро')
+    expect(html).not.toContain('disabled=""')
     expect(html).toContain('Способ можно сменить в любой момент — ответы сохранятся.')
+    const two = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full', 'express'], recommended: 'express', onChoose: noop }))
+    expect(two).not.toContain('Диагностическая беседа с ИИ')
   })
 
-  it('the full questionnaire is marked main, the recommended quick mode «Быстрый старт»', () => {
+  // R4-B4 (PO, Round 4): the default mode (express) first, one mark «Рекомендуем» (was: «Основная» + «Быстрый старт»).
+  it('the recommended mode comes first and alone is marked «Рекомендуем»', () => {
     const html = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full', 'express', 'chat'], recommended: 'express', onChoose: noop }))
-    expect(html.match(/Основная/g)).toHaveLength(1)
-    expect(html.match(/Быстрый старт/g)).toHaveLength(1)
-    expect(html).not.toContain('Скоро')
+    expect(html.match(/Рекомендуем/g)).toHaveLength(1)
+    expect(html.indexOf('Экспресс + блоки')).toBeLessThan(html.indexOf('Расширенная полная анкета'))
+    expect(html).not.toContain('Основная</span>')
+    const full = renderToStaticMarkup(createElement(SurveyModeChooser, { enabled: ['full', 'express'], recommended: 'full', onChoose: noop }))
+    expect(full.indexOf('Расширенная полная анкета')).toBeLessThan(full.indexOf('Экспресс + блоки'))
   })
 })
 

@@ -13,6 +13,7 @@ import {
   gigaFetch, inputClass, useGigaQuery,
 } from '@/components/giga-panel/kit'
 import { PointBSettingsCard } from '@/components/giga-panel/settings/PointBSettingsCard'
+import { SurveySettingsCard } from '@/components/giga-panel/settings/SurveySettingsCard'
 import { ScheduledJobsBlock, opsCounts, type OpsData, type OpsFailure } from '@/components/giga-panel/settings/ScheduledJobsBlock'
 import { NOTIFICATION_TYPES, SETTINGS, type AdminNotificationType, type SettingKey, type SettingValue } from '@/lib/settings/registry'
 
@@ -81,7 +82,7 @@ export default function SettingsPage() {
       <PageHeader
         crumbs={[{ label: 'GIGA-CRM', href: '/admin-giga-panel' }, { label: 'Настройки' }]}
         title="Настройки платформы"
-        description="Регистрация, тарифы, кабинет клиента, безопасность, аналитика и уведомления. Каждое изменение записывается в журнал аудита."
+        description="Регистрация, тарифы, анкета, кабинет клиента, безопасность, аналитика и уведомления. Каждое изменение записывается в журнал аудита."
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} onClick={() => void q.reload()}>Обновить</Button>}
       />
       {!canEdit && q.data && (
@@ -150,6 +151,9 @@ export default function SettingsPage() {
               { href: '/admin-giga-panel/content', label: 'Материалы (CMS)' },
             ]} />
           </Panel>
+
+          {/* R4-B4 (R-027): способы заполнения анкеты — настройка, а не флаг сборки; ИИ-помощник и его потолок. */}
+          <SurveySettingsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onSave={save} />
 
           <AnnouncementCard value={v.announcement} meta={meta} disabled={!canEdit} saving={saving === 'announcement'} onSave={(a) => save({ announcement: a }, 'Объявление')} />
           <MaintenanceCard value={v.maintenance} meta={meta} disabled={!canEdit} saving={saving === 'maintenance'} onSave={(m) => save({ maintenance: m }, 'Технические работы')} />
