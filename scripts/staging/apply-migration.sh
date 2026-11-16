@@ -5,7 +5,8 @@
 #   STAGING_PG_PASSWORD_FILE=~/AI-Portal-backups/staging-secrets/pg \
 #   scripts/staging/apply-migration.sh supabase/migrations/140_staff_rls_from_staff_roles.sql
 #
-# Миграция и запись в журнал — одной транзакцией (psql -1, ON_ERROR_STOP). Хост зашит: staging.
+# Миграция и запись в журнал — одной транзакцией (psql -1, ON_ERROR_STOP). Адрес — только staging
+# (файл «addr» рядом с паролем); метка базы проверяется до применения.
 set -euo pipefail
 
 FILE="${1:?укажите файл миграции}"
@@ -15,7 +16,18 @@ PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
 
 PGPASSWORD="$(cat "$PWFILE")"; export PGPASSWORD
 export PGCONNECT_TIMEOUT=15 PGAPPNAME=staging-migration
-STG="host=junction.proxy.rlwy.net port=48460 dbname=postgres user=supabase_admin sslmode=disable"
+# Адрес TCP-прокси staging (host:port) — не в публичном репозитории: переменная STAGING_PG_ADDR
+# или файл STAGING_PG_ADDR_FILE (по умолчанию «addr» рядом с файлом пароля), одна строка host:port.
+ADDR="${STAGING_PG_ADDR:-}"
+if [ -z "$ADDR" ]; then
+  ADDR_FILE="${STAGING_PG_ADDR_FILE:-$(dirname "$PWFILE")/addr}"
+  [ -r "$ADDR_FILE" ] || { echo "нет адреса staging: задайте STAGING_PG_ADDR или файл $ADDR_FILE (host:port)" >&2; exit 1; }
+  ADDR="$(head -n1 "$ADDR_FILE" | tr -d '[:space:]')"
+fi
+case "$ADDR" in *?:[0-9]*) ;; *) echo "адрес staging должен быть host:port" >&2; exit 1 ;; esac
+STAGING_HOST="${ADDR%:*}"
+STAGING_PORT="${ADDR##*:}"
+STG="host=$STAGING_HOST port=$STAGING_PORT dbname=postgres user=supabase_admin sslmode=disable"
 
 name="$(basename "$FILE")"
 sum="$(shasum -a 256 "$FILE" | cut -d' ' -f1)"

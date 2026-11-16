@@ -781,7 +781,7 @@ function NotificationsCard({ value, meta, disabled, saving, onSave }: {
 
 interface Health {
   checkedAt: string
-  runtime: { node: string; env: string; commit: string | null }
+  runtime: { node: string; env: string; commit: string | null; deployment?: string | null }
   db: { ok: boolean; ms: number }
   env: Array<{ key: string; label: string; required: boolean; configured: boolean }>
   tables: Array<{ name: string; ok: boolean; rows: number | null; error: string | null }>
@@ -873,6 +873,7 @@ function HealthCard() {
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Среда</span><span className="text-slate-300">{h.data.runtime.env}</span></li>
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Node.js</span><span className="text-slate-300">{h.data.runtime.node}</span></li>
               {h.data.runtime.commit && <li className="flex justify-between text-[11px]"><span className="text-slate-500">Сборка</span><span className="font-mono text-slate-300">{h.data.runtime.commit}</span></li>}
+              {h.data.runtime.deployment && <li className="flex justify-between text-[11px]"><span className="text-slate-500">Деплой Railway</span><span className="font-mono text-slate-300">{h.data.runtime.deployment}</span></li>}
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Проверено</span><span className="text-slate-300">{fmtDateTime(h.data.checkedAt)}</span></li>
             </ul>
             <div className="mt-3 flex flex-wrap gap-2">

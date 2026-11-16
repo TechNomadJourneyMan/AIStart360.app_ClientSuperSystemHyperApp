@@ -24,13 +24,22 @@ set -euo pipefail
 
 DUMP="${1:?укажите путь к дампу}"
 PWFILE="${STAGING_PG_PASSWORD_FILE:?укажите STAGING_PG_PASSWORD_FILE (файл с паролем supabase_admin staging)}"
-STAGING_HOST="junction.proxy.rlwy.net"
-STAGING_PORT="48460"
 PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 [ -r "$DUMP" ] || { echo "нет дампа: $DUMP" >&2; exit 1; }
 [ -r "$PWFILE" ] || { echo "нет файла пароля: $PWFILE" >&2; exit 1; }
+# Адрес TCP-прокси staging (host:port) — не в публичном репозитории: переменная STAGING_PG_ADDR
+# или файл STAGING_PG_ADDR_FILE (по умолчанию «addr» рядом с файлом пароля), одна строка host:port.
+ADDR="${STAGING_PG_ADDR:-}"
+if [ -z "$ADDR" ]; then
+  ADDR_FILE="${STAGING_PG_ADDR_FILE:-$(dirname "$PWFILE")/addr}"
+  [ -r "$ADDR_FILE" ] || { echo "нет адреса staging: задайте STAGING_PG_ADDR или файл $ADDR_FILE (host:port)" >&2; exit 1; }
+  ADDR="$(head -n1 "$ADDR_FILE" | tr -d '[:space:]')"
+fi
+case "$ADDR" in *?:[0-9]*) ;; *) echo "адрес staging должен быть host:port" >&2; exit 1 ;; esac
+STAGING_HOST="${ADDR%:*}"
+STAGING_PORT="${ADDR##*:}"
 
 PGPASSWORD="$(cat "$PWFILE")"; export PGPASSWORD
 export PGCONNECT_TIMEOUT=15 PGAPPNAME=staging-load

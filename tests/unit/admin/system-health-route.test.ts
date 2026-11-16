@@ -94,3 +94,23 @@ describe('system health — scheduled jobs and alarm routes', () => {
     expect(body.opsError).toEqual({ kind: 'failed', message: "Can't reach database server at db:5432" })
   })
 })
+
+describe('system health — what is deployed (Railway)', () => {
+  it('Railway deployment and environment are shown; Vercel variables are only a fallback', async () => {
+    vi.stubEnv('RAILWAY_DEPLOYMENT_ID', '8d5f0079-e957-45c3-afbd-f7c3bb5c67a8')
+    vi.stubEnv('RAILWAY_ENVIRONMENT_NAME', 'production')
+    vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', '')
+    vi.stubEnv('VERCEL_GIT_COMMIT_SHA', '')
+    vi.stubEnv('VERCEL_ENV', '')
+    try {
+      const body = await call()
+      expect(body.runtime.deployment).toBe('8d5f0079')
+      expect(body.runtime.env).toBe('production')
+      expect(body.runtime.commit).toBeNull()
+      vi.stubEnv('RAILWAY_GIT_COMMIT_SHA', '0aa6f3ab1234567890')
+      expect((await call()).runtime.commit).toBe('0aa6f3a')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
