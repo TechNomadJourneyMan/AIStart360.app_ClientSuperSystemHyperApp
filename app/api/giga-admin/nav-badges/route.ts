@@ -40,9 +40,12 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.warn('[giga-admin/nav-badges] requests:', err instanceof Error ? err.message : err)
     }
-    // R4 B3: requests for an invitation wait in the same «Заявки» (tab «Регистрация»).
+    // R4 B3: requests for an invitation wait in the same «Заявки» (tab «Регистрация»),
+    // counted for those who see them in the list (review W3A-7): the right to
+    // invite or the whole client base.
     try {
-      out.inviteRequests = { open: await countOpenInviteRequests(sb) }
+      const seesInvites = hasPermission(actor.role, 'users.invite') || (await actorClientScope(actor)).scope === 'all'
+      if (seesInvites) out.inviteRequests = { open: await countOpenInviteRequests(sb) }
     } catch (err) {
       console.warn('[giga-admin/nav-badges] invite requests:', err instanceof Error ? err.message : err)
     }

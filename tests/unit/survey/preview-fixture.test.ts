@@ -60,11 +60,15 @@ describe('survey preview — Ф1 views', () => {
     expect(authors).toMatch(/Заполнил пользователь Айгуль Сапарова|Изменил эксперт/)
   })
 
-  it('?view=chooser shows the three cards', async () => {
+  // R4-B4: the chooser marks the mode offered first «Рекомендуем»; a mode switched off in GIGA has no card (no «Скоро»).
+  it('?view=chooser shows the three cards, express first, and the variant without express', async () => {
     const { ChooserPreview } = await import('@/app/dev/survey-preview/PreviewViews')
     const html = renderToStaticMarkup(createElement(ChooserPreview))
     expect(html).toContain('Расширенная полная анкета')
-    expect(html).toContain('Основная')
-    expect(html).toContain('Скоро')
+    expect(html.match(/Рекомендуем/g)).toHaveLength(2)
+    expect(html.match(/Экспресс \+ блоки/g)).toHaveLength(1)
+    expect(html).not.toContain('Скоро')
+    expect(html).not.toContain('Основная</span>')
+    expect(html).toContain('Настройки → Анкета')
   })
 })

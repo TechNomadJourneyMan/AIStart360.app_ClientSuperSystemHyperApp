@@ -171,6 +171,24 @@ export function surveyModeOffRedirect(mode: GatedSurveyMode, config: Pick<Survey
   return config.enabled.includes(mode) ? null : `/client/onboarding?off=${mode}`
 }
 
+/**
+ * The mode whose screens a cabinet link opens (R4 W3B-7): the express flow, the
+ * snapshot and the blocks belong to «Экспресс + блоки», the chat page to the
+ * chat; anything else (the full questionnaire, «Мои ответы») — null.
+ */
+export function surveyModeOfHref(href: string): GatedSurveyMode | null {
+  const path = href.split(/[?#]/)[0].replace(/\/+$/, '')
+  if (/^\/client\/onboarding\/(express|snapshot|blocks)(\/|$)/.test(path)) return 'express'
+  if (/^\/client\/onboarding\/chat(\/|$)/.test(path)) return 'chat'
+  return null
+}
+
+/** A link that does not lead into a mode switched off in GIGA. */
+export function surveyHrefOpen(href: string, enabled: readonly SurveyMode[]): boolean {
+  const mode = surveyModeOfHref(href)
+  return mode === null || enabled.includes(mode)
+}
+
 /** The notice above the full questionnaire after such a redirect. */
 export const SURVEY_MODE_OFF_NOTICE: Readonly<Record<GatedSurveyMode, string>> = {
   express: '«Экспресс + блоки» сейчас недоступен. Продолжите в полной анкете — ответы, которые вы уже дали, сохранены и уже в ней.',

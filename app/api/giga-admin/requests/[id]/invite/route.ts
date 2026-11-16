@@ -79,12 +79,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+  // Review W3A-6: the letter is from AIStart360 «по вашей заявке» — no name,
+  // company or signature from the anonymous form; the staff member stays in the record.
   const result = await sendPlatformInvite({
     email,
-    name: str(payload.name),
-    company: str(payload.company),
     invitedById: actor.id,
     invitedByLabel: actor.email ?? null,
+    byRequest: true,
   })
 
   if (result.outcome === 'failed') {

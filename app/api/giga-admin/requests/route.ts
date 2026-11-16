@@ -146,24 +146,37 @@ export async function GET(req: NextRequest) {
     //     «Регистрация», card «Запрос приглашения»: «Отправить приглашение»
     //     (POST /requests/:id/invite) or reject / archive. E-mail and contact
     //     only with users.sensitive (WB-2 / R-133).
-    const { data: inviteRows, error: inviteError } = await sb
-      .from('admin_requests')
-      .select('id, type, status, priority, source, payload, rejectionReason, createdAt')
-      .eq('type', 'registration')
-      .eq('source', INVITE_REQUEST_SOURCE)
-      .order('createdAt', { ascending: false })
-      .limit(500)
+    //     Review W3A-7: they are seen by those who may act on them — the right
+    //     to invite (as the «Отправить приглашение» button) or the whole client
+    //     base; with a limited scope (R-047) only the open ones, like the rest.
+    const seesInvites = hasPermission(guard.actor.role, 'users.invite') || !allowed
+    const { data: inviteRows, error: inviteError } = seesInvites
+      ? await sb
+        .from('admin_requests')
+        .select('id, type, status, priority, source, payload, rejectionReason, createdAt')
+        .eq('type', 'registration')
+        .eq('source', INVITE_REQUEST_SOURCE)
+        .order('createdAt', { ascending: false })
+        .limit(500)
+      : { data: [], error: null }
     if (inviteError) console.error('[giga-admin/requests] invitation requests read failed:', inviteError.message)
     for (const r of (inviteRows ?? []) as Array<Record<string, unknown>>) {
       if (seenRequestIds.has(String(r.id))) continue
       seenRequestIds.add(String(r.id))
+      const status = mapStatus(String(r.status ?? ''))
+      if (!inScope(status, null)) continue
       const payload = (r.payload ?? {}) as Record<string, unknown>
       const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
       const contact = str(payload.contact)
+      const hide = (v: string | undefined) => (v ? (sensitive ? v : 'скрыт') : null)
+      // Review W3A-5: repeats with OTHER data than the first request — shown apart, never merged into it.
+      const otherRequests = (Array.isArray(payload.otherRequests) ? payload.otherRequests : [])
+        .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+        .map((o) => ({ name: str(o.name) ?? null, company: str(o.company) ?? null, contact: hide(str(o.contact)), at: str(o.at) ?? null }))
       requests.push({
         id: r.id,
         category: 'registration',
-        status: mapStatus(String(r.status ?? '')),
+        status,
         userName: str(payload.name) ?? 'Без имени',
         userEmail: email(str(payload.email)),
         subject: str(payload.subject) ?? 'Запрос приглашения',
@@ -175,9 +188,10 @@ export async function GET(req: NextRequest) {
         assignedAdmin: null,
         source: INVITE_REQUEST_SOURCE,
         userId: null,
-        contact: contact ? (sensitive ? contact : 'скрыт') : null,
+        contact: hide(contact),
         accountExists: payload.accountExists === true,
         repeats: typeof payload.repeats === 'number' ? payload.repeats : 1,
+        otherRequests,
       })
     }
 

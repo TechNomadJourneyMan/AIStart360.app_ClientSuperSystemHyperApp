@@ -17,6 +17,9 @@ type Row = Record<string, unknown>
 
 const s = vi.hoisted(() => ({
   mode: 'invite' as string,
+  modeDown: false,
+  refresh: vi.fn(async () => ({ data: {}, error: null })),
+  bg: [] as Array<Promise<unknown>>,
   user: null as null | { id: string; email: string; created_at: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
   tables: {} as Record<string, Row[]>,
   profileReadFails: false,
@@ -42,17 +45,22 @@ vi.mock('@supabase/ssr', () => ({
         return { data: { user: s.user, session: { access_token: 'jwt' } }, error: null }
       },
       signOut: s.signOut,
+      refreshSession: s.refresh,
     },
   }),
 }))
-vi.mock('@/lib/settings/system-settings', () => ({ getRegistrationMode: async () => s.mode }))
+// Review W3A-3: the gate reads the mode strictly (ok:false = a database error, not «no row»).
+vi.mock('@/lib/settings/system-settings', () => ({
+  readRegistrationMode: async () => (s.modeDown ? { mode: 'approval', ok: false, updatedAt: null } : { mode: s.mode, ok: true, updatedAt: '2026-11-01T00:00:00.000Z' }),
+  getRegistrationMode: async () => (s.modeDown ? 'invite' : s.mode),
+}))
 vi.mock('@/lib/db', () => ({ prisma: { adminRequest: { create: s.adminRequestCreate } } }))
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notifyAdmins }))
-vi.mock('@/lib/background', () => ({ runInBackground: async (_l: string, work: () => Promise<unknown>) => { await work() } }))
+vi.mock('@/lib/background', () => ({ runInBackground: (_l: string, work: () => Promise<unknown>) => { const p = work(); s.bg.push(p); return p } }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => {} }))
 vi.mock('@/lib/site-url', () => ({ requestOrigin: () => 'https://portal.aistart360.app', getSiteUrl: () => 'https://portal.aistart360.app' }))
 vi.mock('@/lib/admin/invites', () => ({ acceptInvitation: s.acceptInvitation }))
-vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
+vi.mock('@/lib/rate-limit', () => ({ checkRateLimit: async () => ({ limited: false }), checkRateLimitForRequest: async () => ({ limited: false }) }))
 vi.mock('@/lib/email', () => ({ sendNotificationEmail: async (o: unknown) => { s.sent.push(o); return { data: { id: 'm' }, error: null } } }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
@@ -109,6 +117,9 @@ beforeEach(() => {
   s.acceptInvitation.mockResolvedValue({ accepted: false, staffRole: null, secured: false })
   s.generateLink.mockClear()
   s.sent = []
+  s.modeDown = false
+  s.refresh.mockClear()
+  s.bg = []
 })
 
 describe('/auth/callback, режим «по приглашению»', () => {
@@ -219,22 +230,78 @@ describe('/auth/verify: помеченный аккаунт не входит и
     expect(s.updateUserById).toHaveBeenCalledWith(ID, { app_metadata: { signup_blocked: null, signup_blocked_at: null } })
   })
 
-  it('без метки и в режиме «по подтверждению» — как раньше', async () => {
+  it('без метки — как раньше, без лишних запросов', async () => {
     s.user = { ...s.user!, created_at: old(), app_metadata: {} }
-    let res = await visit('token_hash=th&type=magiclink&next=/login')
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
-    s.mode = 'approval'
-    s.user = { ...s.user!, app_metadata: { signup_blocked: 'invite_only' } }
-    res = await visit('token_hash=th&type=magiclink&next=/login')
+    const res = await visit('token_hash=th&type=magiclink&next=/login')
     expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
     expect(s.signOut).not.toHaveBeenCalled()
+    expect(s.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it('W3A-2: «сироту» одобрил персонал — вход по ссылке и «Забыли пароль» пускают, метка снимается, токен обновляется', async () => {
+    s.user = { ...s.user!, created_at: old(), app_metadata: { signup_blocked: 'invite_only' } }
+    s.tables.profiles = [{ id: ID, email: 'new@corp.kz', status: 'approved', role: 'client' }]
+    let res = await visit('token_hash=th&type=magiclink&next=/login')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
+    res = await visit('token_hash=th&type=recovery')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/auth/reset-password')
+    expect(s.signOut).not.toHaveBeenCalled()
+    expect(s.updateUserById).toHaveBeenCalledWith(ID, { app_metadata: { signup_blocked: null, signup_blocked_at: null } })
+    expect(s.refresh).toHaveBeenCalled()
+  })
+
+  it('метку снимают только приглашение и одобрение: в режиме «по подтверждению» не одобренный помеченный тоже не входит', async () => {
+    s.mode = 'approval'
+    s.user = { ...s.user!, created_at: old(), app_metadata: { signup_blocked: 'invite_only' } }
+    const res = await visit('token_hash=th&type=magiclink&next=/login')
+    expect(where(res)).toBe('/register?notice=invite_only')
+  })
+})
+
+describe('W3A-2 / W3A-3 в /auth/callback', () => {
+  it('W3A-2: помеченный, одобренный персоналом — входит, метка снимается, токен обновляется', async () => {
+    s.user = { ...s.user!, created_at: old(), app_metadata: { signup_blocked: 'invite_only' } }
+    s.tables.profiles = [{ id: ID, status: 'approved', role: 'client' }]
+    const res = await call()
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/home')
+    expect(s.signOut).not.toHaveBeenCalled()
+    expect(s.updateUserById).toHaveBeenCalledWith(ID, { app_metadata: { signup_blocked: null, signup_blocked_at: null } })
+    expect(s.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('W3A-3: сбой чтения режима — новый без приглашения НЕ проходит (закрыто), но и не помечается', async () => {
+    s.modeDown = true
+    const res = await call()
+    expect(where(res)).toBe('/register?notice=invite_only')
+    expect(s.adminRequestCreate).not.toHaveBeenCalled()
+    expect(s.notifyAdmins).not.toHaveBeenCalled()
+    expect(s.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it('W3A-3: у помеченного сбой чтения профиля не открывает вход', async () => {
+    s.user = { ...s.user!, created_at: old(), app_metadata: { signup_blocked: 'invite_only' } }
+    s.profileReadFails = true
+    const res = await call()
+    expect(where(res)).toBe('/register?notice=invite_only')
+    expect(s.adminRequestCreate).not.toHaveBeenCalled()
+  })
+
+  it('пригласили после метки — метка снимается и токен обновляется (иначе API закрыт до обновления)', async () => {
+    s.user = { ...s.user!, created_at: old(), app_metadata: { signup_blocked: 'invite_only' } }
+    s.tables.platform_invitations = [{ id: 'inv-1', email: 'new@corp.kz', status: 'sent' }]
+    await call()
+    expect(s.refresh).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('POST /api/v1/auth/email-link: новый пользователь GoTrue не заводится', () => {
-  const post = (email: string) => emailLink(new NextRequest('http://localhost/api/v1/auth/email-link', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, purpose: 'login' }),
-  }))
+  const post = async (email: string) => {
+    const res = await emailLink(new NextRequest('http://localhost/api/v1/auth/email-link', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, purpose: 'login' }),
+    }))
+    await Promise.all(s.bg.splice(0))
+    return res
+  }
 
   it('незнакомая почта: generateLink (он создал бы аккаунт) не вызывается, ответ тот же', async () => {
     const res = await post('stranger@corp.kz')

@@ -9,7 +9,16 @@ import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonati
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
 import { boundImpersonationEdge, impersonationRowEdge } from '@/lib/impersonation/state-edge'
 import { IMPERSONATION_ACCOUNT_PAGE_BLOCKED_ACTION, IMPERSONATION_LOCKED_REDIRECT, isAccountSecurityPage } from '@/lib/impersonation/account-pages'
-import { NO_SESSION_ID, authSessionFromCookies } from '@/lib/mfa/session-binding'
+import { NO_SESSION_ID, accessTokenFromCookies, authSessionFromCookies } from '@/lib/mfa/session-binding'
+import {
+  expireSessionCookies,
+  inviteOnlyApiResponse,
+  inviteOnlyExemptApi,
+  inviteOnlyRedirect,
+  isSignupBlocked,
+  signupBlockedInToken,
+} from '@/lib/auth/invite-only-shared'
+import { markSignupBlockedEdge, pendingSignupVerdictEdge } from '@/lib/auth/invite-only-edge'
 import { CLIENT_NAV_DEFS } from '@/lib/client-shell/nav'
 import { verifyToken } from '@/lib/security/signed-token'
 import { blockedSectionFor, loadEdgeSections } from '@/lib/platform/sections-edge'
@@ -347,6 +356,14 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   if (pathname.startsWith('/api')) {
     const blocked = await guardImpersonatedApi(request, later)
     if (blocked) return blocked
+    // R4 B3 (review W3A-1): an account created around the invitation (marked
+    // app_metadata.signup_blocked by /auth/callback or the rule below) gets no
+    // API — read from the session's JWT, no database round trip. Sign-out and
+    // the «Запросить приглашение» form stay open. The claim is read without the
+    // signature check: it can only ADD a refusal (lib/auth/invite-only-shared.ts).
+    if (!inviteOnlyExemptApi(pathname, request.method) && signupBlockedInToken(accessTokenFromCookies(request.cookies.getAll()))) {
+      return inviteOnlyApiResponse(request)
+    }
   }
 
   // Allow Next.js internals, static files, API routes
@@ -543,6 +560,45 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
     const url = new URL('/login', request.url)
     url.searchParams.set('blocked', '1')
     return NextResponse.redirect(url)
+  }
+
+  // ── R4 B3 (review W3A-1 / W3A-2): registration is by invitation ──
+  // Every new GoTrue user gets a «pending» client profile from the
+  // handle_new_user trigger, whatever the way in (Google, sign-up with the anon
+  // key, the implicit flow) — and with it the waiting room, the survey with the
+  // AI assistant, documents and messages. So:
+  //   • a marked account (app_metadata.signup_blocked, fresh from getUser) that
+  //     staff have not approved is signed out → «Регистрация по приглашению»;
+  //   • a pending client WITHOUT the mark, not invited (GoTrue invited_at or a
+  //     platform_invitations row) and created after 'invite' was switched on
+  //     (updated_at of the registration_mode row) gets the mark and the same
+  //     screen. Older pending registrations (the «approval» era) are untouched.
+  // Staff and approved accounts make no extra request. A failed read changes
+  // nothing and answers «temporary error». /auth/callback has its own gate.
+  if (user && !impersonating && !matchesRoute(pathname, '/auth/callback')) {
+    const marked = isSignupBlocked(user)
+    let turnBack = marked && resolved?.status !== 'approved'
+    if (
+      !marked && role === 'client' && resolved?.status === 'pending_approval' &&
+      !PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+    ) {
+      const verdict = await pendingSignupVerdictEdge(user)
+      if (verdict === 'unknown') return profileUnavailableResponse()
+      if (verdict === 'block') {
+        await markSignupBlockedEdge(user.id)
+        turnBack = true
+      }
+    }
+    if (turnBack) {
+      try {
+        await supabase.auth.signOut()
+      } catch {
+        /* the cookies are expired below anyway */
+      }
+      // On /register itself the form is served — without the session.
+      if (matchesRoute(pathname, '/register')) return expireSessionCookies(response, request)
+      return inviteOnlyRedirect(request.nextUrl.origin, request, response)
+    }
   }
 
   if (role) {

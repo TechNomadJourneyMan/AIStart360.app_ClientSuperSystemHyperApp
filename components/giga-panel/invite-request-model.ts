@@ -24,6 +24,19 @@ export function isInviteRequest(r: { category?: string | null; source?: string |
   return isInviteRequestRow(r)
 }
 
+/**
+ * Ревью W3A-5: повторный запрос на ту же почту с другими данными. Почту может
+ * ввести кто угодно — поэтому исходная заявка не меняется, а повтор показан
+ * отдельно: сотрудник не свяжется по чужому контакту, не заметив подмены.
+ */
+export function otherRequestText(o: { name?: string | null; company?: string | null; contact?: string | null; at?: string | null }): string {
+  const who = [o.name, o.company].filter((v) => !!v && String(v).trim()).join(' · ') || 'без имени'
+  const when = o.at && Number.isFinite(Date.parse(o.at))
+    ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(o.at))
+    : null
+  return `Повторный запрос с другими данными${when ? ` (${when})` : ''}: ${who}${o.contact ? ` · ${o.contact}` : ''}. Сверьте с первым запросом, прежде чем связываться.`
+}
+
 /** Текст диалога «Отправить приглашение». */
 export function sendInviteDialogText(r: { accountExists?: boolean }): string[] {
   return [
@@ -31,6 +44,7 @@ export function sendInviteDialogText(r: { accountExists?: boolean }): string[] {
       ? 'Аккаунт с этой почтой уже есть — уйдёт письмо со ссылкой для входа.'
       : 'На почту из заявки уйдёт письмо-приглашение: человек задаст пароль и войдёт. Ссылка в письме действует один час — если не успеет, отправьте приглашение ещё раз в «Приглашения».',
     'Заявка закроется как принятая. Новый аккаунт клиента после входа ждёт одобрения в этой же вкладке «Регистрация» — примите его, чтобы открыть кабинет.',
+    'Письмо уходит от имени AIStart360 «по вашей заявке» — без имени и компании из формы.',
   ]
 }
 

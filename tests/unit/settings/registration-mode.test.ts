@@ -19,13 +19,14 @@ vi.mock('@/lib/supabase-service', () => ({
   },
 }))
 
-import { getRegistrationMode, setRegistrationMode, isRegistrationMode } from '@/lib/settings/system-settings'
+import { getRegistrationMode, setRegistrationMode, isRegistrationMode, __resetRegistrationModeCacheForTests } from '@/lib/settings/system-settings'
 
-describe('registration mode settings (fail-safe)', () => {
+describe('registration mode settings (no row → approval; a read error → closed, R4 B3 review W3A-3)', () => {
   beforeEach(() => {
     cfg.value = undefined
     cfg.error = null
     cfg.throwIt = false
+    __resetRegistrationModeCacheForTests()
   })
 
   it('defaults to approval when no row exists', async () => {
@@ -42,14 +43,23 @@ describe('registration mode settings (fail-safe)', () => {
     expect(await getRegistrationMode()).toBe('approval')
   })
 
-  it('falls back to approval on a query error (e.g. table not migrated)', async () => {
-    cfg.error = { message: 'relation "system_settings" does not exist' }
-    expect(await getRegistrationMode()).toBe('approval')
+  // R4 B3 (review W3A-3): every caller creates accounts or shows sign-up / the
+  // demo — a failed read used to open all of it on prod in 'invite' mode.
+  it('a query error is closed: invite (no last known mode)', async () => {
+    cfg.error = { message: 'sorry, too many clients already' }
+    expect(await getRegistrationMode()).toBe('invite')
   })
 
-  it('falls back to approval when the service client throws (no key)', async () => {
+  it('a throwing service client (no key) is closed too: invite', async () => {
     cfg.throwIt = true
-    expect(await getRegistrationMode()).toBe('approval')
+    expect(await getRegistrationMode()).toBe('invite')
+  })
+
+  it('a failed read right after a good one keeps the mode just read', async () => {
+    cfg.value = 'open'
+    expect(await getRegistrationMode()).toBe('open')
+    cfg.error = { message: 'timeout' }
+    expect(await getRegistrationMode()).toBe('open')
   })
 
   it('rejects an invalid mode on write', async () => {

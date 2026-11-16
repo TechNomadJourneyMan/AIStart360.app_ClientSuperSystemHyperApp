@@ -4,7 +4,7 @@
 
 | Что | Где |
 |---|---|
-| Проверки перед выкаткой и план команд | `scripts/deploy/preflight.mjs` (`npm run deploy:preflight -- …`) |
+| Проверки перед выкаткой и план команд | `scripts/deploy/preflight.mjs` (`npm run deploy:preflight -- …`); `--env staging` — что применено к staging-базе |
 | Пакет миграций для `db-tools` | `scripts/deploy/migrations-bundle.mjs` |
 | Smoke после выкатки, только чтение | `scripts/smoke/post-deploy.mjs` (`npm run smoke:prod`) |
 | Номера и откаты миграций в CI | `scripts/deploy/check-migrations.mjs`, шаг в `.github/workflows/ci.yml` |
@@ -13,49 +13,57 @@
 | Настройки сервисов Railway, `railway.json` | [railway-config.md](railway-config.md), §13 ниже |
 | Тревоги и сторожа | [docs/ops/README.md](../ops/README.md) |
 | Бэкапы и восстановление | [docs/backup/README.md](../backup/README.md) |
-| Staging | [docs/staging/README.md](../staging/README.md) |
+| Staging (база и Supabase; кода там нет) | [docs/staging/README.md](../staging/README.md) |
+| Вход для разработки на localhost | [docs/dev-login.md](../dev-login.md) |
+| Закрыть регистрацию в GoTrue | §15 ниже |
 
 Скрипты ничего не выкатывают сами. `preflight` проверяет и печатает команды. `migrations-bundle` собирает пакет и печатает команды. `smoke` только читает. Каждую команду из плана человек запускает сам, по одной, и смотрит на вывод.
 
-Обозначения: `<project>` — проект портала в Railway (выбирается `railway link`), `<deploy-dir>` — отдельная чистая копия репозитория для выкатки, `<label>` — имя выкатки (`round4w3`). Сервисы называются по именам: `portal`, `agents`, `db-tools`, `inngest`, `workflow-db`. Значения переменных Railway не смотреть и не печатать, только имена.
+Обозначения: `<project>` — проект портала в Railway (выбирается `railway link`), `<deploy-dir>` — отдельная чистая копия репозитория для выкатки, `<tools-dir>` — вторая копия на свежем `main`, из неё запускаются скрипты при откате (§9), `<label>` — имя выкатки (`round4w3`), `<staging-dsn>` — строка подключения к staging-базе из файла `addr` и пароля (docs/staging/README.md). Сервисы называются по именам: `portal`, `agents`, `db-tools`, `inngest`, `workflow-db`. Значения переменных Railway не смотреть и не печатать, только имена.
 
 ## 1. Порядок
 
 ```
-«да» PO ─► staging (миграции → код → smoke) ─► PR ─► зелёный CI ─► merge в main
-        ─► preflight (prod) ─► бэкап ─► миграции прод ─► код portal + agents ─► PUT /api/inngest
-        ─► smoke ─► через 15–20 мин журнал ops_job_runs ─► отчёт выкатки
+«да» PO ─► миграции на staging-БД ─► локальная проверка кода против staging (коммит V)
+        ─► PR ─► зелёный CI ─► merge в main ─► CI по merge-коммиту M зелёный
+        ─► preflight (prod, --verified V) ─► бэкап ─► миграции прод ─► railway up portal + agents (M)
+        ─► PUT /api/inngest ─► smoke ─► через 15–20 мин журнал ops_job_runs ─► отчёт выкатки
 ```
 
-**Что поменялось против Раундов 1–4.** Раньше выкатывали ветку PR и сливали её после выкатки. Теперь `preflight` пускает на прод только коммит из `origin/main`. Поэтому сначала merge, потом выкатка. Railway к GitHub не подключён, и merge сам ничего не выкатывает. Если подключат (§14), merge станет выкаткой, и миграции нужно будет применять до merge.
+**Staging — это база, а не деплой.** В окружении `staging` на Railway живут база и Supabase. У сервисов `portal` и `agents` там нет ни одного деплоя (проверено 2026-11-17). Код до прода проверяется **локально**: `next dev` с `.env.local`, который смотрит на staging, вход через панель DEV (`POST /api/dev/login {role}`, только localhost), проход по изменённому пути в браузере и smoke в локальном режиме (§4). Поэтому staging-шагу не нужны ни PR, ни CI: CI — проверка перед merge и перед продом.
+
+**Что поменялось против Раундов 1–4.** Раньше выкатывали ветку PR и сливали её после выкатки. Теперь `preflight` пускает на прод только коммит из `origin/main` (merge-коммит M), и только если его код совпадает с проверенным локально коммитом V (`--verified V`; отличаться могут лишь `docs/` и `*.md`). Поэтому сначала merge, потом выкатка. Railway к GitHub не подключён, и merge сам ничего не выкатывает. Если подключат (§14), merge станет выкаткой, и миграции нужно будет применять до merge.
 
 **Миграции идут раньше кода.** Новый код должен работать и на старой схеме, и на новой (expand → contract). Тогда откат кода не требует отката схемы. Удалять колонку или таблицу, которую читает текущий код, можно только следующей выкаткой, после выкатки кода, который её уже не читает.
 
 ## 2. Перед выкаткой
 
 1. «Да» PO на эту выкатку. Окно **не 03:00–06:00 UTC** (preflight откажет). Лучше не 21:45–23:00 UTC: в 22:00 идут ночные пересчёты Точек А и Б, деплой оборвёт идущие разборы.
-2. Тот же коммит уже прошёл staging: миграции, код, smoke (§4–§7 с `-e staging`).
-3. Чистая копия для выкатки. Не рабочая папка, где лежат чужие правки: `railway up` загружает **все** файлы папки, кроме исключённых `.gitignore`, в том числе неотслеживаемые.
+2. Миграции волны применены к staging-базе, код проверен локально против staging (§4). Записать проверенный коммит V (голова ветки на момент проверки).
+3. PR → зелёный CI → merge. **Дождаться CI по merge-коммиту** на `main` (событие push, около 9 минут): preflight проверяет именно его.
+4. Чистая копия для выкатки. Не рабочая папка, где лежат чужие правки: `railway up` загружает **все** файлы папки, кроме исключённых `.gitignore`, в том числе неотслеживаемые.
    ```bash
    git worktree add --detach <deploy-dir> origin/main     # один раз
    git -C <deploy-dir> fetch origin && git -C <deploy-dir> checkout --detach origin/main
    ```
-4. Railway CLI вошёл в аккаунт и привязан к проекту портала: `railway status` показывает `<project>` и нужное окружение. **`railway up` без привязки создаёт новый проект.** Флаги `-y` и `--new` не использовать никогда.
-5. Preflight:
+5. Railway CLI вошёл в аккаунт и привязан к проекту портала: `railway status` показывает `<project>` и нужное окружение. **`railway up` без привязки создаёт новый проект.** Флаги `-y` и `--new` не использовать никогда.
+6. Preflight:
    ```bash
    cd <deploy-dir>
-   node scripts/deploy/preflight.mjs --label <label> --since <коммит, который сейчас на проде>
+   node scripts/deploy/preflight.mjs --label <label> --verified <V> --since <коммит, который сейчас на проде> \
+     [--staging-journal /tmp/staging-journal.txt]
    ```
-   Коммит на проде берётся из отчёта прошлой выкатки или по §8. Preflight проверяет:
+   Коммит на проде берётся из отчёта прошлой выкатки или по §8. Журнал staging — как в §4 «Прод», шаг 1. Preflight проверяет:
    - установлены `git`, `gh`, `railway`;
    - `git fetch` прошёл;
    - дерево чистое, включая неотслеживаемые файлы;
    - `HEAD` = `origin/main` (или `--commit <sha>`, который есть в `origin/main`);
-   - CI по коммиту зелёный через `gh`. Проверка Vercel пропускается явно, строкой «игнорирую…»: аккаунт Vercel заблокирован, прод на Railway;
+   - CI по коммиту зелёный через `gh`: обязательная проверка «typecheck · lint · tests …» — только `success` (пропущенная `skipped`/`neutral` — отказ: тесты не запускались). Проверка Vercel пропускается явно, строкой «игнорирую…»: аккаунт Vercel заблокирован, прод на Railway;
+   - **код = проверенному**: `git diff --name-only <V> <коммит> -- . ':!docs' ':!*.md'` пуст. Если в `main` попало что-то ещё (слили другой PR) — отказ со списком файлов. Проверить локально этот коммит или, осознанно, `--allow-drift` (громкое предупреждение, причину — в отчёт выкатки);
    - время не 03:00–06:00 UTC;
-   - новые миграции между `--since` и коммитом. Изменённая старая миграция — отказ: её сумма разойдётся с журналом.
+   - новые миграции между `--since` и коммитом. Изменённая старая миграция — отказ: её сумма разойдётся с журналом. С `--staging-journal` каждая новая миграция должна быть в журнале staging с суммой своих байтов.
 
-   Код выхода 0 — проверки пройдены, напечатан план с подставленными коммитом, именами и списком миграций. Код 1 — выкатка запрещена, плана нет. Для staging: `--env staging --base-url https://<staging-url>`. Коммит должен быть запушен, окно не ограничено.
+   Код выхода 0 — проверки пройдены, напечатан план с подставленными коммитом, именами и списком миграций. Код 1 — выкатка запрещена, плана нет.
 
 ## 3. Бэкап
 
@@ -76,13 +84,23 @@ pg_restore -l ~/AI-Portal-backups/$N.dump | grep -c ' TABLE '   # = число �
 
 ## 4. Миграции: staging → прод
 
-**Staging.** Каждый файл по порядку применяется скриптом `scripts/staging/apply-migration.sh`. Скрипт проверяет метку staging у базы и пишет `public.schema_migrations (file, checksum, applied_by)` в той же транзакции:
+**Staging: база + локальная проверка.** Кода на staging не выкатывают. В рабочей копии ветки, миграции закоммичены:
 
-```bash
-STAGING_PG_PASSWORD_FILE=<файл пароля> scripts/staging/apply-migration.sh supabase/migrations/NNN_имя.sql
-```
-
-Потом идут код и smoke на staging (§5–§7 с `-e staging`).
+1. Что применить:
+   ```bash
+   node scripts/deploy/preflight.mjs --env staging --label <label> --since <коммит на проде> [--staging-journal /tmp/staging-journal.txt]
+   ```
+   Без CI, без PR и даже без push: проверяется только то, что относится к staging-базе. Журнал staging — тот же запрос, что в «Прод», шаг 1, по новым файлам. Новые миграции между `--since` и HEAD. С журналом staging: какие уже применены с той же суммой (их в плане нет), какие ещё нет, и нет ли применённой **другой версии** файла — это отказ. Незакоммиченная миграция — отказ: на staging должны уйти байты коммита, на проде их сумма сверяется. Прочие незакоммиченные правки — предупреждение: проверенным считается коммит.
+2. Миграции по порядку — `scripts/staging/apply-migration.sh`. Скрипт берёт адрес из файла `addr` рядом с файлом пароля (или `STAGING_PG_ADDR`), проверяет метку staging у базы и пишет `public.schema_migrations (file, checksum, applied_by)` в той же транзакции:
+   ```bash
+   STAGING_PG_PASSWORD_FILE=<файл пароля> scripts/staging/apply-migration.sh supabase/migrations/NNN_имя.sql
+   ```
+3. Локальная проверка кода этого коммита против staging:
+   - `.env.local` смотрит на staging: `NEXT_PUBLIC_SUPABASE_URL` и ключи Supabase staging, `DATABASE_URL`/`DIRECT_URL` staging-базы, `ENABLE_DEV_AUTH_ROUTES=1` (docs/dev-login.md). Значения — вне репозитория;
+   - `npm run dev -- -H 127.0.0.1`;
+   - браузер `http://127.0.0.1:3000`, панель DEV → «Войти как роль» (`POST /api/dev/login {role}`), пройти изменённый путь каждой нужной ролью;
+   - smoke в локальном режиме: `node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000`. Редиректы без входа, 401/403 API, CSP без `*.supabase.co` и связь с базой staging — строго. Чего у dev-сервера быть не может (`deploymentId`, очередь Workflow, планировщик, Inngest, `CRON_SECRET`, локальный «Рынок» в CSP) — предупреждения.
+4. Записать проверенный коммит V (`git rev-parse HEAD`) — он пойдёт в `--verified` на проде. Если после проверки в ветку что-то добавили — проверить заново.
 
 **Прод.** На прод идут только те байты, что прошли staging. Порядок такой.
 
@@ -151,14 +169,14 @@ curl -fsS https://portal.aistart360.app/api/inngest          # function_count �
 
 ```bash
 npm run smoke:prod -- --expect-deployment <deploymentId portal из §5> [--expect-functions <N>]
-# staging: node scripts/smoke/post-deploy.mjs --base-url https://<staging-url>
+# локальная проверка (§4): node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000
 ```
 
 Запросы только на чтение: GET без входа и без секретов, редиректы не выполняются. Итог выводится таблицей. Код выхода ≠ 0, если провалена хоть одна проверка:
 
 | Путь | Ожидается |
 |---|---|
-| `/api/healthz` | 200 `ok`, `deploymentId` = только что выкаченный |
+| `/api/healthz` | 200 `ok`, `deploymentId` = только что выкаченный. Поля нет (код до R4-A4, например после отката) — предупреждение, сверка по `railway deployment list`; другой id — провал |
 | `/api/health` | 200, все проверки `ok` (`unknown` — предупреждение: данных ещё нет, повторить через 15 мин) |
 | `/`, `/login` | 200; у `/login` есть Content-Security-Policy с `connect-src`, без `localhost` и `*.supabase.co` |
 | `/client/home`, `/point-a`, `/dashboard` без входа | редирект на `/login?from=<путь>` |
@@ -199,7 +217,15 @@ railway deployment list -e production -s portal --limit 20 --json       # id, st
 
 ## 9. Откат кода
 
-Откатывать оба сервиса вместе: `portal` и `agents` собраны из одного коммита. После отката обязательно PUT `/api/inngest` (у старого кода может быть другой список функций) и smoke с `--expect-deployment`.
+Откатывать оба сервиса вместе: `portal` и `agents` собраны из одного коммита. После отката обязательно PUT `/api/inngest` (у старого кода может быть другой список функций) и smoke.
+
+**Скрипты — из копии на `main`.** В старом коммите может не быть `scripts/deploy/*`, `scripts/smoke/*` и `npm run smoke:prod` (в коде до R4-A4, например `91b68374`, их нет). Поэтому preflight и smoke при откате всегда запускаются из второй копии `<tools-dir>` на свежем `main`, а `<deploy-dir>` только переключается на старый коммит:
+
+```bash
+git worktree add --detach <tools-dir> origin/main     # один раз; перед откатом: git -C <tools-dir> checkout --detach origin/main
+```
+
+**Smoke после отката.** `node <tools-dir>/scripts/smoke/post-deploy.mjs --expect-deployment <id из railway deployment list>`. У кода до R4-A4 в `/api/healthz` нет `deploymentId`: smoke даст предупреждение «сверить по railway deployment list», а не провал. Деплой тогда сверяется по `railway deployment list -e production -s portal --json` (новая строка SUCCESS с сообщением `<sha> <label>-revert` или Rollback). Если `deploymentId` в ответе есть и он другой — это провал: отвечает не тот деплой.
 
 **Путь А — Rollback в Railway.** Быстро, без сборки. Railway → сервис → Deployments → предыдущий SUCCESS (по сообщению `<sha> <label>`) → ⋯ → **Rollback**.
 - По документации Railway (Deployments → Deployment actions) возвращаются образ **и переменные** того деплоя. Если переменные меняли после него, они откатятся тоже: после отката сверить список переменных с отчётом выкатки.
@@ -210,11 +236,15 @@ railway deployment list -e production -s portal --limit 20 --json       # id, st
 **Путь Б — `railway up` с предыдущего коммита.** Медленнее (сборка 5–10 мин), но переменные остаются текущими, и срок хранения не важен:
 
 ```bash
-git -C <deploy-dir> checkout --detach <предыдущий sha>
-cd <deploy-dir> && node scripts/deploy/preflight.mjs --label <label>-revert --commit <предыдущий sha>
+git -C <deploy-dir> fetch origin && git -C <deploy-dir> checkout --detach <предыдущий sha>
+node <tools-dir>/scripts/deploy/preflight.mjs --revert --commit <предыдущий sha> --dir <deploy-dir> --label <label>-revert
+cd <deploy-dir>
 railway up -e production -s portal --detach -m "<предыдущий sha> <label>-revert"
 railway up -e production -s agents --detach -m "<предыдущий sha> <label>-revert"
+node <tools-dir>/scripts/smoke/post-deploy.mjs --expect-deployment <id новой строки railway deployment list>
 ```
+
+`--revert`: проверенный коммит не нужен, миграции не трогаются, запрещённое окно 03:00–06:00 UTC — только предупреждение (инцидент не ждёт). Остальное как обычно: чистое дерево `<deploy-dir>`, коммит из истории `origin/main`, зелёный CI по нему. План печатает команды с путями обеих копий.
 
 Путь А — когда переменные не менялись и нужен быстрый откат. Путь Б — когда переменные менялись или деплой старый. Схему базы откат кода не трогает: миграции expand-only, старый код с новой схемой работает (§1). Если нет — сначала §10.
 
@@ -305,7 +335,7 @@ PGPASSWORD="$(cat <файл пароля>)" psql "<staging-dsn>" -X -v ON_ERROR_
 2. После подъёма:
    - Захват минут и очередь Workflow восстанавливаются сами: очередь переподключается с паузами, перезапуск портала не нужен. `/api/health` → `queue: ok`.
    - Если база поднялась **пустой** (пересоздана), нужен `railway redeploy -e production -s portal`: pre-deploy создаст таблицы очереди и `cron_runs`.
-3. Пропущенные минуты не повторяются. Суточные задачи, чьё время попало в сбой, запустить вручную, **только те, что действительно не прошли** (последний запуск — в `ops_job_runs`). Расписание — `lib/cron/schedule.ts`: `billing-expiry` 00:15, `ai-discovery` 01:30, `staff-digest` 03:00, `crm-digest` и `agents-digest` 04:00, `telegram/personal/sync` 05:00, `reminders` 06:00, `analytics-rollup` 21:30 UTC. Запуск изнутри сервиса, секрет из контейнера не выходит. Для `agents-digest` — `-s agents`:
+3. Пропущенные минуты не повторяются. Суточные задачи, чьё время попало в сбой, запустить вручную, **только те, что действительно не прошли** (последний запуск — в `ops_job_runs`). Расписание — `lib/cron/schedule.ts`: `billing-expiry` 00:15, `ai-discovery` 01:30, `staff-digest` 03:00, `crm-digest` и `agents-digest` 04:00, `client-digest` по понедельникам 04:00, `telegram/personal/sync` 05:00, `reminders` 06:00, `analytics-rollup` 21:30 UTC. Запуск изнутри сервиса, секрет из контейнера не выходит. Для `agents-digest` — `-s agents`:
    ```bash
    railway ssh -e production -s portal -- node -e 'fetch("http://localhost:"+(process.env.PORT||3000)+"/api/cron/staff-digest",{headers:{authorization:"Bearer "+process.env.CRON_SECRET}}).then(r=>console.log(r.status))'
    ```
@@ -338,7 +368,7 @@ PGPASSWORD="$(cat <файл пароля>)" psql "<staging-dsn>" -X -v ON_ERROR_
 
 **Рекомендация:** overlap 0 у agents приемлем и даже проще. Главное — draining 60 с, а он в сервисе есть. Срочно менять ничего не нужно. Нужно до 01.12:
 
-1. Оркестратор, только чтение: `railway config migrate` **без** `--apply` в staging и в production. Это превью: какие сервисы ещё на Config as Code и что Railway перенёс бы. Сверить с фактами выше.
+1. Оркестратор, только чтение: `railway config migrate` **без** `--apply` в production (в staging у `portal` и `agents` деплоев нет — там смотреть нечего, кроме сервисов Supabase). Это превью: какие сервисы ещё на Config as Code и что Railway перенёс бы. Сверить с фактами выше.
 2. Если превью или настройки сервиса покажут, что у `portal` или `agents` чего-то нет (запуск с `-H 0.0.0.0`, healthcheck, draining 60), задать это в настройках сервиса до 01.12. Это правка настроек прода, только с «да» PO. Можно и переменными `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` / `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS`.
 3. **Решение PO:** overlap у agents — оставить 0 (рекомендация) или поставить 45, как у портала (тогда так же, как сейчас).
 4. Первая выкатка после 01.12 — штатно, по этому runbook. Смотреть: предупреждения про Config as Code в выводе CLI больше нет, healthcheck и остановка старого деплоя прошли, в логах agents нет обрыва задач.
@@ -348,7 +378,7 @@ PGPASSWORD="$(cat <файл пароля>)" psql "<staging-dsn>" -X -v ON_ERROR_
 
 - CI — один job «typecheck · lint · tests (with prod-mirror DB)» в `.github/workflows/ci.yml`. Шаги: номера и откаты миграций, `tsc`, lint, тестовая база из миграций, vitest, `next build`.
 - Проверка Vercel у PR всегда красная: аккаунт Vercel заблокирован, прод на Railway. Её игнорируют глазами и в preflight (с явной строкой).
-- Порядок: ветка → staging → PR → зелёный CI → merge → выкатка по §2–§7.
+- Порядок: ветка → миграции на staging-базу и локальная проверка (§4) → PR → зелёный CI → merge → CI по merge-коммиту → выкатка по §2–§7 с `--verified`. PR можно открыть и раньше локальной проверки — preflight staging от него не зависит.
 
 **Чтобы выкатка шла из GitHub после зелёного CI** (аудит §3.4, решение PO):
 
@@ -357,3 +387,44 @@ PGPASSWORD="$(cat <файл пароля>)" psql "<staging-dsn>" -X -v ON_ERROR_
 3. Тогда `/api/healthz` начнёт отдавать `commit` (`RAILWAY_GIT_COMMIT_SHA`).
 4. Миграции остаются ручными (§4) и идут **до** merge. Либо PR с миграцией сливается только после её применения на проде.
 5. После автодеплоя — §6 и §7. Откат — §9 (путь А). Путь Б — revert-коммит в `main`.
+
+## 15. Закрыть регистрацию в GoTrue (`GOTRUE_DISABLE_SIGNUP=true`)
+
+**Только по отдельному «да» PO.** Это правка настроек прода, в обычную выкатку она не входит. Источник фактов — отчёт исполнителя B3 (Раунд 4, волна 3), §2.
+
+**Зачем.** В режиме регистрации `invite` портал сам аккаунтов не создаёт, но GoTrue открыт напрямую:
+- `POST /auth/v1/signup` с anon-ключом (он есть в браузерном бандле) сразу создаёт аккаунт с паролем. Дальше вход формой и зал ожидания с анкетой, ИИ-помощником, документами и «Сообщениями». Колбэк портала такой аккаунт не видит;
+- новый человек через Google: колбэк портала его ловит (метка `app_metadata.signup_blocked`, выход, экран «Регистрация по приглашению»), но пользователь GoTrue и профиль «на одобрении» всё равно создаются — остаётся «сирота».
+
+**Где.** Переменная `GOTRUE_DISABLE_SIGNUP` сервиса GoTrue нашего Supabase на Railway (в панели проекта — сервис GoTrue, в старых документах его называют `auth`). GoTrue читает настройки из окружения с префиксом `GOTRUE_`; конфигурации GoTrue в репозитории нет (R-050 в `docs/audit-2026-11/R3-AUDIT-C.md`). Имя сверить в панели: если переменная уже есть (шаблон мог задать `false`), поменять значение, вторую не заводить. Смена переменной перезапускает GoTrue: несколько секунд вход и обновление сессий не работают. Делать в тихое время: не 03:00–06:00 и не 21:45–23:00 UTC.
+
+**Что перестаёт работать:**
+- `POST /auth/v1/signup` по anon-ключу — отказ GoTrue `signup_disabled`;
+- новый человек через Google (и любой OAuth) — GoTrue пользователя не создаёт и возвращает в колбэк `error_code=signup_disabled`; портал показывает экран «Регистрация по приглашению» (`isSignupDisabledError`, `lib/auth/invite-only-shared.ts`; `app/auth/callback/route.ts`).
+
+**Что продолжает работать.** Портал создаёт аккаунты только служебным API (`service_role`), публичный signup не вызывает (`auth.signUp` / `signInWithOtp` в коде нет). По исходникам GoTrue служебные методы `disable_signup` не проверяют — это **по памяти исполнителя B3, не проверено**, поэтому staging обязателен:
+- приглашения ГИГА — `admin.generateLink` invite (`lib/admin/invites.ts`);
+- регистрация в режимах `approval` / `open` и демо-доступ — `admin.createUser`;
+- вход по ссылке на почту — `generateLink` magiclink, только для существующих;
+- вход владельца ГИГА и «вход от имени» — `generateLink` magiclink для существующих;
+- вход через Google существующего аккаунта и привязка Google к аккаунту с паролем по той же почте — это не signup, должно работать.
+
+**Порядок:**
+
+1. «Да» PO.
+2. **Staging.** У сервиса GoTrue окружения `staging` задать `GOTRUE_DISABLE_SIGNUP=true`. Проверить локальным порталом против staging (§4):
+   - отказ публичного signup:
+     ```bash
+     curl -sS -X POST "<Supabase URL staging>/auth/v1/signup" -H "apikey: <anon-ключ staging>" \
+       -H 'content-type: application/json' -d '{"email":"probe@staging.aistart360.test","password":"<случайный>"}'
+     # ждём ошибку signup_disabled; ключ и URL — из .env.local, в отчёт не копировать
+     ```
+   - вход Google **существующим** аккаунтом. Нужен Google-провайдер у GoTrue staging и аккаунт staging с этой почтой. Если провайдер на staging не настроен — пункт проверяется на проде сразу после включения, с готовым откатом (шаг 4);
+   - новый Google-аккаунт → экран «Регистрация по приглашению», пользователь GoTrue не создан;
+   - одно приглашение до конца: ГИГА → «Пригласить» на свою тестовую почту → ссылка → пароль → вход. Письмо с локального сервера уходит, только если в `.env.local` есть ключ Resend;
+   - «Войти по ссылке на почту» существующим аккаунтом;
+   - регистрация в режиме `approval`: ГИГА → Настройки → режим регистрации `approval` → `/register` → аккаунт «на одобрении» создаётся. После проверки вернуть режим staging как был.
+3. **Прод.** То же у сервиса GoTrue окружения `production`. Сразу после: `curl` signup → `signup_disabled`; вход Google существующим аккаунтом; вход по ссылке. Время включения — в отчёт.
+4. **Откат.** Вернуть `GOTRUE_DISABLE_SIGNUP` как было до включения (`false` или удалить переменную, если её не было). GoTrue перезапустится, публичный signup снова открыт. Данные не меняются.
+
+Сироты, созданные до включения (Google в режиме `invite`), остаются: профиль «на одобрении» и метка `signup_blocked`. Их разбор — отдельное решение PO.

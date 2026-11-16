@@ -95,6 +95,18 @@ describe('runSmoke', () => {
     expect(r.row('/api/healthz').mark).toBe('!')
   })
 
+  it('W3B-3: a rollback to code before R4-A4 with --expect-deployment — the field is absent → a warning, the healthy rollback passes', async () => {
+    const r = await smoke({ '/api/healthz': json(200, { ok: true, uptimeS: 3 }) }, ['--expect-deployment', DEP])
+    expect(r.ok).toBe(true)
+    expect(r.row('/api/healthz')).toMatchObject({ mark: '!', note: expect.stringContaining('railway deployment list') })
+    // a deploymentId of the wrong shape is no id either
+    const junk = await smoke({ '/api/healthz': json(200, { ok: true, deploymentId: 'x' }) }, ['--expect-deployment', DEP])
+    expect(junk.ok).toBe(true)
+    // but a deploymentId that is there and differs is the wrong deployment
+    const other = await smoke({ '/api/healthz': json(200, { ok: true, deploymentId: '11111111-2222-4333-8444-555555555555' }) }, ['--expect-deployment', DEP])
+    expect(other.ok).toBe(false)
+  })
+
   it('/api/health: a failed check or 503 fails; «unknown» only warns', async () => {
     expect((await smoke({ '/api/health': json(503, { ok: false, checks: { db: 'ok', inngest: 'fail' } }) })).ok).toBe(false)
     expect((await smoke({ '/api/health': json(200, { ok: true, checks: { db: 'ok', queue: 'fail' } }) })).ok).toBe(false)
@@ -138,6 +150,62 @@ describe('runSmoke', () => {
     expect(r.row('/').note).toContain('сеть')
     expect(r.row('/api/healthz').note).toContain('нет ответа')
     expect(r.rows).toHaveLength(15)
+  })
+})
+
+describe('local mode — the dev server against staging (W3B-2, runbook §4)', () => {
+  const LOCAL = 'http://127.0.0.1:3000'
+  function devServer(patch: Record<string, Answer> = {}): Record<string, Answer> {
+    return {
+      ...healthy(),
+      '/api/healthz': json(200, { ok: true, uptimeS: 30, deploymentId: null, commit: null }),
+      // a laptop has no Workflow queue, scheduler or Inngest; the database is staging
+      '/api/health': json(503, { ok: false, checks: { db: 'ok', config: 'fail' } }),
+      '/login': { status: 200, headers: { 'content-security-policy': `${CSP} http://localhost:5173` } },
+      '/api/cron/ops-watchdog': json(503, { ok: false, error: 'cron_not_configured' }),
+      '/api/cron/agents': json(503, { ok: false, error: 'cron_not_configured' }),
+      // the redirects of healthy() name the prod-like host; the dev server answers with its own
+      '/client/home': go('/login?from=%2Fclient%2Fhome'),
+      '/dashboard': go('/login?from=%2Fdashboard'),
+      '/admin-giga-panel': go('/giga-login'),
+      '/super-expert': go('/super-expert/login?from=%2Fsuper-expert'),
+      ...patch,
+    }
+  }
+  async function local(answers: Record<string, Answer>) {
+    const requests: string[] = []
+    const fetch = async (url: string) => {
+      requests.push(url)
+      const a = answers[url.slice(LOCAL.length)]
+      if (!a) return new Response('not found', { status: 404 })
+      const body = a.body === undefined ? null : typeof a.body === 'string' ? a.body : JSON.stringify(a.body)
+      return new Response(body, { status: a.status, headers: a.headers })
+    }
+    const result = await runSmoke(parseArgs(['--base-url', LOCAL]), { fetch })
+    return { ...result, requests, row: (p: string) => result.rows.find((r: { path: string }) => r.path === p)! }
+  }
+
+  it('is switched on by a localhost base URL', () => {
+    expect(parseArgs(['--base-url', LOCAL]).local).toBe(true)
+    expect(parseArgs(['--base-url', BASE]).local).toBe(false)
+  })
+
+  it('what a dev server cannot have only warns: no deploymentId, health beyond db, dev CSP, crons without a secret', async () => {
+    const r = await local(devServer())
+    expect(r.ok).toBe(true)
+    expect(r.row('/api/healthz').mark).toBe('✓')
+    expect(r.row('/api/health')).toMatchObject({ mark: '!', note: expect.stringContaining('config') })
+    expect(r.row('/login').mark).toBe('✓')
+    expect(r.row('/api/cron/agents').mark).toBe('!')
+    expect(r.requests.every((u) => u.startsWith(LOCAL))).toBe(true)
+  })
+
+  it('stays strict where the code is under test: the staging database, redirects, 401/403, *.supabase.co', async () => {
+    expect((await local(devServer({ '/api/health': json(503, { ok: false, checks: { db: 'fail', config: 'ok' } }) }))).row('/api/health').mark).toBe('✗')
+    expect((await local(devServer({ '/client/home': { status: 200, body: '<html>' } }))).ok).toBe(false)
+    expect((await local(devServer({ '/api/v1/notifications?count=1': json(200, {}) }))).ok).toBe(false)
+    const cloud = await local(devServer({ '/login': { status: 200, headers: { 'content-security-policy': "connect-src 'self' https://*.supabase.co" } } }))
+    expect(cloud.row('/login').mark).toBe('✗')
   })
 })
 

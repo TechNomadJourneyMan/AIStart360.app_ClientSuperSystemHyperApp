@@ -26,6 +26,7 @@ const s = vi.hoisted(() => ({
   inviteOutcome: 'invited' as 'invited' | 'relinked' | 'failed',
   audit: [] as Array<{ action: string; entityId?: string | null; metadata?: Record<string, unknown> }>,
   approvals: 0,
+  scope: 'all' as 'all' | 'assigned',
 }))
 
 vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
@@ -36,11 +37,12 @@ vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
     ...actual,
     requireGiga: async (req: unknown, p: Parameters<typeof inner>[1]) => {
       const g = await inner(req, p)
-      return g.actor ? { actor: { ...g.actor, clientScope: 'all' } } : g
+      return g.actor ? { actor: { ...g.actor, clientScope: s.scope } } : g
     },
   }
 })
-vi.mock('@/lib/admin/actor-scope', () => ({ actorClientScope: async () => ({ scope: 'all', clientIds: [] }) }))
+vi.mock('@/lib/admin/actor-scope', () => ({ actorClientScope: async () => ({ scope: s.scope, clientIds: [] }) }))
+vi.mock('@/lib/admin/client-scope', async (orig) => ({ ...(await orig<Record<string, unknown>>()), assignedClientIds: async () => [] }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (k: string) => (k === 'request_sla_hours' ? 4 : undefined) }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/admin/audit', () => ({
@@ -122,6 +124,7 @@ beforeEach(() => {
   s.invites = []
   s.audit = []
   s.approvals = 0
+  s.scope = 'all'
   s.inviteOutcome = 'invited'
   s.tables = {
     admin_requests: [inviteRow()],
@@ -153,6 +156,77 @@ describe('GET /api/giga-admin/requests — запрос приглашения �
   })
 })
 
+describe('W3A-7: кто видит запросы приглашения в списке', () => {
+  const ids = async () => ((await (await list(req('/api/giga-admin/requests'))).json()).requests as Row[]).filter((x) => x.source === 'invite_request').map((x) => `${x.id}:${x.status}`)
+
+  beforeEach(() => {
+    s.tables.admin_requests = [inviteRow(), inviteRow({ id: 'r-done', status: 'rejected' })]
+  })
+
+  it('право приглашать и вся клиентская база — все, открытые и решённые', async () => {
+    expect(await ids()).toEqual([`${REQ}:pending`, 'r-done:rejected'])
+  })
+
+  it('охват «только свои» с правом приглашать — только открытые (как остальные заявки, R-047)', async () => {
+    s.scope = 'assigned'
+    s.role = 'crm_manager'
+    expect(await ids()).toEqual([`${REQ}:pending`])
+  })
+
+  it('охват «только свои» без права приглашать — не видит вовсе; бейдж их не считает', async () => {
+    s.scope = 'assigned'
+    s.role = 'support'
+    expect(await ids()).toEqual([])
+    const body = await (await badges(req('/api/giga-admin/nav-badges'))).json()
+    expect(body.inviteRequests).toBeUndefined()
+  })
+})
+
+describe('W3A-5: повтор с другими данными виден отдельно', () => {
+  it('список отдаёт otherRequests (контакт скрыт без users.sensitive), карточка их показывает', async () => {
+    s.tables.admin_requests = [inviteRow({ payload: { ...(inviteRow().payload as Row), otherRequests: [{ name: 'Служба поддержки', company: 'Другая', contact: '@someone_else', at: '2026-11-16T11:00:00.000Z' }] } })]
+    let r = ((await (await list(req('/api/giga-admin/requests'))).json()).requests as Row[]).find((x) => x.id === REQ)!
+    expect(r.otherRequests).toEqual([{ name: 'Служба поддержки', company: 'Другая', contact: '@someone_else', at: '2026-11-16T11:00:00.000Z' }])
+    expect(r.contact).toBe('+7 701 111 22 33')
+    s.role = 'analyst'
+    r = ((await (await list(req('/api/giga-admin/requests'))).json()).requests as Row[]).find((x) => x.id === REQ)!
+    expect((r.otherRequests as Row[])[0].contact).toBe('скрыт')
+
+    const { RequestCard } = await import('@/components/giga-panel/RequestsModule')
+    const out = renderToStaticMarkup(React.createElement(RequestCard, {
+      request: { id: REQ, category: 'registration', source: 'invite_request', status: 'pending', userName: 'Айгуль', userEmail: 'a@corp.kz', subject: '…', description: '…', createdAt: new Date().toISOString(), contact: '+7 701', otherRequests: [{ name: 'Служба поддержки', company: 'Другая', contact: '@someone_else', at: '2026-11-16T11:00:00.000Z' }] },
+      onApprove: () => {}, onReject: () => {}, onArchive: () => {}, onSendInvite: () => {}, canInvite: true,
+    }))
+    expect(out).toContain('data-invite-other')
+    expect(out).toContain('Повторный запрос с другими данными')
+    expect(out).toContain('Служба поддержки · Другая · @someone_else')
+  })
+})
+
+describe('W3A-6: письмо по заявке — от имени AIStart360', () => {
+  it('без компании и имени из формы, без «<компания> приглашает вас»; честно про одобрение', async () => {
+    const { buildInvitationEmail } = await import('@/lib/email/templates')
+    const { subject, content } = buildInvitationEmail({ name: 'Анна', company: 'ТОО Корп', invitedByLabel: 'admin@x', url: 'https://portal/x', existingAccount: false, byRequest: true })
+    const text = JSON.stringify(content)
+    expect(subject).toBe('Приглашение в AIStart360')
+    expect(text).not.toContain('ТОО Корп')
+    expect(text).not.toContain('Анна')
+    expect(text).not.toContain('admin@x')
+    expect(text).not.toContain('приглашает вас на платформу AIStart360')
+    expect(content.paragraphs?.[0]).toContain('По вашей заявке команда AIStart360 приглашает вас')
+    expect(content.preheader).not.toContain('получите доступ')
+    expect(text).toContain('когда доступ откроют, придёт письмо')
+    const relink = buildInvitationEmail({ url: 'https://portal/x', existingAccount: true, byRequest: true })
+    expect(relink.content.paragraphs?.join(' ')).toContain('Если аккаунт ещё ждёт одобрения')
+  })
+
+  it('обычное приглашение из «Приглашения» — как раньше', async () => {
+    const { buildInvitationEmail } = await import('@/lib/email/templates')
+    const { content } = buildInvitationEmail({ company: 'ТОО Корп', url: 'https://portal/x', existingAccount: false })
+    expect(content.paragraphs?.[0]).toContain('ТОО Корп приглашает вас')
+  })
+})
+
 describe('POST /api/giga-admin/requests/:id/invite — «Отправить приглашение»', () => {
   const post = () => sendInvite(req(`/api/giga-admin/requests/${REQ}/invite`, { method: 'POST' }), { params: { id: REQ } })
 
@@ -160,7 +234,10 @@ describe('POST /api/giga-admin/requests/:id/invite — «Отправить пр
     const res = await post()
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, outcome: 'invited' })
-    expect(s.invites).toEqual([expect.objectContaining({ email: 'aigul@corp.kz', name: 'Айгуль Серикова', company: 'ТОО «Ромашка»', invitedById: ME })])
+    // W3A-6: «по вашей заявке» from AIStart360 — neither the company nor the name of the anonymous form.
+    expect(s.invites).toEqual([expect.objectContaining({ email: 'aigul@corp.kz', invitedById: ME, byRequest: true })])
+    expect(s.invites[0]).not.toHaveProperty('company')
+    expect(s.invites[0]).not.toHaveProperty('name')
     expect(s.tables.admin_requests[0].status).toBe('approved')
     expect(s.audit).toContainEqual(expect.objectContaining({ action: 'user.invited', entityId: 'aigul@corp.kz', metadata: expect.objectContaining({ fromRequest: REQ }) }))
   })

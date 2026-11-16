@@ -36,6 +36,9 @@ const s = vi.hoisted(() => ({
 }))
 
 const withAbort = <T extends object>(o: T): T => Object.assign(o, { abortSignal: () => o })
+// R4 B3 (W3A-1): the invite-only rule for pending clients reads the mode and invitations at the edge;
+// the pending accounts here are registrations of the «approval» era — the rule lets them through.
+vi.mock('@/lib/auth/invite-only-edge', () => ({ pendingSignupVerdictEdge: async () => 'allow', markSignupBlockedEdge: async () => {} }))
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null, loadEdgeSections: async () => [] }))
 vi.mock('@/lib/impersonation/edge', () => ({

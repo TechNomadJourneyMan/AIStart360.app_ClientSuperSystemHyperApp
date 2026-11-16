@@ -9,8 +9,9 @@
  *   • Запрос — строка admin_requests: type 'registration', "userId" NULL,
  *     source 'invite_request', payload.kind 'invite_request' (+ данные). Таблица
  *     принадлежит Prisma: колонки "createdAt"/"updatedAt" в кавычках.
- *   • Одна ОТКРЫТАЯ заявка на почту: повтор с той же почтой обновляет её
- *     (имя, компания, контакт, число повторов) и ничего второй раз не шлёт.
+ *   • Одна ОТКРЫТАЯ заявка на почту: повтор с той же почтой считается (repeats)
+ *     и ничего второй раз не шлёт; данные первого запроса не перезаписываются —
+ *     повтор с другими данными хранится рядом (otherRequests, ревью W3A-5).
  *   • Персонал узнаёт сразу — как о заявке на оплату (lib/access/request-notices.ts):
  *     лента ГИГА + Telegram Admin / Super Admin, кто привязал Telegram; ночью тоже.
  *     В тексте нет ни почты, ни телефона (правило WB-2: ленту видит любой
@@ -79,6 +80,14 @@ async function accountExists(sb: Sb, email: string): Promise<boolean | null> {
 
 interface OpenRow { id: string; payload: Record<string, unknown> | null }
 
+/** How many repeats with other data a request keeps (review W3A-5). */
+export const MAX_OTHER_REQUESTS = 5
+
+function sameText(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '')
+  return norm(a) === norm(b)
+}
+
 async function findOpenRequest(sb: Sb, email: string): Promise<OpenRow | null> {
   const { data, error } = await sb
     .from('admin_requests')
@@ -115,12 +124,23 @@ export async function submitInviteRequest(sb: Sb, input: InviteRequestInput, now
 
   const open = await findOpenRequest(sb, email)
   if (open) {
+    // Review W3A-5: anyone who knows the address can send the form with it. The
+    // first request's name / company / contact stay as they were; a repeat with
+    // DIFFERENT data is kept beside them (otherRequests, the last few) and the
+    // card says «повторный запрос с другими данными». Only the count and the time change.
     const prev = open.payload ?? {}
     const repeats = (typeof prev.repeats === 'number' && Number.isFinite(prev.repeats) ? prev.repeats : 1) + 1
+    const differs = !sameText(prev.name, person.name) || !sameText(prev.company, person.company) || (!!contact && !sameText(prev.contact, contact))
+    const others = Array.isArray(prev.otherRequests) ? (prev.otherRequests as unknown[]).slice(-(MAX_OTHER_REQUESTS - 1)) : []
     const { error } = await sb
       .from('admin_requests')
       .update({
-        payload: { ...prev, name: person.name, company: person.company, contact: contact ?? prev.contact ?? null, subject, repeats, lastRequestedAt: nowIso },
+        payload: {
+          ...prev,
+          repeats,
+          lastRequestedAt: nowIso,
+          ...(differs ? { otherRequests: [...others, { name: person.name, company: person.company, contact, at: nowIso }] } : {}),
+        },
         updatedAt: nowIso,
       })
       .eq('id', open.id)

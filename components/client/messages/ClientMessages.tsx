@@ -46,8 +46,8 @@ async function loadSlaTasks(): Promise<ClientSlaTaskView[]> {
 /** «Кто и когда ответит» (R-024). */
 export function ReplyNote({ note }: { note: MessagesReplyNote }) {
   return (
-    <div role="note" data-reply-due={note.dueAt ?? ''} className="flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5">
-      <Icon name={note.dueAt ? 'schedule' : 'support_agent'} className="mt-0.5 text-base text-primary/80" />
+    <div role="note" data-reply-state={note.state} data-reply-due={note.dueAt ?? ''} className="flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5">
+      <Icon name={note.state === 'due' ? 'schedule' : note.state === 'answered' ? 'mark_chat_read' : 'support_agent'} className="mt-0.5 text-base text-primary/80" />
       <div className="min-w-0">
         <p className="text-sm font-semibold text-on-surface">{note.who}</p>
         <p className="text-xs text-on-surface-variant">{note.text}</p>
@@ -134,7 +134,8 @@ export default function ClientMessages() {
         </div>
       </div>
 
-      <ReplyNote note={messagesReplyNote(slaTasks)} />
+      {/* W3B-6: no deadline once the team has answered after the client's last question. */}
+      <ReplyNote note={messagesReplyNote(slaTasks, new Date(), messages)} />
 
       <section className={cn(CARD, 'flex flex-col p-0 sm:p-0')}>
         <div ref={feedRef} className="max-h-[60vh] min-h-[280px] space-y-3 overflow-y-auto p-4 sm:p-5" aria-live="polite">

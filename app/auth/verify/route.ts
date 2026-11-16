@@ -7,7 +7,7 @@ import { requestOrigin } from '@/lib/site-url'
 import { acceptInvitation } from '@/lib/admin/invites'
 import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
 import { createServiceClient } from '@/lib/supabase-service'
-import { clearSignupBlocked, inviteOnlyDecision, inviteOnlyRedirect, isSignupBlocked } from '@/lib/auth/invite-only-gate'
+import { clearSignupBlocked, inviteOnlyDecision, inviteOnlyRedirect, isSignupBlocked, refreshAfterClear } from '@/lib/auth/invite-only-gate'
 
 /**
  * GET /auth/verify — приземление ссылки, отправленной нами (см.
@@ -74,22 +74,35 @@ export async function GET(request: NextRequest) {
     invitationAccepted = accepted.accepted
   }
 
-  // R4 B3 (N4B-14): an account a Google sign-in created WITHOUT an invitation
-  // (marked by /auth/callback in 'invite' mode) does not get in through an
-  // e-mail link either — unless this link accepted an invitation or the person
-  // has been invited meanwhile (then the mark goes).
+  // R4 B3 (N4B-14): an account created around the invitation (marked by
+  // /auth/callback or middleware in 'invite' mode) does not get in through an
+  // e-mail link («Войти по ссылке», «Забыли пароль») either — unless this link
+  // accepted an invitation, the person has been invited meanwhile, or staff
+  // APPROVED the account (review W3A-2). Then the mark goes and the session
+  // gets a token without it.
   if (isSignupBlocked(data.user)) {
     const admin = createServiceClient()
-    if (invitationAccepted) {
-      await clearSignupBlocked(admin, data.user.id)
-    } else if ((await inviteOnlyDecision(admin, data.user)) === 'block') {
-      try {
-        await supabase.auth.signOut()
-      } catch (e) {
-        console.warn('[auth/verify] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
-      }
-      return inviteOnlyRedirect(origin, request, response)
+    let allowed = invitationAccepted
+    if (!allowed) {
+      const { data: prof } = await admin.from('profiles').select('status').eq('id', data.user.id).maybeSingle()
+      allowed = (prof as { status?: string } | null)?.status === 'approved'
     }
+    if (allowed) {
+      await clearSignupBlocked(admin, data.user.id)
+    } else {
+      const verdict = await inviteOnlyDecision(admin, data.user)
+      if (verdict.decision === 'block') {
+        try {
+          await supabase.auth.signOut()
+        } catch (e) {
+          console.warn('[auth/verify] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
+        }
+        return inviteOnlyRedirect(origin, request, response)
+      }
+    }
+    await refreshAfterClear(supabase)
+    // The secured-account redirect copied the cookies before the refresh.
+    if (destination !== response) for (const c of response.cookies.getAll()) destination.cookies.set(c)
   }
 
   void trackEvent({

@@ -24,6 +24,14 @@
  *   /api/inngest (GET)          200 with function_count > 0 (= --expect-functions when given).
  * What it cannot see — the logs and the journal ops_job_runs 15–20 min later — is printed as a reminder.
  *
+ * Local mode (base URL on localhost / 127.0.0.1 — the dev server against staging, runbook §4): there is no
+ * code deploy to staging, so the same smoke runs against `next dev`. What a dev server cannot have is a
+ * warning there, not a failure: no deploymentId; /api/health checks other than `db` (no Workflow queue,
+ * no scheduler, no Inngest locally); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
+ * (no CRON_SECRET locally); /api/inngest. Redirects, 401/403 and `db` stay strict.
+ * With --expect-deployment and a /api/healthz WITHOUT deploymentId (code from before R4-A4, e.g. after a
+ * rollback) the check warns instead of failing (W3B-3); a deploymentId that differs still fails.
+ *
  * Exit 0 — all passed (warnings allowed); 1 — something failed; 2 — bad arguments.
  * Plain ESM, Node 20+ (global fetch, AbortSignal.timeout); `fetch` is injected in tests.
  */
@@ -38,7 +46,7 @@ const REDIRECT = new Set([301, 302, 303, 307, 308])
 export class UsageError extends Error {}
 
 export function parseArgs(argv) {
-  const opts = { baseUrl: PROD_BASE_URL, expectDeployment: null, expectFunctions: null, timeoutMs: 10_000 }
+  const opts = { baseUrl: PROD_BASE_URL, expectDeployment: null, expectFunctions: null, timeoutMs: 10_000, local: false }
   const value = (i, flag) => {
     const v = argv[i + 1]
     if (v === undefined || v.startsWith('--')) throw new UsageError(`${flag}: нужно значение`)
@@ -60,6 +68,7 @@ export function parseArgs(argv) {
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) throw new UsageError('--base-url: https:// (http:// — только localhost)')
   opts.baseUrl = url.origin
+  opts.local = local
   if (opts.expectDeployment !== null && !/^[0-9a-f-]{8,64}$/.test(opts.expectDeployment)) throw new UsageError('--expect-deployment: id деплоя Railway')
   if (opts.expectFunctions !== null && !(Number.isInteger(opts.expectFunctions) && opts.expectFunctions > 0)) throw new UsageError('--expect-functions: целое > 0')
   if (!(Number.isInteger(opts.timeoutMs) && opts.timeoutMs >= 1000 && opts.timeoutMs <= 60_000)) throw new UsageError('--timeout-ms: 1000…60000')
@@ -97,20 +106,34 @@ export function checks() {
       verify: (r, _b, o) => {
         const body = /** @type {Record<string, unknown> | null} */ (r.json)
         if (r.status !== 200 || !body || body.ok !== true) return { ok: false, got: String(r.status) }
-        const dep = typeof body.deploymentId === 'string' ? body.deploymentId : null
+        const dep = typeof body.deploymentId === 'string' && UUID.test(body.deploymentId) ? body.deploymentId : null
         const commit = typeof body.commit === 'string' ? body.commit.slice(0, 12) : null
         const got = `200 deployment ${dep ?? '—'}${commit ? `, commit ${commit}` : ''}`
+        if (o.local) return { ok: true, got, note: dep ? '' : 'локально deploymentId нет — так и должно быть' }
+        // W3B-3: code from before R4-A4 (a rollback to it) has no deploymentId at all — that is no proof of the
+        // wrong deployment, only no proof: a warning, and the deployment is checked by `railway deployment list`.
+        // A deploymentId that is there and differs IS the wrong deployment.
+        if (!dep) {
+          return { ok: true, warn: true, got, note: o.expectDeployment
+            ? `в ответе нет deploymentId (код до R4-A4?) — ${o.expectDeployment} сверить по railway deployment list`
+            : 'deploymentId нет: не Railway или код до R4-A4' }
+        }
         if (o.expectDeployment && dep !== o.expectDeployment) return { ok: false, got, note: `ждали деплой ${o.expectDeployment}` }
-        if (!dep || !UUID.test(dep)) return { ok: true, warn: true, got, note: 'deploymentId нет: не Railway или старая сборка' }
         return { ok: true, got }
       },
     },
     {
       path: '/api/health', expect: '200, все проверки ok',
-      verify: (r) => {
+      verify: (r, _b, o) => {
         const body = /** @type {{ ok?: unknown, checks?: Record<string, unknown> } | null} */ (r.json)
         const entries = Object.entries(body?.checks ?? {})
         const got = `${r.status} ${entries.map(([k, v]) => `${k}:${v}`).join(' ') || '(нет checks)'}`
+        if (o.local && (r.status === 200 || r.status === 503) && body?.checks) {
+          // dev server: only the database is required (staging); the rest a laptop does not run
+          if (body.checks.db !== 'ok') return { ok: false, got, note: 'база staging не отвечает' }
+          const rest = entries.filter(([k, v]) => k !== 'db' && v !== 'ok').map(([k]) => k)
+          return rest.length ? { ok: true, warn: true, got, note: `локально: ${rest.join(', ')} — без них dev-сервер работает` } : { ok: true, got }
+        }
         if (r.status !== 200 || body?.ok !== true || entries.length === 0) return { ok: false, got }
         const bad = entries.filter(([, v]) => v !== 'ok' && v !== 'unknown')
         if (bad.length) return { ok: false, got }
@@ -121,13 +144,14 @@ export function checks() {
     { path: '/', expect: '200', verify: status(200) },
     {
       path: '/login', expect: '200 + CSP',
-      verify: (r) => {
+      verify: (r, _b, o) => {
         if (r.status !== 200) return { ok: false, got: String(r.status) }
         const csp = r.headers.get('content-security-policy')
         if (!csp) return { ok: false, got: '200, без CSP', note: 'нет заголовка Content-Security-Policy' }
         const problems = []
         if (!/(^|;)\s*connect-src\s/i.test(csp)) problems.push('нет connect-src')
-        if (/localhost|127\.0\.0\.1/i.test(csp)) problems.push('localhost в CSP')
+        // the dev build allows the local «Рынок» (lib/security/csp.mjs); a production build must not
+        if (!o.local && /localhost|127\.0\.0\.1/i.test(csp)) problems.push('localhost в CSP')
         if (/\*\.supabase\.co\b/i.test(csp)) problems.push('*.supabase.co в CSP')
         return problems.length ? { ok: false, got: '200 + CSP', note: problems.join(', ') } : { ok: true, got: '200 + CSP' }
       },
@@ -142,8 +166,10 @@ export function checks() {
     { path: '/api/expert/sla-tasks', expect: '401', verify: status(401) },
     ...['/api/cron/ops-watchdog', '/api/cron/agents'].map((p) => ({
       path: p, expect: '401',
-      verify: (/** @type {Got} */ r) => r.status === 503
-        ? { ok: false, got: '503', note: 'CRON_SECRET не задан: кроны не работают' }
+      verify: (/** @type {Got} */ r, /** @type {string} */ _b, /** @type {{ local: boolean }} */ o) => r.status === 503
+        ? (o.local
+          ? { ok: true, warn: true, got: '503', note: 'локально CRON_SECRET не задан' }
+          : { ok: false, got: '503', note: 'CRON_SECRET не задан: кроны не работают' })
         : { ok: r.status === 401, got: String(r.status) },
     })),
     {
@@ -152,7 +178,9 @@ export function checks() {
         const body = /** @type {Record<string, unknown> | null} */ (r.json)
         const n = typeof body?.function_count === 'number' ? body.function_count : null
         const got = `${r.status}${n !== null ? ` function_count ${n}` : ''}`
-        if (r.status !== 200 || n === null || n <= 0) return { ok: false, got }
+        if (r.status !== 200 || n === null || n <= 0) {
+          return o.local ? { ok: true, warn: true, got, note: 'локально Inngest может быть не настроен' } : { ok: false, got }
+        }
         if (o.expectFunctions !== null && n !== o.expectFunctions) return { ok: false, got, note: `ждали ${o.expectFunctions}` }
         return { ok: true, got }
       },
@@ -217,14 +245,16 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     }
     throw e
   }
-  log(`smoke: ${opts.baseUrl} (${new Date().toISOString()})`)
+  log(`smoke: ${opts.baseUrl}${opts.local ? ' — локальный режим (dev-сервер против staging)' : ''} (${new Date().toISOString()})`)
   const result = await runSmoke(opts, deps)
   for (const l of formatTable(result.rows)) log(l)
   const failed = result.rows.filter((r) => r.mark === '✗').length
   const warned = result.rows.filter((r) => r.mark === '!').length
   log('')
   log(failed ? `ПРОВАЛ: ${failed} из ${result.rows.length}${warned ? `, предупреждений ${warned}` : ''}` : `OK: ${result.rows.length} проверок${warned ? `, предупреждений ${warned}` : ''}`)
-  log('Вручную: логи portal и agents без ошибок; через 15–20 мин журнал ops_job_runs — все задачи ok (runbook §7).')
+  log(opts.local
+    ? 'Вручную: пройти изменённый путь в браузере каждой нужной ролью (панель DEV, runbook §4).'
+    : 'Вручную: логи portal и agents без ошибок; через 15–20 мин журнал ops_job_runs — все задачи ok (runbook §7).')
   return failed ? 1 : 0
 }
 

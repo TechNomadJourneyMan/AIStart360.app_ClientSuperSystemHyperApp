@@ -7,7 +7,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ClientState } from '@/lib/automation/data'
 
-const h = vi.hoisted(() => ({ modes: new Map<string, { mode: string | null; expressCompletedAt: string | null }>(), modesFail: false, sent: [] as Array<Record<string, unknown>> }))
+const h = vi.hoisted(() => ({
+  modes: new Map<string, { mode: string | null; expressCompletedAt: string | null }>(), modesFail: false, sent: [] as Array<Record<string, unknown>>,
+  enabled: ['full', 'express', 'chat'] as string[],
+}))
 
 vi.mock('@/lib/automation/data', () => ({
   fetchClientStates: async () => [state('runner', { survey_first_at: ago(8), survey_last_change_at: ago(8) })],
@@ -18,6 +21,8 @@ vi.mock('@/lib/automation/data', () => ({
 vi.mock('@/lib/automation/survey-modes', () => ({
   fetchSurveyModes: async () => { if (h.modesFail) throw new Error('down'); return h.modes },
 }))
+// R4 W3B-7: the GIGA setting of the survey modes.
+vi.mock('@/lib/survey/modes-server', () => ({ getSurveyModes: async () => ({ enabled: h.enabled, defaultMode: 'express' }) }))
 vi.mock('@/lib/notifications/notify', () => ({
   notifyClient: async (input: Record<string, unknown>) => { h.sent.push(input); return { ok: true } },
 }))
@@ -80,7 +85,42 @@ describe('planReminders — the questionnaire mode', () => {
   })
 })
 
+// R4 W3B-7: a mode switched off in GIGA is never the reminder's link — the full questionnaire instead.
+describe('planReminders — a mode switched off in GIGA', () => {
+  it('express off: the express done / in progress → the classic «шаг N» into the full questionnaire', () => {
+    for (const survey of [
+      { mode: 'express' as const, expressCompletedAt: '2026-10-22T09:00:00Z', answers: {} },
+      { mode: 'express' as const, expressCompletedAt: null, answers: { s1_company_name: 'ТОО' } },
+    ]) {
+      const t = surveyTouch({ state: stuck, surveySteps: [1, 2], draft: null, pulseWeeks: [], survey, enabledModes: ['full', 'chat'] })
+      expect(t).toMatchObject({ title: 'Вы остановились на шаге 3', ctaUrl: '/client/onboarding?step=3' })
+      expect(t?.body).not.toMatch(/быстр|блок/i)
+    }
+  })
+
+  it('chat off → the classic text; the express done with the chat chosen later and express off → the chat while it is on', () => {
+    const chatOff = surveyTouch({ state: stuck, surveySteps: [1, 2], draft: null, pulseWeeks: [], survey: { mode: 'chat', expressCompletedAt: null }, enabledModes: ['full', 'express'] })
+    expect(chatOff).toMatchObject({ ctaUrl: '/client/onboarding?step=3' })
+    const toChat = surveyTouch({ state: stuck, surveySteps: [1, 2], draft: null, pulseWeeks: [], survey: { mode: 'chat', expressCompletedAt: ago(8) }, enabledModes: ['full', 'chat'] })
+    expect(toChat).toMatchObject({ ctaUrl: '/client/onboarding/chat' })
+  })
+})
+
 describe('runReminders reads the mode', () => {
+  it('W3B-7: the GIGA setting reaches the reminder — express off → no link to the blocks', async () => {
+    h.modesFail = false
+    h.modes = new Map([['runner', { mode: 'express', expressCompletedAt: ago(8) }]])
+    h.enabled = ['full', 'chat']
+    h.sent = []
+    try {
+      await runReminders(NOW)
+      expect(h.sent[0]).toMatchObject({ event: 'survey_reminder', title: 'Вы остановились на шаге 2' })
+      expect(String(h.sent[0].ctaUrl)).not.toContain('/blocks')
+    } finally {
+      h.enabled = ['full', 'express', 'chat']
+    }
+  })
+
   it('the mode facts reach the text; a failed read keeps the classic text', async () => {
     h.modes = new Map([['runner', { mode: 'express', expressCompletedAt: ago(8) }]])
     h.sent = []

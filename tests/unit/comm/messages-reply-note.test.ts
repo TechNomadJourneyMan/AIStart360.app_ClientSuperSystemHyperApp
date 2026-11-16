@@ -9,14 +9,15 @@ import { describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TEAM_REPLY_COMMON, TEAM_REPLY_WHO, messagesReplyNote, slaTasksFromResponse } from '@/lib/comm/reply-note'
+import { TEAM_REPLY_ANSWERED, TEAM_REPLY_COMMON, TEAM_REPLY_WHO, messagesReplyNote, slaTasksFromResponse } from '@/lib/comm/reply-note'
 
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ channel: () => ({ on: () => ({ subscribe: () => ({}) }) }), removeChannel: async () => {} }) }))
 
 const NOW = new Date('2026-11-16T09:00:00Z')
-const task = (over: Partial<{ source: string; answerDueAt: string; overdue: boolean; inProgress: boolean }> = {}) => ({
-  source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: false, ...over,
+const task = (over: Partial<{ source: string; answerDueAt: string; overdue: boolean; inProgress: boolean; receivedAt: string | null }> = {}) => ({
+  source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: false, receivedAt: '2026-11-16T08:00:00Z', ...over,
 })
+const msg = (direction: 'in' | 'out', authorKind: string, createdAt: string) => ({ direction, authorKind, createdAt })
 
 describe('messagesReplyNote', () => {
   it('an open request under the SLA → «Ответим до <срок>» (Almaty time), the earliest one', () => {
@@ -28,7 +29,7 @@ describe('messagesReplyNote', () => {
   })
 
   it('no task, SLA off (empty list), a failed read, an overdue task, other kinds of work → the common text without a date', () => {
-    const common = { who: TEAM_REPLY_WHO, text: TEAM_REPLY_COMMON, dueAt: null }
+    const common = { who: TEAM_REPLY_WHO, text: TEAM_REPLY_COMMON, dueAt: null, state: 'common' }
     expect(messagesReplyNote(null, NOW)).toEqual(common)
     expect(messagesReplyNote([], NOW)).toEqual(common)
     expect(messagesReplyNote([task({ overdue: true })], NOW)).toEqual(common)
@@ -38,9 +39,28 @@ describe('messagesReplyNote', () => {
     expect(TEAM_REPLY_COMMON).not.toMatch(/\d/)
   })
 
+  // W3B-6: a staff reply in the conversation does not close the request (expert_cases), the task stays open.
+  it('the team already answered after the last question (and after the request) → no deadline, an honest line', () => {
+    const answered = { who: TEAM_REPLY_WHO, text: TEAM_REPLY_ANSWERED, dueAt: null, state: 'answered' }
+    const asked = msg('in', 'user', '2026-11-16T08:00:00Z')
+    // staff answered after the question → the deadline is gone
+    expect(messagesReplyNote([task()], NOW, [asked, msg('out', 'staff', '2026-11-16T08:30:00Z')])).toEqual(answered)
+    // the bot hand-over and a broadcast are not an answer
+    expect(messagesReplyNote([task()], NOW, [asked, msg('out', 'bot', '2026-11-16T08:01:00Z'), msg('out', 'system', '2026-11-16T08:40:00Z')]).state).toBe('due')
+    // the client asked again after the answer → the deadline is back
+    expect(messagesReplyNote([task()], NOW, [asked, msg('out', 'staff', '2026-11-16T08:30:00Z'), msg('in', 'user', '2026-11-16T08:50:00Z')]).state).toBe('due')
+    // an old staff message before a NEW request (e.g. an assistant escalation) does not count
+    expect(messagesReplyNote([task({ receivedAt: '2026-11-16T08:45:00Z' })], NOW, [asked, msg('out', 'staff', '2026-11-16T08:30:00Z')]).state).toBe('due')
+    // no request at all, but the team answered the last question → also said honestly
+    expect(messagesReplyNote([], NOW, [asked, msg('out', 'staff', '2026-11-16T08:30:00Z')])).toEqual(answered)
+    // a staff message without any question from the client is not «answered your question»
+    expect(messagesReplyNote([], NOW, [msg('out', 'staff', '2026-11-16T08:30:00Z')]).state).toBe('common')
+    expect(TEAM_REPLY_ANSWERED).not.toMatch(/\d/)
+  })
+
   it('the API body → tasks; anything malformed → none', () => {
-    expect(slaTasksFromResponse({ ok: true, data: [{ id: 'x', source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: true, label: 'Обращение клиента' }] }))
-      .toEqual([{ source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: true }])
+    expect(slaTasksFromResponse({ ok: true, data: [{ id: 'x', source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: true, label: 'Обращение клиента', receivedAt: '2026-11-16T08:00:00Z' }] }))
+      .toEqual([{ source: 'case', answerDueAt: '2026-11-18T09:00:00Z', overdue: false, inProgress: true, receivedAt: '2026-11-16T08:00:00Z' }])
     expect(slaTasksFromResponse({ ok: false, error: 'Unauthorized' })).toEqual([])
     expect(slaTasksFromResponse(null)).toEqual([])
     expect(slaTasksFromResponse({ data: [{ source: 1 }, null, 'x'] })).toEqual([])
@@ -72,7 +92,11 @@ describe('«Сообщения» on screen', () => {
     expect(out).toContain('data-reply-due="2026-11-18T09:00:00.000Z"')
     const src = readFileSync('components/client/messages/ClientMessages.tsx', 'utf8')
     expect(src).toContain("fetch('/api/v1/expert-sla'")
-    expect(src).toContain('<ReplyNote note={messagesReplyNote(slaTasks)} />')
+    expect(src).toContain('<ReplyNote note={messagesReplyNote(slaTasks, new Date(), messages)} />')
+    const answered = renderToStaticMarkup(React.createElement(ReplyNote, { note: messagesReplyNote([task()], NOW, [msg('in', 'user', '2026-11-16T08:00:00Z'), msg('out', 'staff', '2026-11-16T08:30:00Z')]) }))
+    expect(answered).toContain(TEAM_REPLY_ANSWERED)
+    expect(answered).toContain('data-reply-state="answered"')
+    expect(answered).not.toContain('Ответим до')
   })
 })
 

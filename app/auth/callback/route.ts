@@ -11,11 +11,13 @@ import { runInBackground } from '@/lib/background'
 import { CABINET_ENTRY_PATH, roleLandingPath } from '@/lib/role-landing'
 import {
   INVITE_ONLY_PATH,
+  clearSignupBlocked,
   inviteOnlyDecision,
   inviteOnlyRedirect,
   isSignupBlocked,
   isSignupDisabledError,
   markSignupBlocked,
+  refreshAfterClear,
 } from '@/lib/auth/invite-only-gate'
 import type { UserRole } from '@/types'
 
@@ -84,16 +86,30 @@ export async function GET(request: NextRequest) {
       // old (approved) account must never turn it back.
       const freshAccount = Number.isFinite(createdMs) && Date.now() - createdMs < 10 * 60_000
       const newcomer = freshAccount && (!existingProfile || existingProfile.status === 'pending_approval')
-      const markedPending = existingProfile?.status === 'pending_approval' && isSignupBlocked(user)
-      if ((newcomer || markedPending) && (await inviteOnlyDecision(supabaseAdmin, user)) === 'block') {
-        if (!isSignupBlocked(user)) await markSignupBlocked(supabaseAdmin, user.id)
-        try {
-          await supabase.auth.signOut()
-        } catch (e) {
-          console.warn('[auth/callback] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
+      const marked = isSignupBlocked(user)
+      const approved = existingProfile?.status === 'approved'
+      // Review W3A-2: staff approved a marked account — the mark goes (it also
+      // goes in applyApprovalDecision), and the session gets a token without it.
+      if (marked && approved) {
+        await clearSignupBlocked(supabaseAdmin, user.id)
+        await refreshAfterClear(supabase)
+      }
+      // Review W3A-3: a marked account is judged by its mark, not by the profile
+      // row — a failed profile read (null) must not let it through. A failed
+      // read of the MODE blocks without marking (lib/auth/invite-only-gate.ts).
+      if (newcomer || (marked && !approved)) {
+        const verdict = await inviteOnlyDecision(supabaseAdmin, user)
+        if (verdict.decision === 'block') {
+          if (verdict.mark) await markSignupBlocked(supabaseAdmin, user.id)
+          try {
+            await supabase.auth.signOut()
+          } catch (e) {
+            console.warn('[auth/callback] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
+          }
+          console.info('[auth/callback] invite-only: a Google sign-in without an invitation was turned back', user.id)
+          return inviteOnlyRedirect(origin, request, response)
         }
-        console.info('[auth/callback] invite-only: a new Google sign-in without an invitation was turned back', user.id)
-        return inviteOnlyRedirect(origin, request, response)
+        if (verdict.cleared) await refreshAfterClear(supabase)
       }
 
       if (justSignedUp) {

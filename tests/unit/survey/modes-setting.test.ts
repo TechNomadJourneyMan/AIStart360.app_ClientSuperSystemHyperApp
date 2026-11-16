@@ -97,6 +97,19 @@ describe('resolveSurveyModes / withoutSwitchedOff / surveyModeOffRedirect', () =
     expect(surveyModeOffRedirect('express', all)).toBeNull()
   })
 
+  it('W3B-7: which links open a mode page — express / snapshot / blocks are the express, the chat page is the chat', async () => {
+    const { surveyModeOfHref, surveyHrefOpen } = await import('@/lib/survey/modes')
+    expect(surveyModeOfHref('/client/onboarding/express')).toBe('express')
+    expect(surveyModeOfHref('/client/onboarding/snapshot?fresh=1')).toBe('express')
+    expect(surveyModeOfHref('/client/onboarding/blocks/b3')).toBe('express')
+    expect(surveyModeOfHref('/client/onboarding/chat')).toBe('chat')
+    expect(surveyModeOfHref('/client/onboarding?step=1')).toBeNull()
+    expect(surveyModeOfHref('/client/onboarding/answers')).toBeNull()
+    expect(surveyModeOfHref('/client/onboarding/expressive')).toBeNull()
+    expect(surveyHrefOpen('/client/onboarding/express', ['full', 'chat'])).toBe(false)
+    expect(surveyHrefOpen('/client/onboarding?step=1', ['full'])).toBe(true)
+  })
+
   it('a new client is recommended the default mode of the setting; anyone who started — the full questionnaire', async () => {
     const { resolveSurveyEntry, recommendedSurveyMode } = await import('@/lib/survey/modes')
     const ALL = ['full', 'express', 'chat'] as const

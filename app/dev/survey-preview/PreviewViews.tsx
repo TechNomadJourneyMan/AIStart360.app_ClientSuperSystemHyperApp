@@ -60,8 +60,8 @@ export function ChooserPreview() {
       <SurveyModesBanner enabled={all} onTry={setPicked} onDismiss={() => setPicked(null)} />
       <SurveyModeChooser enabled={all} recommended="express" onChoose={setPicked} />
       <div className="mx-auto max-w-4xl px-4 pb-6">
-        <p className="text-xs text-on-surface-variant">Сегодня (Ф1) в продукте выбирается только полная анкета — остальные карточки показываются как «Скоро»:</p>
-        <SurveyModeChooser enabled={['full']} recommended="full" onChoose={setPicked} />
+        <p className="text-xs text-on-surface-variant">Способы включаются в ГИГА («Настройки → Анкета», R4-B4). Выключенного способа на экране нет — например, без экспресса первой предлагается полная анкета:</p>
+        <SurveyModeChooser enabled={['full', 'chat']} recommended="full" onChoose={setPicked} />
         {picked && <p className="mt-2 text-xs text-primary" role="status">Выбрано: {picked}</p>}
       </div>
     </div>

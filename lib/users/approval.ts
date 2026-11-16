@@ -79,6 +79,15 @@ export async function applyApprovalDecision(input: ApplyApprovalInput): Promise<
     await notifyAccessGranted(profile.id).catch(() => undefined)
   }
 
+  // R4 B3 (review W3A-2): staff approved the account — a «created around the
+  // invitation» mark (app_metadata.signup_blocked, lib/auth/invite-only-gate.ts)
+  // no longer applies: middleware, /auth/verify and the password sign-in let
+  // it in. GoTrue merges app_metadata; null removes the key (a no-op without it).
+  if (profile && input.status === 'approved') {
+    const { clearSignupBlocked } = await import('@/lib/auth/invite-only-gate')
+    await clearSignupBlocked(sb, profile.id)
+  }
+
   // SR-19: a person who loses access (rejected / needs clarification / back to
   // pending) keeps no working public report links — an expert's links must not
   // outlive the expert. Failures are logged and reported to staff, never thrown.

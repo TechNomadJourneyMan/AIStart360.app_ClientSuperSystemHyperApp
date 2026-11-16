@@ -10,36 +10,71 @@ import { createServiceClient } from '@/lib/supabase-service'
 export type RegistrationMode = 'open' | 'approval' | 'invite'
 
 const VALID_MODES: RegistrationMode[] = ['open', 'approval', 'invite']
-/** The safe default — identical to the pre-toggle behaviour (admin approval). */
+/** The default when the admin never set the mode (no row) — the pre-toggle behaviour (admin approval). */
 const DEFAULT_MODE: RegistrationMode = 'approval'
 
 export function isRegistrationMode(v: unknown): v is RegistrationMode {
   return typeof v === 'string' && (VALID_MODES as string[]).includes(v)
 }
 
+export interface RegistrationModeRead {
+  mode: RegistrationMode
+  /** false — the database could not be read (an error, not «no row»). */
+  ok: boolean
+  /** When the row was last written (ISO) — «invite mode on since» for the invite-only gate. */
+  updatedAt: string | null
+}
+
+/** Last successfully read mode (per server instance) — used for a short while when a read fails. */
+let lastKnownMode: { mode: RegistrationMode; at: number } | null = null
+const LAST_KNOWN_MS = 5 * 60_000
+
 /**
- * Current registration mode — FAIL-SAFE. Any problem (table not yet migrated, no
- * row, malformed value, missing service key) resolves to 'approval', so the
- * feature is completely inert until the migration is applied AND an admin opts
- * in. Registration therefore never breaks because of this setting.
+ * Strict read of the registration mode. «No row» / a malformed value is the
+ * default 'approval' (ok: true — the admin never switched it); a database
+ * ERROR is ok: false, so the caller can choose the closed answer.
  */
-export async function getRegistrationMode(): Promise<RegistrationMode> {
+export async function readRegistrationMode(): Promise<RegistrationModeRead> {
   try {
     const sb = createServiceClient()
     const { data, error } = await sb
       .from('system_settings')
-      .select('value')
+      .select('value, updated_at')
       .eq('key', 'registration_mode')
       .maybeSingle()
 
-    if (error || !data) return DEFAULT_MODE
+    if (error) return { mode: DEFAULT_MODE, ok: false, updatedAt: null }
+    if (!data) return { mode: DEFAULT_MODE, ok: true, updatedAt: null }
 
-    const raw = data.value as unknown
+    const raw = (data as { value?: unknown }).value
     const mode = typeof raw === 'string' ? raw : (raw as { mode?: unknown })?.mode
-    return isRegistrationMode(mode) ? mode : DEFAULT_MODE
+    const updatedAt = typeof (data as { updated_at?: unknown }).updated_at === 'string' ? (data as { updated_at: string }).updated_at : null
+    const value = isRegistrationMode(mode) ? mode : DEFAULT_MODE
+    lastKnownMode = { mode: value, at: Date.now() }
+    return { mode: value, ok: true, updatedAt }
   } catch {
-    return DEFAULT_MODE
+    return { mode: DEFAULT_MODE, ok: false, updatedAt: null }
   }
+}
+
+/**
+ * Current registration mode. «No row» → 'approval' (the default the admin
+ * never changed). R4 B3 (review W3A-3): a database ERROR is not «approval» any
+ * more — every caller of this function creates accounts or shows sign-up / the
+ * demo, so a failed read gives the last mode read in the last 5 minutes, or
+ * the closed one: 'invite'. (Before, a too_many_connections moment on prod
+ * opened registration, the demo and the Google gate at once.)
+ */
+export async function getRegistrationMode(): Promise<RegistrationMode> {
+  const r = await readRegistrationMode()
+  if (r.ok) return r.mode
+  if (lastKnownMode && Date.now() - lastKnownMode.at < LAST_KNOWN_MS) return lastKnownMode.mode
+  return 'invite'
+}
+
+/** Tests only. */
+export function __resetRegistrationModeCacheForTests(): void {
+  lastKnownMode = null
 }
 
 export async function setRegistrationMode(mode: RegistrationMode, updatedBy?: string | null): Promise<void> {

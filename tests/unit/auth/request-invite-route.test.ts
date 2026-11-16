@@ -139,11 +139,27 @@ describe('POST /api/auth/request-invite', () => {
     expect(s.notices).toHaveLength(1)
     const p = s.tables.admin_requests[0].payload as Record<string, unknown>
     expect(p.repeats).toBe(2)
-    expect(p.company).toBe('ТОО «Ромашка-2»')
+    // W3A-5: the first request's data stay; the repeat with other data is kept apart.
+    expect(p.company).toBe('ТОО «Ромашка»')
+    expect(p.otherRequests).toEqual([expect.objectContaining({ company: 'ТОО «Ромашка-2»' })])
     // закрытая заявка не мешает новой
     s.tables.admin_requests[0].status = 'rejected'
     await post()
     expect(s.inserts).toHaveLength(2)
+  })
+
+  it('W3A-5: зная чужую почту, нельзя подменить имя, компанию и контакт открытой заявки', async () => {
+    await post()
+    await post({ name: 'Служба поддержки', email: 'AIGUL@corp.kz ', company: 'Другая компания', contact: '@someone_else', consent: true })
+    const p = s.tables.admin_requests[0].payload as Record<string, unknown>
+    expect(p).toMatchObject({ name: 'Айгуль Серикова', company: 'ТОО «Ромашка»', contact: '+7 701 111 22 33', repeats: 2 })
+    expect(p.otherRequests).toEqual([{ name: 'Служба поддержки', company: 'Другая компания', contact: '@someone_else', at: expect.any(String) }])
+    // the same data again — counted, nothing new kept beside
+    await post()
+    const q = s.tables.admin_requests[0].payload as Record<string, unknown>
+    expect(q.repeats).toBe(3)
+    expect(q.otherRequests).toHaveLength(1)
+    expect(s.notices).toHaveLength(1)
   })
 
   it('ловушка для ботов: ответ как у человека, ничего не пишется и никого не зовут', async () => {

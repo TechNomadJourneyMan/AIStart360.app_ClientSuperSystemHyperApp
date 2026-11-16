@@ -25,6 +25,7 @@ import {
 } from './store'
 import { runTurn, type TurnOutcome } from './turn'
 import type { ChatBudgetDTO, ChatButton, ChatMessageDTO, ChatProgressDTO, ChatQuestionDTO, ChatQuickAction, ChatScope } from './types'
+import { surveyHrefOpen, type SurveyMode } from '../modes'
 
 type Db = Pick<SupabaseClient, 'from'>
 
@@ -70,7 +71,21 @@ function currentQuestion(state: ChatState, answers: ReadonlyMap<string, StoredAn
   return q
 }
 
-export async function loadChatView(db: Db, userId: string, budget: ChatBudgetDTO): Promise<ChatView> {
+/**
+ * R4 W3B-7: the buttons «Быстрый старт» / … lead only into modes switched on in
+ * GIGA (getSurveyModes().enabled). Messages are stored with their buttons, so
+ * the filter runs both when writing and when reading. Absent → as stored.
+ */
+export function modeButtonsFor(buttons: readonly ChatButton[], enabled?: readonly SurveyMode[]): ChatButton[] {
+  return enabled ? buttons.filter((b) => b.action !== 'mode' || surveyHrefOpen(b.href, enabled)) : [...buttons]
+}
+
+export function withOpenModeButtons(messages: ChatMessageDTO[], enabled?: readonly SurveyMode[]): ChatMessageDTO[] {
+  if (!enabled) return messages
+  return messages.map((m) => (m.buttons?.length ? { ...m, buttons: modeButtonsFor(m.buttons, enabled) } : m))
+}
+
+export async function loadChatView(db: Db, userId: string, budget: ChatBudgetDTO, enabledModes?: readonly SurveyMode[]): Promise<ChatView> {
   const [answers, conversation] = await Promise.all([loadChatAnswers(db, userId), loadActiveConversation(db, userId)])
   if (!conversation) return { conversationId: null, scope: null, needsScope: true, messages: [], question: null, progress: chatProgress(answers, []), budget }
   const [messages, actions] = await Promise.all([loadMessages(db, conversation.id), loadActions(db, [conversation.id])])
@@ -80,7 +95,7 @@ export async function loadChatView(db: Db, userId: string, budget: ChatBudgetDTO
     conversationId: conversation.id,
     scope: state.scope,
     needsScope: state.scope === null,
-    messages: messagesToDTO(messages, actions),
+    messages: withOpenModeButtons(messagesToDTO(messages, actions), enabledModes),
     question: q ? questionDTO(q) : null,
     progress: chatProgress(answers, actions),
     budget,
@@ -108,6 +123,8 @@ export interface ChatPostDeps {
   now?: Date
   /** Server events (SURVEY_CHAT_PROPOSAL / _GUARD_BLOCKED); never awaited by the caller's UX. */
   track?: (name: 'SURVEY_CHAT_PROPOSAL' | 'SURVEY_CHAT_GUARD_BLOCKED', metadata: Record<string, unknown>) => void
+  /** R4 W3B-7: the modes switched on in GIGA; mode buttons into others are not offered. */
+  enabledModes?: readonly SurveyMode[]
 }
 
 export type ChatPostResult =
@@ -231,8 +248,8 @@ export async function chatPost(deps: ChatPostDeps, input: ChatPostInput): Promis
     deps.track?.('SURVEY_CHAT_GUARD_BLOCKED', { key: question.key, reason: outcome.guard.reason })
   }
   if (outcome.buttons) g.buttons = outcome.buttons
-  if (outcome.kind === 'budget') g.buttons = MODE_BUTTONS
-  if (outcome.kind === 'unavailable') g.buttons = MODE_BUTTONS
+  if (outcome.kind === 'budget') g.buttons = modeButtonsFor(MODE_BUTTONS, deps.enabledModes)
+  if (outcome.kind === 'unavailable') g.buttons = modeButtonsFor(MODE_BUTTONS, deps.enabledModes)
   if (outcome.kind === 'escalate') g.escalate = { key: question.key, label: question.label, text: message || state.answerTexts.get(question.key)?.slice(-1)[0] || '' }
 
   if (outcome.kind === 'proposal' && outcome.proposal) {
@@ -247,7 +264,7 @@ export async function chatPost(deps: ChatPostDeps, input: ChatPostInput): Promis
         preview: { title: question.label, after: p.display, before: before.stored, before_by_staff: before.byStaff, note: p.note ?? null, quote: p.quote },
       })
       if (!action) {
-        toWrite.push({ role: 'assistant', content: 'Не получилось подготовить запись. Ответ можно ввести в форме — всё сохранится.', grounding: { kind: 'unavailable', key: question.key, buttons: MODE_BUTTONS } })
+        toWrite.push({ role: 'assistant', content: 'Не получилось подготовить запись. Ответ можно ввести в форме — всё сохранится.', grounding: { kind: 'unavailable', key: question.key, buttons: modeButtonsFor(MODE_BUTTONS, deps.enabledModes) } })
         return finish()
       }
       g.proposal_id = action.id
@@ -276,7 +293,7 @@ export async function chatPost(deps: ChatPostDeps, input: ChatPostInput): Promis
       ok: true,
       conversationId: conversation!.id,
       scope: finalState.scope,
-      messages: messagesToDTO(written, actions),
+      messages: withOpenModeButtons(messagesToDTO(written, actions), deps.enabledModes),
       question: shownQuestion ? questionDTO(shownQuestion) : null,
       progress: chatProgress(answers, actions),
       budget: deps.budget,

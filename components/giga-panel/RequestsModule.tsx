@@ -57,6 +57,7 @@ import {
   SEND_INVITE_NO_RIGHT,
   SEND_INVITE_PERMISSION,
   isInviteRequest,
+  otherRequestText,
   sendInviteDialogText,
   sendInviteFromRequest,
 } from './invite-request-model'
@@ -229,7 +230,7 @@ export function RequestCard({
               </div>
             </div>
 
-            {invite && (request.contact || request.accountExists || (request.repeats ?? 1) > 1) && (
+            {invite && (request.contact || request.accountExists || (request.repeats ?? 1) > 1 || !!request.otherRequests?.length) && (
               <div className="mt-2 space-y-1 text-[11px] text-slate-400" data-invite-details>
                 {request.contact && (
                   <p className="inline-flex items-center gap-1.5">
@@ -239,6 +240,12 @@ export function RequestCard({
                 )}
                 {request.accountExists && <p>Аккаунт с этой почтой уже есть — приглашение придёт как ссылка для входа.</p>}
                 {(request.repeats ?? 1) > 1 && <p>Запросов с этой почты: {request.repeats} — заявка одна.</p>}
+                {/* Review W3A-5: a repeat with other data never replaces the first request — it is shown apart. */}
+                {(request.otherRequests ?? []).map((o, i) => (
+                  <p key={`${o.at ?? ''}-${i}`} data-invite-other className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-amber-200">
+                    {otherRequestText(o)}
+                  </p>
+                ))}
               </div>
             )}
 

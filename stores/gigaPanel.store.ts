@@ -62,6 +62,8 @@ export interface GigaRequest {
   accountExists?: boolean
   /** R4 B3: how many times the same e-mail asked while the request was open. */
   repeats?: number
+  /** R4 B3 (review W3A-5): repeats with data other than the first request — never merged into it. */
+  otherRequests?: Array<{ name: string | null; company: string | null; contact: string | null; at: string | null }>
   surveyData?: {
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
