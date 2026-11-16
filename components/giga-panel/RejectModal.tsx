@@ -10,9 +10,15 @@ interface RejectModalProps {
   userName: string
   onConfirm: (id: string, reason: string) => void
   onClose: () => void
+  /** Placeholder of the reason: who will read it. Default — the user gets it. */
+  reasonHint?: string
 }
 
-export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }: RejectModalProps) {
+export const REJECT_REASON_TO_USER = 'Укажите причину, которая будет отправлена пользователю...'
+// R4 B3: a request for an invitation has no account — nothing is sent, the reason stays with the team.
+export const REJECT_REASON_STAFF_ONLY = 'Причина останется в заявке для команды — человеку без аккаунта ничего не отправляется'
+
+export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose, reasonHint = REJECT_REASON_TO_USER }: RejectModalProps) {
   const [reason, setReason] = useState('')
 
   const handleConfirm = () => {
@@ -79,7 +85,7 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Укажите причину, которая будет отправлена пользователю..."
+                placeholder={reasonHint}
                 rows={4}
                 className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08]
                   text-sm text-slate-200 placeholder:text-slate-600

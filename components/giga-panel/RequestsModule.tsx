@@ -26,7 +26,7 @@ import {
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
-import { RejectModal } from './RejectModal'
+import { REJECT_REASON_STAFF_ONLY, REJECT_REASON_TO_USER, RejectModal } from './RejectModal'
 import { UserDetailPanel } from './UserDetailPanel'
 import { RegistrationModeControl } from './RegistrationModeControl'
 import { useStaff } from './StaffContext'
@@ -903,6 +903,7 @@ export function RequestsModule() {
         isOpen={!!rejectTarget}
         requestId={rejectTarget?.id ?? ''}
         userName={rejectTarget?.userName ?? ''}
+        reasonHint={rejectTarget && isInviteRequest(rejectTarget) ? REJECT_REASON_STAFF_ONLY : REJECT_REASON_TO_USER}
         onConfirm={handleReject}
         onClose={() => setRejectTarget(null)}
       />

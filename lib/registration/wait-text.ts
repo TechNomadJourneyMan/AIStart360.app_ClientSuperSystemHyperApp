@@ -42,11 +42,15 @@ export const INVITE_ONLY_LEAD =
 export const INVITE_REQUEST_ACCEPTED =
   'Заявка принята. Команда AIStart360 свяжется с вами. Если доступ откроют, приглашение придёт письмом на указанную почту.'
 
-/** /register?notice=invite_only — сюда возвращает вход через Google без приглашения (app/auth/callback). */
+/**
+ * /register?notice=invite_only — сюда возвращает любой вход без приглашения: Google (app/auth/callback),
+ * пароль, ссылка на почту, первая страница кабинета (staging-проход волны 3: «Google» в тексте сбивал
+ * вошедшего паролем).
+ */
 export const INVITE_ONLY_NOTICE_PARAM = 'invite_only'
 
 export const GOOGLE_INVITE_ONLY_NOTICE =
-  'Вход через Google открыт только для тех, у кого уже есть аккаунт или приглашение. Оставьте заявку — команда AIStart360 свяжется с вами.'
+  'Войти могут только те, кого пригласила или одобрила команда AIStart360. Оставьте заявку — команда свяжется с вами.'
 
 /** Текст пометки для `?notice=` страницы /register; неизвестное значение — null. */
 export function registerNotice(raw: string | string[] | undefined): string | null {

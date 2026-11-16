@@ -163,7 +163,8 @@ describe('R-107 / N4B-8: /login и /register без придуманных чи�
     expect(html).not.toContain('data-invite-notice')
     html = await register('invite_only')
     expect(html).toContain('data-invite-notice')
-    expect(html).toContain('Вход через Google открыт только для тех, у кого уже есть аккаунт или приглашение.')
+    expect(html).toContain('Войти могут только те, кого пригласила или одобрила команда AIStart360.')
+    expect(html).not.toContain('Вход через Google')
   })
 
   it('страницы входа читают режим при каждом заходе, а не при сборке', () => {
