@@ -227,6 +227,8 @@ describe('GIGA «Заявки» lists paid-access requests', () => {
     expect(paid.assignable).toBe(true)
     // R4 (N4B-1 / N4B-9): the 4 h answer deadline from "createdAt" (UTC) and the client for the links
     expect(paid).toMatchObject({ userId: CLIENT, slaDueAt: '2026-11-14T13:00:00.000Z' })
+    // R4 staging: "createdAt" (timestamp without zone, UTC) goes out with «Z» — the card shows the same moment as the deadline
+    expect(paid.createdAt).toBe('2026-11-14T09:00:00.000Z')
     expect(body.slaHours).toBe(4)
   })
 

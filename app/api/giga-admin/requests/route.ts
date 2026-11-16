@@ -10,6 +10,7 @@ import { scopedClientIds } from '@/lib/admin/client-scope'
 import { parseJsonBody } from '@/lib/validation/http'
 import { GigaAdminRequestBody } from '@/lib/validation/schemas'
 import { ACCESS_REQUEST_SOURCES, isTariffAccessRequest } from '@/lib/access/upgrade-requests'
+import { utcIso } from '@/lib/payments/plan-state'
 import { requestSlaDueAt, requestSlaHours } from '@/lib/access/request-notices'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
@@ -116,7 +117,9 @@ export async function GET(req: NextRequest) {
         userEmail: email(str(payload.email)),
         subject: str(payload.subject) ?? `Заявка на доступ #${String(r.id ?? '').slice(-6)}`,
         description: str(payload.description) ?? '',
-        createdAt: r.createdAt,
+        // admin_requests."createdAt" is a Prisma timestamp WITHOUT a zone (UTC): sent as ISO with «Z», otherwise the
+        // browser reads it as local time and the card shows the request hours earlier than its deadline (R4 staging).
+        createdAt: utcIso(r.createdAt) ?? r.createdAt,
         company: str(payload.company),
         rejectionReason: str(r.rejectionReason),
         priority: str(r.priority) ?? 'medium',
