@@ -129,6 +129,23 @@ describe('W3A-1 / W3A-2: вход по паролю', () => {
     expect(s.updateUserById).toHaveBeenCalledWith(UID, CLEAR)
   })
 
+  it('NV3-2: помеченному отправили приглашение (platform_invitations) — входит, метка снимается, токен свежий', async () => {
+    s.tables.platform_invitations = [{ email: 'new@corp.kz', status: 'sent' }]
+    const body = await (await login()).json()
+    expect(body).toMatchObject({ ok: true, session: { access_token: 'fresh-at', refresh_token: 'fresh-rt' } })
+    expect(s.updateUserById).toHaveBeenCalledWith(UID, CLEAR)
+    expect(s.refresh).toHaveBeenCalledTimes(1)
+    expect(s.signOut).not.toHaveBeenCalled()
+  })
+
+  it('NV3-2: приглашён в GoTrue (invited_at) — тоже входит; неудавшееся (failed) приглашение — нет', async () => {
+    s.signedIn = { ...s.signedIn!, invited_at: '2026-11-16T09:00:00.000Z' } as typeof s.signedIn
+    expect((await (await login()).json()).ok).toBe(true)
+    s.signedIn = { id: UID, email: 'new@corp.kz', app_metadata: { ...MARK } }
+    s.tables.platform_invitations = [{ email: 'new@corp.kz', status: 'failed' }]
+    expect(await (await login()).json()).toMatchObject({ ok: false, code: 'invite_only' })
+  })
+
   it('без метки — как раньше', async () => {
     s.signedIn = { id: UID, email: 'new@corp.kz', app_metadata: {} }
     const body = await (await login()).json()

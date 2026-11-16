@@ -224,6 +224,9 @@ describe('runPreflight — production', () => {
     expect(plan).toContain(`curl -fsS -X PUT ${PROD_BASE_URL}/api/inngest`)
     expect(plan).toContain('prod-before-round4w3-20261117T1015Z.dump')
     expect(plan).toContain(`node ${TOOLS}/scripts/smoke/post-deploy.mjs`)
+    // NV3-3: a normal deploy never tells the smoke to tolerate a missing deploymentId
+    expect(plan).not.toContain('--revert')
+    expect(plan).toContain('нет deploymentId в ответе = отвечает старый деплой')
     expect(plan).toContain(`Проверенный коммит: ${BRANCH.slice(0, 12)}`)
     // what it called: versions, git reads, one fetch, two gh GETs — nothing else
     for (const c of calls) {
@@ -406,8 +409,9 @@ describe('runPreflight — rollback, path B (W3B-3)', () => {
     expect(plan).toContain('ПЛАН ОТКАТА')
     expect(plan).toContain('cd /deploy')
     expect(plan).toContain(`railway up -e production -s portal --detach -m "${OLD} r4w3-revert"`)
-    expect(plan).toContain(`node ${TOOLS}/scripts/smoke/post-deploy.mjs`)
-    expect(plan).toContain('нет deploymentId — будет предупреждение')
+    // NV3-3: the rollback plan passes --revert to the smoke (a pre-A4 healthz only warns there)
+    expect(plan).toMatch(new RegExp(`node ${TOOLS}/scripts/smoke/post-deploy\\.mjs .*--expect-deployment .* --revert`))
+    expect(plan).toContain('предупреждение, а не провал')
     expect(plan).not.toContain('pg_dump')
     // git runs against the deploy copy
     expect(calls.filter((c) => c.startsWith('git -C ')).every((c) => c.startsWith('git -C /deploy '))).toBe(true)

@@ -34,6 +34,7 @@ const s = vi.hoisted(() => ({
   invitations: [] as string[],
   marks: [] as Array<{ url: string; body: Record<string, unknown> }>,
   fetches: [] as string[],
+  impActive: true,
 }))
 
 const withAbort = <T extends object>(o: T): T => Object.assign(o, { abortSignal: () => o })
@@ -58,7 +59,7 @@ vi.mock('@/lib/supabase/transport-edge', () => ({
 }))
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => ({ maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false }) }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null, loadEdgeSections: async () => [] }))
-vi.mock('@/lib/impersonation/edge', () => ({ isImpersonationActiveEdge: async () => false, endImpersonationEdge: async () => {}, auditImpersonatedRequestEdge: async () => {} }))
+vi.mock('@/lib/impersonation/edge', () => ({ isImpersonationActiveEdge: async () => s.impActive, endImpersonationEdge: async () => {}, auditImpersonatedRequestEdge: async () => {} }))
 vi.mock('@/lib/impersonation/state-edge', () => ({ impersonationRowEdge: async () => null, boundImpersonationEdge: async () => null }))
 vi.mock('@/lib/supabase/middleware', () => ({
   updateSession: async () => {
@@ -79,8 +80,10 @@ vi.mock('@/lib/supabase/middleware', () => ({
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.example.app'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service'
+process.env.GIGA_COOKIE_SECRET = 'test-secret-for-signed-tokens-0123456789'
 
 const { middleware } = await import('@/middleware')
+const { signImpersonation, IMP_COOKIE_NAME } = await import('@/lib/impersonation/token')
 const { __resetInviteOnlyEdgeCacheForTests } = await import('@/lib/auth/invite-only-edge')
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -88,10 +91,14 @@ const authCookies = (appMeta: Record<string, unknown> = {}) =>
   createChunks('sb-supabase-auth-token', `base64-${stringToBase64URL(JSON.stringify({
     access_token: `${b64({ alg: 'HS256' })}.${b64({ sub: UID, session_id: SESSION, exp: Math.floor(Date.now() / 1000) + 3600, app_metadata: appMeta })}.sig`,
   }))}`)
-const req = (path: string, opts: { method?: string; appMeta?: Record<string, unknown> } = {}) => {
+const req = (path: string, opts: { method?: string; appMeta?: Record<string, unknown>; imp?: string } = {}) => {
   const jar = authCookies(opts.appMeta).map((c) => `${c.name}=${c.value}`)
+  if (opts.imp) jar.push(`${IMP_COOKIE_NAME}=${opts.imp}`)
   return new NextRequest(`http://localhost${path}`, { method: opts.method ?? 'GET', headers: { cookie: jar.join('; ') } })
 }
+/** The signed «от имени» cookie a staff member gets for THIS session of the account `uid`. */
+const impCookie = (uid = UID) =>
+  signImpersonation({ sid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', uid, mode: 'edit', aid: 'staff-1', alabel: 'admin@aistart360.app', tlabel: 'new@corp.kz', asid: SESSION } as never)
 const location = (res: Response) => { const l = res.headers.get('location'); return l ? new URL(l).pathname + new URL(l).search : null }
 const expiresSession = (res: Response) =>
   (res.headers.getSetCookie?.() ?? []).some((c) => /^sb-supabase-auth-token=;/.test(c) && /Max-Age=0/i.test(c))
@@ -109,6 +116,7 @@ beforeEach(() => {
   s.invitations = []
   s.marks = []
   s.fetches = []
+  s.impActive = true
 })
 
 describe('W3A-1: метка в JWT закрывает API без запроса в базу', () => {
@@ -202,5 +210,42 @@ describe('W3A-1: ожидающий без метки (signup по anon-ключ
     s.status = 'approved'
     expect((await middleware(req('/client/home'))).status).toBe(200)
     expect(s.fetches).toEqual([])
+  })
+})
+
+describe('NV3-1: сотрудник «от имени» помеченного клиента — не сам клиент', () => {
+  it('живая сессия «от имени» этого аккаунта: API отвечает как раньше, сессия не гаснет', async () => {
+    const imp = await impCookie()
+    for (const [path, method] of [['/api/v1/survey', 'GET'], ['/api/v1/survey', 'POST']] as const) {
+      const res = await middleware(req(path, { method, appMeta: MARK, imp }))
+      expect(res.status, `${method} ${path}`).toBe(200)
+      expect(expiresSession(res)).toBe(false)
+    }
+  })
+
+  it('API ГИГА и выход из режима «от имени» открыты при любой сессии во вкладке; выход — всегда', async () => {
+    for (const path of ['/api/giga-admin/users', '/api/v1/impersonation/exit', '/api/v1/auth/sign-out']) {
+      const res = await middleware(req(path, { method: path.endsWith('users') ? 'GET' : 'POST', appMeta: MARK }))
+      expect(res.status, path).toBe(200)
+      expect(expiresSession(res), path).toBe(false)
+    }
+  })
+
+  it('подделанная, чужая или закрытая cookie «от имени» не снимает запрет с самого клиента', async () => {
+    expect((await middleware(req('/api/v1/survey', { appMeta: MARK, imp: 'forged.token' }))).status).toBe(403)
+    expect((await middleware(req('/api/v1/survey', { appMeta: MARK, imp: await impCookie('00000000-0000-4000-8000-0000000000ff') }))).status).toBe(403)
+    s.impActive = false
+    expect((await middleware(req('/api/v1/survey', { appMeta: MARK, imp: await impCookie() }))).status).toBe(401)
+  })
+
+  it('плашка «от имени» говорит сотруднику, почему клиент сам не войдёт', async () => {
+    const { createElement } = await import('react')
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const { default: ImpersonationBar } = await import('@/components/impersonation/ImpersonationBar')
+    const base = { mode: 'view' as const, target: 'new@corp.kz', admin: 'admin@aistart360.app', expiresAt: Date.now() + 60_000 }
+    const marked = renderToStaticMarkup(createElement(ImpersonationBar, { ...base, inviteOnly: true }))
+    expect(marked).toContain('data-invite-only-note')
+    expect(marked).toContain('создан в обход приглашения')
+    expect(renderToStaticMarkup(createElement(ImpersonationBar, base))).not.toContain('data-invite-only-note')
   })
 })

@@ -89,22 +89,32 @@ describe('runSmoke', () => {
     expect(r.row('/api/healthz').note).toContain('ждали деплой')
   })
 
-  it('an old build without the deployment id: a warning, not a failure', async () => {
-    const r = await smoke({ '/api/healthz': json(200, { ok: true, uptimeS: 3 }) })
-    expect(r.ok).toBe(true)
-    expect(r.row('/api/healthz').mark).toBe('!')
+  // NV3-3: the first deploy of A4 replaces code WITHOUT deploymentId — a missing field must not pass as «OK».
+  const OLD_HEALTHZ = json(200, { ok: true, uptimeS: 3 }) // /api/healthz of code from before R4-A4
+  const OTHER = '11111111-2222-4333-8444-555555555555'
+
+  it('NV3-3: a deploy, and /api/healthz has no deploymentId → ✗ (the old deployment still answers)', async () => {
+    const r = await smoke({ '/api/healthz': OLD_HEALTHZ }, ['--expect-deployment', DEP])
+    expect(r.ok).toBe(false)
+    expect(r.row('/api/healthz')).toMatchObject({ mark: '✗', note: expect.stringContaining('старый деплой') })
+    // without --expect-deployment too, and a deploymentId of the wrong shape is no id either
+    expect((await smoke({ '/api/healthz': OLD_HEALTHZ })).ok).toBe(false)
+    expect((await smoke({ '/api/healthz': json(200, { ok: true, deploymentId: 'x' }) }, ['--expect-deployment', DEP])).ok).toBe(false)
   })
 
-  it('W3B-3: a rollback to code before R4-A4 with --expect-deployment — the field is absent → a warning, the healthy rollback passes', async () => {
-    const r = await smoke({ '/api/healthz': json(200, { ok: true, uptimeS: 3 }) }, ['--expect-deployment', DEP])
+  it('NV3-3 / W3B-3: a rollback (--revert) to code before R4-A4 — the field is absent → a warning, the healthy rollback passes', async () => {
+    const r = await smoke({ '/api/healthz': OLD_HEALTHZ }, ['--expect-deployment', DEP, '--revert'])
     expect(r.ok).toBe(true)
     expect(r.row('/api/healthz')).toMatchObject({ mark: '!', note: expect.stringContaining('railway deployment list') })
-    // a deploymentId of the wrong shape is no id either
-    const junk = await smoke({ '/api/healthz': json(200, { ok: true, deploymentId: 'x' }) }, ['--expect-deployment', DEP])
-    expect(junk.ok).toBe(true)
-    // but a deploymentId that is there and differs is the wrong deployment
-    const other = await smoke({ '/api/healthz': json(200, { ok: true, deploymentId: '11111111-2222-4333-8444-555555555555' }) }, ['--expect-deployment', DEP])
-    expect(other.ok).toBe(false)
+    expect((await smoke({ '/api/healthz': OLD_HEALTHZ }, ['--revert'])).ok).toBe(true)
+  })
+
+  it('NV3-3: a deploymentId that is there and differs → ✗ always, --revert or not', async () => {
+    const other = { '/api/healthz': json(200, { ok: true, deploymentId: OTHER }) }
+    expect((await smoke(other, ['--expect-deployment', DEP])).ok).toBe(false)
+    const reverted = await smoke(other, ['--expect-deployment', DEP, '--revert'])
+    expect(reverted.ok).toBe(false)
+    expect(reverted.row('/api/healthz').note).toContain('ждали деплой')
   })
 
   it('/api/health: a failed check or 503 fails; «unknown» only warns', async () => {

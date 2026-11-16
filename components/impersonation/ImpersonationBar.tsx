@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from 'react'
 
-interface Props { mode: 'view' | 'edit'; target: string; admin: string; expiresAt: number }
+interface Props {
+  mode: 'view' | 'edit'
+  target: string
+  admin: string
+  expiresAt: number
+  /** R4 B3 (verify NV3-1): the account was created around the invitation (app_metadata.signup_blocked). */
+  inviteOnly?: boolean
+}
+
+export const INVITE_ONLY_IMPERSONATION_NOTE =
+  'Аккаунт создан в обход приглашения: пока его не одобрят или не пригласят, сам клиент войти не может — регистрация по приглашению. Открыть доступ: «Принять» в «Заявки → Регистрация» или отправить приглашение.'
 
 function left(ms: number): string {
   if (ms <= 0) return '0:00'
@@ -11,7 +21,7 @@ function left(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export default function ImpersonationBar({ mode, target, admin, expiresAt }: Props) {
+export default function ImpersonationBar({ mode, target, admin, expiresAt, inviteOnly = false }: Props) {
   const [now, setNow] = useState(() => Date.now())
   const [leaving, setLeaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +62,7 @@ export default function ImpersonationBar({ mode, target, admin, expiresAt }: Pro
           <p className="truncate">
             {target} · {mode === 'edit' ? 'правка разрешена, действия записываются' : 'только просмотр'} · вы: {admin} · осталось {left(expiresAt - now)}
           </p>
+          {inviteOnly && <p data-invite-only-note className="font-semibold">{INVITE_ONLY_IMPERSONATION_NOTE}</p>}
           {error && <p className="font-semibold text-red-900">{error}</p>}
         </div>
         <button

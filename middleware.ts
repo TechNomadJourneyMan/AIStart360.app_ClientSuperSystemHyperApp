@@ -56,13 +56,21 @@ function redirectKeepingCookies(from: NextResponse, url: URL): NextResponse {
  * it here can only add a restriction. An expired access token is refreshed by
  * the route; the next call carries the fresh one and is checked.
  */
-async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unknown>) => void): Promise<NextResponse | null> {
+interface ImpersonatedApiGuard {
+  /** Refusal to send as is; null — go on. */
+  response: NextResponse | null
+  /** A live impersonation of THIS session drives the call (verified cookie, open row). */
+  impersonating: boolean
+}
+
+async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unknown>) => void): Promise<ImpersonatedApiGuard> {
+  const go = (response: NextResponse | null, impersonating = false): ImpersonatedApiGuard => ({ response, impersonating })
   const { pathname } = request.nextUrl
-  if (pathname.startsWith('/api/giga-admin/') || pathname === '/api/v1/impersonation/exit') return null
+  if (pathname.startsWith('/api/giga-admin/') || pathname === '/api/v1/impersonation/exit') return go(null)
   // The localhost developer login (lib/dev/dev-access.ts) replaces the identity
   // of the browser and clears this cookie: a view-mode or ended impersonation
   // must not lock its routes out. Constant `false` in a production build.
-  if (pathname.startsWith('/api/dev/') && devAccessEnabledForRequest(request)) return null
+  if (pathname.startsWith('/api/dev/') && devAccessEnabledForRequest(request)) return go(null)
   const token = request.cookies.get(IMP_COOKIE_NAME)?.value
   const method = request.method.toUpperCase()
   const ended = () => NextResponse.json({ ok: false, error: 'Сессия просмотра от имени пользователя завершена' }, { status: 401 })
@@ -74,17 +82,19 @@ async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unk
     const v = await readImpersonation(token)
     if (!v.claims) {
       // Forged / unreadable cookie: as before, it cannot mutate.
-      if (MUTATING.has(method)) return ended()
+      if (MUTATING.has(method)) return go(ended())
     } else if (v.claims.asid && sessionKey && v.claims.asid !== sessionKey) {
       // An authentic cookie of ANOTHER session: not this browser session's.
-      return ended()
+      return go(ended())
     } else {
-      if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) return ended()
-      if (!MUTATING.has(method)) return null
+      if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) return go(ended())
+      // The impersonation drives THIS account's session (NV3-1: not the account's own use).
+      const drives = !!auth?.sub && v.claims.uid === auth.sub
+      if (!MUTATING.has(method)) return go(null, drives)
       const row = await impersonationRowEdge(v.claims.sid)
       const mode = v.claims.mode === 'view' || row?.mode === 'view' ? 'view' : 'edit'
       if (mode === 'view' && !isViewModeAllowed(pathname)) {
-        return NextResponse.json({ ok: false, error: 'Режим просмотра: изменения запрещены' }, { status: 403 })
+        return go(NextResponse.json({ ok: false, error: 'Режим просмотра: изменения запрещены' }, { status: 403 }), drives)
       }
       if (pathname !== '/api/v1/events' && !READ_ONLY_POST_API.includes(pathname)) {
         later(auditImpersonatedRequestEdge({
@@ -99,19 +109,19 @@ async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unk
           ua: request.headers.get('user-agent')?.slice(0, 300) || null,
         }))
       }
-      return null
+      return go(null, drives)
     }
   }
 
   // No usable cookie: was this very session minted for an impersonation?
   // ('unknown' = the binding could not be read now: do not lock everyone out.)
-  if (!sessionKey) return null
+  if (!sessionKey) return go(null)
   const bound = await boundImpersonationEdge(sessionKey)
   if (bound && bound !== 'unknown') {
     later(endImpersonationEdge(bound, token ? 'cookie_mismatch' : 'cookie_missing'))
-    return ended()
+    return go(ended())
   }
-  return null
+  return go(null)
 }
 
 const MFA_CHALLENGE_PATH = '/2fa'
@@ -354,14 +364,24 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
   if (strayCode) return strayCode
 
   if (pathname.startsWith('/api')) {
-    const blocked = await guardImpersonatedApi(request, later)
-    if (blocked) return blocked
+    const imp = await guardImpersonatedApi(request, later)
+    if (imp.response) return imp.response
     // R4 B3 (review W3A-1): an account created around the invitation (marked
     // app_metadata.signup_blocked by /auth/callback or the rule below) gets no
-    // API — read from the session's JWT, no database round trip. Sign-out and
-    // the «Запросить приглашение» form stay open. The claim is read without the
-    // signature check: it can only ADD a refusal (lib/auth/invite-only-shared.ts).
-    if (!inviteOnlyExemptApi(pathname, request.method) && signupBlockedInToken(accessTokenFromCookies(request.cookies.getAll()))) {
+    // API — read from the session's JWT, no database round trip. Sign-out, the
+    // «Запросить приглашение» form, the staff API (/api/giga-admin — its own
+    // staff check) and leaving an impersonation stay open. The claim is read
+    // without the signature check: it can only ADD a refusal
+    // (lib/auth/invite-only-shared.ts).
+    // Verify NV3-1: a staff member working «as» a marked client is not that
+    // client — a live impersonation of this session (checked just above) is
+    // not refused and its session is not dropped; the bar tells the staff
+    // member the account is closed by the invite-only rule.
+    if (
+      !imp.impersonating &&
+      !inviteOnlyExemptApi(pathname, request.method) &&
+      signupBlockedInToken(accessTokenFromCookies(request.cookies.getAll()))
+    ) {
       return inviteOnlyApiResponse(request)
     }
   }

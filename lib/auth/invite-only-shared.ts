@@ -64,11 +64,16 @@ export function signupBlockedInToken(accessToken: string | null | undefined): bo
 }
 
 /**
- * API, которые помеченному аккаунту остаются доступны: выход и сама форма
- * «Запросить приглашение».
+ * API, которые помеченному аккаунту остаются доступны: выход, сама форма
+ * «Запросить приглашение», выход из режима «от имени» и API персонала
+ * (/api/giga-admin — своя проверка роли сотрудника; помеченный клиент её не
+ * пройдёт, а сотрудник, у которого во вкладке сессия «от имени» помеченного,
+ * не должен терять ГИГА — проверка NV3-1).
  */
 export function inviteOnlyExemptApi(pathname: string, method: string): boolean {
   if (pathname === '/api/v1/auth/sign-out') return true
+  if (pathname === '/api/v1/impersonation/exit') return true
+  if (pathname.startsWith('/api/giga-admin/')) return true
   if (pathname === '/api/auth/request-invite' && method.toUpperCase() === 'POST') return true
   return false
 }

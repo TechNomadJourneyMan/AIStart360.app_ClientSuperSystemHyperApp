@@ -3,7 +3,7 @@
  * scripts/smoke/post-deploy.mjs — the smoke check after a deploy (R4-A4, N4A-6; docs/deploy/runbook.md §7).
  *
  *   node scripts/smoke/post-deploy.mjs [--base-url https://portal.aistart360.app]
- *        [--expect-deployment <RAILWAY deployment id>] [--expect-functions <N>] [--timeout-ms 10000]
+ *        [--expect-deployment <RAILWAY deployment id>] [--expect-functions <N>] [--timeout-ms 10000] [--revert]
  *   npm run smoke:prod
  *
  * READ ONLY: GET requests without cookies, tokens or secrets, one after another, redirects not
@@ -12,7 +12,11 @@
  *
  * Checks:
  *   /api/healthz                200 ok, prints the deployment id (and commit); with --expect-deployment
- *                               it must be that one — the new deploy really answers;
+ *                               it must be that one — the new deploy really answers. NO deploymentId at
+ *                               all fails too (NV3-3): every build since R4-A4 has it on Railway, so a
+ *                               missing one means the OLD code still answers (the first deploy of A4 goes
+ *                               over code without it — overlap, a smoke run too early). Only --revert
+ *                               (a rollback to code from before R4-A4, runbook §9) turns that into a warning;
  *   /api/health                 200, every check «ok» («unknown» — no data yet — is a warning);
  *   /, /login                   200; /login carries a Content-Security-Policy with connect-src and no
  *                               localhost / 127.0.0.1 / *.supabase.co (docs/deploy/csp.md);
@@ -29,8 +33,9 @@
  * warning there, not a failure: no deploymentId; /api/health checks other than `db` (no Workflow queue,
  * no scheduler, no Inngest locally); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
  * (no CRON_SECRET locally); /api/inngest. Redirects, 401/403 and `db` stay strict.
- * With --expect-deployment and a /api/healthz WITHOUT deploymentId (code from before R4-A4, e.g. after a
- * rollback) the check warns instead of failing (W3B-3); a deploymentId that differs still fails.
+ * --revert (W3B-3, NV3-3): a rollback to code from before R4-A4 — a /api/healthz without deploymentId is a
+ * warning, the deployment is checked by `railway deployment list`. A deploymentId that is there and differs
+ * fails always, --revert or not.
  *
  * Exit 0 — all passed (warnings allowed); 1 — something failed; 2 — bad arguments.
  * Plain ESM, Node 20+ (global fetch, AbortSignal.timeout); `fetch` is injected in tests.
@@ -46,7 +51,7 @@ const REDIRECT = new Set([301, 302, 303, 307, 308])
 export class UsageError extends Error {}
 
 export function parseArgs(argv) {
-  const opts = { baseUrl: PROD_BASE_URL, expectDeployment: null, expectFunctions: null, timeoutMs: 10_000, local: false }
+  const opts = { baseUrl: PROD_BASE_URL, expectDeployment: null, expectFunctions: null, timeoutMs: 10_000, local: false, revert: false }
   const value = (i, flag) => {
     const v = argv[i + 1]
     if (v === undefined || v.startsWith('--')) throw new UsageError(`${flag}: нужно значение`)
@@ -59,6 +64,7 @@ export function parseArgs(argv) {
       case '--expect-deployment': opts.expectDeployment = value(i, a).toLowerCase(); i++; break
       case '--expect-functions': opts.expectFunctions = Number(value(i, a)); i++; break
       case '--timeout-ms': opts.timeoutMs = Number(value(i, a)); i++; break
+      case '--revert': opts.revert = true; break
       case '-h': case '--help': throw new UsageError('help')
       default: throw new UsageError(`неизвестный аргумент: ${a}`)
     }
@@ -110,13 +116,14 @@ export function checks() {
         const commit = typeof body.commit === 'string' ? body.commit.slice(0, 12) : null
         const got = `200 deployment ${dep ?? '—'}${commit ? `, commit ${commit}` : ''}`
         if (o.local) return { ok: true, got, note: dep ? '' : 'локально deploymentId нет — так и должно быть' }
-        // W3B-3: code from before R4-A4 (a rollback to it) has no deploymentId at all — that is no proof of the
-        // wrong deployment, only no proof: a warning, and the deployment is checked by `railway deployment list`.
-        // A deploymentId that is there and differs IS the wrong deployment.
+        // NV3-3: every build since R4-A4 reports its deploymentId on Railway — none means the old code answers
+        // (the first deploy of A4 replaces code without the field). Only a rollback TO such code (--revert,
+        // W3B-3) makes it a warning; then the deployment is checked by `railway deployment list`.
+        // A deploymentId that is there and differs IS the wrong deployment, always.
         if (!dep) {
-          return { ok: true, warn: true, got, note: o.expectDeployment
-            ? `в ответе нет deploymentId (код до R4-A4?) — ${o.expectDeployment} сверить по railway deployment list`
-            : 'deploymentId нет: не Railway или код до R4-A4' }
+          return o.revert
+            ? { ok: true, warn: true, got, note: `откат на код до R4-A4: deploymentId нет — ${o.expectDeployment ?? 'деплой'} сверить по railway deployment list` }
+            : { ok: false, got, note: 'deploymentId нет — отвечает старый деплой (код до R4-A4); подождать SUCCESS/overlap и повторить; при откате на такой код — --revert' }
         }
         if (o.expectDeployment && dep !== o.expectDeployment) return { ok: false, got, note: `ждали деплой ${o.expectDeployment}` }
         return { ok: true, got }
@@ -230,7 +237,7 @@ export function formatTable(rows) {
   return [line(' ', 'путь', 'ожидалось', 'получено', ''), ...rows.map((r) => line(r.mark, r.path, r.expect, r.got, r.note))]
 }
 
-const HELP = `node scripts/smoke/post-deploy.mjs [--base-url https://…] [--expect-deployment <id>] [--expect-functions <N>] [--timeout-ms 10000]
+const HELP = `node scripts/smoke/post-deploy.mjs [--base-url https://…] [--expect-deployment <id>] [--expect-functions <N>] [--timeout-ms 10000] [--revert]
 Только чтение (GET без входа). Подробно — docs/deploy/runbook.md §7.`
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
