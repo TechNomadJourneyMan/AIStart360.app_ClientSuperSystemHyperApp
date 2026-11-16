@@ -39,6 +39,14 @@ const STALE_DRAIN_MS = 10 * 60_000
 /** The call that is draining now, if any: one drain at a time in a process. */
 let current: { since: number } | null = null
 
+/** The due Point A recalculations within `budgetMs`; a failure is logged by its first line, never thrown. */
+function drainPointA(budgetMs: number) {
+  return drainPointARecalc({ budgetMs }).catch((err: unknown) => {
+    console.error('[cron/agents] point A drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
+    return null
+  })
+}
+
 /**
  * GET /api/cron/agents — maintenance of the agent queue. Requires `Authorization: Bearer $CRON_SECRET`.
  *
@@ -48,7 +56,8 @@ let current: { since: number } | null = null
  *   - 'agents': the service has no Inngest and its in-process cron calls this route every minute
  *     (lib/cron/schedule.ts), so here the route IS that maintenance loop and keeps its rules: the
  *     quiet mode (with «Агенты по расписанию (24/7)» off the upkeep runs every 15 minutes only, the
- *     database is left alone in between), the short budgets, and the clock read once at the start.
+ *     database is left alone in between — except one claim of due Point A recalculations a minute,
+ *     N4A-13), the short budgets, and the clock read once at the start.
  *     tests/unit/agents/maintenance-parity.test.ts compares the two call for call.
  *   - 'web': agent work does not run in this process; the call is answered and nothing is drained.
  *
@@ -79,7 +88,11 @@ export async function GET(req: NextRequest) {
     const now = new Date()
     const around = await scheduledAgentsOn()
     if (loop && !around && now.getUTCMinutes() % 15 !== 0) {
-      return NextResponse.json({ ok: true, skipped: 'quiet_mode' })
+      // N4A-13: the quiet mode still drains the Point A queue every minute (one cheap claim): the
+      // nightly pass only queues, and without Inngest a client's recalculation waited up to 15 min
+      // behind the nightly wave. Everything else waits for the quarter of an hour, as before.
+      const pointA = await drainPointA(budgets.pointAMs)
+      return NextResponse.json({ ok: true, skipped: 'quiet_mode', pointA: pointA ? { done: pointA.done.length, failed: pointA.failed.length } : null })
     }
     const scheduled = around ? await enqueueScheduledAgents(now) : []
     const redispatched = await redispatchPending()
@@ -91,10 +104,7 @@ export async function GET(req: NextRequest) {
     })
     // Point A recalculations that are due (lib/point-a/recalc-queue.ts): the
     // path without Inngest; bounded, never fails the cron.
-    const pointA = await drainPointARecalc({ budgetMs: budgets.pointAMs }).catch((err: unknown) => {
-      console.error('[cron/agents] point A drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
-      return null
-    })
+    const pointA = await drainPointA(budgets.pointAMs)
     // Ревью R3-PA H1: a Point A AI analysis «готовится» for more than 15 min was lost
     // (network, redeploy / OOM mid-call) → failed / 'stale', «Повторить» is offered.
     // One conditional UPDATE; never fails the cron.

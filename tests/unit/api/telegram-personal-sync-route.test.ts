@@ -126,6 +126,29 @@ describe('GET /api/telegram/personal/sync', () => {
   })
 })
 
+describe('R-015 (R4-A2): a hung sync no longer holds the cron', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('answers 504 «telegram-personal-sync» after 60 s (the cron runner used to wait 300 s)', async () => {
+    configure(CONFIGURED)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    sync.syncTelegramPersonalInbox.mockImplementation(() => new Promise(() => {}))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    let settled = false
+    const pending = GET(request(CRON_SECRET))
+    pending.then(() => { settled = true }, () => { settled = true })
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    const response = await pending
+    expect(response.status).toBe(504)
+    expect(response.headers.get('x-deadline')).toBe('telegram-personal-sync')
+  })
+})
+
 describe('telegramPersonalSyncConfigured', () => {
   it('is true only when all three variables are non-empty', () => {
     const withOne = (name: keyof typeof CONFIGURED, value: string | undefined) => {

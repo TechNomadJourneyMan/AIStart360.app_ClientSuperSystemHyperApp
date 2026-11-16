@@ -13,11 +13,12 @@ import { providerParam, serverError, unknownProvider } from '@/lib/integrations/
 import { getConnection } from '@/lib/integrations/store'
 import { syncConnectionNow } from '@/lib/integrations/sync'
 import { refreshCompanyMetrics } from '@/lib/agents/definitions/integration-sync'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export async function POST(req: NextRequest, { params }: { params: { companyId: string; provider: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { companyId: string; provider: string } }) {
   const guard = await requireGigaCompany(req, 'company.edit', params.companyId)
   if (guard.response) return guard.response
   const provider = providerParam(params.provider)
@@ -47,3 +48,10 @@ export async function POST(req: NextRequest, { params }: { params: { companyId: 
     return serverError('giga-admin/integrations sync', err)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_INTEGRATION_SYNC overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'integration-sync', ms: 60_000 })

@@ -20,6 +20,7 @@ import { checkSurveyAssistantBudget } from '@/lib/survey/chat/budget'
 import { openRouterSurveyLlm } from '@/lib/survey/chat/model'
 import { chatPost, loadChatView } from '@/lib/survey/chat/session'
 import { CHAT_SCOPES, type ChatBudgetDTO } from '@/lib/survey/chat/types'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const KEY_RE = /^[a-z][a-z0-9_]{1,79}$/
 const Body = z.object({
@@ -55,7 +56,7 @@ async function budgetFor(userId: string): Promise<ChatBudgetDTO> {
   return { exhausted: b.exhausted, reason: b.reason, message: b.message }
 }
 
-export async function GET() {
+async function handleGet() {
   const who = await sessionUser()
   if (who instanceof NextResponse) return who
   try {
@@ -67,7 +68,7 @@ export async function GET() {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const who = await sessionUser()
   if (who instanceof NextResponse) return who
   const parsed = Body.safeParse(await req.json().catch(() => null))
@@ -93,3 +94,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Помощник не ответил — попробуйте ещё раз или продолжите в форме.' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_SURVEY_CHAT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'survey-chat', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'survey-chat', ms: 60_000 })

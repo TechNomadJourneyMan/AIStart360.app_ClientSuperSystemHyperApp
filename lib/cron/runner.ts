@@ -26,9 +26,21 @@
  * Every job is tracked as background work (lib/background.ts) from the moment it is due until its
  * call settles, so the shutdown on SIGTERM waits for it: the claim of a call cut short is already
  * spent, and no other instance would run that minute again.
+ *
+ * Outcomes (R4-A1, N4A-3): with `record`, every call and every failed claim is handed to the journal
+ * (public.ops_job_runs, lib/ops/job-journal.ts) after it settles — the status, the HTTP code, the
+ * duration and the first line of the error. The write happens outside the two slots and its failure
+ * is only a log line: the journal must never hold back or break a job.
+ *
+ * Claims that keep failing (N4A-4): every cron depends on the claim in workflow-db, and a claim that
+ * fails means the job is not called. Once claims have failed for CLAIM_OUTAGE_ALERT_MS without one
+ * success in between, the runner says so on the error log and through `onClaimOutage` (wired to the
+ * Telegram alarm that needs no database, lib/notifications/ops-direct.ts) — again every
+ * CLAIM_OUTAGE_REPEAT_MS while it lasts, and once more when a claim answers again.
  */
 import { trackBackground } from '@/lib/background'
 import { dueJobs, jobsForRole, type CronJob } from '@/lib/cron/schedule'
+import type { JobOutcome } from '@/lib/ops/job-journal'
 import { portalRole } from '@/lib/runtime/role'
 
 const MINUTE_MS = 60_000
@@ -36,6 +48,10 @@ const MINUTE_MS = 60_000
 const MAX_CONCURRENT = 2
 /** A cron route may legitimately run for minutes (maxDuration 300 s on Vercel); a hung one must not hold a slot forever. */
 const FETCH_TIMEOUT_MS = 300_000
+/** Claims failing this long without a success in between are an outage: the error log and the alarm. */
+export const CLAIM_OUTAGE_ALERT_MS = 5 * MINUTE_MS
+/** While the outage lasts the alarm is repeated this often, not on every failed claim. */
+export const CLAIM_OUTAGE_REPEAT_MS = 6 * 60 * MINUTE_MS
 
 // The guard lives on globalThis for the same reason as the set in lib/background.ts: Next compiles
 // instrumentation.ts separately from the routes, so a module-level variable is not shared.
@@ -60,6 +76,26 @@ export interface CronRunnerOptions {
   now?: () => Date
   setTimer?: typeof setTimeout
   log?: (line: string) => void
+  /** Lines that need attention (claims keep failing). Default: `log`. */
+  logError?: (line: string) => void
+  /**
+   * The journal of outcomes (lib/ops/job-journal.ts recordJobRun). Called once per call that was
+   * made and once per failed claim, after it settled and outside the slots; awaited by the shutdown
+   * (background work), never by the job. A rejection is logged and dropped.
+   */
+  record?: (outcome: JobOutcome) => Promise<unknown>
+  /** Claims have kept failing (state 'down', repeated every CLAIM_OUTAGE_REPEAT_MS) or answer again after that ('recovered'). */
+  onClaimOutage?: (event: ClaimOutage) => Promise<unknown> | void
+}
+
+export interface ClaimOutage {
+  state: 'down' | 'recovered'
+  /** The first failed claim of the streak. */
+  since: Date
+  /** Failed claims in a row (several jobs of one minute count one each). */
+  failures: number
+  /** The last error, the cron secret masked. */
+  lastError: string
 }
 
 const minuteOf = (ms: number) => Math.floor(ms / MINUTE_MS)
@@ -73,6 +109,16 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
       // a broken logger must not take the scheduler down
     }
   }
+
+  const writeError = opts.logError
+    ? (line: string) => {
+        try {
+          opts.logError!(line)
+        } catch {
+          // same as above
+        }
+      }
+    : write
 
   const running = runnerSlot[RUNNER_KEY]
   if (running) {
@@ -99,6 +145,60 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
     return opts.secret ? message.split(opts.secret).join('***') : message
   }
 
+  // Hand an outcome to the journal: after the call, outside the slots, never awaited by the job.
+  const journal = (outcome: JobOutcome) => {
+    if (!opts.record) return
+    let pending: Promise<unknown>
+    try {
+      pending = Promise.resolve(opts.record(outcome))
+    } catch (error) {
+      pending = Promise.reject(error)
+    }
+    trackBackground(pending.catch((error) => write(`cron: ${outcome.job} outcome not recorded: ${messageOf(error)}`)))
+  }
+
+  // The streak of failed claims (N4A-4). Any answer of the claim, won or lost, ends it.
+  let claimFailures = 0
+  let claimFailingSince: Date | undefined
+  let claimAlertedAt: number | undefined
+  let claimLastError = ''
+  const announceOutage = (event: ClaimOutage) => {
+    if (!opts.onClaimOutage) return
+    let pending: Promise<unknown>
+    try {
+      pending = Promise.resolve(opts.onClaimOutage(event))
+    } catch (error) {
+      pending = Promise.reject(error)
+    }
+    trackBackground(pending.catch((error) => write(`cron: claim outage alarm failed: ${messageOf(error)}`)))
+  }
+  const claimFailed = (message: string) => {
+    const at = now()
+    claimFailures += 1
+    claimFailingSince ??= at
+    claimLastError = message
+    const lasting = at.getTime() - claimFailingSince.getTime()
+    if (lasting < CLAIM_OUTAGE_ALERT_MS) return
+    if (claimAlertedAt !== undefined && at.getTime() - claimAlertedAt < CLAIM_OUTAGE_REPEAT_MS) return
+    claimAlertedAt = at.getTime()
+    writeError(
+      `cron: захват задач в workflow-db не удаётся с ${claimFailingSince.toISOString()} (${claimFailures} раз подряд) - ` +
+        `задачи по расписанию НЕ выполняются: ${message}`,
+    )
+    announceOutage({ state: 'down', since: claimFailingSince, failures: claimFailures, lastError: message })
+  }
+  const claimAnswered = () => {
+    if (claimFailures === 0) return
+    if (claimAlertedAt !== undefined && claimFailingSince) {
+      write(`cron: захват задач снова работает (неудач подряд было ${claimFailures})`)
+      announceOutage({ state: 'recovered', since: claimFailingSince, failures: claimFailures, lastError: claimLastError })
+    }
+    claimFailures = 0
+    claimFailingSince = undefined
+    claimAlertedAt = undefined
+    claimLastError = ''
+  }
+
   // Two slots shared by every tick. A freed slot is handed straight to the next waiter, so the
   // count never dips below the real number in flight in between.
   let active = 0
@@ -119,18 +219,26 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
       if (stopped) return
       if (opts.claim) {
         // After the stop check and right before the call, so a claim is never taken and then dropped.
+        let won: boolean
         try {
-          if (!(await opts.claim(job.path, minute))) {
-            write(`cron: ${job.path} пропущено, уже запущено другим экземпляром`)
-            return
-          }
+          won = await opts.claim(job.path, minute)
         } catch (error) {
-          write(`cron: ${job.path} not run, claim failed: ${messageOf(error)}`)
+          const message = messageOf(error)
+          write(`cron: ${job.path} not run, claim failed: ${message}`)
+          const at = now()
+          journal({ job: job.path, kind: 'cron', scheduledFor: minute, startedAt: at, finishedAt: at, durationMs: 0, status: 'claim_failed', error: `claim failed: ${message}` })
+          claimFailed(message)
+          return
+        }
+        claimAnswered()
+        if (!won) {
+          write(`cron: ${job.path} пропущено, уже запущено другим экземпляром`)
           return
         }
       }
-      const began = now().getTime()
-      const elapsed = () => `${now().getTime() - began} ms`
+      const startedAt = now()
+      const began = startedAt.getTime()
+      const elapsedMs = () => now().getTime() - began
       try {
         const res = await fetchImpl(`${baseUrl}${job.path}`, {
           method: 'GET',
@@ -139,9 +247,21 @@ export function startCronRunner(opts: CronRunnerOptions): Handle {
         })
         // Only the status matters; do not hold the slot (or the memory) for a body nobody reads.
         try { await res.body?.cancel() } catch { /* already closed */ }
-        write(`cron: GET ${job.path} -> ${res.status} in ${elapsed()}${res.ok ? '' : ' (FAILED)'}`)
+        const took = elapsedMs()
+        write(`cron: GET ${job.path} -> ${res.status} in ${took} ms${res.ok ? '' : ' (FAILED)'}`)
+        journal({
+          job: job.path, kind: 'cron', scheduledFor: minute, startedAt, finishedAt: now(), durationMs: took,
+          status: res.ok ? 'ok' : 'http_error', httpStatus: res.status, error: res.ok ? null : `HTTP ${res.status}`,
+        })
       } catch (error) {
-        write(`cron: GET ${job.path} -> error in ${elapsed()}: ${messageOf(error)}`)
+        const took = elapsedMs()
+        const message = messageOf(error)
+        write(`cron: GET ${job.path} -> error in ${took} ms: ${message}`)
+        const timedOut = (error as { name?: unknown } | null)?.name === 'TimeoutError'
+        journal({
+          job: job.path, kind: 'cron', scheduledFor: minute, startedAt, finishedAt: now(), durationMs: took,
+          status: timedOut ? 'timeout' : 'error', error: message,
+        })
       }
     } finally {
       release()

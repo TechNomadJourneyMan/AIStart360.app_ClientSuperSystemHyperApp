@@ -11,6 +11,7 @@ import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { validateAiText } from '@/lib/ai/validation/apply'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/assistant/insight — one AI insight for the current screen.
@@ -23,7 +24,7 @@ import { validateAiText } from '@/lib/ai/validation/apply'
 
 const bodySchema = z.object({ screen: z.string().trim().min(1).max(64) })
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
@@ -86,3 +87,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'ai_unavailable' }, { status: 502 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ASSISTANT_INSIGHT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'assistant-insight', ms: 60_000 })

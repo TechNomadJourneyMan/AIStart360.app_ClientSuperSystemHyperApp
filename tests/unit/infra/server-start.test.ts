@@ -20,18 +20,21 @@ vi.mock('workflow/runtime', () => ({
   },
 }))
 
-import { queueRetryDelayMs, startPersistentServer } from '@/lib/runtime/server-start'
+import { claimOutageAlert, queueRetryDelayMs, startPersistentServer } from '@/lib/runtime/server-start'
+import { missingServiceLinkEnv } from '@/lib/env'
 import { getWorkflowQueueStatus } from '@/lib/runtime/workflow-queue-status'
 import { trackBackground, waitForBackgroundWork } from '@/lib/background'
 
 type Handler = () => void
 
+// R-061 (R4-A1): a complete environment also has a secret for internal tokens, or the boot names it as missing.
 const FULL_ENV: Partial<NodeJS.ProcessEnv> = {
   PERSISTENT_SERVER: '1',
   NEXT_MANUAL_SIG_HANDLE: 'true',
   WORKFLOW_TARGET_WORLD: '@workflow/world-postgres',
   CRON_RUNNER_ENABLED: '1',
   CRON_SECRET: 'x',
+  INTERNAL_TOKEN_SECRET: 'it',
   PORT: '8080',
 }
 // The same without the Workflow queue: nothing for graphile-worker to stop, so nothing to wait for.
@@ -40,6 +43,7 @@ const NO_QUEUE_ENV: Partial<NodeJS.ProcessEnv> = {
   NEXT_MANUAL_SIG_HANDLE: 'true',
   CRON_RUNNER_ENABLED: '1',
   CRON_SECRET: 'x',
+  INTERNAL_TOKEN_SECRET: 'it',
   PORT: '8080',
 }
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 20))
@@ -1086,5 +1090,91 @@ describe('startPersistentServer: defaults', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// R4-A1: the cron writes every outcome to the journal and turns a lasting claim outage into the
+// Telegram alarm that needs no database; the boot names the missing link variables (R-061).
+describe('startPersistentServer: the journal, the claim alarm and the link variables', () => {
+  type CronOpts = { record?: (o: unknown) => Promise<unknown>; onClaimOutage?: (e: unknown) => unknown; logError?: unknown }
+  const cronOpts = (t: ReturnType<typeof setup>) => t.startCron.mock.calls[0][0] as CronOpts
+
+  it('the cron gets the journal and the error log; with a claim also the outage alarm', async () => {
+    const t = setup()
+    const recorded: unknown[] = []
+    const alerts: unknown[] = []
+    const env = { ...FULL_ENV, WORKFLOW_POSTGRES_URL: 'postgres://user:pw@unreachable.invalid:5432/db' }
+    await startPersistentServer(env, { ...t.deps, recordJob: async (o) => { recorded.push(o) }, alertDirect: async (a) => { alerts.push(a) } })
+
+    const opts = cronOpts(t)
+    expect(typeof opts.logError).toBe('function')
+    await opts.record!({ job: '/api/cron/expert-sla' })
+    expect(recorded).toEqual([{ job: '/api/cron/expert-sla' }])
+
+    await opts.onClaimOutage!({ state: 'down', since: new Date('2026-11-16T10:01:00Z'), failures: 6, lastError: 'password authentication failed for user "user" (pw)' })
+    expect(alerts).toHaveLength(1)
+    const text = JSON.stringify(alerts[0])
+    expect(text).toContain('workflow-db')
+    expect(text).not.toContain('pw')
+  })
+
+  it('without a claim there is no outage to alarm about', async () => {
+    const t = setup()
+    await startPersistentServer(FULL_ENV, t.deps)
+    expect(cronOpts(t).onClaimOutage).toBeUndefined()
+    expect(typeof cronOpts(t).record).toBe('function')
+  })
+
+  it('claimOutageAlert: CRITICAL with the service, the start and the masked error; SUCCESS when it is over', () => {
+    const env = { PORTAL_ROLE: 'agents', WORKFLOW_POSTGRES_URL: 'postgres://wf:s3cret@workflow-db.railway.internal:5432/railway' }
+    const down = claimOutageAlert({ state: 'down', since: new Date('2026-11-16T10:01:00Z'), failures: 7, lastError: 'connect to postgres://wf:s3cret@workflow-db.railway.internal:5432/railway failed' }, env)
+    expect(down.level).toBe('CRITICAL')
+    expect(down.lines!.join(' ')).toContain('сервис агентов')
+    expect(down.lines!.join(' ')).toContain('15:01') // Almaty
+    expect(JSON.stringify(down)).not.toContain('s3cret')
+    const up = claimOutageAlert({ state: 'recovered', since: new Date('2026-11-16T10:01:00Z'), failures: 7, lastError: '' }, {})
+    expect(up.level).toBe('SUCCESS')
+    expect(up.lines!.join(' ')).toContain('портал')
+  })
+
+  it('missing link variables: one error line at boot with their names, never a value', async () => {
+    const t = setup()
+    const env = { PERSISTENT_SERVER: '1', PORTAL_ROLE: 'web', CRON_RUNNER_ENABLED: '1', CRON_SECRET: 'cron-secret-value', INNGEST_SELF_HOSTED_URL: 'http://inngest.railway.internal:8288', INNGEST_SELF_EVENT_KEY: 'evkey-value' }
+    await startPersistentServer(env, t.deps)
+    const said = t.errors.filter((l) => l.includes('связки сервисов'))
+    expect(said).toHaveLength(1)
+    expect(said[0]).toContain('INTERNAL_TOKEN_SECRET')
+    expect(said[0]).toContain('AGENTS_SERVICE_URL')
+    expect(said[0]).toContain('INNGEST_SELF_SIGNING_KEY')
+    expect(said[0]).not.toContain('INNGEST_SELF_EVENT_KEY')
+    expect(t.text()).not.toContain('cron-secret-value')
+    expect(t.text()).not.toContain('evkey-value')
+  })
+
+  it('a complete environment says nothing about them', async () => {
+    const t = setup()
+    await startPersistentServer(FULL_ENV, t.deps)
+    expect(t.errors.filter((l) => l.includes('связки сервисов'))).toEqual([])
+  })
+})
+
+describe('missingServiceLinkEnv (R-061)', () => {
+  it('nothing off a persistent server', () => {
+    expect(missingServiceLinkEnv({})).toEqual([])
+    expect(missingServiceLinkEnv({ PORTAL_ROLE: 'web' })).toEqual([])
+  })
+
+  it('by role: the cron secret, a secret for internal tokens, the agents address, the keys of our Inngest', () => {
+    expect(missingServiceLinkEnv({ PERSISTENT_SERVER: '1' })).toEqual(['INTERNAL_TOKEN_SECRET'])
+    expect(missingServiceLinkEnv({ PERSISTENT_SERVER: '1', CRON_RUNNER_ENABLED: '1', GIGA_COOKIE_SECRET: 'g' })).toEqual(['CRON_SECRET'])
+    expect(missingServiceLinkEnv({ PERSISTENT_SERVER: '1', PORTAL_ROLE: 'web', CRON_SECRET: 'c', AUTH_SECRET: 'a', AGENTS_SERVICE_URL: 'not a url' })).toEqual(['AGENTS_SERVICE_URL'])
+    expect(missingServiceLinkEnv({
+      PERSISTENT_SERVER: '1', PORTAL_ROLE: 'web', CRON_SECRET: 'c', INTERNAL_TOKEN_SECRET: 'i',
+      AGENTS_SERVICE_URL: 'http://agents.railway.internal:8080', INNGEST_SELF_HOSTED_URL: 'http://inngest:8288', INNGEST_SELF_EVENT_KEY: ' ',
+    })).toEqual(['INNGEST_SELF_EVENT_KEY', 'INNGEST_SELF_SIGNING_KEY'])
+  })
+
+  it('the agents service needs no keys of our Inngest (it sends no events there) and no agents address', () => {
+    expect(missingServiceLinkEnv({ PERSISTENT_SERVER: '1', PORTAL_ROLE: 'agents', CRON_SECRET: 'c', INTERNAL_TOKEN_SECRET: 'i', INNGEST_SELF_HOSTED_URL: 'http://inngest:8288' })).toEqual([])
   })
 })

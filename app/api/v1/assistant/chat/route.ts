@@ -6,6 +6,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { CHAT_SCRIPTS, hydrate } from '@/lib/assistant/chat-scripts'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { accessOfContext, paidScriptOutcome } from '@/lib/assistant/paid-context'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/assistant/chat
@@ -27,7 +28,7 @@ function withoutInsufficient(text: string, locale: 'ru' | 'en'): string {
     : text.replace(/Недостаточно данных/g, 'Подробные цифры — в платном доступе')
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
@@ -86,3 +87,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ASSISTANT_CHAT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'assistant-chat', ms: 60_000 })

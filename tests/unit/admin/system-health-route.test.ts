@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server'
 const s = vi.hoisted(() => ({
   crm: { data: [] as unknown[] | null, error: null as { message: string } | null },
   snapshot: (async () => []) as () => Promise<unknown>,
+  ops: (async () => ({ journal: 'ok', jobs: [], alertRoutes: { linkedStaff: 1, envChats: 0, direct: false, nowhere: false } })) as () => Promise<unknown>,
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -24,6 +25,7 @@ vi.mock('@/lib/supabase-service', () => ({
   }),
 }))
 vi.mock('@/lib/agents/definitions/monitoring', () => ({ platformHealthSnapshot: () => s.snapshot() }))
+vi.mock('@/lib/ops/job-watchdog', () => ({ opsOverview: () => s.ops() }))
 
 import { GET } from '@/app/api/giga-admin/system/health/route'
 
@@ -32,6 +34,7 @@ const call = async () => (await GET(new NextRequest('http://localhost/api/giga-a
 beforeEach(() => {
   s.crm = { data: [], error: null }
   s.snapshot = async () => []
+  s.ops = async () => ({ journal: 'ok', jobs: [], alertRoutes: { linkedStaff: 1, envChats: 0, direct: false, nowhere: false } })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -67,5 +70,27 @@ describe('system health — agent checks', () => {
   it('a missing relation is reported as migrations not applied', async () => {
     s.snapshot = async () => { throw new Error('relation "public.agent_tasks" does not exist') }
     expect((await call()).agentsError).toMatchObject({ kind: 'not_migrated' })
+  })
+})
+
+// R4-A1: the scheduled jobs from the journal of job outcomes and where alarms can go.
+describe('system health — scheduled jobs and alarm routes', () => {
+  it('the overview is passed through: jobs with their health, «nowhere to alert»', async () => {
+    const overview = {
+      journal: 'ok',
+      jobs: [{ job: '/api/cron/expert-sla', label: 'SLA экспертов', kind: 'cron', schedule: '*/5 * * * *', lastAt: '2026-11-16T10:00:00.000Z', lastStatus: 'ok', health: 'stale', allowedMinutes: 20 }],
+      alertRoutes: { linkedStaff: 0, envChats: 0, direct: false, nowhere: true },
+    }
+    s.ops = async () => overview
+    const body = await call()
+    expect(body.ops).toEqual(overview)
+    expect(body.opsError).toBeNull()
+  })
+
+  it('a failed read is a failure with its message, never an empty «all fine»', async () => {
+    s.ops = async () => { throw new Error("Can't reach database server at db:5432") }
+    const body = await call()
+    expect(body.ops).toBeNull()
+    expect(body.opsError).toEqual({ kind: 'failed', message: "Can't reach database server at db:5432" })
   })
 })

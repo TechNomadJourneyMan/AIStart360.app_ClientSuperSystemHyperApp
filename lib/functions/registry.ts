@@ -5,8 +5,14 @@
  * Inngest calls back whatever the last sync (PUT /api/inngest) registered. After the role of the
  * portal changes, sync again: until then Inngest keeps invoking functions this process no longer
  * serves (docs/railway-agents-service.md).
+ *
+ * R4-A1: every function on a cron writes the end of each run to the journal of job outcomes
+ * (withRunJournal, lib/functions/ops-ping.ts), and `ops-ping` is the heartbeat of our Inngest every
+ * 10 minutes. The watchdog (lib/ops/job-watchdog.ts) reads both against inngestCronSchedules().
  */
 import type { InngestFunction } from 'inngest'
+import { inngestEnabled } from '@/lib/inngest-target'
+import { cronTriggersOf, functionIdOf, opsPing, withRunJournal } from '@/lib/functions/ops-ping'
 import { assistantEventsRetention } from '@/lib/functions/assistant-events-retention'
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
@@ -58,7 +64,14 @@ const ALL: readonly InngestFunction.Like[] = [
   pbInviteExternal,
   // Expert SLA (R2-B, lib/expert-sla) is NOT here: it runs from the portal's own scheduler
   // (/api/cron/expert-sla, lib/cron/schedule.ts) — Inngest Cloud does not call the portal on Railway.
+  // The heartbeat of our Inngest (R4-A1): writes its own journal row every 10 minutes.
+  opsPing,
 ]
+
+// Scheduled functions report the end of every run to the journal; ops-ping writes its row itself.
+for (const fn of ALL) {
+  if (fn !== opsPing && cronTriggersOf(fn).length > 0) withRunJournal(fn)
+}
 
 /**
  * The functions /api/inngest serves in a process of `role`:
@@ -85,4 +98,13 @@ export function disabledFunctionIds(env: NodeJS.ProcessEnv = process.env): Set<s
 
 function functionId(fn: InngestFunction.Like): string {
   return (fn as unknown as { opts?: { id?: string } }).opts?.id ?? ''
+}
+
+/**
+ * The cron functions this process serves, with their schedules (Inngest syntax): what the watchdog
+ * expects in the journal. None when no Inngest is configured (events and crons go nowhere then).
+ */
+export function inngestCronSchedules(role: PortalRole, env: NodeJS.ProcessEnv = process.env): Array<{ id: string; cron: string }> {
+  if (!inngestEnabled(env)) return []
+  return inngestFunctionsForRole(role, env).flatMap((fn) => cronTriggersOf(fn).map((cron) => ({ id: functionIdOf(fn), cron })))
 }

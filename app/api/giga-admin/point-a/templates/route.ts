@@ -11,6 +11,7 @@ import { getMetricById } from '@/lib/metrics/registry'
 import { TemplateCreate, orderedBlocks } from '@/lib/point-a/template-schema'
 import { enqueueTemplateRecalc, loadCompanyTemplates, loadTemplates, templateUsage } from '@/lib/point-a/template-impact'
 import { profanityResponse } from '@/lib/moderation/http'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * Industry templates of Point A (pa_templates) — GIGA-CRM «Шаблоны Точки А»,
@@ -23,7 +24,7 @@ import { profanityResponse } from '@/lib/moderation/http'
  *        industry now resolves to the new template are recalculated.
  */
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const g = await requireGiga(req, 'pointa.templates')
   if (g.response) return g.response
   const sb = createServiceClient()
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
   })
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const g = await requireGiga(req, 'pointa.templates')
   if (g.response) return g.response
   const actor = g.actor
@@ -105,3 +106,11 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, data: { key, recalc } })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_TEMPLATES overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'point-a-templates', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'point-a-templates', ms: 60_000 })

@@ -14,6 +14,7 @@ import { apiError, dbError } from '@/lib/api-error'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { recordAiCacheHit } from '@/lib/ai/usage'
 import { gatePaidSection } from '@/lib/access/gate'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/point-a/narrative
@@ -32,7 +33,7 @@ import { gatePaidSection } from '@/lib/access/gate'
  *    `diagnostics` has no UPDATE policy for API roles, so a session write was a
  *    silent no-op.
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = await createClient()
 
   // 1. Auth
@@ -164,3 +165,10 @@ function emptyBlock(): BlockScore {
     recommendations: [],
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_NARRATIVE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-a-narrative', ms: 60_000 })

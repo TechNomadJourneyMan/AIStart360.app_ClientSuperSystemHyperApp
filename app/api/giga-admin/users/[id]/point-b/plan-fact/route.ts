@@ -4,6 +4,7 @@ export const maxDuration = 60
 import { NextRequest } from 'next/server'
 import { auditPlan, fail, guarded, guardPlanRoute, json, NO_COMPANY } from '@/lib/point-b/plan/route-guard'
 import { PLANFACT_AUDIT, planFactFailure, saveFactsAndRefresh, staffPlanFactView } from '@/lib/point-b/planfact/route'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * Plan-fact of a client for the staff (spec §13, §15.4): clients.review + access to this client (guardPlanRoute).
@@ -16,7 +17,7 @@ import { PLANFACT_AUDIT, planFactFailure, saveFactsAndRefresh, staffPlanFactView
  *     approved plan, 503 before migration 132.
  *     → { ok, data: { period, saved, cleared, checkpoint: { status, overall?, reason? } } }
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGet(req: NextRequest, { params }: { params: { id: string } }) {
   return guarded('giga/point-b/plan-fact GET', async () => {
     const g = await guardPlanRoute(req, params.id)
     if (!g.ok) return g.response
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   })
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePut(req: NextRequest, { params }: { params: { id: string } }) {
   return guarded('giga/point-b/plan-fact PUT', async () => {
     const g = await guardPlanRoute(req, params.id, { write: true })
     if (!g.ok) return g.response
@@ -57,3 +58,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_B_PLAN_FACT_STAFF overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'point-b-plan-fact-staff', ms: 60_000 })
+export const PUT = withDeadline(handlePut, { label: 'point-b-plan-fact-staff', ms: 60_000 })

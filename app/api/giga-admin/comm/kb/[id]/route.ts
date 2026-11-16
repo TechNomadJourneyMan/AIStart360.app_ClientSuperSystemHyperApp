@@ -10,6 +10,7 @@ import {
   type KbArticleRow,
 } from '@/lib/comm/kb'
 import { ProfanityError } from '@/lib/moderation/profanity'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * One article of GIGA «База знаний бота» (inbox.manage).
@@ -32,7 +33,7 @@ async function loadArticle(sb: NonNullable<Awaited<ReturnType<typeof guardComm>>
   return (data as KbArticleRow | null) ?? null
 }
 
-export async function GET(req: NextRequest, { params }: Ctx) {
+async function handleGet(req: NextRequest, { params }: Ctx) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   if (!UUID.test(params.id)) return commError('Неверный идентификатор')
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
+async function handlePatch(req: NextRequest, { params }: Ctx) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   if (!UUID.test(params.id)) return commError('Неверный идентификатор')
@@ -91,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: Ctx) {
+async function handleDelete(req: NextRequest, { params }: Ctx) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   if (!UUID.test(params.id)) return commError('Неверный идентификатор')
@@ -110,3 +111,12 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
     return commError('Не удалось удалить статью', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_KB_ITEM overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'comm-kb-item', ms: 60_000 })
+export const PATCH = withDeadline(handlePatch, { label: 'comm-kb-item', ms: 60_000 })
+export const DELETE = withDeadline(handleDelete, { label: 'comm-kb-item', ms: 60_000 })

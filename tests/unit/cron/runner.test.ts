@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // pinned by tests/unit/cron/schedule.test.ts (and tests/unit/expert-sla/cron-route.test.ts).
 vi.mock('@/lib/cron/schedule', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/cron/schedule')>()
-  const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla']
+  // The job watchdog ('3-59/10') and the cross-watch of the agents service ('*/3') are left out for the same reason.
+  const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla', '/api/cron/ops-watchdog', '/api/cron/ops-crosswatch']
   const jobs = real.CRON_JOBS.filter((job) => !frequent.includes(job.path))
   return {
     ...real,
@@ -22,7 +23,8 @@ vi.mock('@/lib/cron/schedule', async (importOriginal) => {
 })
 
 import { dueJobs, jobsForRole } from '@/lib/cron/schedule'
-import { startCronRunner } from '@/lib/cron/runner'
+import { startCronRunner, type ClaimOutage } from '@/lib/cron/runner'
+import type { JobOutcome } from '@/lib/ops/job-journal'
 import { pendingBackgroundCount } from '@/lib/background'
 
 const SECRET = 's3cr3t'
@@ -872,6 +874,226 @@ describe('startCronRunner (the jobs of the role of this process)', () => {
     vi.stubEnv('PORTAL_ROLE', 'web')
     await vi.advanceTimersByTimeAsync(30_000)
     expect(calledPaths()).toEqual(['/api/cron/agents'])
+    runner.stop()
+  })
+})
+
+// R4-A1 (N4A-3): every call that was made, and every claim that failed, goes to the journal of job
+// outcomes (public.ops_job_runs) — after it settled, outside the two slots, and a journal that fails
+// or hangs never holds a job back.
+describe('startCronRunner: the journal of outcomes', () => {
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+  let records: JobOutcome[]
+  const byJob = (job: string) => records.find((r) => r.job === job)
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    lines = []
+    records = []
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function start(extra: Partial<Parameters<typeof startCronRunner>[0]> = {}) {
+    vi.setSystemTime(new Date('2026-11-02T03:59:30Z'))
+    return startCronRunner({
+      baseUrl: BASE,
+      secret: SECRET,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      log: (line) => { lines.push(line) },
+      record: async (outcome) => { records.push(outcome) },
+      ...extra,
+    })
+  }
+
+  it('records each call: the job, its minute, the status, the HTTP code, the duration; the error without the secret', async () => {
+    fetchImpl.mockImplementation(async (url: string) => {
+      if (url.endsWith('/api/cron/agents-digest')) return new Response('nope', { status: 500 })
+      if (url.endsWith('/api/cron/client-digest')) throw new Error(`socket hang up (Bearer ${SECRET})`)
+      return new Response('{}', { status: 200 })
+    })
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(records).toHaveLength(3)
+    const minute = new Date('2026-11-02T04:00:00Z')
+    expect(byJob('/api/cron/crm-digest')).toMatchObject({ kind: 'cron', scheduledFor: minute, status: 'ok', httpStatus: 200, error: null })
+    expect(byJob('/api/cron/agents-digest')).toMatchObject({ kind: 'cron', status: 'http_error', httpStatus: 500, error: 'HTTP 500' })
+    const failed = byJob('/api/cron/client-digest')!
+    expect(failed).toMatchObject({ kind: 'cron', status: 'error' })
+    expect(failed.error).toContain('socket hang up')
+    expect(JSON.stringify(records)).not.toContain(SECRET)
+    for (const r of records) {
+      expect(r.durationMs).toBeGreaterThanOrEqual(0)
+      expect(r.startedAt).toBeInstanceOf(Date)
+    }
+    runner.stop()
+  })
+
+  it('a call that runs out of time is recorded as a timeout', async () => {
+    fetchImpl.mockImplementationOnce(async () => { throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }) })
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(records.filter((r) => r.status === 'timeout')).toHaveLength(1)
+    runner.stop()
+  })
+
+  it('a failed claim is recorded as claim_failed and the route is not called; a lost claim records nothing', async () => {
+    const claim = vi.fn(async (path: string) => {
+      if (path === '/api/cron/crm-digest') throw new Error('connect ECONNREFUSED')
+      return path !== '/api/cron/client-digest' // client-digest: another instance has it
+    })
+    const runner = start({ claim })
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(fetchImpl.mock.calls.map((c) => String(c[0]))).toEqual([`${BASE}/api/cron/agents-digest`])
+    expect(byJob('/api/cron/crm-digest')).toMatchObject({ status: 'claim_failed', durationMs: 0 })
+    expect(byJob('/api/cron/crm-digest')!.error).toContain('ECONNREFUSED')
+    expect(byJob('/api/cron/client-digest')).toBeUndefined()
+    expect(byJob('/api/cron/agents-digest')).toMatchObject({ status: 'ok' })
+    runner.stop()
+  })
+
+  it('a journal that hangs holds no slot: every job of the minute and of the next hours is still called', async () => {
+    const runner = start({ record: () => new Promise(() => {}) })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(60 * 60_000) // 05:00
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
+    runner.stop()
+  })
+
+  it('a journal that rejects or throws is one log line, and the scheduler goes on', async () => {
+    let n = 0
+    const runner = start({
+      record: () => {
+        n += 1
+        if (n === 1) throw new Error('journal exploded')
+        return Promise.reject(new Error('journal down'))
+      },
+    })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(lines.filter((l) => /outcome not recorded/.test(l))).toHaveLength(3)
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
+    runner.stop()
+  })
+})
+
+// R4-A1 (N4A-4): every cron depends on its claim in workflow-db. Claims that keep failing mean that
+// nothing runs, so after 5 minutes without one success the runner says so loudly — the error log and
+// the alarm that needs no database — again every 6 hours while it lasts, and once when it is over.
+describe('startCronRunner: claims that keep failing', () => {
+  let fetchImpl: ReturnType<typeof vi.fn>
+  let lines: string[]
+  let errors: string[]
+  let events: ClaimOutage[]
+  let claimFails: boolean
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubEnv('PORTAL_ROLE', 'agents') // the queue drain claims every minute
+    lines = []
+    errors = []
+    events = []
+    claimFails = true
+    fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
+
+  function start() {
+    vi.setSystemTime(new Date('2026-11-02T10:00:30Z'))
+    return startCronRunner({
+      baseUrl: BASE,
+      secret: SECRET,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      log: (line) => { lines.push(line) },
+      logError: (line) => { errors.push(line) },
+      claim: async () => {
+        if (claimFails) throw new Error(`connect ECONNREFUSED workflow-db.railway.internal (token ${SECRET})`)
+        return true
+      },
+      onClaimOutage: (event) => { events.push(event) },
+    })
+  }
+
+  it('after 5 minutes of failed claims: one error line and one alarm, with the error and the secret masked', async () => {
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000 + 4 * 60_000) // 10:01 .. 10:05: four minutes of failures
+    expect(events).toEqual([])
+    expect(errors).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(60_000) // 10:06: five minutes since the first failure
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ state: 'down', since: new Date('2026-11-02T10:01:00Z'), failures: 6 })
+    expect(events[0].lastError).toContain('ECONNREFUSED')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatch(/workflow-db/)
+    expect(errors[0]).toMatch(/НЕ выполняются/)
+    expect(JSON.stringify(events) + errors.join('\n')).not.toContain(SECRET)
+    expect(fetchImpl).not.toHaveBeenCalled() // never fire without a claim
+    runner.stop()
+  })
+
+  it('not again within 6 hours, again after them; a claim that answers again ends it with one «recovered»', async () => {
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000 + 5 * 60_000) // 10:06: the first alarm
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60_000) // 15:06
+    expect(events.map((e) => e.state)).toEqual(['down'])
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000) // 16:06: six hours since the alarm
+    expect(events.map((e) => e.state)).toEqual(['down', 'down'])
+
+    claimFails = false
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(events.map((e) => e.state)).toEqual(['down', 'down', 'recovered'])
+    expect(events[2]).toMatchObject({ since: new Date('2026-11-02T10:01:00Z') })
+    expect(lines.some((l) => /снова работает/.test(l))).toBe(true)
+    expect(fetchImpl).toHaveBeenCalled() // the jobs run again
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(events).toHaveLength(3)
+    runner.stop()
+  })
+
+  it('a short outage (under 5 minutes) raises nothing, not even a «recovered»', async () => {
+    const runner = start()
+    await vi.advanceTimersByTimeAsync(30_000 + 3 * 60_000) // 10:01 .. 10:04 fail
+    claimFails = false
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(events).toEqual([])
+    expect(errors).toEqual([])
+    runner.stop()
+  })
+
+  it('a claim that is lost (another instance has it) is an answer too: it ends the streak', async () => {
+    let mode: 'fail' | 'lost' = 'fail'
+    vi.setSystemTime(new Date('2026-11-02T10:00:30Z'))
+    const runner = startCronRunner({
+      baseUrl: BASE, secret: SECRET, fetchImpl: fetchImpl as unknown as typeof fetch, log: () => {}, logError: (l) => { errors.push(l) },
+      claim: async () => {
+        if (mode === 'fail') throw new Error('connect ECONNREFUSED')
+        return false
+      },
+      onClaimOutage: (event) => { events.push(event) },
+    })
+    await vi.advanceTimersByTimeAsync(30_000 + 3 * 60_000) // 10:01 .. 10:04 fail
+    mode = 'lost'
+    await vi.advanceTimersByTimeAsync(60_000) // 10:05 lost: the database answered
+    mode = 'fail'
+    await vi.advanceTimersByTimeAsync(4 * 60_000) // 10:06 .. 10:09 fail: four minutes, a new streak
+    expect(events).toEqual([])
+    expect(errors).toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
     runner.stop()
   })
 })

@@ -10,6 +10,7 @@ import { openCrmToken } from '@/lib/crm/token-store'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { resolveTenant } from '@/lib/tenancy'
 import type { CrmProvider } from '@/lib/crm/types'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const CHUNK = 200
@@ -20,7 +21,7 @@ const MAX_RECORDS = 500
  * clients-черновики и upsert-им в crm_clients по телефону (паттерн импорта).
  * RLS скоупит и подключение, и клиентов на пользователя.
  */
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
   const {
     data: { user },
@@ -146,3 +147,10 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     data: { inserted, updated, skipped, fetchedContacts: contacts.length, fetchedDeals: deals.length },
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_CRM_CONNECTION_SYNC overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'crm-connection-sync', ms: 60_000 })

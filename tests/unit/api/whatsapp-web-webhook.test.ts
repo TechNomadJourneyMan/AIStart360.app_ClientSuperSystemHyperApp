@@ -596,4 +596,38 @@ describe("/api/webhooks/whatsapp-web", () => {
     expect(repository.recordWebhookEvent).toHaveBeenCalledOnce();
     expect(postgres.recordWebhookEvent).not.toHaveBeenCalled();
   });
+  describe("R-015 (R4-A2): a hung queue no longer holds the delivery", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("answers 504 «webhook-whatsapp-web» after 30 s; the bridge's re-delivery is idempotent", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      queue.send.mockImplementationOnce(() => new Promise(() => {}));
+
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let settled = false;
+      const first = POST(request(payload()));
+      first.then(() => { settled = true; }, () => { settled = true; });
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const timedOut = await first;
+      expect(timedOut.status).toBe(504);
+      expect(timedOut.headers.get("x-deadline")).toBe("webhook-whatsapp-web");
+      vi.useRealTimers();
+
+      // The bridge keeps the event in its outbox and delivers it again (same event_id).
+      repository.recordWebhookEvent.mockResolvedValueOnce({ id: "audit-1", duplicate: true, status: "processing" });
+      const again = await POST(request(payload()));
+      expect(again.status).toBe(200);
+
+      const hashes = repository.recordWebhookEvent.mock.calls.map(([e]) => (e as { eventHash: string }).eventHash);
+      expect(new Set(hashes).size).toBe(1);
+      const ids = queue.send.mock.calls.map(([e]) => (e as { id: string }).id);
+      expect(ids).toEqual(["omnichannel-message-message-1", "omnichannel-message-message-1"]);
+      expect(repository.transitionWebhookEvent).toHaveBeenCalledWith("audit-1", "processed");
+      expect(warn.mock.calls.some(([line]) => String(line).includes("route_deadline_exceeded"))).toBe(true);
+    });
+  });
 });

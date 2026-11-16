@@ -15,6 +15,8 @@
  *     is never cut by it;
  *   - an ambient deadline (AsyncLocalStorage): code below the handler — the AI failover in
  *     particular — reads `deadlineRemainingMs()` and never plans past the request's own budget.
+ *     Work the handler leaves running after it answered in time (runInBackground, a webhook's fast
+ *     path, a streamed body) is not bound by it any more; after a 504 the late work sees it spent.
  *
  * ROUTE_DEADLINE_DISABLED=1 turns the route wrapper off (rollback without a deploy of code).
  * Edge-safe: AsyncLocalStorage is taken from globalThis (Next puts it there in both runtimes);
@@ -47,9 +49,21 @@ export function envMs(name: string, fallback: number, opts: { allowZero?: boolea
   return Math.floor(value)
 }
 
+/**
+ * What the async context holds: the deadline, the one around it, and whether it still applies.
+ * `open` turns false when `fn` of runWithDeadline settled while the budget was not spent: work it
+ * left running (background work it started, a streamed body) is no longer bound by it and sees the
+ * deadline around it, if any. A spent deadline stays visible: the late work must see it and stop.
+ */
+interface Frame {
+  readonly deadline: Deadline
+  readonly outer: Frame | null
+  open: boolean
+}
+
 interface Store {
-  run<R>(store: Deadline, fn: () => R): R
-  getStore(): Deadline | undefined
+  run<R>(store: Frame, fn: () => R): R
+  getStore(): Frame | undefined
 }
 
 let storage: Store | null | undefined
@@ -61,9 +75,16 @@ function als(): Store | null {
   return storage
 }
 
+/** The innermost deadline that still applies here. */
+function currentFrame(): Frame | null {
+  let frame = als()?.getStore() ?? null
+  while (frame && !frame.open) frame = frame.outer
+  return frame
+}
+
 /** The deadline of the current request / job, when one is set. */
 export function currentDeadline(): Deadline | null {
-  return als()?.getStore() ?? null
+  return currentFrame()?.deadline ?? null
 }
 
 /** Milliseconds left of the ambient deadline (never negative), or null when there is none. */
@@ -75,6 +96,8 @@ export function deadlineRemainingMs(now: number = Date.now()): number | null {
 /**
  * Runs `fn` under a deadline of `ms`. A deadline already in force is never extended: the nearer of
  * the two wins. The signal is aborted when the time is up; `fn` is not interrupted otherwise.
+ * Work `fn` leaves running after it settled in time (background work, a streamed body) is not bound
+ * by this deadline: it sees the one around it, if any — never a budget that ran out after the answer.
  */
 export async function runWithDeadline<R>(
   label: string,
@@ -82,19 +105,22 @@ export async function runWithDeadline<R>(
   fn: (deadline: Deadline) => Promise<R>,
   now: () => number = Date.now,
 ): Promise<R> {
-  const outer = currentDeadline()
+  const outerFrame = currentFrame()
+  const outer = outerFrame?.deadline ?? null
   const at = Math.min(now() + ms, outer?.at ?? Number.POSITIVE_INFINITY)
   const controller = new AbortController()
   const deadline: Deadline = { at, signal: controller.signal, label }
+  const frame: Frame = { deadline, outer: outerFrame, open: true }
   const timer = setTimeout(() => controller.abort(new DeadlineExceededError(label, ms)), Math.max(0, at - now()))
   const onOuterAbort = () => controller.abort(outer?.signal.reason)
   outer?.signal.addEventListener('abort', onOuterAbort, { once: true })
   try {
     const store = als()
-    return store ? await store.run(deadline, () => fn(deadline)) : await fn(deadline)
+    return store ? await store.run(frame, () => fn(deadline)) : await fn(deadline)
   } finally {
     clearTimeout(timer)
     outer?.signal.removeEventListener('abort', onOuterAbort)
+    if (!controller.signal.aborted) frame.open = false
   }
 }
 

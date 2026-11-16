@@ -10,6 +10,7 @@ import {
   profanityResponseBody, type KbArticleRow,
 } from '@/lib/comm/kb'
 import { ProfanityError } from '@/lib/moderation/profanity'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * GIGA «База знаний бота» (inbox.manage) — articles the client bot answers from.
@@ -24,7 +25,7 @@ import { ProfanityError } from '@/lib/moderation/profanity'
  * Audit: comm.kb.created.
  */
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   const sp = req.nextUrl.searchParams
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   const parsed = KbArticleInput.safeParse(await req.json().catch(() => null))
@@ -78,3 +79,11 @@ export async function POST(req: NextRequest) {
     return commError('Не удалось сохранить статью', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_KB overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'comm-kb', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'comm-kb', ms: 60_000 })

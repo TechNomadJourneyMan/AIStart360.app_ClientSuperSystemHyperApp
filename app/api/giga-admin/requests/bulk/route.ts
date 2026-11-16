@@ -7,6 +7,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { decideRequest } from '@/lib/admin/request-decision'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/requests/bulk { action: 'approve'|'reject', ids: string[] (≤ 100), reason? }
@@ -24,7 +25,7 @@ const bodySchema = z.object({
   reason: z.string().trim().max(500).optional(),
 })
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const guard = await requireGiga(req, 'users.approve')
   if (guard.response) return guard.response
 
@@ -57,3 +58,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, results, done, failed: ids.length - done })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_REQUESTS_BULK overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'requests-bulk', ms: 60_000 })

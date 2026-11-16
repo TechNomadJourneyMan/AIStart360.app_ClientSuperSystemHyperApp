@@ -10,6 +10,7 @@ import { commError, guardComm } from '@/lib/comm/admin'
 import { campaignDTO, campaignForActor, scheduleInfo, staffNames } from '@/lib/comm/campaign-admin'
 import { changeCampaignStatus, channelProgress, startCampaign } from '@/lib/comm/campaigns'
 import { CommError } from '@/lib/comm/store'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * GET   /api/giga-admin/comm/campaigns/:id  (inbox.view)
@@ -24,7 +25,7 @@ import { CommError } from '@/lib/comm/store'
 
 type Ctx = { params: { campaignId: string } }
 
-export async function GET(req: NextRequest, { params }: Ctx) {
+async function handleGet(req: NextRequest, { params }: Ctx) {
   const g = await guardComm(req, 'inbox.view')
   if (g.response) return g.response
   if (!isUuid(params.campaignId)) return commError('Неверный id')
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
 const Body = z.object({ action: z.enum(['start', 'pause', 'resume', 'cancel']) })
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
+async function handlePatch(req: NextRequest, { params }: Ctx) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   if (!isUuid(params.campaignId)) return commError('Неверный id')
@@ -82,3 +83,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     return commError('Не удалось изменить рассылку', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_CAMPAIGN overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'comm-campaign', ms: 60_000 })
+export const PATCH = withDeadline(handlePatch, { label: 'comm-campaign', ms: 60_000 })

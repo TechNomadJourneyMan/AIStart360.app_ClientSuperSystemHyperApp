@@ -20,6 +20,7 @@ import {
 import { loadLatestExpertNotes } from '@/lib/point-b/compat'
 import { loadOfficialSnapshot, officialDiagnosticRow, officialPointA } from '@/lib/point-a/official'
 import type { SurveyStepRow } from '@/lib/survey/steps'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/users/:id/review/ai-draft
@@ -36,7 +37,7 @@ import type { SurveyStepRow } from '@/lib/survey/steps'
 
 const AI_LIMIT = { max: 5, windowMs: 60 * 60 * 1000 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGigaClient(req, 'clients.review', params.id)
   if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
@@ -163,3 +164,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     data: { reviewId, created: (inserted as unknown[] | null)?.length ?? kept.length, comments: inserted ?? [], dropped, missing: ctx.missing },
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 90 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_REVIEW_AI_DRAFT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'review-ai-draft', ms: 90_000 })

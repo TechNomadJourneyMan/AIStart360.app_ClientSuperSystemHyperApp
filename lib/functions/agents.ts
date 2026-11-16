@@ -58,9 +58,15 @@ export const agentsMaintenance = inngest.createFunction(
     // queue upkeep runs every 15 minutes instead of every minute — the site's
     // database is not kept busy around the clock. Event-driven tasks still run
     // at once through agentsTaskRequested.
+    // N4A-13: except the Point A queue — one cheap claim a minute. The nightly
+    // pass only queues (no event per company), and a client's recalculation
+    // must not wait a quarter of an hour behind it when Inngest is down.
     const now = new Date()
     const around = await scheduledAgentsOn()
-    if (!around && now.getUTCMinutes() % 15 !== 0) return { skipped: 'quiet_mode' }
+    if (!around && now.getUTCMinutes() % 15 !== 0) {
+      const pointA = await drainPointAQueue()
+      return { skipped: 'quiet_mode', pointA }
+    }
     const scheduled = around ? await enqueueScheduledAgents(now) : []
     const redispatched = await redispatchPending()
     // WhatsApp outbox first (bounded, seconds): retries must not wait behind a long agent drain.
@@ -70,9 +76,7 @@ export const agentsMaintenance = inngest.createFunction(
     // (2026-10-15).
     const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 10_000 }).catch(() => null)
     // Point A recalculations that are due (works without Inngest too).
-    const pointA = await import('@/lib/point-a/recalc-queue')
-      .then((q) => q.drainPointARecalc({ budgetMs: 15_000 }))
-      .catch((err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }))
+    const pointA = await drainPointAQueue()
     const drained = await drainQueue({ budgetMs: 20_000 })
     return {
       scheduled,
@@ -86,6 +90,13 @@ export const agentsMaintenance = inngest.createFunction(
     }
   },
 )
+
+/** The due Point A recalculations, within the loop's 15 s; never throws. */
+function drainPointAQueue() {
+  return import('@/lib/point-a/recalc-queue')
+    .then((q) => q.drainPointARecalc({ budgetMs: 15_000 }))
+    .catch((err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }))
+}
 
 /** The «Агенты по расписанию (24/7)» setting (off unless an admin turns it on). */
 export async function scheduledAgentsOn(): Promise<boolean> {

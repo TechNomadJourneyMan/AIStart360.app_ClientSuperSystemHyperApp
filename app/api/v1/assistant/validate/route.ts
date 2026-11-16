@@ -6,6 +6,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import type { AssistantContext } from '@/lib/assistant/types'
 import { unwrapAnswer } from '@/lib/survey/answer-value'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/assistant/validate
@@ -18,7 +19,7 @@ import { unwrapAnswer } from '@/lib/survey/answer-value'
  * section so a step shows only its own hints. Session-scoped (current user from
  * cookie — never a user_id param), same IDOR guard as point-b/route.ts.
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
@@ -60,3 +61,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ASSISTANT_VALIDATE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'assistant-validate', ms: 60_000 })

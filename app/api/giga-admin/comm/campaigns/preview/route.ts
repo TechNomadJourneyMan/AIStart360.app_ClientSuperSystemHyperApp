@@ -9,6 +9,7 @@ import { AudienceSchema, ChannelsSchema } from '@/lib/comm/campaign-admin'
 import { previewAudience } from '@/lib/comm/campaigns'
 import { CommError } from '@/lib/comm/store'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/comm/campaigns/preview  (inbox.manage)
@@ -20,7 +21,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 
 const Body = z.object({ channels: ChannelsSchema, audience: AudienceSchema })
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   const parsed = Body.safeParse(await req.json().catch(() => null))
@@ -39,3 +40,10 @@ export async function POST(req: NextRequest) {
     return commError('Не удалось посчитать получателей', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_CAMPAIGN_PREVIEW overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'comm-campaign-preview', ms: 60_000 })

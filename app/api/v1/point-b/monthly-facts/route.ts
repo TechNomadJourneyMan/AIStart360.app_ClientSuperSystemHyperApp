@@ -9,6 +9,7 @@ import { planFactFailure, saveFactsAndRefresh } from '@/lib/point-b/planfact/rou
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * PUT /api/v1/point-b/monthly-facts { period: 'YYYY-MM', values: { revenue?, leads?, conversion?, avg_check?, cash? }, note? }
@@ -22,7 +23,7 @@ import { createServiceClient } from '@/lib/supabase-service'
  * 409 without an approved plan, 429 more often than 20 times an hour, 503 before migration 132.
  *   → { ok, data: { period, saved, cleared, unchanged, checkpoint: { status, overall, reason } } }
  */
-export async function PUT(req: NextRequest) {
+async function handlePut(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
@@ -54,3 +55,10 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Не удалось сохранить факт' }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_B_MONTHLY_FACTS overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const PUT = withDeadline(handlePut, { label: 'point-b-monthly-facts', ms: 60_000 })

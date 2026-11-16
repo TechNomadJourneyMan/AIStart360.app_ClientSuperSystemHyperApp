@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse, type NextRequest } from "next/server";
+import { webhookRefusal } from "@/lib/runtime/webhook-log";
 import { trackBackground } from "@/lib/background";
 import { drainOmnichannelProcessingJobs } from "@/lib/omnichannel/process-job-queue";
 import { shouldUseOmnichannelPostgres } from "@/lib/omnichannel/postgres-runtime";
@@ -85,37 +86,39 @@ function acceptNonce(nonce: string, timestamp: number): boolean {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) return response(503);
+  // R-060: one structured line per refusal (route, status, reason, request id) — never the body.
+  const refuse = webhookRefusal("webhooks/whatsapp-web/drain", req);
+  if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) return refuse(503, "bridge_disabled", response);
   if (
     process.env.OMNICHANNEL_PROCESSING_BACKEND?.trim().toLowerCase() !==
     "database"
   ) {
-    return response(503);
+    return refuse(503, "database_queue_not_configured", response);
   }
-  if (!shouldUseOmnichannelPostgres()) return response(503);
+  if (!shouldUseOmnichannelPostgres()) return refuse(503, "database_queue_dsn_missing", response);
 
   const secret = hmacSecret(process.env.WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET);
-  if (!secret) return response(503);
+  if (!secret) return refuse(503, "secret_not_configured", response);
   if (
     !req.headers
       .get("content-type")
       ?.toLowerCase()
       .startsWith("application/json")
   ) {
-    return response(415);
+    return refuse(415, "unsupported_content_type", response);
   }
   const declaredLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return response(413);
+    return refuse(413, "body_too_large", response);
   }
 
   let rawBody: Buffer;
   try {
     rawBody = Buffer.from(await req.arrayBuffer());
   } catch {
-    return response(400);
+    return refuse(400, "body_unreadable", response);
   }
-  if (rawBody.byteLength > MAX_BODY_BYTES) return response(413);
+  if (rawBody.byteLength > MAX_BODY_BYTES) return refuse(413, "body_too_large", response);
 
   const verified = verifySignedBridgeRequest({
     method: "POST",
@@ -131,7 +134,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
     maxSkewSeconds: 60,
   });
-  if (!verified.ok) return response(401);
+  if (!verified.ok) return refuse(401, "bad_signature", response);
 
   let payload: DrainPayload | null = null;
   try {
@@ -139,11 +142,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     // Rejected below without exposing parser details.
   }
-  if (!payload) return response(400);
+  if (!payload) return refuse(400, "invalid_payload", response);
   const configuredSession =
     process.env.WHATSAPP_WEB_BRIDGE_SESSION_ID?.trim() || "primary";
-  if (payload.session_id !== configuredSession) return response(403);
-  if (!acceptNonce(verified.nonce, verified.timestamp)) return response(409);
+  if (payload.session_id !== configuredSession) return refuse(403, "session_mismatch", response);
+  if (!acceptNonce(verified.nonce, verified.timestamp)) return refuse(409, "replayed_nonce", response);
 
   const work = drainOmnichannelProcessingJobs({ limit: 1 }).catch(() => {
     // The next signed kick retries due jobs. No exception/customer prose is

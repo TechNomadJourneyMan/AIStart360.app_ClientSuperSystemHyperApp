@@ -1,11 +1,28 @@
 /**
- * lib/health/platform.ts — the platform liveness checks shared by the public
- * GET /api/health and the staff /intelligence page: a database round-trip and
- * completeness of the critical server environment. Only what is measured is
- * reported; names of missing variables are not exposed here.
+ * lib/health/platform.ts — the platform checks shared by the public GET /api/health and the staff
+ * /intelligence page: a database round-trip and completeness of the critical server environment.
+ * Only what is measured is reported; names of missing variables are not exposed here.
+ *
+ * Readiness (R4-A1, N4A-5 / R-061) — what GET /api/health answers on top of that, on a persistent
+ * server (Railway):
+ *   • config also counts the variables that tie the services together (lib/env.ts
+ *     missingServiceLinkEnv) — by number, never by name;
+ *   • inngest — our own Inngest (INNGEST_SELF_HOSTED_URL) in the role that serves functions: the
+ *     heartbeat `ops-ping` (lib/functions/ops-ping.ts, every 10 min) is in the journal and younger
+ *     than 30 min. It proves the whole chain (the server fires the cron, calls the portal, the
+ *     portal writes the database) without a call to the Inngest server itself;
+ *   • jobs — the in-process cron of this role (CRON_RUNNER_ENABLED=1) has called something in the
+ *     last 15 min (public.ops_job_runs, migration 154).
+ *   A check whose evidence is not there yet (journal table missing, no row yet after a fresh start)
+ *   is 'unknown', never a failure. Every check is bounded (DB_TIMEOUT_MS) and the whole result is
+ *   cached for READINESS_CACHE_MS, one computation at a time, so a burst of probes is one query.
+ * /api/healthz (Railway's deploy check) stays out of all of this: no database, no network.
  */
 import { prisma } from '@/lib/db'
-import { getMissingServerEnv } from '@/lib/env'
+import { getMissingServerEnv, missingServiceLinkEnv } from '@/lib/env'
+import { inngestTarget } from '@/lib/inngest-target'
+import { isPersistentServer } from '@/lib/runtime/platform'
+import { portalRole, servesWeb, type PortalRole } from '@/lib/runtime/role'
 
 export type CheckStatus = 'online' | 'degraded' | 'offline'
 
@@ -22,11 +39,30 @@ export function dbStatusFor(ok: boolean, latencyMs: number): CheckStatus {
   return latencyMs < 150 ? 'online' : latencyMs < 400 ? 'degraded' : 'offline'
 }
 
+/** No single check of the readiness may take longer. */
+export const DB_TIMEOUT_MS = 3_000
+export const READINESS_CACHE_MS = 15_000
+/** ops-ping runs every 10 min: three missed in a row. */
+export const INNGEST_HEARTBEAT_MAX_MS = 30 * 60_000
+/** The busiest cron of a role runs at least every 5 min (web) or every minute (agents). */
+export const JOBS_FRESH_MAX_MS = 15 * 60_000
+
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label}: no answer in ${ms} ms`)), ms)
+      ;(timer as { unref?: () => void }).unref?.()
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
 export async function checkPlatformHealth(): Promise<PlatformHealth> {
   const t = Date.now()
   let ok = true
   try {
-    await prisma.$queryRaw`SELECT 1`
+    await withTimeout(prisma.$queryRaw`SELECT 1`, DB_TIMEOUT_MS, 'database')
   } catch (err) {
     console.error('[health] database check failed:', err instanceof Error ? err.message : err)
     ok = false
@@ -35,4 +71,135 @@ export async function checkPlatformHealth(): Promise<PlatformHealth> {
   const db = { status: dbStatusFor(ok, latencyMs), latencyMs }
   const missingEnv = getMissingServerEnv().length
   return { db, missingEnv, allOnline: db.status === 'online' && missingEnv === 0 }
+}
+
+// ─── Readiness ───────────────────────────────────────────────────────────────
+
+/** off — not this process's business; unknown — no evidence yet (never a failure). */
+export type ReadinessCheck = 'ok' | 'fail' | 'unknown' | 'off'
+
+export interface Readiness extends PlatformHealth {
+  inngest: ReadinessCheck
+  jobs: ReadinessCheck
+}
+
+type Env = Partial<NodeJS.ProcessEnv>
+
+export interface JournalEvidence {
+  /** The last cron call of this role (claim failures left out). */
+  lastCron: Date | null
+  /** The last successful ops-ping. */
+  lastPing: Date | null
+  /** The oldest row of the journal. */
+  since: Date | null
+}
+
+/** Which of the journal checks apply to this process. */
+export function readinessScope(env: Env = process.env): { inngest: boolean; jobs: boolean; role: PortalRole } {
+  const role = portalRole(env)
+  if (!isPersistentServer(env)) return { inngest: false, jobs: false, role }
+  return {
+    inngest: servesWeb(role) && inngestTarget(env as NodeJS.ProcessEnv).selfHostedUrl !== null,
+    jobs: env.CRON_RUNNER_ENABLED === '1',
+    role,
+  }
+}
+
+/** The journal checks from the evidence. Pure. */
+export function judgeJournal(e: JournalEvidence | null, scope: { inngest: boolean; jobs: boolean }, now: Date): { inngest: ReadinessCheck; jobs: ReadinessCheck } {
+  const age = (d: Date | null) => (d ? now.getTime() - d.getTime() : Number.POSITIVE_INFINITY)
+  const journalAge = age(e?.since ?? null)
+  const judge = (last: Date | null, maxMs: number): ReadinessCheck => {
+    if (!e) return 'unknown'
+    if (last) return age(last) <= maxMs ? 'ok' : 'fail'
+    // Nothing yet: a young journal (just migrated, just started) has not had the chance.
+    return journalAge > maxMs ? 'fail' : 'unknown'
+  }
+  return {
+    inngest: scope.inngest ? judge(e?.lastPing ?? null, INNGEST_HEARTBEAT_MAX_MS) : 'off',
+    jobs: scope.jobs ? judge(e?.lastCron ?? null, JOBS_FRESH_MAX_MS) : 'off',
+  }
+}
+
+/** null — the journal table does not exist here (migration 154 not applied). */
+async function loadJournalEvidence(role: PortalRole): Promise<JournalEvidence | null> {
+  const rows = await prisma.$queryRaw<Array<{ present: boolean }>>`
+    SELECT to_regclass('public.ops_job_runs') IS NOT NULL AS present`
+  if (!rows[0]?.present) return null
+  const [r] = await prisma.$queryRaw<Array<{ last_cron: Date | null; last_ping: Date | null; since: Date | null }>>`
+    SELECT
+      (SELECT max(finished_at) FROM public.ops_job_runs
+        WHERE kind = 'cron' AND service = ${role} AND status <> 'claim_failed'
+          AND finished_at > now() - interval '1 day') AS last_cron,
+      (SELECT max(finished_at) FROM public.ops_job_runs
+        WHERE job = 'inngest:ops-ping' AND status = 'ok' AND finished_at > now() - interval '1 day') AS last_ping,
+      (SELECT min(finished_at) FROM public.ops_job_runs) AS since`
+  return { lastCron: r?.last_cron ?? null, lastPing: r?.last_ping ?? null, since: r?.since ?? null }
+}
+
+export interface ReadinessDeps {
+  env?: Env
+  now?: () => Date
+  platform?: () => Promise<PlatformHealth>
+  journal?: (role: PortalRole) => Promise<JournalEvidence | null>
+}
+
+async function computeReadiness(deps: ReadinessDeps): Promise<Readiness> {
+  const env = deps.env ?? process.env
+  const scope = readinessScope(env)
+  const needJournal = scope.inngest || scope.jobs
+  const [platform, journal] = await Promise.all([
+    (deps.platform ?? checkPlatformHealth)(),
+    needJournal
+      ? withTimeout((deps.journal ?? loadJournalEvidence)(scope.role), DB_TIMEOUT_MS, 'journal').then(
+          (e) => ({ ok: true as const, e }),
+          (err: unknown) => {
+            console.error('[health] journal check failed:', err instanceof Error ? err.message : err)
+            return { ok: false as const }
+          },
+        )
+      : Promise.resolve({ ok: true as const, e: null }),
+  ])
+  // A journal that cannot be read while the database answers is a failure of those checks; with
+  // the database down the db check already fails, and the journal says nothing more.
+  const judged = journal.ok
+    ? judgeJournal(journal.e, scope, (deps.now ?? (() => new Date()))())
+    : { inngest: scope.inngest ? ('unknown' as const) : ('off' as const), jobs: scope.jobs ? ('unknown' as const) : ('off' as const) }
+  const missingEnv = platform.missingEnv + missingServiceLinkEnv(env).length
+  return {
+    ...platform,
+    missingEnv,
+    allOnline: platform.db.status === 'online' && missingEnv === 0 && judged.inngest !== 'fail' && judged.jobs !== 'fail',
+    ...judged,
+  }
+}
+
+const CACHE_KEY = Symbol.for('aistart360.health.readiness')
+type CacheSlot = { at: number; value?: Readiness; pending?: Promise<Readiness> }
+
+/** For tests: forget the cached readiness. */
+export function resetReadinessCache(): void {
+  delete (globalThis as Record<symbol, CacheSlot | undefined>)[CACHE_KEY]
+}
+
+/**
+ * The readiness of this process, cached for READINESS_CACHE_MS; callers that arrive while it is
+ * being computed share that computation.
+ */
+export async function checkReadiness(deps: ReadinessDeps = {}): Promise<Readiness> {
+  const g = globalThis as Record<symbol, CacheSlot | undefined>
+  const now = Date.now()
+  const slot = g[CACHE_KEY]
+  if (slot?.value && now - slot.at < READINESS_CACHE_MS) return slot.value
+  if (slot?.pending) return slot.pending
+  const pending = computeReadiness(deps)
+  g[CACHE_KEY] = { at: slot?.at ?? 0, value: slot?.value, pending }
+  try {
+    const value = await pending
+    g[CACHE_KEY] = { at: Date.now(), value }
+    return value
+  } catch (error) {
+    g[CACHE_KEY] = slot?.value ? { at: slot.at, value: slot.value } : undefined
+    throw error
+  }
 }

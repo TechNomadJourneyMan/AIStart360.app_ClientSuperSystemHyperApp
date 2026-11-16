@@ -30,13 +30,14 @@ import { RESOLVED_INPUT_METRICS, resolvedInputsFromValues } from './resolved-inp
 import { calculatePointAV4, toCompatPointA, type HypothesisReview, type PointAV4, type V4Block } from './v4/engine'
 import { BLOCK_LIBRARY, isBlockKey, type BlockKey } from './v4/config'
 import { loadBlockConfig } from './v4/store'
-import { carryOverHypotheses } from './v4/hypotheses'
+import { blocksNeedingHypothesis, carryOverHypotheses, generateHypotheses } from './v4/hypotheses'
 import { loadGoals } from '@/lib/goals/store'
 import { evaluateGoals } from '@/lib/goals/current'
 import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
 import { pipelineTriggerOf, type FanOutPath } from './diagnostic-row'
 import { internalBaseUrl } from '@/lib/internal-auth'
+import { pointAAiSlots } from './ai-slots'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
 
@@ -210,7 +211,6 @@ export async function catchUpHypotheses(ownerId: string, deps: { service?: () =>
     const { data } = await service.from('point_a_snapshots').select('id, blocks, v4').eq('company_id', c.id).order('created_at', { ascending: false }).limit(1)
     const snap = ((data ?? []) as Array<{ id: string; blocks: V4Block[] | null; v4: { assessment?: string } | null }>)[0]
     if (!snap || snap.v4?.assessment === 'preliminary' || !Array.isArray(snap.blocks)) return false
-    const { blocksNeedingHypothesis } = await import('./v4/hypotheses')
     if (!blocksNeedingHypothesis(snap.blocks).length) return false
     await (deps.add ?? addHypotheses)(snap.id, snap.blocks, c.industry ?? null, ownerId)
     return true
@@ -222,7 +222,6 @@ export async function catchUpHypotheses(ownerId: string, deps: { service?: () =>
 
 /** AI hypotheses of the blocks without data, written into the snapshot (budget-guarded). */
 async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: string | null, ownerId: string): Promise<void> {
-  const { blocksNeedingHypothesis, generateHypotheses } = await import('./v4/hypotheses')
   if (!blocksNeedingHypothesis(blocks).length) return
   const { assertAiBudget, isAiBudgetError } = await import('@/lib/ai/budget')
   try {
@@ -232,15 +231,26 @@ async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: st
     throw err
   }
   const need = blocksNeedingHypothesis(blocks).length
-  const { blocks: withHyp, generated } = await generateHypotheses(blocks, { industry, userId: ownerId })
-  // Ids and counts only (B3: 34 of 34 hypotheses failed and nothing said why — the model's
-  // reason is in ai_usage / the structured-call log lines «[point-a:hypothesis] …»).
-  if (!generated) {
-    console.error(`[point-a/snapshot] hypotheses: none of ${need} generated for snapshot ${snapshotId}`)
+  // N4A-12: a Point A AI slot (≤ 2 per process with the analysis fan-out, lib/point-a/ai-slots.ts):
+  // a wave of snapshots must not start one chain of model calls per company at once.
+  const release = await pointAAiSlots().acquire()
+  if (!release) {
+    console.error(`[point-a/snapshot] hypotheses: no AI slot for snapshot ${snapshotId}, left for the next pass`)
     return
   }
-  const { error } = await createServiceClient().from('point_a_snapshots').update({ blocks: withHyp }).eq('id', snapshotId)
-  if (error) console.error('[point-a/snapshot] hypotheses not stored', snapshotId, error.code ?? '', error.message ?? '')
+  try {
+    const { blocks: withHyp, generated } = await generateHypotheses(blocks, { industry, userId: ownerId })
+    // Ids and counts only (B3: 34 of 34 hypotheses failed and nothing said why — the model's
+    // reason is in ai_usage / the structured-call log lines «[point-a:hypothesis] …»).
+    if (!generated) {
+      console.error(`[point-a/snapshot] hypotheses: none of ${need} generated for snapshot ${snapshotId}`)
+      return
+    }
+    const { error } = await createServiceClient().from('point_a_snapshots').update({ blocks: withHyp }).eq('id', snapshotId)
+    if (error) console.error('[point-a/snapshot] hypotheses not stored', snapshotId, error.code ?? '', error.message ?? '')
+  } finally {
+    release()
+  }
 }
 
 /** Expert decisions on AI hypotheses (migration 117); none before it. */

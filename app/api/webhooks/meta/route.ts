@@ -31,6 +31,7 @@ import { trackBackground } from '@/lib/background'
 import { canRunAfterResponse } from '@/lib/runtime/platform'
 import { webhookRefusal } from '@/lib/runtime/webhook-log'
 import { processOmnichannelMessageWorkflow } from '@/workflows/process-omnichannel-message'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const MAX_FAST_PATH_DELAY_MS = 30_000
 
@@ -147,7 +148,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * The raw payload is never logged or persisted; the audit table receives only
  * its SHA-256 digest and small non-sensitive counters.
  */
-export async function POST(req: NextRequest): Promise<NextResponse> {
+async function handlePost(req: NextRequest): Promise<NextResponse> {
   // INT-02: every refusal / failure leaves one structured line (route, status,
   // reason, request id) — never the payload, a signature or customer data.
   const refuse = webhookRefusal('webhooks/meta', req)
@@ -326,3 +327,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return refuse(500, 'webhook_processing_failed', genericResponse, error)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so a delivery had no time limit (a silent queue held it, and
+ * its connection, while Meta re-delivered). After 30 s Meta gets 504 (DEADLINE_EXCEEDED) and delivers again; the
+ * late handler sees its deadline spent (an Inngest send in flight is aborted, lib/inngest.ts) and marks the audit
+ * row failed. The re-delivery is safe: the audit row (hash of the exact bytes), the message upserts and the
+ * deterministic Inngest event id keep one message and one AI run. ROUTE_DEADLINE_MS_WEBHOOK_META overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'webhook-meta', ms: 30_000 })

@@ -10,6 +10,7 @@ import { requestPointARecalc } from '@/lib/point-a/recalc-queue'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 import type { V4Block } from '@/lib/point-a/v4/engine'
 import { profanityResponse } from '@/lib/moderation/http'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * The expert's decision on the AI hypothesis of a block without data
@@ -43,7 +44,7 @@ async function applyNow(companyId: string): Promise<{ recalculated: boolean; que
   return { recalculated: false, queued: await requestPointARecalc(companyId, 'expert_hypothesis') }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guardPointAExpert(req, params.id, 'write')
   if (g.response) return g.response
   const { actor, sb, companyId } = g
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ ok: true, data: { block: key, decision, score: row.score, ...applied } })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+async function handleDelete(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guardPointAExpert(req, params.id, 'write')
   if (g.response) return g.response
   const { actor, sb, companyId } = g
@@ -124,3 +125,11 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const applied = await applyNow(companyId)
   return NextResponse.json({ ok: true, data: { block: key, ...applied } })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_HYPOTHESES overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-a-hypotheses', ms: 60_000 })
+export const DELETE = withDeadline(handleDelete, { label: 'point-a-hypotheses', ms: 60_000 })

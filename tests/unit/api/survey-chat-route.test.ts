@@ -96,7 +96,7 @@ async function startExpress() {
 
 describe('GET / start', () => {
   it('a new client: needs a scope; start asks the first express question with the honest line', async () => {
-    const g = await chat.GET()
+    const g = await chat.GET(new NextRequest('http://t/api/v1/survey/chat'))
     const view = (await g.json()).data
     expect(view.needsScope).toBe(true)
     const r = await startExpress()
@@ -283,7 +283,7 @@ describe('the transcript', () => {
   it('another client never sees this conversation through the chat API', async () => {
     await seed()
     s.user = { id: OTHER }
-    const view = (await (await chat.GET()).json()).data
+    const view = (await (await chat.GET(new NextRequest('http://t/api/v1/survey/chat'))).json()).data
     expect(view.messages.map((m: { content: string }) => m.content)).not.toContain('что значит отрасль?')
   })
 })

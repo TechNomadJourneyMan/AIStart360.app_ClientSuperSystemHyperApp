@@ -142,8 +142,40 @@ async function defaultAccess(sb: SupabaseClient, userId: string): Promise<boolea
 }
 
 /**
+ * R4 (S0, migration 153): owners who are NOT clients of the product — a staff_roles row, or a profile whose role is
+ * not a client role (lib/profiles/client-roles.ts). Staff always have Point B access, so without this the scan put
+ * the team's own accounts into «Ждут план» (production 2026-11-16). The same rule as public.expert_sla_is_client,
+ * whose trigger is the guarantee; here it only spares the model calculation. A failed read filters nobody (the
+ * trigger still skips the task).
+ */
+async function nonClientOwners(sb: SupabaseClient, userIds: readonly string[]): Promise<Set<string>> {
+  const out = new Set<string>()
+  const ids = Array.from(new Set(userIds))
+  try {
+    const { isClientProfileRole } = await import('@/lib/profiles/client-roles')
+    for (let i = 0; i < ids.length; i += 100) {
+      const part = ids.slice(i, i + 100)
+      const [staff, profiles] = await Promise.all([
+        sb.from('staff_roles').select('user_id').in('user_id', part),
+        sb.from('profiles').select('id, role').in('id', part),
+      ])
+      if (staff.error || profiles.error) throw new Error(`staff ${staff.error?.code ?? 'ok'}, profiles ${profiles.error?.code ?? 'ok'}`)
+      for (const s of (staff.data ?? []) as Array<{ user_id: string }>) out.add(s.user_id)
+      for (const p of (profiles.data ?? []) as Array<{ id: string; role: string | null }>) {
+        if (p.role != null && !isClientProfileRole(p.role)) out.add(p.id)
+      }
+    }
+    return out
+  } catch (err) {
+    console.error('[point-b/waiting] staff filter not read', err instanceof Error ? err.message : err)
+    return new Set()
+  }
+}
+
+/**
  * The client candidates of the queue: companies with a revenue goal (metric_targets or the companies columns the
- * survey writes), without an approved and without an open plan version. Ordered by the goal's age (oldest first).
+ * survey writes), without an approved and without an open plan version, owned by a client of the product (not staff —
+ * R4 S0). Ordered by the goal's age (oldest first).
  */
 async function candidates(sb: SupabaseClient): Promise<Array<{ companyId: string; userId: string; since: string | null }>> {
   const [targets, columns] = await Promise.all([
@@ -162,7 +194,9 @@ async function candidates(sb: SupabaseClient): Promise<Array<{ companyId: string
     const hasColumnGoal = Number(c.target_revenue_12m_kzt) > 0 || Number(c.target_revenue_3y_kzt) > 0
     if (hasColumnGoal && !since.has(id)) since.set(id, typeof c.createdAt === 'string' ? c.createdAt : null)
   }
-  const ids = [...since.keys()].filter((id) => owner.has(id))
+  const owned = [...since.keys()].filter((id) => owner.has(id))
+  const staff = owned.length ? await nonClientOwners(sb, owned.map((id) => owner.get(id)!)) : new Set<string>()
+  const ids = owned.filter((id) => !staff.has(owner.get(id)!))
   if (!ids.length) return []
 
   // Plans: approved or open → not waiting.

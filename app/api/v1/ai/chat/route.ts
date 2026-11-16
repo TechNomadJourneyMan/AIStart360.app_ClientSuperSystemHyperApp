@@ -23,6 +23,7 @@ import { generateObjectViaOpenRouter } from '@/lib/ai/structured'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { trackUserAction } from '@/lib/events/server'
 import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/ai/chat  { message, personaId?, surface?, conversationId? }
@@ -50,7 +51,7 @@ const OUTPUT_CONTRACT = `
 {"can_answer":true,"answer":"строка ≤250 слов","confidence":"high","used_sources":[{"type":"gri_top5","ref":"gri_top5:0","label":"строка"}],"assumptions":[],"needs_expert":false,"suggested_next":["строка"]}`
 
 /** GET /api/v1/ai/chat?surface=report → { ok, conversationId, messages } — last dialog. */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, conversationId: conv.id, messages: messages ?? [] })
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
@@ -291,3 +292,11 @@ async function persist(
     return null
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_AI_CHAT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'ai-chat', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'ai-chat', ms: 60_000 })

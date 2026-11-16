@@ -11,6 +11,7 @@ import {
   titleFromFileName, type KbArticleRow,
 } from '@/lib/comm/kb'
 import { ProfanityError } from '@/lib/moderation/profanity'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/comm/kb/upload (inbox.manage), multipart:
@@ -20,7 +21,7 @@ import { ProfanityError } from '@/lib/moderation/profanity'
  * (source 'file') — staff read it and publish it. The file itself is not kept.
  * Profanity in the title or text → 400 { error, field }. Audit: comm.kb.uploaded.
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   const form = await req.formData().catch(() => null)
@@ -66,3 +67,10 @@ export async function POST(req: NextRequest) {
     return commError('Не удалось сохранить статью', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_KB_UPLOAD overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'comm-kb-upload', ms: 60_000 })

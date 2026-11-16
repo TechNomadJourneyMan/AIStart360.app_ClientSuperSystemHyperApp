@@ -13,6 +13,7 @@ import { dirtyField } from '@/lib/moderation/profanity'
 import { COMM_CHANNELS, MAX_BODY } from '@/lib/comm/types'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { getSetting } from '@/lib/settings/store'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/comm/users/:userId/messages (inbox.manage)
@@ -35,7 +36,7 @@ const Body = z.object({
   important: z.boolean().optional(),
 })
 
-export async function POST(req: NextRequest, { params }: { params: { userId: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { userId: string } }) {
   const g = await guardComm(req, 'inbox.manage', params.userId)
   if (g.response) return g.response
   const parsed = Body.safeParse(await req.json().catch(() => null))
@@ -76,3 +77,10 @@ export async function POST(req: NextRequest, { params }: { params: { userId: str
     return commError('Не удалось отправить сообщение', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_USER_MESSAGE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'comm-user-message', ms: 60_000 })

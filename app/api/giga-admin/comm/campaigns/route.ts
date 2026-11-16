@@ -15,6 +15,7 @@ import { CommError } from '@/lib/comm/store'
 import { hasPermission } from '@/lib/admin/rbac'
 import { profanityResponse } from '@/lib/moderation/http'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * GET  /api/giga-admin/comm/campaigns?status=  (inbox.view)
@@ -32,7 +33,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 
 const STATUSES = new Set(['draft', 'scheduled', 'running', 'paused', 'done', 'cancelled'])
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const g = await guardComm(req, 'inbox.view')
   if (g.response) return g.response
   const status = req.nextUrl.searchParams.get('status') || null
@@ -52,7 +53,7 @@ const Body = CampaignTextSchema.extend({
   start: z.boolean().optional(),
 })
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const g = await guardComm(req, 'inbox.manage')
   if (g.response) return g.response
   const parsed = Body.safeParse(await req.json().catch(() => null))
@@ -101,3 +102,11 @@ export async function POST(req: NextRequest) {
     return commError('Не удалось создать рассылку', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_COMM_CAMPAIGNS overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'comm-campaigns', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'comm-campaigns', ms: 60_000 })

@@ -13,6 +13,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { plainAnswer } from '@/lib/survey/plain'
 import { dbError, safeErrorMessage } from '@/lib/api-error'
 import { guardAiBudget } from '@/lib/ai/budget'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const UPSTREAM_TIMEOUT_MS = 6000
 
@@ -21,7 +22,7 @@ const UPSTREAM_TIMEOUT_MS = 6000
 // AI-fills all 50 draft answers, grounded in real context. Never overwrites a
 // user/expert/confirmed answer. Rebuilds the snapshot afterwards.
 // =============================================================================
-export async function POST() {
+async function handlePost() {
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) {
@@ -232,3 +233,10 @@ async function fetchUpstream(
   }
   return out
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_MARKET_ANALYSIS_GENERATE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'market-analysis-generate', ms: 60_000 })

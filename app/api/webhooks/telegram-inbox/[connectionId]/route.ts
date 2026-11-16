@@ -15,6 +15,7 @@ import {
 } from '@/lib/omnichannel/telegram-connections'
 import { ingestTelegramInboxUpdate } from '@/lib/omnichannel/telegram-ingest'
 import { parseTelegramInboxUpdate } from '@/lib/omnichannel/telegram-webhook'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/webhooks/telegram-inbox/<connectionId> — updates of the inbox's
@@ -43,7 +44,7 @@ function response(status = 200): NextResponse {
   )
 }
 
-export async function POST(
+async function handlePost(
   req: NextRequest,
   { params }: { params: { connectionId: string } },
 ): Promise<NextResponse> {
@@ -106,3 +107,12 @@ export async function POST(
   void runInBackground('telegram-inbox-heartbeat', () => touchTelegramBotLastUpdate(target!))
   return response(200)
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so an update had no time limit (a silent queue held it while
+ * Telegram re-delivered). After 30 s Telegram gets 504 (DEADLINE_EXCEEDED) and delivers again; the re-delivery is
+ * deduplicated by update_id (audit row) and message_id (message row), and the queue event id is deterministic
+ * (lib/omnichannel/telegram-ingest.ts). ROUTE_DEADLINE_MS_WEBHOOK_TELEGRAM_INBOX overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'webhook-telegram-inbox', ms: 30_000 })

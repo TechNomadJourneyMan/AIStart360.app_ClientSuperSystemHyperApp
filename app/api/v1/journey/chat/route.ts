@@ -15,12 +15,13 @@ import {
 } from '@/lib/journey/persistence'
 import { journeyChatRequestSchema } from '@/lib/journey/schema'
 import { AI_BUDGET_MESSAGE, assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     const actorUserId = await resolveJourneyActor()
     const payload = journeyChatRequestSchema.parse(
@@ -64,3 +65,10 @@ export async function POST(request: Request) {
     return journeyErrorResponse(error)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_JOURNEY_CHAT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'journey-chat', ms: 60_000 })

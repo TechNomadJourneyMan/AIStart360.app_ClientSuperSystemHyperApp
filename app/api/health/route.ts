@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { checkPlatformHealth } from '@/lib/health/platform'
+import { checkReadiness, type ReadinessCheck } from '@/lib/health/platform'
 import { isPersistentServer } from '@/lib/runtime/platform'
 import { servesWeb } from '@/lib/runtime/role'
 import { getWorkflowQueueStatus, type WorkflowQueueState } from '@/lib/runtime/workflow-queue-status'
@@ -24,6 +24,14 @@ export const dynamic = 'force-dynamic'
  * The agents service (PORTAL_ROLE=agents) is a persistent server that does not start the Workflow
  * queue on purpose, so it has no queue entry: its check passes when the database and the
  * configuration do.
+ *
+ * Readiness (R4-A1, lib/health/platform.ts checkReadiness): on a persistent server two more entries
+ * when they apply — «Фоновые задачи (Inngest)» (the heartbeat of our Inngest) and «Задачи по
+ * расписанию» (the in-process cron of this role is calling); a failed one fails the check (503),
+ * one without evidence yet is «degraded» and does not. The configuration also counts the variables
+ * that tie the services together (by number). The result is cached for 15 s and every check is
+ * bounded, so the probe stays cheap; the agents service reads it every 3 minutes
+ * (lib/ops/crosswatch.ts). Railway's deploy check is /api/healthz, which touches none of this.
  */
 interface ServiceResult {
   name: string
@@ -41,8 +49,14 @@ const QUEUE_STATUS: Record<WorkflowQueueState, ServiceResult['status']> = {
   off: 'offline',
 }
 
+const JOURNAL_STATUS: Record<Exclude<ReadinessCheck, 'off'>, ServiceResult['status']> = {
+  ok: 'online',
+  unknown: 'degraded',
+  fail: 'offline',
+}
+
 export async function GET() {
-  const health = await checkPlatformHealth()
+  const health = await checkReadiness()
   const db: ServiceResult = { name: 'База данных', status: health.db.status, latencyMs: health.db.latencyMs, uptime: NOT_MEASURED }
   const missing = health.missingEnv
   const config: ServiceResult = {
@@ -54,12 +68,20 @@ export async function GET() {
   const queue: ServiceResult | null = isPersistentServer() && servesWeb()
     ? { name: 'Очередь Workflow', status: QUEUE_STATUS[getWorkflowQueueStatus().state], latencyMs: 0, uptime: NOT_MEASURED }
     : null
-  const services = queue ? [db, config, queue] : [db, config]
+  const inngest: ServiceResult | null = health.inngest !== 'off'
+    ? { name: 'Фоновые задачи (Inngest)', status: JOURNAL_STATUS[health.inngest], latencyMs: 0, uptime: NOT_MEASURED }
+    : null
+  const jobs: ServiceResult | null = health.jobs !== 'off'
+    ? { name: 'Задачи по расписанию', status: JOURNAL_STATUS[health.jobs], latencyMs: 0, uptime: NOT_MEASURED }
+    : null
+  const services = [db, config, queue, inngest, jobs].filter((s): s is ServiceResult => s !== null)
   const degradedCount = services.filter((s) => s.status !== 'online').length
   const dbOk = db.status !== 'offline'
   const configOk = missing === 0
   const queueOk = queue ? queue.status !== 'offline' : true
-  const ok = dbOk && configOk && queueOk
+  const inngestOk = health.inngest !== 'fail'
+  const jobsOk = health.jobs !== 'fail'
+  const ok = dbOk && configOk && queueOk && inngestOk && jobsOk
 
   return NextResponse.json({
     ok,
@@ -67,6 +89,8 @@ export async function GET() {
       db: dbOk ? 'ok' : 'fail',
       config: configOk ? 'ok' : 'fail',
       ...(queue ? { queue: queueOk ? 'ok' : 'fail' } : {}),
+      ...(inngest ? { inngest: health.inngest } : {}),
+      ...(jobs ? { jobs: health.jobs } : {}),
     },
     services,
     allOnline: degradedCount === 0,
@@ -76,9 +100,15 @@ export async function GET() {
       ? 'Все проверки пройдены'
       : missing > 0
         ? 'Конфигурация сервера неполная — подробности в GIGA → Система'
-        : db.status !== 'online' || !queue
+        : db.status !== 'online'
           ? 'База данных отвечает медленно или недоступна'
-          : 'Очередь Workflow не запущена или ещё запускается — подробности в логах сервера',
+          : queue && queue.status !== 'online'
+            ? 'Очередь Workflow не запущена или ещё запускается — подробности в логах сервера'
+            : health.inngest === 'fail'
+              ? 'Фоновые задачи (Inngest) давно не запускались — подробности в GIGA → Система'
+              : health.jobs === 'fail'
+                ? 'Задачи по расписанию давно не запускались — подробности в GIGA → Система'
+                : 'Проверки фоновых задач ещё собирают данные',
     timestamp: new Date().toISOString(),
   }, {
     status: ok ? 200 : 503,

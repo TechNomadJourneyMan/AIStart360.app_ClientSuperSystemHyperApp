@@ -8,6 +8,7 @@ import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { fenceUntrusted } from '@/lib/ai/gateway'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const STAGE_RISK: Record<string, number> = {
   NEW: 30, PREPARATION: 40, PREPAYMENT_INVOICE: 25,
@@ -23,7 +24,7 @@ const PULSE_ROLES = new Set(['super_admin', 'admin', 'expert', 'manager'])
  * Generation goes through lib/pulse/briefing.ts: shared OpenRouter client,
  * validator, per-user day cache (ai_briefing_cache) and 10/hour limit.
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   try {
     // Auth: staff session required. Prevents anonymous callers from burning the
     // OpenRouter budget and reading platform CRM data.
@@ -123,3 +124,10 @@ ${fenceUntrusted('crm_deals', top5)}
     return NextResponse.json({ briefing: null, error: 'Failed to generate briefing' })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_PULSE_BRIEFING overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'pulse-briefing', ms: 60_000 })

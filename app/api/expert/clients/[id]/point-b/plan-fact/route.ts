@@ -16,6 +16,7 @@ import { expertBlockResponse, guardExpertClient, resolveExpert, type ExpertViewe
 import { companyOfUser } from '@/lib/point-b/plan/flow'
 import { PLANFACT_AUDIT, planFactFailure, recomputeNow, saveFactsAndRefresh, staffPlanFactView } from '@/lib/point-b/planfact/route'
 import { createServiceClient } from '@/lib/supabase-service'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const NO_COMPANY = 'У клиента нет компании — плану Точки Б не к чему привязаться'
 
@@ -44,7 +45,7 @@ async function run(route: string, fn: () => Promise<NextResponse>): Promise<Next
   }
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handleGet(_req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guard(params.id)
   if (!g.ok) return g.response
   return run('expert/point-b/plan-fact GET', async () => {
@@ -55,7 +56,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   })
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guard(params.id)
   if (!g.ok) return g.response
   const body = (await req.json().catch(() => null)) as { action?: unknown } | null
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   })
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePut(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guard(params.id)
   if (!g.ok) return g.response
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
@@ -95,3 +96,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ ok: true, data: { period: r.period, saved: r.saved, cleared: r.cleared, unchanged: r.unchanged, checkpoint: { status: r.checkpoint.status, overall: r.checkpoint.overall ?? null, reason: r.checkpoint.reason ?? null } } })
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_B_PLAN_FACT_EXPERT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'point-b-plan-fact-expert', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'point-b-plan-fact-expert', ms: 60_000 })
+export const PUT = withDeadline(handlePut, { label: 'point-b-plan-fact-expert', ms: 60_000 })

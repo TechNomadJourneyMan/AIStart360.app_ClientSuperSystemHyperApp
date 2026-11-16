@@ -13,6 +13,7 @@ import {
   gigaFetch, inputClass, useGigaQuery,
 } from '@/components/giga-panel/kit'
 import { PointBSettingsCard } from '@/components/giga-panel/settings/PointBSettingsCard'
+import { ScheduledJobsBlock, opsCounts, type OpsData, type OpsFailure } from '@/components/giga-panel/settings/ScheduledJobsBlock'
 import { NOTIFICATION_TYPES, SETTINGS, type AdminNotificationType, type SettingKey, type SettingValue } from '@/lib/settings/registry'
 
 type Values = { [K in SettingKey]: SettingValue<K> }
@@ -787,6 +788,9 @@ interface Health {
   agents?: Array<{ key: string; label: string; status: 'ok' | 'warn' | 'critical'; value: number; detail: string }> | null
   /** The agent checks could not run: migrations missing, or a real failure. */
   agentsError?: { kind: 'not_migrated' | 'failed'; message: string } | null
+  /** Scheduled jobs and alarm routes (R4-A1); absent on older deployments. */
+  ops?: OpsData | null
+  opsError?: OpsFailure | null
 }
 
 const CHECK_STATUS = {
@@ -806,8 +810,10 @@ function HealthCard() {
       // A check that could not run is not "all clear".
       + (h.data.integrations?.crmError ? 1 : 0)
       + (h.data.agentsError?.kind === 'failed' ? 1 : 0)
+      + opsCounts(h.data.ops, h.data.opsError).problems
   }, [h.data])
   const warnings = (h.data?.agents ?? []).filter((c) => c.status === 'warn').length + (h.data?.integrations?.crm?.errors ? 1 : 0)
+    + opsCounts(h.data?.ops, h.data?.opsError).warnings
 
   return (
     <Panel
@@ -934,6 +940,7 @@ function HealthCard() {
           </div>
         </div>
       )}
+      {h.data && (h.data.ops !== undefined || h.data.opsError) && <ScheduledJobsBlock ops={h.data.ops} error={h.data.opsError} />}
     </Panel>
   )
 }

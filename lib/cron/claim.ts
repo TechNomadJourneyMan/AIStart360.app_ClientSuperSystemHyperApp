@@ -6,7 +6,7 @@
  * whose INSERT lands owns the run, the others see the conflict and skip it. No lock to hold and
  * nothing to clean up if an instance dies mid-run: the minute is simply spent.
  */
-import { Pool } from 'pg'
+import { Client, Pool } from 'pg'
 import { maskConnectionSecrets } from '@/lib/runtime/mask-secrets'
 import { CREATE_CRON_RUNS_TABLE } from './cron-runs-table.mjs'
 
@@ -66,5 +66,41 @@ export function createPgCronClaim(
     // ISO string: the stored minute does not depend on the time zone of this process.
     const result = await poolOf().query(CLAIM, [path, minute.toISOString()])
     return result.rows.length > 0
+  }
+}
+
+/**
+ * Retention of the claims (R4-A1, N4A-15): deletes rows of cron_runs older than `days`, at most
+ * `limit` per call; returns how many went. A claim is only ever taken for the current minute, so an
+ * old row is never needed again. One short-lived connection with its own timeouts; a missing table
+ * (no claim taken yet in this database) is 0.
+ */
+export async function pruneCronRuns(
+  connectionString: string,
+  days: number,
+  limit: number,
+  deps: { client?: Pick<Client, 'connect' | 'query' | 'end'> } = {},
+): Promise<number> {
+  const client = deps.client ?? new Client({
+    connectionString,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: 15_000,
+    query_timeout: 20_000,
+    application_name: 'aistart360-cron-retention',
+  })
+  try {
+    await client.connect()
+    const res = await client.query(
+      `DELETE FROM cron_runs WHERE ctid IN (
+         SELECT ctid FROM cron_runs WHERE minute < now() - make_interval(days => $1::int) LIMIT $2::int)`,
+      [days, limit],
+    )
+    return res.rowCount ?? 0
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === '42P01') return 0
+    // The message can echo the connection string, its user or its password.
+    throw new Error(`cron_runs retention failed: ${maskConnectionSecrets(error instanceof Error ? error.message : String(error), connectionString)}`)
+  } finally {
+    try { await client.end() } catch { /* already closed */ }
   }
 }

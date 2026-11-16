@@ -22,6 +22,7 @@ import {
   type JourneyState,
   type JourneyWidget,
 } from '@/lib/journey/schema'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,7 +38,7 @@ const MIME_BY_EXTENSION: Record<string, string[]> = {
   txt: ['text/plain'],
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     const actorUserId = await resolveJourneyActor()
     const form = await request.formData()
@@ -337,3 +338,10 @@ function fieldValue(value: string | number | boolean | string[] | number[]): str
   if (Array.isArray(value)) return value.join(', ').slice(0, 1_000)
   return String(value).slice(0, 1_000)
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 90 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_JOURNEY_DOCUMENTS overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'journey-documents', ms: 90_000 })
