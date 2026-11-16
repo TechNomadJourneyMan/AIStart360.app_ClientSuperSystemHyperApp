@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { NextResponse, type NextRequest } from "next/server";
+import { webhookRefusal } from "@/lib/runtime/webhook-log";
 import { z } from "zod";
 import { authorizeOutboundDeliveryViaPostgres } from "@/lib/omnichannel/outbound-deliveries";
 import {
@@ -28,12 +29,16 @@ function response(body: Record<string, unknown>, status = 200): NextResponse {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // R-060: one structured line per refusal (route, status, reason, request id) — never the body, a
+  // header value, a QR or a message text. A store failure keeps its own one line (logBridgeFailure).
+  const refuse = webhookRefusal("webhooks/whatsapp-web/outbound/authorize", req);
+  const refused = (status: number) => response({ ok: false }, status);
   const verified = await verifyWhatsAppPortalPullRequest(req, PATH, 2_048);
-  if (!verified.ok) return response({ ok: false }, verified.status);
+  if (!verified.ok) return refuse(verified.status, verified.reason, refused);
   const parsed = schema.safeParse(verified.payload);
-  if (!parsed.success) return response({ ok: false }, 400);
+  if (!parsed.success) return refuse(400, "invalid_payload", refused);
   if (parsed.data.session_id !== verified.sessionId) {
-    return response({ ok: false }, 403);
+    return refuse(403, "session_mismatch", refused);
   }
 
   try {

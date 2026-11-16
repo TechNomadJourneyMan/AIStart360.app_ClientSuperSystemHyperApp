@@ -9,6 +9,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { handleDocumentFinalize } from '@/lib/documents/finalize-http'
 import { dbError } from '@/lib/api-error'
 import { CLIENT_DOCUMENT_COLUMNS, parsedDataForList } from '@/lib/documents/status-view'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /** Most recent documents returned by the (polled) list. */
 const LIST_LIMIT = 200
@@ -18,7 +19,7 @@ const LIST_LIMIT = 200
 // Polled every few seconds while a document is processing, so it returns the
 // ClientDocument columns only and parsed_data without its row arrays
 // (raw_rows / client_rows can hold thousands of rows).
-export async function GET(_req: NextRequest) {
+async function handleGet(_req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
@@ -43,6 +44,14 @@ export async function GET(_req: NextRequest) {
 // sha256 dedupe); the signed URL is never stored. Processing starts
 // asynchronously — POST …/[id]/process is no longer required (it returns the
 // already queued task). Response: see app/api/v1/documents/route.ts.
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   return handleDocumentFinalize(req, 'legacy')
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ONBOARDING_DOCUMENTS overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'onboarding-documents', ms: 60_000 })
+export const POST = withDeadline(handlePost, { label: 'onboarding-documents', ms: 60_000 })

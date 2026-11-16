@@ -48,6 +48,7 @@ const KIND_LABEL: Record<Worker['kind'], string> = { expert: 'эксперт', s
 const CLOSE_LABEL: Record<string, string> = {
   superseded: 'заменена новой версией', stale: 'рекомендации устарели', excluded: 'рекомендации сняты с SLA', withdrawn: 'отозвана', failed: 'сбой — проверять нечего', gone: 'удалена',
   no_access: 'у клиента нет доступа к Точке Б', needs_data: 'данных для плана не хватает', no_goal: 'нет цели по выручке', not_waiting: 'клиент больше не ждёт план',
+  not_client: 'аккаунт персонала — не работа SLA',
 }
 const VIA_LABEL: Record<string, string> = { source: 'из обращения', client: 'ответственный клиента', auto: 'авто: наименее загружен', manual: 'вручную' }
 

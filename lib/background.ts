@@ -16,6 +16,8 @@
  * Errors are caught and logged: background work must never crash the request.
  */
 
+import { detachDeadline } from '@/lib/runtime/deadline'
+
 type RequestContext = { waitUntil?: (p: Promise<unknown>) => void }
 type ContextStore = { get?: () => RequestContext | undefined }
 
@@ -74,13 +76,15 @@ export async function waitForBackgroundWork(timeoutMs: number): Promise<{ finish
 }
 
 export function runInBackground(label: string, work: () => Promise<unknown>): Promise<void> {
-  const promise = (async () => {
+  // RA-1 (R4-A2): outside the request's deadline (lib/runtime/deadline.ts) — background work has
+  // its own budgets; after a 504 it must not inherit the spent deadline of the late handler.
+  const promise = detachDeadline(async () => {
     try {
       await work()
     } catch (err) {
       console.error(`[background:${label}]`, err instanceof Error ? err.message : err)
     }
-  })()
+  })
   trackBackground(promise)
   return promise
 }

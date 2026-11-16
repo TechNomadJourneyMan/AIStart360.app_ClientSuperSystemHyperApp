@@ -6,6 +6,7 @@ import { guardAiBudget } from '@/lib/ai/budget'
 import { safeErrorMessage } from '@/lib/api-error'
 import { hasAllScores, knownScores } from '@/lib/gri-calculator/assessment-seed'
 import { gatePaidSection } from '@/lib/access/gate'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator (OpenRouter).
@@ -27,7 +28,7 @@ const AI_UNAVAILABLE = {
   en: 'The AI strategy is unavailable right now (the model did not answer or the limit is spent). Try again later.',
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // BE-01: this fires paid Claude Sonnet calls and is only invoked from the
     // authenticated GRI Calculator (app/(dashboard)/gri). Require a Supabase
@@ -86,3 +87,10 @@ Keep the response structured, professional, and actionable. Use markdown formatt
     return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось сгенерировать стратегию') }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_GRI_AI_STRATEGY overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'gri-ai-strategy', ms: 60_000 })

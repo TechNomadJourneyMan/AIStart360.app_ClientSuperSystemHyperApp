@@ -326,12 +326,27 @@ describe('GET /api/cron/agents: the agents role - the maintenance loop of the ag
     vi.stubEnv('PORTAL_ROLE', 'agents')
   })
 
-  it('24/7 switch off (the default), not a quarter of an hour: quiet mode, only the switch is read', async () => {
+  it('24/7 switch off (the default), not a quarter of an hour: quiet mode, only the switch is read and the Point A queue drained', async () => {
+    work.drainPointARecalc.mockResolvedValue({ done: [{ companyId: 'c1', status: 'ok' }], failed: [] })
+
     const res = await call()
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, skipped: 'quiet_mode' })
-    expect(calls()).toEqual({ ...NOTHING, scheduledAgentsOn: 1 })
+    expect(await res.json()).toEqual({ ok: true, skipped: 'quiet_mode', pointA: { done: 1, failed: 0 } })
+    // N4A-13: the due Point A recalculations every minute (the nightly pass only queues), with the loop's budget
+    expect(calls()).toEqual({ ...NOTHING, scheduledAgentsOn: 1, drainPointARecalc: 1 })
+    expect(work.drainPointARecalc).toHaveBeenCalledWith({ budgetMs: 15_000 })
+  })
+
+  it('quiet mode: a Point A drain that fails is logged and the call still answers 200 quiet_mode', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    work.drainPointARecalc.mockRejectedValue(new Error('point A down\nsecond line'))
+
+    const res = await call()
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, skipped: 'quiet_mode', pointA: null })
+    expect(error.mock.calls.map((args) => args.join(' '))).toEqual(['[cron/agents] point A drain failed point A down'])
   })
 
   it('24/7 switch off: the upkeep runs in minutes 00, 15, 30 and 45 (UTC) and in no other', async () => {
@@ -340,10 +355,14 @@ describe('GET /api/cron/agents: the agents role - the maintenance loop of the ag
       vi.setSystemTime(new Date(Date.UTC(2026, 10, 10, 10, minute, 30)))
       const body = await bodyOf(call())
       if (body.skipped === undefined) ran.push(minute)
-      else expect(body).toEqual({ ok: true, skipped: 'quiet_mode' })
+      else expect(body).toEqual({ ok: true, skipped: 'quiet_mode', pointA: { done: 0, failed: 0 } })
     }
     expect(ran).toEqual([0, 15, 30, 45])
     expect(work.drainQueue).toHaveBeenCalledTimes(4)
+    expect(work.redispatchPending).toHaveBeenCalledTimes(4)
+    expect(work.drainWhatsAppOutbox).toHaveBeenCalledTimes(4)
+    // N4A-13: only the Point A queue is drained in every minute
+    expect(work.drainPointARecalc).toHaveBeenCalledTimes(60)
     expect(work.enqueueScheduledAgents).not.toHaveBeenCalled() // no scheduled agents while the switch is off
   })
 
@@ -405,7 +424,7 @@ describe('GET /api/cron/agents: the agents role - the maintenance loop of the ag
   })
 
   it('a quiet minute leaves the route free for the next call', async () => {
-    expect(await bodyOf(call())).toEqual({ ok: true, skipped: 'quiet_mode' })
+    expect(await bodyOf(call())).toEqual({ ok: true, skipped: 'quiet_mode', pointA: { done: 0, failed: 0 } })
     vi.setSystemTime(new Date('2026-11-10T10:15:00Z'))
     expect((await bodyOf(call())).skipped).toBeUndefined()
   })

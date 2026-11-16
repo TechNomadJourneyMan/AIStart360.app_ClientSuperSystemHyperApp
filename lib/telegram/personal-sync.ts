@@ -54,7 +54,18 @@ export interface TelegramPersonalSyncResult {
   linkedProfiles: number
   repliedMessages: number
   ignoredMessages: number
+  /** RA-5: messages left for the next run because the run's budget was spent. */
+  deferredMessages: number
 }
+
+/**
+ * RA-5 (review of R4-A2): how long one run may keep taking dialogs and messages
+ * (TELEGRAM_PERSONAL_SYNC_BUDGET_MS) — below the route's 60 s deadline
+ * (app/api/telegram/personal/sync), so a long day ends in an answer, not a 504 every morning. A
+ * message is never cut in the middle; what is left is read on the next run: each chat keeps its
+ * last_processed_message_id.
+ */
+export const TELEGRAM_PERSONAL_SYNC_BUDGET_MS = 40_000
 
 function intEnv(name: string, fallback: number): number {
   const value = Number(process.env[name])
@@ -309,14 +320,19 @@ async function handleLinkedMessage(
 async function collectIncomingMessages(
   client: TelegramClient,
   admin: SupabaseClient,
+  spent: () => boolean = () => false,
 ): Promise<{ messages: IncomingPersonalMessage[]; scannedDialogs: number; ignored: number }> {
   const dialogLimit = intEnv('TELEGRAM_PERSONAL_DIALOG_LIMIT', 40)
   const messagesPerDialog = intEnv('TELEGRAM_PERSONAL_MESSAGES_PER_DIALOG', 5)
   const dialogs = (await (client as any).getDialogs({ limit: dialogLimit })) as any[]
   const incoming: IncomingPersonalMessage[] = []
   let ignored = 0
+  let scanned = 0
 
   for (const dialog of dialogs) {
+    // RA-5: a dialog not read this run is read on the next one.
+    if (spent()) break
+    scanned++
     const identity = identityFromEntity(dialog.entity)
     if (!identity) {
       ignored++
@@ -339,10 +355,15 @@ async function collectIncomingMessages(
     const firstSeenChat = !state
     const lastProcessed = Number(state?.last_processed_message_id ?? 0)
     const latestIncomingId = inbox[inbox.length - 1]?.id ?? lastProcessed
+    // A chat seen for the first time skips its history — but never past a link code it has not
+    // handled yet (NV-2): a code left for the next run by the budget (RA-5) would be behind the
+    // cursor then, and lost. The cursor stops just before the first code; handling it moves it on.
+    const firstLinkCodeId = firstSeenChat ? inbox.find((m) => extractTelegramLinkToken(m.text))?.id : undefined
+    const firstSeenCursor = firstLinkCodeId !== undefined ? firstLinkCodeId - 1 : latestIncomingId
 
     await upsertChatState(admin, identity, {
       linked_profile_id: state?.linked_profile_id ?? null,
-      last_processed_message_id: firstSeenChat ? latestIncomingId : lastProcessed,
+      last_processed_message_id: firstSeenChat ? firstSeenCursor : lastProcessed,
     })
 
     for (const message of inbox) {
@@ -353,7 +374,7 @@ async function collectIncomingMessages(
     }
   }
 
-  return { messages: incoming, scannedDialogs: dialogs.length, ignored }
+  return { messages: incoming, scannedDialogs: scanned, ignored }
 }
 
 /**
@@ -366,7 +387,13 @@ export function telegramPersonalSyncConfigured(env: Partial<NodeJS.ProcessEnv> =
   return [env.TELEGRAM_API_ID, env.TELEGRAM_API_HASH, env.TELEGRAM_USER_SESSION].every((value) => Boolean(value?.trim()))
 }
 
-export async function syncTelegramPersonalInbox(): Promise<TelegramPersonalSyncResult> {
+export async function syncTelegramPersonalInbox(
+  opts: { budgetMs?: number; now?: () => number } = {},
+): Promise<TelegramPersonalSyncResult> {
+  const now = opts.now ?? Date.now
+  const startedAt = now()
+  const budgetMs = opts.budgetMs ?? intEnv('TELEGRAM_PERSONAL_SYNC_BUDGET_MS', TELEGRAM_PERSONAL_SYNC_BUDGET_MS)
+  const spent = () => now() - startedAt >= budgetMs
   const admin = createTelegramAdminClient()
   const client = await createTelegramPersonalClient()
   const maxMessages = intEnv('TELEGRAM_PERSONAL_MAX_MESSAGES_PER_RUN', 20)
@@ -376,13 +403,20 @@ export async function syncTelegramPersonalInbox(): Promise<TelegramPersonalSyncR
   let linkedProfiles = 0
   let repliedMessages = 0
   let ignoredMessages = 0
+  let deferredMessages = 0
 
   try {
-    const collected = await collectIncomingMessages(client, admin)
+    const collected = await collectIncomingMessages(client, admin, spent)
     scannedDialogs = collected.scannedDialogs
     ignoredMessages += collected.ignored
 
-    for (const message of collected.messages.slice(0, maxMessages)) {
+    const batch = collected.messages.slice(0, maxMessages)
+    for (const [index, message] of batch.entries()) {
+      // RA-5: no new message once the budget is spent; the rest is read on the next run.
+      if (spent()) {
+        deferredMessages = batch.length - index
+        break
+      }
       processedMessages++
 
       try {
@@ -422,6 +456,7 @@ export async function syncTelegramPersonalInbox(): Promise<TelegramPersonalSyncR
       linkedProfiles,
       repliedMessages,
       ignoredMessages,
+      deferredMessages,
     }
   } finally {
     await disconnectTelegramPersonalClient(client)

@@ -7,6 +7,7 @@ import { canManageAssignments } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { BULK_PERMISSIONS, bulkSchema, runBulkUserAction, validateAssignee, type BulkAction, type BulkItemResult } from '@/lib/admin/bulk-users'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/users/bulk
@@ -17,7 +18,7 @@ import { BULK_PERMISSIONS, bulkSchema, runBulkUserAction, validateAssignee, type
  * Право на действие — как у одиночного маршрута и проверяется ДО чтения
  * данных; ранг цели — по каждому человеку (см. lib/admin/bulk-users.ts).
  */
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const raw = await req.json().catch(() => null)
   const action = (raw as { action?: unknown } | null)?.action
   const known = typeof action === 'string' && Object.prototype.hasOwnProperty.call(BULK_PERMISSIONS, action)
@@ -64,3 +65,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, results, done, failed: results.length - done })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_USERS_BULK overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'users-bulk', ms: 60_000 })

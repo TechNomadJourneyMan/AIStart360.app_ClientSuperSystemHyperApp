@@ -13,9 +13,13 @@ const globalReplayState = globalThis as typeof globalThis & {
   __aistart360WhatsAppPortalNonces?: Map<string, number>;
 };
 
+/**
+ * `reason` (R-060): a fixed code for the refusal line (lib/runtime/webhook-log.ts) — never a header
+ * value, a body or a secret.
+ */
 export type VerifiedWhatsAppPortalRequest =
   | { ok: true; rawBody: Buffer; payload: unknown; sessionId: string }
-  | { ok: false; status: number };
+  | { ok: false; status: number; reason: string };
 
 function enabled(value: string | undefined): boolean {
   return /^(?:1|true|yes|on)$/i.test(value?.trim() ?? "");
@@ -56,34 +60,34 @@ export async function verifyWhatsAppPortalPullRequest(
   options: { requirePostgres?: boolean } = {},
 ): Promise<VerifiedWhatsAppPortalRequest> {
   if (!enabled(process.env.WHATSAPP_WEB_BRIDGE_ENABLED)) {
-    return { ok: false, status: 503 };
+    return { ok: false, status: 503, reason: "bridge_disabled" };
   }
   // Consumer endpoints stay available in direct mode so a bridge can be
   // switched to pull first and drain residual work during rollback. Only
   // producers are gated by WHATSAPP_WEB_DELIVERY_MODE. Session-control
   // endpoints store through the Supabase service client instead and opt out.
   if (options.requirePostgres !== false && !shouldUseOmnichannelPostgres()) {
-    return { ok: false, status: 503 };
+    return { ok: false, status: 503, reason: "database_queue_dsn_missing" };
   }
   const secret = hmacSecret(process.env.WHATSAPP_WEB_BRIDGE_WEBHOOK_SECRET);
-  if (!secret) return { ok: false, status: 503 };
+  if (!secret) return { ok: false, status: 503, reason: "secret_not_configured" };
   if (
     !req.headers.get("content-type")?.toLowerCase().startsWith("application/json")
   ) {
-    return { ok: false, status: 415 };
+    return { ok: false, status: 415, reason: "unsupported_content_type" };
   }
   const declaredLength = Number(req.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
-    return { ok: false, status: 413 };
+    return { ok: false, status: 413, reason: "body_too_large" };
   }
 
   let rawBody: Buffer;
   try {
     rawBody = Buffer.from(await req.arrayBuffer());
   } catch {
-    return { ok: false, status: 400 };
+    return { ok: false, status: 400, reason: "body_unreadable" };
   }
-  if (rawBody.byteLength > maxBodyBytes) return { ok: false, status: 413 };
+  if (rawBody.byteLength > maxBodyBytes) return { ok: false, status: 413, reason: "body_too_large" };
 
   const verified = verifySignedBridgeRequest({
     method: "POST",
@@ -99,16 +103,16 @@ export async function verifyWhatsAppPortalPullRequest(
     },
     maxSkewSeconds: 60,
   });
-  if (!verified.ok) return { ok: false, status: 401 };
+  if (!verified.ok) return { ok: false, status: 401, reason: "bad_signature" };
   if (!acceptNonce(path, verified.nonce, verified.timestamp)) {
-    return { ok: false, status: 409 };
+    return { ok: false, status: 409, reason: "replayed_nonce" };
   }
 
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody.toString("utf8")) as unknown;
   } catch {
-    return { ok: false, status: 400 };
+    return { ok: false, status: 400, reason: "invalid_json" };
   }
   const sessionId = process.env.WHATSAPP_WEB_BRIDGE_SESSION_ID?.trim() || "primary";
   return { ok: true, rawBody, payload, sessionId };
@@ -126,7 +130,7 @@ export async function verifyWhatsAppBridgeControlRequest(
   maxBodyBytes = 1_024,
 ): Promise<VerifiedWhatsAppPortalRequest> {
   if (whatsappWebBridgeControlMode() !== "pull") {
-    return { ok: false, status: 404 };
+    return { ok: false, status: 404, reason: "control_not_pull" };
   }
   return verifyWhatsAppPortalPullRequest(req, path, maxBodyBytes, {
     requirePostgres: false,

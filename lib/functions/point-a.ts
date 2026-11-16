@@ -43,8 +43,11 @@ export const pointANightly = inngest.createFunction(
         AND EXISTS (SELECT 1 FROM public.survey_answers s WHERE s.user_id = c.user_id)`
     let queued = 0
     for (const r of rows) {
-      // Spread over the hour so the minute drain is never flooded.
-      if (await requestPointARecalc(r.id, 'nightly', (queued % 60) * 60_000, { slide: false })) queued++
+      // Spread over the hour so the minute drain is never flooded. N4A-13: `kick: false` — only
+      // queued. An event per company started N runs of point-a-recalc at once, and nearly all of
+      // them found nothing due (the row is due up to an hour later); the minute drain of the agents
+      // loop takes each row when it is due (every minute, also in the quiet mode).
+      if (await requestPointARecalc(r.id, 'nightly', (queued % 60) * 60_000, { slide: false, kick: false })) queued++
     }
     // Retention (spec §2.5): every snapshot of the last 90 days; older ones —
     // the last of each week; snapshots reviewed by an expert are kept forever.

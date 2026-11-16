@@ -5,6 +5,7 @@ export const maxDuration = 60
 import { NextRequest } from 'next/server'
 import { auditPlan, fail, guarded, guardPlanRoute, json, NO_COMPANY } from '@/lib/point-b/plan/route-guard'
 import { PLANFACT_AUDIT, planFactFailure, recomputeNow } from '@/lib/point-b/planfact/route'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/users/:id/point-b/recompute — the button «Пересчитать» of User 360 → «Точка Б» (spec §14).
@@ -15,7 +16,7 @@ import { PLANFACT_AUDIT, planFactFailure, recomputeNow } from '@/lib/point-b/pla
  *   → { ok, data: { status: 'done' | 'unchanged' | 'no_plan' | 'failed', computedAt?, period?, overall?, reason?,
  *                   draft?, invites?, staleRecs? } }
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { id: string } }) {
   return guarded('giga/point-b/recompute POST', async () => {
     const g = await guardPlanRoute(req, params.id, { write: true })
     if (!g.ok) return g.response
@@ -38,3 +39,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_B_RECOMPUTE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-b-recompute', ms: 60_000 })

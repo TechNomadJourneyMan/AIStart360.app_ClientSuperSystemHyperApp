@@ -60,8 +60,13 @@ vi.mock('@/workflows/process-omnichannel-message', () => ({
   processOmnichannelMessageWorkflow: workflow.processor,
 }))
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { GET, POST } from '@/app/api/webhooks/meta/route'
 import { waitForBackgroundWork } from '@/lib/background'
+import { deadlineRemainingMs } from '@/lib/runtime/deadline'
+
+// Next puts AsyncLocalStorage on globalThis (both runtimes): the route's deadline is ambient, as in production.
+;(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage ??= AsyncLocalStorage
 
 const originalAppSecret = process.env.META_APP_SECRET
 const originalInstagramAppSecret = process.env.INSTAGRAM_APP_SECRET
@@ -701,6 +706,82 @@ describe('/api/webhooks/meta', () => {
 
       expect(response.status).toBe(503)
       expect(outbox.applyStatus).not.toHaveBeenCalled()
+    })
+  })
+  describe('R-015 (R4-A2): a hung queue no longer holds the delivery', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('answers 504 «webhook-meta» after 30 s, and the re-delivery is idempotent', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const rawBody = JSON.stringify(whatsAppInboundPayload())
+      // the first delivery: Inngest accepts the connection and never answers
+      queue.send.mockImplementationOnce(() => new Promise(() => {}))
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let settled = false
+      const first = POST(postRequest(rawBody, 'app-secret'))
+      first.then(() => { settled = true }, () => { settled = true })
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      const timedOut = await first
+      expect(timedOut.status).toBe(504)
+      expect(timedOut.headers.get('x-deadline')).toBe('webhook-meta')
+      expect(repository.transitionWebhookEvent).not.toHaveBeenCalledWith('audit-1', 'processed')
+      vi.useRealTimers()
+
+      // Meta delivers the same bytes again: the same audit row (hash of the bytes), the same
+      // message upsert and the same deterministic event id — Inngest keeps one event, one AI run.
+      repository.recordWebhookEvent.mockResolvedValueOnce({ id: 'audit-1', duplicate: true, status: 'processing' })
+      const again = await POST(postRequest(rawBody, 'app-secret'))
+      expect(again.status).toBe(200)
+
+      const hashes = repository.recordWebhookEvent.mock.calls.map(([event]) => (event as { eventHash: string }).eventHash)
+      expect(new Set(hashes).size).toBe(1)
+      const ingested = repository.ingestNormalizedMessage.mock.calls.map(([event]) => (event as { externalMessageId: string }).externalMessageId)
+      expect(ingested).toEqual(['wamid.inbound-1', 'wamid.inbound-1'])
+      const ids = queue.send.mock.calls.map(([event]) => (event as { id: string }).id)
+      expect(ids).toEqual(['omnichannel-message-message-1', 'omnichannel-message-message-1'])
+      expect(repository.transitionWebhookEvent).toHaveBeenCalledWith('audit-1', 'processed')
+      expect(warn.mock.calls.some(([line]) => String(line).includes('route_deadline_exceeded') && String(line).includes('webhook-meta'))).toBe(true)
+    })
+
+    it('RA-1: after a 504 the late handler still queues the job, and the fast path (the AI reply) runs outside the spent deadline', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+      process.env.OMNICHANNEL_PROCESSING_BACKEND = 'database'
+      process.env.PERSISTENT_SERVER = '1'
+      vi.stubEnv('ROUTE_DEADLINE_MS_WEBHOOK_META', '30')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      // the database is slow: the delivery outlives its deadline
+      repository.recordWebhookEvent.mockImplementationOnce(async () => {
+        await new Promise((r) => setTimeout(r, 80))
+        return { id: 'audit-1', duplicate: false, status: 'received' }
+      })
+      processingJobs.enqueue.mockResolvedValue({ id: 'job-1', runAt: new Date(Date.now() - 1_000).toISOString() })
+      let seen: number | null = -1
+      jobDrain.drain.mockImplementation(async () => {
+        seen = deadlineRemainingMs()
+        return { completed: 1 }
+      })
+
+      const response = await POST(postRequest(JSON.stringify(instagramInboundPayload()), 'app-secret'))
+      expect(response.status).toBe(504)
+      await vi.waitFor(() => expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 }), { timeout: 2_000 })
+      await waitForBackgroundWork(1_000)
+      vi.unstubAllEnvs()
+
+      // before: 0 — the AI reply of the job was refused at once and the message went to a human
+      expect(seen).toBeNull()
+    })
+
+    it('a delivery that is not stuck is answered as before (the deadline only bounds a hang)', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+      const response = await POST(postRequest(JSON.stringify(whatsAppInboundPayload()), 'app-secret'))
+      expect(response.status).toBe(200)
+      expect(response.headers.get('x-deadline')).toBeNull()
     })
   })
 })

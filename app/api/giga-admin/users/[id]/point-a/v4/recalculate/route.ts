@@ -6,6 +6,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { badRequest, guardPointAExpert } from '@/lib/admin/point-a-expert'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/giga-admin/users/:id/point-a/v4/recalculate — «Пересчитать» from
@@ -21,7 +22,7 @@ const SKIPPED: Record<string, string> = {
   not_migrated: 'Новая Точка А ещё не включена на платформе',
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await guardPointAExpert(req, params.id, 'write')
   if (g.response) return g.response
   const { actor, companyId } = g
@@ -47,3 +48,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   return NextResponse.json({ ok: true, data: { status: out.status, snapshotId: out.snapshotId } })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_STAFF_RECALCULATE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-a-staff-recalculate', ms: 60_000 })

@@ -20,6 +20,7 @@ import {
 import { backfillInstagramHistoryWorkflow } from '@/workflows/backfill-instagram-history'
 import { backfillWhatsAppHistoryWorkflow } from '@/workflows/backfill-whatsapp-history'
 import { getMetaConfigurationHealth } from '@/lib/omnichannel/meta-client'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const schema = z.object({ channel: z.enum(['instagram', 'whatsapp']) })
 const WHATSAPP_HISTORY_ANALYSIS_LIMIT = 100
@@ -38,7 +39,7 @@ function shouldUseWorkflowBackend(): boolean {
   return process.env.OMNICHANNEL_PROCESSING_BACKEND?.trim().toLowerCase() === 'workflow'
 }
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const guard = await requireGiga(req, 'inbox.manage')
   if (guard.response) return guard.response
   const actor = guard.actor
@@ -212,3 +213,10 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 30 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_OMNICHANNEL_BACKFILL overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'omnichannel-backfill', ms: 30_000 })

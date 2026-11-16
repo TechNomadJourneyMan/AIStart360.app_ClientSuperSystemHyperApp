@@ -1,0 +1,317 @@
+/**
+ * N4A-12 (R4-A2) — after a Point A recalculation the paid AI analysis (fireAiFanOut, up to 150 s)
+ * and the AI hypotheses (a model call per block without data) ran in the background with no common
+ * limit: a wave of snapshots (the nightly pass after a config-version change, a bulk «→ Pro») started
+ * one of each per company at once. Now both take a slot of lib/point-a/ai-slots.ts: at most 2 per
+ * process, the rest wait; too many waiting → the analysis is marked failed ('busy', «Повторить»).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const h = vi.hoisted(() => ({
+  inFlight: 0,
+  peak: 0,
+  hypotheses: 0,
+  hold: 30,
+}))
+
+/** One AI job: counted while it runs. */
+async function aiJob(): Promise<void> {
+  h.inFlight += 1
+  h.peak = Math.max(h.peak, h.inFlight)
+  await new Promise((r) => setTimeout(r, h.hold))
+  h.inFlight -= 1
+}
+
+vi.mock('@/lib/agents/queue', () => ({ enqueueAgentTask: async () => ({ id: 't-1' }) }))
+vi.mock('@/lib/background', () => ({
+  runInBackground: async (_l: string, work: () => Promise<unknown>) => { await work() },
+  trackBackground: () => undefined,
+}))
+vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))
+vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))
+vi.mock('@/lib/internal-auth', () => ({ internalBaseUrl: () => 'https://app.test', internalFetchHeaders: () => ({}) }))
+vi.mock('@/lib/ai/budget', () => ({ assertAiBudget: async () => undefined, isAiBudgetError: () => false }))
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => ({
+    from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }),
+  }),
+}))
+vi.mock('@/lib/point-a/v4/hypotheses', () => ({
+  blocksNeedingHypothesis: (blocks: Array<{ status?: string }>) => blocks.filter((b) => b.status === 'insufficient_data'),
+  carryOverHypotheses: (blocks: unknown[]) => [...blocks],
+  generateHypotheses: async (blocks: unknown[]) => {
+    h.hypotheses += 1
+    await aiJob()
+    return { blocks, generated: 0 }
+  },
+}))
+
+const { fireAiFanOut } = await import('@/lib/point-a/diagnostic-row')
+const { runAfterWrite } = await import('@/lib/point-a/snapshot')
+const { pointAAiSlots, resetPointAAiSlotsForTests } = await import('@/lib/point-a/ai-slots')
+const { createSemaphore } = await import('@/lib/agents/run-slots')
+const { drainPointARecalc } = await import('@/lib/point-a/recalc-queue')
+const { pointAAiBacklogged, acquirePatiently } = await import('@/lib/point-a/ai-slots')
+
+const BASE = 'https://app.test'
+const ANALYZE = '/api/v1/diagnostics/ai-analyze' as const
+const BLOCK_NEEDING = { key: 'marketing', title: 'Маркетинг', weight: 0.2, hiddenForClient: false, informational: false, order: 1, status: 'insufficient_data', score: null, coverage: 0.2, confidence: 0.1, earned: 1, possible: 2, checks: [], top_issues: [], recommendations: [], needs: [], conflicts: [], inputsHash: 'x' }
+
+const fetchImpl: typeof fetch = async () => {
+  await aiJob()
+  return new Response('{"ok":true}', { status: 200 })
+}
+
+beforeEach(() => {
+  h.inFlight = 0
+  h.peak = 0
+  h.hypotheses = 0
+  h.hold = 30
+  resetPointAAiSlotsForTests()
+  process.env.OPENROUTER_API_KEY = 'k'
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  resetPointAAiSlotsForTests()
+})
+
+describe('N4A-12 the Point A AI slots', () => {
+  it('two per process by default, read from the environment once', () => {
+    expect(pointAAiSlots().limit).toBe(2)
+    expect(pointAAiSlots()).toBe(pointAAiSlots())
+    resetPointAAiSlotsForTests()
+    vi.stubEnv('POINT_A_AI_MAX_CONCURRENCY', '3')
+    expect(pointAAiSlots().limit).toBe(3)
+  })
+
+  it('10 analyses fired at once: at most 2 run, all 10 finish, none is marked failed', async () => {
+    const works: Promise<unknown>[] = []
+    const failed: string[] = []
+    for (let i = 0; i < 10; i += 1) {
+      fireAiFanOut({ baseUrl: BASE, diagnosticId: `d-${i}`, userId: `u-${i}`, locale: 'ru', paths: [ANALYZE] }, {
+        fetchImpl, track: (w) => { works.push(w) }, markFailed: async (_p, o) => { failed.push(o.diagnosticId) }, log: () => {},
+      })
+    }
+    expect(works).toHaveLength(10) // tracked at once: a redeploy waits for the waiting ones too
+    await Promise.all(works)
+    expect(h.peak).toBe(2)
+    expect(failed).toEqual([])
+    expect(pointAAiSlots().active()).toBe(0)
+  })
+
+  it('too many waiting: the extra analysis is marked failed «busy» at once (the client gets «Повторить»)', async () => {
+    const slots = createSemaphore({ limit: 2, maxWaiting: 1, maxWaitMs: 60_000 })
+    const works: Promise<unknown>[] = []
+    const failed: Array<{ id: string; reason: string }> = []
+    let fetched = 0
+    const counting: typeof fetch = async (...args) => { fetched += 1; return fetchImpl(...args) }
+    for (let i = 0; i < 4; i += 1) {
+      fireAiFanOut({ baseUrl: BASE, diagnosticId: `d-${i}`, userId: 'u', locale: 'ru', paths: [ANALYZE] }, {
+        fetchImpl: counting, slots, track: (w) => { works.push(w) }, markFailed: async (_p, o, reason) => { failed.push({ id: o.diagnosticId, reason }) }, log: () => {},
+      })
+    }
+    await Promise.all(works)
+    expect(fetched).toBe(3)
+    expect(failed).toEqual([{ id: 'd-3', reason: 'busy' }])
+    expect(h.peak).toBe(2)
+  })
+
+  it('a call that throws gives its slot back', async () => {
+    const slots = createSemaphore({ limit: 1, maxWaiting: 5, maxWaitMs: 60_000 })
+    const works: Promise<unknown>[] = []
+    const reasons: string[] = []
+    const opts = (i: number) => ({ baseUrl: BASE, diagnosticId: `d-${i}`, userId: 'u', locale: 'ru', paths: [ANALYZE] })
+    const deps = { slots, track: (w: Promise<unknown>) => { works.push(w) }, markFailed: async (_p: string, _o: unknown, r: string) => { reasons.push(r) }, log: () => {} }
+    fireAiFanOut(opts(1), { ...deps, fetchImpl: async () => { throw new TypeError('fetch failed') } })
+    fireAiFanOut(opts(2), { ...deps, fetchImpl })
+    await Promise.all(works)
+    expect(reasons).toEqual(['TypeError'])
+    expect(slots.active()).toBe(0)
+  })
+
+  it('10 snapshots written at once: hypotheses and analyses together, never more than 2 AI jobs', async () => {
+    vi.stubGlobal('fetch', fetchImpl)
+    const input = (i: number) => ({
+      companyId: `co-${i}`, ownerId: `owner-${i}`, diagnosticId: `d-${i}`, snapshotId: `s-${i}`, engine: 'v4' as const,
+      written: { overall_score: 61 } as never, preliminary: false, noScore: false, changes: [], trigger: 'schedule' as const,
+      locale: 'ru', blocks: [BLOCK_NEEDING] as never, industry: null, paidPaths: [ANALYZE] as const,
+    })
+
+    await Promise.all(Array.from({ length: 10 }, (_, i) => runAfterWrite(input(i))))
+    // the analyses are fire-and-forget: wait until the slots are free again
+    await vi.waitFor(() => expect(pointAAiSlots().active() + pointAAiSlots().waiting()).toBe(0), { timeout: 5_000 })
+
+    expect(h.hypotheses).toBe(10)
+    expect(h.peak).toBe(2)
+  })
+})
+
+describe('RA-2: the AI hypotheses are never dropped for want of a slot', () => {
+  it('6 snapshots while the slots and the queue of waiters are full: all 6 hypotheses are made, one at a time (NV-1: the other slot stays free for an analysis)', async () => {
+    // a tiny queue and a short wait: before, 3 of 6 were dropped («left for the next pass» that never came)
+    vi.stubEnv('POINT_A_AI_MAX_WAITING', '1')
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '40')
+    vi.stubEnv('POINT_A_AI_SLOT_RETRY_MS', '10')
+    resetPointAAiSlotsForTests()
+    const input = (i: number) => ({
+      companyId: `co-${i}`, ownerId: `owner-${i}`, diagnosticId: `d-${i}`, snapshotId: `s-${i}`, engine: 'v4' as const,
+      // no official score → no analysis fan-out: only the hypotheses compete for the slots here
+      written: { overall_score: null } as never, preliminary: false, noScore: true, changes: [], trigger: 'schedule' as const,
+      locale: 'ru', blocks: [BLOCK_NEEDING] as never, industry: null, paidPaths: [ANALYZE] as const,
+    })
+
+    await Promise.all(Array.from({ length: 6 }, (_, i) => runAfterWrite(input(i))))
+
+    expect(h.hypotheses).toBe(6)
+    expect(h.peak).toBe(1)
+  })
+})
+
+describe('RA-3: the minute drain does not overflow the slots', () => {
+  function queue(n: number) {
+    const rows = Array.from({ length: n }, (_, i) => ({ company_id: `co-${i}`, reasons: ['nightly'] }))
+    const claim = vi.fn(async (limit: number) => rows.splice(0, limit).map((r) => ({ ...r, started_at: new Date(), attempts: 1 })))
+    return { rows, claim }
+  }
+  const noop = async () => undefined
+
+  it('while 2 AI jobs already wait for a slot, no new rows are taken: they stay in the queue (deferred)', async () => {
+    const slots = pointAAiSlots()
+    const held = [slots.tryAcquire()!, slots.tryAcquire()!]
+    const waiting = [slots.acquire(), slots.acquire()]
+    expect(slots.waiting()).toBe(2)
+    const { rows, claim } = queue(9)
+
+    const report = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    expect(claim).not.toHaveBeenCalled()
+    expect(report).toEqual({ done: [], failed: [], deferred: true })
+    expect(rows).toHaveLength(9)
+
+    // the slots free up → the next minute drains again
+    for (const r of held) r()
+    for (const w of await Promise.all(waiting)) w?.()
+    expect(slots.waiting()).toBe(0)
+    const again = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+    expect(again.done).toHaveLength(9)
+    expect(again.deferred).toBeUndefined()
+  })
+
+  it('stops between batches as soon as the AI work of the built rows backs up', async () => {
+    const slots = pointAAiSlots()
+    const pending: Array<Promise<unknown>> = []
+    const { rows, claim } = queue(9)
+    // every build starts AI work that takes a slot, as the snapshot's afterWrite does
+    const build = async () => { pending.push(slots.acquire().then((r) => { setTimeout(() => r?.(), 30) })); return { status: 'written' } }
+
+    const report = await drainPointARecalc({ budgetMs: 5_000 }, {
+      claim: claim as never, finish: noop as never, fail: noop as never, build, aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    // batch 1 (3 rows): 2 jobs run, 1 waits — go on; batch 2: 4 wait — stop, 3 rows stay queued
+    expect(claim).toHaveBeenCalledTimes(2)
+    expect(report.done).toHaveLength(6)
+    expect(report.deferred).toBe(true)
+    expect(rows).toHaveLength(3)
+    await Promise.all(pending)
+  })
+
+  it('one company\'s own recalculation (the client\'s event) is never held back', async () => {
+    const slots = pointAAiSlots()
+    const held = [slots.tryAcquire()!, slots.tryAcquire()!]
+    const waiting = [slots.acquire(), slots.acquire()]
+    const { claim } = queue(1)
+
+    const report = await drainPointARecalc({ companyId: 'co-0' }, {
+      claim: claim as never, finish: noop as never, fail: noop as never,
+      build: async () => ({ status: 'written' }), aiBacklogged: () => pointAAiBacklogged(),
+    })
+
+    expect(claim).toHaveBeenCalledTimes(1)
+    expect(report.done).toHaveLength(1)
+    for (const r of held) r()
+    for (const w of await Promise.all(waiting)) w?.()
+  })
+})
+
+describe('NV-1: the paid analysis goes before the hypotheses', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  it('a wave of 120 hypotheses: an analysis requested in the middle of it starts at once, and all 120 are still made', async () => {
+    // scaled time: one hypothesis chain «1 min» = 20 ms, the 10 min wait of an analysis = 200 ms
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '200')
+    vi.stubEnv('POINT_A_AI_SLOT_RETRY_MS', '5')
+    resetPointAAiSlotsForTests()
+    const slots = pointAAiSlots()
+    let running = 0
+    let peak = 0
+    let done = 0
+    const wave = Array.from({ length: 120 }, async () => {
+      const release = await acquirePatiently()
+      running += 1
+      peak = Math.max(peak, running)
+      try { await sleep(20) } finally { running -= 1; release() }
+      done += 1
+    })
+
+    await sleep(100) // the wave is in full swing
+    const asked = Date.now()
+    const analysis = await slots.acquire()
+    const waitedMs = Date.now() - asked
+    // before: the queue of 50 was full of patient hypotheses → null («busy», «Повторить») for ~45 «min»
+    expect(analysis).not.toBeNull()
+    expect(waitedMs).toBeLessThan(20) // not even one hypothesis «minute»
+    analysis!()
+
+    await Promise.all(wave)
+    expect(done).toBe(120)
+    expect(peak).toBe(1) // the hypotheses never took the slot kept for an analysis
+  })
+
+  it('both slots busy: a freed slot goes to the waiting analysis, not to the next hypothesis in line', async () => {
+    const slots = pointAAiSlots()
+    const hypothesis = await slots.acquireBackground() // slot 1
+    const analysis1 = (await slots.acquire())! // slot 2
+    const order: string[] = []
+    const nextHypothesis = slots.acquireBackground().then((r) => { order.push('hypothesis'); return r })
+    const analysis2 = slots.acquire().then((r) => { order.push('analysis'); return r })
+    await sleep(5)
+    expect(order).toEqual([])
+
+    hypothesis() // the hypothesis ends first: its slot goes to the analysis that waits
+    const second = await analysis2
+    expect(second).not.toBeNull()
+    expect(order).toEqual(['analysis'])
+
+    analysis1()
+    second!()
+    ;(await nextHypothesis)()
+    expect(order).toEqual(['analysis', 'hypothesis'])
+    expect(slots.active()).toBe(0)
+    expect(slots.waiting()).toBe(0)
+  })
+
+  it('analyses still wait their bounded time behind other analyses (busy after POINT_A_AI_SLOT_WAIT_MS), hypotheses never are refused', async () => {
+    vi.stubEnv('POINT_A_AI_SLOT_WAIT_MS', '30')
+    resetPointAAiSlotsForTests()
+    const slots = pointAAiSlots()
+    const a = [(await slots.acquire())!, (await slots.acquire())!]
+    expect(await slots.acquire()).toBeNull() // 30 ms passed with both slots held by analyses
+    let gotIt = false
+    const hypothesis = slots.acquireBackground().then((r) => { gotIt = true; return r })
+    await sleep(50)
+    expect(gotIt).toBe(false) // waits, is not refused
+    a[0]()
+    ;(await hypothesis)()
+    expect(gotIt).toBe(true)
+    a[1]()
+  })
+})

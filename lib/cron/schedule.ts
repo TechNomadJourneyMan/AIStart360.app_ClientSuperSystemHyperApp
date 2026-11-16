@@ -34,13 +34,20 @@ export const CRON_JOBS: readonly CronJob[] = [
   { path: '/api/cron/client-digest', schedule: '0 4 * * 1' },
   { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
   { path: '/api/cron/reminders', schedule: '0 6 * * *' },
-  { path: '/api/cron/analytics-rollup', schedule: '0 22 * * *' },
+  // 21:30, не 22:00 (N4A-14): в 22:00 UTC стартуют ночной пересчёт Точки А и пересчёт Точки Б.
+  { path: '/api/cron/analytics-rollup', schedule: '30 21 * * *' },
   { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
   // Сторож бэкапов (R-011): ежечасно, в :07 — журнал ops_backup_runs свежее 10 ч, иначе Super Admin.
   { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
   // SLA экспертов (R2-B): каждые 5 минут — задачи, авто-назначение, эскалация 24 ч, просрочка 48 ч.
   // Раньше — Inngest cron `expert-sla-watch`, но Inngest Cloud на Railway не вызывает портал.
   { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
+  // Сторож задач (R4-A1): каждые 10 минут, в :03, :13, … — журнал ops_job_runs против расписания,
+  // очередь Точки А, проверки мониторинга без ИИ, демо-аккаунты; ретенция журналов (lib/ops/job-watchdog.ts).
+  { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
+  // Перекрёстный сторож (R4-A1): сервис агентов раз в 3 минуты проверяет портал и базу, тревога —
+  // напрямую в Telegram без базы (lib/ops/crosswatch.ts). Только при отдельном сервисе агентов.
+  { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },
   // The agents service has no public domain and so no Inngest: this call is its queue maintenance,
   // the stand-in for the Inngest cron `agents-maintenance` that one process for everything relies on.
   { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },

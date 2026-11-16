@@ -12,12 +12,13 @@ import { apiError } from '@/lib/api-error'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 import { gatePaidSection } from '@/lib/access/gate'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePost(req: Request): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
@@ -44,3 +45,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     return apiError('Не удалось пересчитать Точку А', 500)
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_RECALCULATE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-a-recalculate', ms: 60_000 })

@@ -8,6 +8,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { guardAiBudget } from '@/lib/ai/budget'
 import { getInsightModerationEnabled } from '@/lib/settings/system-settings'
 import { gatePaidSection } from '@/lib/access/gate'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/point-a/insights/ai-generate
@@ -30,7 +31,7 @@ async function resolveCompanyId(
   return (data?.id as string | undefined) ?? null
 }
 
-export async function POST() {
+async function handlePost() {
   if (!hasOpenRouterKey()) {
     return NextResponse.json(
       { ok: false, error: 'AI key not configured' },
@@ -202,3 +203,10 @@ export async function POST() {
     },
   })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_INSIGHTS_AI overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'point-a-insights-ai', ms: 60_000 })

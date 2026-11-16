@@ -12,6 +12,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PointA } from '@/types/onboarding'
 import { internalFetchHeaders } from '@/lib/internal-auth'
 import { runInBackground, trackBackground } from '@/lib/background'
+import type { Semaphore } from '@/lib/agents/run-slots'
+import { pointAAiSlots } from './ai-slots'
 
 export type StoreResult =
   | { ok: true; diag: Record<string, unknown> & { id: string } }
@@ -193,6 +195,8 @@ export async function catchUpPaidAi(userId: string, deps: {
 
 export interface FanOutDeps {
   fetchImpl?: typeof fetch
+  /** Default: the process-wide Point A AI slots (lib/point-a/ai-slots.ts, ≤ 2 at a time). */
+  slots?: Semaphore
   /** Default trackBackground: a shutdown waits for the calls. */
   track?: (work: Promise<unknown>) => void
   /** Default: ai_status 'processing' → 'failed' on the row the call was for. */
@@ -238,6 +242,8 @@ function fanOutTimeoutMs(): number {
  * BE-13: each call has a timeout, is tracked as background work (a redeploy waits for it), and a
  * call that fails — a non-2xx answer, a network error, the timeout — marks its status 'failed' so
  * the client stops showing «ИИ анализирует…» and offers a retry. Never throws, never rejects.
+ * N4A-12: each call first takes a Point A AI slot (≤ 2 per process with the hypotheses); the
+ * timeout starts when it has one. No slot in time (too many waiting) → 'failed' with reason 'busy'.
  */
 export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   const { baseUrl, diagnosticId, userId, locale } = opts
@@ -247,21 +253,29 @@ export function fireAiFanOut(opts: FanOutOpts, deps: FanOutDeps = {}): void {
   const markFailed = deps.markFailed ?? ((path: string, o: FanOutOpts, reason: string) => markFanOutFailed(path, o, reason))
   const log = deps.log ?? ((line: string) => console.error(line))
   const timeoutMs = deps.timeoutMs ?? fanOutTimeoutMs()
+  const slots = deps.slots ?? pointAAiSlots()
   for (const path of opts.paths ?? CLIENT_FAN_OUT_PATHS) {
     const work = (async () => {
       let reason: string | null = null
-      try {
-        const res = await doFetch(`${baseUrl}${path}`, {
-          method: 'POST',
-          headers: internalFetchHeaders({}, { path, userId, diagnosticId }),
-          body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale, ...(opts.regenerate ? { regenerate: true } : {}) }),
-          signal: AbortSignal.timeout(timeoutMs),
-        })
-        if (!res.ok) reason = `http_${res.status}`
-        await res.body?.cancel().catch(() => {})
-      } catch (err) {
-        const name = (err as { name?: unknown } | null)?.name
-        reason = typeof name === 'string' && name ? name : 'Error'
+      const release = await slots.acquire().catch(() => null)
+      if (!release) {
+        reason = 'busy'
+      } else {
+        try {
+          const res = await doFetch(`${baseUrl}${path}`, {
+            method: 'POST',
+            headers: internalFetchHeaders({}, { path, userId, diagnosticId }),
+            body: JSON.stringify({ diagnostic_id: diagnosticId, user_id: userId, locale, ...(opts.regenerate ? { regenerate: true } : {}) }),
+            signal: AbortSignal.timeout(timeoutMs),
+          })
+          if (!res.ok) reason = `http_${res.status}`
+          await res.body?.cancel().catch(() => {})
+        } catch (err) {
+          const name = (err as { name?: unknown } | null)?.name
+          reason = typeof name === 'string' && name ? name : 'Error'
+        } finally {
+          release()
+        }
       }
       if (!reason) return
       // Ids and a reason code only: the body may echo client data.

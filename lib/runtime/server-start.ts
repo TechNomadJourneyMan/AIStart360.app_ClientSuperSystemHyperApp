@@ -15,6 +15,11 @@
  *
  * Next's own signal handler is turned off with NEXT_MANUAL_SIG_HANDLE=true, so this one is the only one.
  *
+ * Round 4 (R4-A1): the cron writes the outcome of every call to the journal (public.ops_job_runs,
+ * lib/ops/job-journal.ts), and claims that keep failing in workflow-db go out as a Telegram alarm
+ * that needs no database (lib/notifications/ops-direct.ts). The boot also names, as an error, the
+ * variables that tie the services together and are missing (R-061, lib/env.ts missingServiceLinkEnv).
+ *
  * The same build also runs as the agents service (PORTAL_ROLE=agents, lib/runtime/role.ts). It
  * does not start the Workflow queue: the queue belongs to the portal, and a second service polling
  * it would take a share of the portal's workflow jobs and run them in the agents process. Its
@@ -25,8 +30,11 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createPgCronClaim } from '@/lib/cron/claim'
-import { startCronRunner } from '@/lib/cron/runner'
+import { startCronRunner, type ClaimOutage } from '@/lib/cron/runner'
 import { pendingBackgroundCount, waitForBackgroundWork } from '@/lib/background'
+import { missingServiceLinkEnv } from '@/lib/env'
+import { sendOpsDirect, type OpsDirectAlert } from '@/lib/notifications/ops-direct'
+import { recordJobRun, type JobOutcome } from '@/lib/ops/job-journal'
 import { maskConnectionSecrets } from '@/lib/runtime/mask-secrets'
 import { isPersistentServer } from '@/lib/runtime/platform'
 import { portalRole, servesWeb } from '@/lib/runtime/role'
@@ -61,6 +69,36 @@ export interface ServerStartDeps {
   log?: (line: string) => void
   /** Failures that need attention (the queue cannot start, the cron runner is refused). Default: console.error. */
   logError?: (line: string) => void
+  /** Writes a cron outcome to the journal. Default: recordJobRun (lib/ops/job-journal.ts). */
+  recordJob?: (outcome: JobOutcome) => Promise<unknown>
+  /** The alarm without the database. Default: sendOpsDirect (lib/notifications/ops-direct.ts). */
+  alertDirect?: (alert: OpsDirectAlert) => Promise<unknown>
+}
+
+function almatyTime(d: Date): string {
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(d)
+}
+
+/** The Telegram text of a claim outage of the cron (N4A-4); the error is masked against the workflow-db URL. */
+export function claimOutageAlert(event: ClaimOutage, env: Env): OpsDirectAlert {
+  const service = portalRole(env) === 'agents' ? 'сервис агентов' : 'портал'
+  if (event.state === 'recovered') {
+    return {
+      level: 'SUCCESS',
+      title: 'Задачи по расписанию снова запускаются',
+      lines: [`${service}: захват минуты в workflow-db снова работает (неудач подряд было ${event.failures}, с ${almatyTime(event.since)} по Алматы).`],
+    }
+  }
+  return {
+    level: 'CRITICAL',
+    title: 'Задачи по расписанию не запускаются',
+    lines: [
+      `${service}: захват минуты в workflow-db не удаётся с ${almatyTime(event.since)} (Алматы), ${event.failures} раз подряд.`,
+      `Ошибка: ${maskConnectionSecrets(event.lastError, env.WORKFLOW_POSTGRES_URL).slice(0, 300)}`,
+      'Пока это так, не выполняются SLA экспертов, сторож бэкапов и задач, сводки, обслуживание очереди агентов.',
+      'Проверьте сервис workflow-db в Railway (переменная WORKFLOW_POSTGRES_URL).',
+    ],
+  }
 }
 
 async function startWorldDefault(): Promise<void> {
@@ -181,6 +219,12 @@ export async function startPersistentServer(
   const logError = safe(deps.logError ?? ((line: string) => console.error(line)))
   const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
+  // R-061: say at boot, not at the first failed call, which link variables are missing (names only).
+  const missingLinks = missingServiceLinkEnv(env)
+  if (missingLinks.length > 0) {
+    logError(`server: не заданы переменные связки сервисов (роль ${portalRole(env)}): ${missingLinks.join(', ')} - первый вызов между сервисами не пройдёт`)
+  }
+
   let queue: QueueStart | undefined
   let cron: { stop(): void } | undefined
   /** The agents service: agent work only (PORTAL_ROLE=agents). */
@@ -210,11 +254,16 @@ export async function startPersistentServer(
       if (!claim) {
         log('server: WORKFLOW_POSTGRES_URL не задан - при перекрытии деплоев задачи планировщика могут запуститься дважды')
       }
+      const recordJob = deps.recordJob ?? ((outcome: JobOutcome) => recordJobRun(outcome, { env, log: logError }))
+      const alertDirect = deps.alertDirect ?? ((alert: OpsDirectAlert) => sendOpsDirect(alert, { env, logError }))
       cron = startCron({
         baseUrl: `http://127.0.0.1:${env.PORT || 3000}`,
         secret: env.CRON_SECRET,
         claim,
         log,
+        logError,
+        record: recordJob,
+        onClaimOutage: claim ? (event: ClaimOutage) => alertDirect(claimOutageAlert(event, env)) : undefined,
       })
     }
   }

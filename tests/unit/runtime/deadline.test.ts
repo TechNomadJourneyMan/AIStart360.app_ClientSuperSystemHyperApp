@@ -91,6 +91,51 @@ describe('R-015 withDeadline', () => {
   })
 })
 
+describe('R4-A2: work that outlives the answer', () => {
+  it('background work of a handler that answered in time is not bound by the route deadline', async () => {
+    const seen: Array<number | null> = []
+    let background: Promise<void> | null = null
+    const handler = withDeadline(async () => {
+      // a webhook's fast path / runInBackground: started here, runs after the response
+      background = wait(60).then(() => { seen.push(deadlineRemainingMs()) })
+      return new Response('ok')
+    }, { label: 'answers-fast', ms: 30, log: () => {} })
+
+    expect((await handler(new Request('http://x/'), {})).status).toBe(200)
+    await background
+    // before: 0 — an AI call there was refused at once («истёк общий лимит времени»)
+    expect(seen).toEqual([null])
+  })
+
+  it('a nested deadline that finished leaves the outer one in force for the work it started', async () => {
+    let later: number | null = -1
+    await runWithDeadline('route', 1_000, async () => {
+      let started: Promise<void> | null = null
+      await runWithDeadline('inngest-send', 20, async () => {
+        started = wait(40).then(() => { later = deadlineRemainingMs() })
+      })
+      await started
+    })
+    expect(later).not.toBeNull()
+    expect(later!).toBeGreaterThan(800)
+  })
+
+  it('after a 504 the late handler still sees its deadline spent', async () => {
+    let lateSignal: AbortSignal | null = null
+    let lateRemaining: number | null = -1
+    const handler = withDeadline(async () => {
+      await wait(60)
+      lateSignal = currentDeadline()?.signal ?? null
+      lateRemaining = deadlineRemainingMs()
+      return new Response('late')
+    }, { label: 'late-work', ms: 20, log: () => {} })
+    expect((await handler(new Request('http://x/'), {})).status).toBe(504)
+    await wait(80)
+    expect(lateSignal!.aborted).toBe(true)
+    expect(lateRemaining).toBe(0)
+  })
+})
+
 describe('R-015 ambient deadline', () => {
   it('is visible below the handler and never extended by a nested one', async () => {
     expect(deadlineRemainingMs()).toBeNull()

@@ -24,7 +24,8 @@ const VERCEL_SCHEDULE = [
   { path: '/api/cron/client-digest', schedule: '0 4 * * 1' },
   { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
   { path: '/api/cron/reminders', schedule: '0 6 * * *' },
-  { path: '/api/cron/analytics-rollup', schedule: '0 22 * * *' },
+  // Vercel ran it at 22:00; R4-A1 (N4A-14) moved it to 21:30, away from the 22:00 recalculations of Points A and B.
+  { path: '/api/cron/analytics-rollup', schedule: '30 21 * * *' },
   { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
 ]
 
@@ -33,6 +34,8 @@ const RAILWAY_ADDED = [
   { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
   // Expert SLA (R2-B): the portal's scheduler runs it, Inngest Cloud does not call the portal on Railway.
   { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
+  // The job watchdog (R4-A1, lib/ops/job-watchdog.ts): every 10 minutes, off the :00/:05 minutes.
+  { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
 ]
 /** What one process for everything schedules: the Vercel schedule plus the Railway additions. */
 const PORTAL_SCHEDULE = [...VERCEL_SCHEDULE, ...RAILWAY_ADDED]
@@ -47,11 +50,13 @@ describe('CRON_JOBS', () => {
       { path: '/api/cron/client-digest', schedule: '0 4 * * 1' },
       { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
       { path: '/api/cron/reminders', schedule: '0 6 * * *' },
-      { path: '/api/cron/analytics-rollup', schedule: '0 22 * * *' },
+      { path: '/api/cron/analytics-rollup', schedule: '30 21 * * *' },
       { path: '/api/cron/ai-discovery', schedule: '30 1 * * *' },
       { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },
       { path: '/api/cron/backup-freshness', schedule: '7 * * * *' },
       { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
+      { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
+      { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },
     ]
     expect([...CRON_JOBS].sort(byPath)).toEqual(expected.sort(byPath))
   })
@@ -66,10 +71,17 @@ describe('CRON_JOBS', () => {
     expect(new Set(paths).size).toBe(paths.length)
   })
 
-  it('the only job that exists for a dedicated service alone is the per-minute queue drain', () => {
-    expect(CRON_JOBS.filter((job) => job.dedicatedOnly)).toEqual([
+  it('the jobs that exist for a dedicated service alone: the per-minute queue drain and the cross-watch of the portal', () => {
+    expect(CRON_JOBS.filter((job) => job.dedicatedOnly).sort(byPath)).toEqual([
       { path: '/api/cron/agents', schedule: '* * * * *', role: 'agents', dedicatedOnly: true },
+      { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },
     ])
+  })
+
+  it('N4A-14: nothing of the portal starts at 22:00 UTC, when the recalculations of Points A and B do', () => {
+    const at22 = CRON_JOBS.filter((job) => /^0 22 /.test(job.schedule)).map((job) => job.path)
+    expect(at22).toEqual([])
+    expect(CRON_JOBS.find((job) => job.path === '/api/cron/analytics-rollup')?.schedule).toBe('30 21 * * *')
   })
 })
 
@@ -89,9 +101,10 @@ describe('jobsForRole', () => {
     expect(timesOf(jobsForRole('web'))).toEqual(PORTAL_SCHEDULE.filter((job) => job.path !== '/api/cron/agents-digest'))
   })
 
-  it("'agents' is the agents digest and the queue drain every minute", () => {
+  it("'agents' is the agents digest, the cross-watch of the portal and the queue drain every minute", () => {
     expect(timesOf(jobsForRole('agents'))).toEqual([
       { path: '/api/cron/agents-digest', schedule: '0 4 * * *' },
+      { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *' },
       { path: '/api/cron/agents', schedule: '* * * * *' },
     ])
   })

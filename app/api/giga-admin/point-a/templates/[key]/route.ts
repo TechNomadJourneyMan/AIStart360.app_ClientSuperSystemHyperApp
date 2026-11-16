@@ -10,6 +10,7 @@ import { TEMPLATE_KEY_RE, TemplateContent, orderedBlocks } from '@/lib/point-a/t
 import { enqueueTemplateRecalc, loadCompanyTemplates, loadTemplates } from '@/lib/point-a/template-impact'
 import type { BlockTemplate } from '@/lib/point-a/v4/config'
 import { profanityResponse } from '@/lib/moderation/http'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * PUT    /api/giga-admin/point-a/templates/:key { title, industries[], blocks[7] }
@@ -22,7 +23,7 @@ import { profanityResponse } from '@/lib/moderation/http'
  * Right pointa.templates.
  */
 
-export async function PUT(req: NextRequest, { params }: { params: { key: string } }) {
+async function handlePut(req: NextRequest, { params }: { params: { key: string } }) {
   const g = await requireGiga(req, 'pointa.templates')
   if (g.response) return g.response
   const actor = g.actor
@@ -73,7 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: { key: string 
   return NextResponse.json({ ok: true, data: { key: params.key, version, recalc } })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { key: string } }) {
+async function handleDelete(req: NextRequest, { params }: { params: { key: string } }) {
   const g = await requireGiga(req, 'pointa.templates')
   if (g.response) return g.response
   const actor = g.actor
@@ -107,3 +108,11 @@ export async function DELETE(req: NextRequest, { params }: { params: { key: stri
   const recalc = await enqueueTemplateRecalc(companies, params.key, before, before.filter((t) => t.key !== params.key))
   return NextResponse.json({ ok: true, data: { key: params.key, recalc } })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_POINT_A_TEMPLATE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const PUT = withDeadline(handlePut, { label: 'point-a-template', ms: 60_000 })
+export const DELETE = withDeadline(handleDelete, { label: 'point-a-template', ms: 60_000 })

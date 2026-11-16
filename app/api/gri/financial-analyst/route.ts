@@ -10,6 +10,7 @@ import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { knownScores } from '@/lib/gri-calculator/assessment-seed'
 import { maskDocumentText } from '@/lib/documents/pii-mask'
 import { gatePaidSection } from '@/lib/access/gate'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -56,7 +57,7 @@ const AI_INVALID_OUTPUT = {
   en: 'The AI returned a malformed answer — no analysis was made. Please try again.',
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // BE-01: this fires paid Claude Sonnet calls. It is only ever invoked from
     // the authenticated GRI Calculator (app/(dashboard)/gri), so require a
@@ -195,3 +196,10 @@ ${scoresDescription}`
     return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось выполнить финансовый анализ') }, { status: 500 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 90 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_GRI_FINANCIAL_ANALYST overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'gri-financial-analyst', ms: 90_000 })

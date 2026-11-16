@@ -14,6 +14,7 @@ import { guardAiBudget } from '@/lib/ai/budget'
 import { validateAiText } from '@/lib/ai/validation/apply'
 import { maskProfanity } from '@/lib/moderation/profanity'
 import { maskUserQuestion, safeAnswer } from '@/lib/moderation/chat'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 /**
  * POST /api/v1/assistant/converse — a multi-turn chat turn with «Гри».
@@ -44,7 +45,7 @@ const bodySchema = z.object({
   screen: z.string().trim().max(64).optional(),
 })
 
-export async function POST(req: NextRequest) {
+async function handlePost(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
@@ -128,3 +129,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'ai_unavailable' }, { status: 502 })
   }
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ASSISTANT_CONVERSE overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'assistant-converse', ms: 60_000 })

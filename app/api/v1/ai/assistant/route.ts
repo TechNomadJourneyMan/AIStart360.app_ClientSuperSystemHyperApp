@@ -29,6 +29,7 @@ import { runChatTurn, type ChatSurface } from '@/lib/chat/engine'
 import { toolsFor, type ActionPreview, type PendingKind } from '@/lib/chat/tools'
 import { saveChatTurn } from '@/lib/chat/turn-store'
 import { resolveAccess } from '@/lib/access/decision'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -56,7 +57,7 @@ async function conversationFor(sb: Awaited<ReturnType<typeof createClient>>, use
   return (created as { id: string } | null)?.id ?? null
 }
 
-export async function GET(req: Request): Promise<NextResponse> {
+async function handleGet(req: Request): Promise<NextResponse> {
   const sb = await createClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
@@ -79,7 +80,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   return NextResponse.json({ ok: true, data: { conversationId, messages: [...(msgs.data ?? [])].reverse(), actions: [...(acts.data ?? [])].reverse() } })
 }
 
-export async function POST(req: Request): Promise<Response> {
+async function handlePost(req: Request): Promise<Response> {
   const sb = await createClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
@@ -176,3 +177,11 @@ export async function POST(req: Request): Promise<Response> {
   })
   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' } })
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 90 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_AI_ASSISTANT overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const GET = withDeadline(handleGet, { label: 'ai-assistant', ms: 90_000 })
+export const POST = withDeadline(handlePost, { label: 'ai-assistant', ms: 90_000 })

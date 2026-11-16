@@ -18,6 +18,7 @@ import {
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { createServerClient } from '@/lib/supabase-server'
 import { resolveTenant } from '@/lib/tenancy'
+import { withDeadline } from '@/lib/runtime/deadline'
 
 const LIVE = new Set(['queued', 'running', 'awaiting_approval'])
 
@@ -39,7 +40,7 @@ const LIVE = new Set(['queued', 'running', 'awaiting_approval'])
  * the server connection after authz (the 089 guard blocks pipeline columns
  * for PostgREST callers).
  */
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+async function handlePost(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, code: 'UNAUTHENTICATED', error: 'unauthorized' }, { status: 401 })
@@ -132,3 +133,10 @@ async function mayProcess(
   const owner = typeof doc.user_id === 'string' ? doc.user_id : null
   return owner && owner !== userId && (await mayActOnUser(sb, userId, owner)) ? 'ok' : 'denied'
 }
+
+/**
+ * R-015: on Railway `next start` ignores maxDuration, so the request had no time limit. After 60 s the client
+ * gets 504 (DEADLINE_EXCEEDED) and the work below sees its deadline spent. ROUTE_DEADLINE_MS_ONBOARDING_DOCUMENT_PROCESS overrides it;
+ * ROUTE_DEADLINE_DISABLED=1 turns it off.
+ */
+export const POST = withDeadline(handlePost, { label: 'onboarding-document-process', ms: 60_000 })

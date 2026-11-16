@@ -148,6 +148,18 @@ describe('GET /api/cron/agents on the agents service does what the Inngest cron 
     ])
   })
 
+  it('N4A-13: the quiet mode of both drains the due Point A recalculations, and nothing else', async () => {
+    vi.setSystemTime(new Date('2026-11-10T10:07:20Z'))
+
+    const viaInngest = await runInngest()
+    const viaRoute = await runRoute()
+
+    expect(viaInngest.calls).toEqual([['getSetting', 'agents_scheduled'], ['drainPointARecalc', { budgetMs: 15_000 }]])
+    expect(viaRoute.calls).toEqual(viaInngest.calls)
+    expect(viaInngest.result).toMatchObject({ skipped: 'quiet_mode', pointA: { done: [], failed: [] } })
+    expect(viaRoute.body).toEqual({ ok: true, skipped: 'quiet_mode', pointA: { done: 0, failed: 0 } })
+  })
+
   it('one run at a time and one tick a minute, like the Inngest function', () => {
     // the route's single flight is the stand-in for the concurrency limit
     expect(inngest.opts.concurrency).toEqual({ limit: 1 })

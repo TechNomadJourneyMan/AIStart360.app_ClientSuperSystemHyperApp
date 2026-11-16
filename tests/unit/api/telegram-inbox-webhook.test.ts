@@ -3,7 +3,7 @@
  * Secret check before any write (403), unknown connection 404, private text
  * → shared ingest, groups ignored, in-flight lease → 503.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
 import { hashTelegramWebhookSecret } from '@/lib/omnichannel/telegram-connections'
 
@@ -125,5 +125,38 @@ describe('telegram inbox webhook', () => {
     expect((await POST(req(textUpdate), params)).status).toBe(503)
     m.ingest.mockRejectedValueOnce(new Error('db down'))
     expect((await POST(req(textUpdate), params)).status).toBe(500)
+  })
+  describe('R-015 (R4-A2): a hung ingest no longer holds the update', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('answers 504 «webhook-telegram-inbox» after 30 s; Telegram\'s re-delivery goes through the same idempotent ingest', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      m.ingest.mockImplementationOnce(() => new Promise(() => {})) // the queue (Inngest) never answers
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      let settled = false
+      const first = POST(req(textUpdate), params)
+      first.then(() => { settled = true }, () => { settled = true })
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      const timedOut = await first
+      expect(timedOut.status).toBe(504)
+      expect(timedOut.headers.get('x-deadline')).toBe('webhook-telegram-inbox')
+      vi.useRealTimers()
+
+      const again = await POST(req(textUpdate), params)
+      expect(again.status).toBe(200)
+      // the same update_id / message_id both times: the audit row and the message row dedupe
+      const ids = m.ingest.mock.calls.map(([u]) => {
+        const parsed = u as { updateId: number; message: { externalMessageId: string } }
+        return `${parsed.updateId}:${parsed.message.externalMessageId}`
+      })
+      expect(ids).toHaveLength(2)
+      expect(new Set(ids).size).toBe(1)
+      expect(warn.mock.calls.some(([line]) => String(line).includes('route_deadline_exceeded'))).toBe(true)
+    })
   })
 })

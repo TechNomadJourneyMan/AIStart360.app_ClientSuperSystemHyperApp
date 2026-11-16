@@ -41,7 +41,12 @@ vi.mock("@/lib/comm/inbound", () => ({
   mirrorWhatsAppInbound: vi.fn(async () => "no_user"),
 }));
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { POST } from "@/app/api/webhooks/whatsapp-web/route";
+import { deadlineRemainingMs } from "@/lib/runtime/deadline";
+
+// Next puts AsyncLocalStorage on globalThis (both runtimes): the route's deadline is ambient, as in production.
+(globalThis as { AsyncLocalStorage?: unknown }).AsyncLocalStorage ??= AsyncLocalStorage;
 
 const managedEnv = [
   "WHATSAPP_WEB_BRIDGE_ENABLED",
@@ -595,5 +600,66 @@ describe("/api/webhooks/whatsapp-web", () => {
     expect(response.status).toBe(200);
     expect(repository.recordWebhookEvent).toHaveBeenCalledOnce();
     expect(postgres.recordWebhookEvent).not.toHaveBeenCalled();
+  });
+  it("RA-1: after a 504 the late handler still queues the job, and the fast path (the AI reply) runs outside the spent deadline", async () => {
+    process.env.OMNICHANNEL_PROCESSING_BACKEND = "database";
+    process.env.OMNICHANNEL_PERSISTENCE = "postgres";
+    process.env.OMNICHANNEL_DATABASE_URL = "postgresql://restricted.invalid/omnichannel";
+    process.env.PERSISTENT_SERVER = "1";
+    vi.stubEnv("ROUTE_DEADLINE_MS_WEBHOOK_WHATSAPP_WEB", "30");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // the database is slow: the delivery outlives its deadline
+    postgres.recordWebhookEvent.mockImplementationOnce(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+      return { id: "pg-audit-1", duplicate: false, status: "received" };
+    });
+    processingJobs.enqueue.mockResolvedValue({ id: "job-1", runAt: new Date(Date.now() - 1_000).toISOString() });
+    let seen: number | null = -1;
+    jobDrain.drain.mockImplementation(async () => {
+      seen = deadlineRemainingMs();
+      return { completed: 1 };
+    });
+
+    const response = await POST(request(payload()));
+    expect(response.status).toBe(504);
+    await vi.waitFor(() => expect(jobDrain.drain).toHaveBeenCalledWith({ limit: 1 }), { timeout: 2_000 });
+    await waitForBackgroundWork(1_000);
+    // before: 0 — the AI reply of the job was refused at once and the message went to a human
+    expect(seen).toBeNull();
+  });
+
+  describe("R-015 (R4-A2): a hung queue no longer holds the delivery", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("answers 504 «webhook-whatsapp-web» after 30 s; the bridge's re-delivery is idempotent", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      queue.send.mockImplementationOnce(() => new Promise(() => {}));
+
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let settled = false;
+      const first = POST(request(payload()));
+      first.then(() => { settled = true; }, () => { settled = true; });
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const timedOut = await first;
+      expect(timedOut.status).toBe(504);
+      expect(timedOut.headers.get("x-deadline")).toBe("webhook-whatsapp-web");
+      vi.useRealTimers();
+
+      // The bridge keeps the event in its outbox and delivers it again (same event_id).
+      repository.recordWebhookEvent.mockResolvedValueOnce({ id: "audit-1", duplicate: true, status: "processing" });
+      const again = await POST(request(payload()));
+      expect(again.status).toBe(200);
+
+      const hashes = repository.recordWebhookEvent.mock.calls.map(([e]) => (e as { eventHash: string }).eventHash);
+      expect(new Set(hashes).size).toBe(1);
+      const ids = queue.send.mock.calls.map(([e]) => (e as { id: string }).id);
+      expect(ids).toEqual(["omnichannel-message-message-1", "omnichannel-message-message-1"]);
+      expect(repository.transitionWebhookEvent).toHaveBeenCalledWith("audit-1", "processed");
+      expect(warn.mock.calls.some(([line]) => String(line).includes("route_deadline_exceeded"))).toBe(true);
+    });
   });
 });
