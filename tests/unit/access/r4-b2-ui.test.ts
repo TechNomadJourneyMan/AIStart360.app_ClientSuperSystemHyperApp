@@ -71,6 +71,37 @@ describe('N4B-1 / N4B-9: the card of a request for paid access', () => {
   })
 })
 
+describe('review WB-9 (PO): only Admin / Super Admin decide on a request for paid access — the card says so', () => {
+  const base = {
+    id: 'r1', category: 'access' as const, source: 'paywall', status: 'pending' as const, userName: 'Иван Петров', userEmail: 'ivan@corp.kz',
+    subject: 'Платный доступ: Точка А', description: '…', createdAt: new Date().toISOString(), userId: CLIENT,
+  }
+  const disabled = (out: string, action: string) => new RegExp(`<button[^>]*disabled=""[^>]*data-action="${action}"|<button[^>]*data-action="${action}"[^>]*disabled=""`).test(out)
+
+  it('another role (SuperExpert, CRM manager): «Назначить Pro», «Отклонить», «Архив» inactive with the reason; no bulk checkbox', async () => {
+    const { RequestCard } = await import('@/components/giga-panel/RequestsModule')
+    const { PAID_DECIDERS_ONLY } = await import('@/components/giga-panel/assign-pro-model')
+    const out = html(React.createElement(RequestCard, {
+      request: base, onApprove: noop, onReject: noop, onArchive: noop, onAssignPro: noop, canAssignPro: true, paidDecider: false, onToggleSelect: noop,
+    }))
+    expect(PAID_DECIDERS_ONLY).toBe('Заявки на оплату разбирают Admin и Super Admin')
+    expect(out).toContain(PAID_DECIDERS_ONLY)
+    for (const a of ['assign-pro', 'reject', 'archive']) expect(disabled(out, a), a).toBe(true)
+    expect(out).not.toContain('type="checkbox"')
+  })
+
+  it('Admin / Super Admin: all active; a registration card is not affected by the rule', async () => {
+    const { RequestCard } = await import('@/components/giga-panel/RequestsModule')
+    const { decidesPaidRequests } = await import('@/lib/admin/rbac')
+    expect(['admin', 'super_admin', 'super_expert', 'crm_manager', 'support'].map((r) => decidesPaidRequests(r as never))).toEqual([true, true, false, false, false])
+    const ok = html(React.createElement(RequestCard, { request: base, onApprove: noop, onReject: noop, onArchive: noop, onAssignPro: noop, canAssignPro: true, paidDecider: true }))
+    for (const a of ['assign-pro', 'reject', 'archive']) expect(disabled(ok, a), a).toBe(false)
+    const reg = html(React.createElement(RequestCard, { request: { ...base, category: 'registration', source: 'supabase_profile' }, onApprove: noop, onReject: noop, onArchive: noop, paidDecider: false }))
+    expect(disabled(reg, 'reject')).toBe(false)
+    expect(reg).not.toContain('Заявки на оплату разбирают')
+  })
+})
+
 describe('N4B-4: «Настройки → Биллинг» — a request to the manager, not the free mini-GRI', () => {
   it('Free: «Подключить платный доступ», the request button, the payment stub; no /gri-free, no «сравнение и стоимость»', async () => {
     const { BillingRequestView, billingRequestMode } = await import('@/components/settings/BillingPanel')
@@ -103,6 +134,8 @@ describe('N4B-4: «Настройки → Биллинг» — a request to the 
     expect(src).not.toContain('href="/gri-free"')
     expect(src).not.toContain('сравнение и стоимость')
     expect(src).toContain("sendAccessRequest(fetch, 'pro')")
+    // Review WB-6: only when the server says the account is a client.
+    expect(src).toContain('const requestMode = canRequest ? billingRequestMode(plan) : null')
     const { isKnownRequestFeature, featureLabel } = await import('@/lib/access/upgrade-requests')
     expect(isKnownRequestFeature('pro')).toBe(true)
     expect(featureLabel('pro')).toContain('Тариф Pro')

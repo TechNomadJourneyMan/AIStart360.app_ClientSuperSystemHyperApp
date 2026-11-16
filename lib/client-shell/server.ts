@@ -18,10 +18,12 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { getRequestUserFacts } from '@/lib/platform/facts'
 import { getRequestAccess } from '@/lib/access/request-access'
 import {
+  buildClientMoreNav,
   buildClientNav,
   clientNotificationsLink,
   lockedNavKeysFor,
   usesClientShell,
+  type ClientMoreItem,
   type ClientNavItem,
   type ClientNavKey,
   type ClientNotificationsLink,
@@ -36,6 +38,8 @@ export interface ClientShellData {
   email: string | null
   /** R-096: the bell (feed link + unread count), null when the feed is not for this account. */
   notifications: ClientNotificationsLink | null
+  /** WA-1: «Ещё» — the other sections visible to the account (may be empty). */
+  more: ClientMoreItem[]
 }
 
 async function staffRoleOf(userId: string): Promise<string | null> {
@@ -125,6 +129,7 @@ export function clientShellData(account: ClientShellAccount, hiddenPaths: readon
     panel: account.panel,
     email: account.email,
     notifications: clientNotificationsLink({ profileRole: account.profileRole, hiddenPaths, unread: account.unreadNotifications }),
+    more: buildClientMoreNav({ approved: account.approved, hiddenPaths, profileRole: account.profileRole }),
   }
 }
 

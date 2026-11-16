@@ -34,6 +34,7 @@ import {
   ASSIGN_PRO_PERIOD_ERROR,
   ASSIGN_PRO_PERMISSION,
   DEFAULT_ASSIGN_PRO_FORM,
+  PAID_DECIDERS_ONLY,
   assignProBlockedReason,
   assignProBody,
   assignProPeriodText,
@@ -46,6 +47,7 @@ import {
   type AssignProForm,
 } from './assign-pro-model'
 import { NAV_BADGES_CHANGED } from './agents/model'
+import { decidesPaidRequests } from '@/lib/admin/rbac'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -87,6 +89,7 @@ export function RequestCard({
   onArchive,
   onAssignPro,
   canAssignPro = false,
+  paidDecider = true,
   selected,
   onToggleSelect,
 }: {
@@ -97,13 +100,17 @@ export function RequestCard({
   /** R2-C (M-5): a request for paid access is approved by assigning Pro. */
   onAssignPro?: (req: GigaRequest) => void
   canAssignPro?: boolean
+  /** R4 (review WB-9): the actor is Admin / Super Admin — only they decide on a request for paid access. */
+  paidDecider?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
   const tariff = isTariffRequest(request)
-  const assignBlocked = assignProBlockedReason(canAssignPro && !!onAssignPro, request)
+  const assignBlocked = assignProBlockedReason(canAssignPro && !!onAssignPro, request, paidDecider)
+  // WB-9: «Отклонить» / «Архив» of a request for paid access — Admin / Super Admin only.
+  const decisionBlocked = tariff && !paidDecider ? PAID_DECIDERS_ONLY : null
   // R4 (N4B-1 / N4B-9): the answer deadline (4 h) and the way to the client.
   const sla = tariff ? requestSlaView(request) : null
   const links = tariff ? requestClientLinks(request.userId) : null
@@ -134,7 +141,7 @@ export function RequestCard({
       {/* Card header */}
       <div className="p-4">
         <div className="flex items-start gap-3">
-          {onToggleSelect && isPending && (
+          {onToggleSelect && isPending && !decisionBlocked && (
             <input
               type="checkbox"
               checked={!!selected}
@@ -302,11 +309,15 @@ export function RequestCard({
 
           <motion.button
             onClick={() => onReject(request)}
+            disabled={!!decisionBlocked}
+            title={decisionBlocked ?? undefined}
+            data-action="reject"
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
               bg-red-500/15 border border-red-500/25 text-red-300
-              hover:bg-red-500/25 hover:border-red-500/40 transition-all"
+              hover:bg-red-500/25 hover:border-red-500/40 transition-all
+              disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <XCircle size={13} />
             Отклонить
@@ -314,11 +325,15 @@ export function RequestCard({
 
           <motion.button
             onClick={() => onArchive(request.id)}
+            disabled={!!decisionBlocked}
+            title={decisionBlocked ?? undefined}
+            data-action="archive"
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
               bg-white/[0.05] border border-white/[0.08] text-slate-400
-              hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto"
+              hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto
+              disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Archive size={13} />
             Архив
@@ -409,8 +424,10 @@ export function RequestsModule() {
   } = useGigaPanelStore()
 
   const [rejectTarget, setRejectTarget] = useState<GigaRequest | null>(null)
-  const { can } = useStaff()
+  const { can, me } = useStaff()
   const canDecide = can('users.approve')
+  // R4 (review WB-9, PO): requests for paid access — Admin / Super Admin only (the server checks it too).
+  const paidDecider = decidesPaidRequests(me?.role)
   // R2-C (M-5): «Назначить Pro» — the rights of the plan editor (User 360 → Биллинг).
   const canAssignPro = can(ASSIGN_PRO_PERMISSION)
   const [proTarget, setProTarget] = useState<GigaRequest | null>(null)
@@ -516,10 +533,12 @@ export function RequestsModule() {
 
   const filtered = requests.filter((r) => r.category === activeRequestTab)
   const pendingFiltered = filtered.filter((r) => r.status === 'pending')
-  const pickedHere = pendingFiltered.filter((r) => picked.has(r.id))
+  // WB-9: a request for paid access is selectable for bulk only by Admin / Super Admin.
+  const selectable = pendingFiltered.filter((r) => paidDecider || !isTariffRequest(r))
+  const pickedHere = selectable.filter((r) => picked.has(r.id))
   // R2-C (M-5): a request for paid access is approved only by «Назначить Pro» — no bulk «Принять» for it.
   const pickedTariff = pickedHere.some((r) => isTariffRequest(r))
-  const allPicked = pendingFiltered.length > 0 && pendingFiltered.every((r) => picked.has(r.id))
+  const allPicked = selectable.length > 0 && selectable.every((r) => picked.has(r.id))
 
   // Массовое решение: каждая заявка решается тем же кодом, что и одиночная,
   // отчёт — по каждой. После — сверка с базой, как и у одиночных действий.
@@ -662,7 +681,7 @@ export function RequestsModule() {
                       <input
                         type="checkbox"
                         checked={allPicked}
-                        onChange={() => setPicked(allPicked ? new Set() : new Set(pendingFiltered.map((r) => r.id)))}
+                        onChange={() => setPicked(allPicked ? new Set() : new Set(selectable.map((r) => r.id)))}
                         aria-label="Выбрать все ожидающие заявки"
                         className="h-3.5 w-3.5 cursor-pointer accent-blue-500"
                       />
@@ -697,6 +716,7 @@ export function RequestsModule() {
                           onAssignPro={openAssignPro}
                           canAssignPro={canAssignPro}
                           selected={picked.has(req.id)}
+                          paidDecider={paidDecider}
                           onToggleSelect={canDecide ? togglePick : undefined}
                         />
                       ))}

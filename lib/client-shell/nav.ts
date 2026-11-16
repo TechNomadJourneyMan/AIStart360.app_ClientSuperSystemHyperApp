@@ -55,9 +55,57 @@ export const NOTIFICATIONS_HREF = '/notifications'
 
 /**
  * Pages an expert account cannot open (middleware ADMIN_PATHS send an expert
- * to /expert/dashboard). Kept in sync by tests/unit/client-shell.
+ * to /expert/dashboard); a path blocks everything under it. Kept in sync by
+ * tests/unit/client-shell.
  */
-export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market', NOTIFICATIONS_HREF]
+export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market', NOTIFICATIONS_HREF, '/simulator', '/metrics', '/profile']
+
+export type ClientMoreKey = 'pulse' | 'simulator' | 'metrics' | 'psych'
+
+/** An item of «Ещё» in the cabinet bar. */
+export interface ClientMoreItem {
+  key: ClientMoreKey
+  label: string
+  href: string
+  /** Material Symbols name. */
+  icon: string
+}
+
+/**
+ * WA-1: the sections of the old menus (lib/navigation.ts, MobileNav) that the
+ * cabinet bar had no item for — under «Ещё», so a client in the old shell
+ * (R-028) does not lose them. Клиенты (CRM), Симулятор and Метрики are
+ * platform sections: shown only when GIGA-CRM makes them visible to the
+ * client (platform_sections → hiddenPaths; on prod they are staff_only, so a
+ * client sees none of them — as intended). Психопрофиль is not a platform
+ * section and is a client page (/profile is in middleware CLIENT_DASHBOARD_PATHS).
+ * None of them is a paid section (lib/access/entitlements PAID_SECTIONS), so
+ * the access decision puts no lock on them. Before approval «Ещё» is empty:
+ * middleware closes the first three (R-052), and Психопрофиль (an AI feature)
+ * is not offered before approval, like the paid sections of the main menu.
+ */
+export const CLIENT_MORE_DEFS: readonly ClientMoreItem[] = [
+  { key: 'pulse', label: 'Клиенты (CRM)', href: '/pulse', icon: 'groups' },
+  { key: 'simulator', label: 'Симулятор', href: '/simulator', icon: 'query_stats' },
+  { key: 'metrics', label: 'Метрики', href: '/metrics', icon: 'monitoring' },
+  { key: 'psych', label: 'Психопрофиль', href: '/profile/psych', icon: 'psychology' },
+]
+
+/** WA-1: «Ещё» for the account — visible sections only, nothing middleware would bounce. */
+export function buildClientMoreNav(input: Pick<BuildClientNavInput, 'approved' | 'hiddenPaths' | 'profileRole'>): ClientMoreItem[] {
+  if (!input.approved) return []
+  const expert = isExpertProfile(input.profileRole)
+  return CLIENT_MORE_DEFS
+    .filter((d) => !hiddenByPlatform(d.href, input.hiddenPaths))
+    .filter((d) => !(expert && EXPERT_BLOCKED_HREFS.some((b) => under(d.href, b))))
+    .map((d) => ({ ...d }))
+}
+
+/** The «Ещё» item of `pathname`, or null. */
+export function activeClientMoreKey(pathname: string, items: readonly Pick<ClientMoreItem, 'key' | 'href'>[]): ClientMoreKey | null {
+  const path = (pathname || '').split(/[?#]/, 1)[0]
+  return items.find((i) => under(path, i.href))?.key ?? null
+}
 
 const isExpertProfile = (role: string | null | undefined) => role === 'expert' || role === 'manager' || role === 'analyst'
 
@@ -77,6 +125,17 @@ export function clientNotificationsLink(input: { profileRole?: string | null; hi
   if (isExpertProfile(input.profileRole)) return null
   if (hiddenByPlatform(NOTIFICATIONS_HREF, input.hiddenPaths)) return null
   return { href: NOTIFICATIONS_HREF, unread: Math.max(0, Math.floor(Number(input.unread) || 0)) }
+}
+
+/**
+ * R-096 / WA-4: the number on the bell. On the feed page itself — none (the
+ * page shows it). Before the first sync — the server's count; after it — the
+ * shared store, which the poll AND the feed page («Прочитать все», opening an
+ * entry) write, so the number changes at once.
+ */
+export function bellUnreadCount(input: { onFeed: boolean; synced: boolean; live: number; server: number }): number {
+  if (input.onFeed) return 0
+  return Math.max(0, Math.floor(Number(input.synced ? input.live : input.server) || 0))
 }
 
 /**
@@ -140,7 +199,7 @@ export function buildClientNav(input: BuildClientNavInput): ClientNavItem[] {
   return CLIENT_NAV_DEFS
     .filter((d) => input.approved || d.openBeforeApproval)
     .filter((d) => !hiddenByPlatform(d.href, input.hiddenPaths))
-    .filter((d) => !(expert && EXPERT_BLOCKED_HREFS.includes(d.href)))
+    .filter((d) => !(expert && EXPERT_BLOCKED_HREFS.some((b) => under(d.href, b))))
     .map(({ openBeforeApproval: _open, ...item }) => (item.key === 'messages' && unread > 0 ? { ...item, badge: unread } : item))
     .map((item) => (input.lockedKeys?.includes(item.key) ? { ...item, locked: true } : item))
 }

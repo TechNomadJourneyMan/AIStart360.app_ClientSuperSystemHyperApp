@@ -149,6 +149,12 @@ const CLIENT_DASHBOARD_PATHS = [
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']
+/**
+ * X-1: staff pages an expert DOES open — the own account settings, the only
+ * place to enrol in 2FA. With «2FA для персонала обязательна» the gate sends
+ * an expert there; bouncing it back to /expert/dashboard made an endless loop.
+ */
+const EXPERT_ACCOUNT_PATHS = ['/settings']
 
 /** R-052: statuses of a client account that is not admitted yet. */
 const NOT_APPROVED_STATUSES = new Set(['pending_approval', 'requires_clarification', 'rejected'])
@@ -581,12 +587,11 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    let allowed = role === 'super_admin' && resolved?.status === 'approved'
-    if (!allowed) {
-      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
-      const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
-      allowed = !!staffRole && SUPER_EXPERT_ROLES.has(staffRole) && resolved?.status === 'approved'
-    }
+    // X-2 / R-002: by the staff_roles row only — a legacy profiles.role
+    // 'super_admin' without one is not staff here either (as in GIGA).
+    const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+    const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+    const allowed = !!staffRole && SUPER_EXPERT_ROLES.has(staffRole) && resolved?.status === 'approved'
     if (!allowed) {
       return NextResponse.redirect(new URL(`${SUPER_EXPERT_LOGIN_PATH}?denied=1`, request.url))
     }
@@ -739,8 +744,8 @@ async function handle(request: NextRequest, event: NextFetchEvent | undefined, c
       return NextResponse.redirect(new URL(roleLandingPath(role, resolved?.status, staffRole), request.url))
     }
 
-    // Expert trying to access admin-only pages
-    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
+    // Expert trying to access admin-only pages (its own settings excepted — X-1)
+    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS) && !matchesAny(pathname, EXPERT_ACCOUNT_PATHS)) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
 

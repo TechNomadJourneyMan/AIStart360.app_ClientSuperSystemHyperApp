@@ -24,7 +24,15 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useId, useRef, useState } from 'react'
 import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import { trackLogout } from '@/lib/events/client'
-import { activeClientNavKey, clientShellMode, type ClientNavItem, type ClientNotificationsLink } from '@/lib/client-shell/nav'
+import {
+  activeClientMoreKey,
+  activeClientNavKey,
+  bellUnreadCount,
+  clientShellMode,
+  type ClientMoreItem,
+  type ClientNavItem,
+  type ClientNotificationsLink,
+} from '@/lib/client-shell/nav'
 import type { PanelLink } from '@/lib/client-shell/staff-links'
 import { cn } from '@/lib/utils'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
@@ -36,13 +44,15 @@ export interface ClientNavProps {
   email: string | null
   /** R-096: the bell — null when the account cannot open the feed (an expert profile). */
   notifications?: ClientNotificationsLink | null
+  /** WA-1: «Ещё» — the other sections visible to the account; nothing is drawn when empty. */
+  more?: ClientMoreItem[]
 }
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60'
 
-function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string | null }) {
+/** A drop-down of the bar: closes on navigation, an outside click and Escape (focus back to its button). */
+function usePopover() {
   const [open, setOpen] = useState(false)
-  const [leaving, setLeaving] = useState(false)
   const pathname = usePathname()
   const menuId = useId()
   const wrap = useRef<HTMLDivElement>(null)
@@ -61,6 +71,67 @@ function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string 
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
 
+  return { open, setOpen, pathname: pathname ?? '', menuId, wrap, button }
+}
+
+const MENU_ROW = cn('flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-on-surface hover:bg-white/[0.05]', FOCUS)
+
+/**
+ * WA-1: «Ещё» — the sections of the old menus the bar has no item for
+ * (Клиенты (CRM), Симулятор, Метрики, Психопрофиль), only those visible to the
+ * account (the server builds the list). Outside the sideways-scrolling row so
+ * the drop-down is not clipped on a phone. The list is in the markup and
+ * `hidden` while closed.
+ */
+function MoreMenu({ items }: { items: ClientMoreItem[] }) {
+  const { open, setOpen, pathname, menuId, wrap, button } = usePopover()
+  const active = activeClientMoreKey(pathname, items)
+  return (
+    <div ref={wrap} className="relative shrink-0">
+      <button
+        ref={button}
+        type="button"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label="Ещё разделы"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex h-10 items-center gap-1 rounded-xl px-2 text-xs font-medium',
+          active || open ? 'bg-primary/10 text-primary' : 'text-on-surface-variant hover:bg-white/[0.05] hover:text-on-surface',
+          FOCUS,
+        )}
+      >
+        <span className="material-symbols-outlined text-[20px]" aria-hidden>more_horiz</span>
+        <span className="hidden sm:inline">Ещё</span>
+      </button>
+      <div
+        id={menuId}
+        hidden={!open}
+        className="absolute right-0 top-full mt-2 w-60 rounded-2xl border border-white/[0.08] bg-surface-container p-1.5 shadow-xl shadow-black/40"
+      >
+        <ul className="space-y-0.5">
+          {items.map((item) => (
+            <li key={item.key}>
+              <Link
+                href={item.href}
+                aria-current={item.key === active ? 'page' : undefined}
+                className={cn(MENU_ROW, item.key === active && 'text-primary')}
+              >
+                <span className="material-symbols-outlined text-[18px] text-on-surface-variant" aria-hidden>{item.icon}</span>
+                {item.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string | null }) {
+  const { open, setOpen, menuId, wrap, button } = usePopover()
+  const [leaving, setLeaving] = useState(false)
+
   const logout = async () => {
     setLeaving(true)
     trackLogout()
@@ -78,7 +149,7 @@ function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string 
     }
   }
 
-  const row = cn('flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-on-surface hover:bg-white/[0.05]', FOCUS)
+  const row = MENU_ROW
 
   return (
     <div ref={wrap} className="relative shrink-0">
@@ -134,17 +205,17 @@ function ProfileMenu({ panel, email }: { panel: PanelLink | null; email: string 
 
 /**
  * R-096: the bell. First paint shows the server count; NotificationsBellSync
- * then keeps it fresh (light poll, refetch when the tab is back) — the layout
- * itself is not re-rendered on client navigation. On the feed page itself the
- * number is not repeated (the page shows it).
+ * then keeps it fresh (a light count request, WA-5; refetch when the tab is
+ * back) — the layout itself is not re-rendered on client navigation. The feed
+ * page writes the same store, so «Прочитать все» or opening an entry changes
+ * the number at once (WA-4). On the feed page itself the number is not repeated.
  */
 function NotificationsBell({ link, pathname }: { link: ClientNotificationsLink; pathname: string }) {
   const live = useNotificationsStore((s) => s.unreadCount)
   // The store holds a real count only after the first sync; until then — the server's.
-  const [synced, setSynced] = useState(false)
-  useEffect(() => useNotificationsStore.subscribe(() => setSynced(true)), [])
+  const synced = useNotificationsStore((s) => s.synced)
   const current = pathname === link.href || pathname.startsWith(`${link.href}/`)
-  const unread = current ? 0 : synced ? live : link.unread
+  const unread = bellUnreadCount({ onFeed: current, synced, live, server: link.unread })
   return (
     <>
       <NotificationsBellSync />
@@ -170,7 +241,7 @@ function NotificationsBell({ link, pathname }: { link: ClientNotificationsLink; 
   )
 }
 
-export function ClientNav({ items, panel, email, notifications = null }: ClientNavProps) {
+export function ClientNav({ items, panel, email, notifications = null, more = [] }: ClientNavProps) {
   const pathname = usePathname() ?? ''
   const mode = clientShellMode(pathname)
   const active = activeClientNavKey(pathname, items)
@@ -238,6 +309,8 @@ export function ClientNav({ items, panel, email, notifications = null }: ClientN
             })}
           </ul>
         </nav>
+
+        {more.length > 0 && <MoreMenu items={more} />}
 
         {panel && (
           <Link

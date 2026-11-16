@@ -14,6 +14,7 @@ const s = vi.hoisted(() => ({
   user: { id: 'u-1', email: 'owner@example.kz' } as null | { id: string; email: string },
   facts: null as null | { role: string; status: string; is_staff: boolean },
   staffRow: null as null | { role: string },
+  hiddenPaths: [] as string[],
 }))
 
 const stub = (name: string) => {
@@ -37,7 +38,7 @@ vi.mock('@/components/analytics/ActivityTracker', () => ({ default: stub('activi
 vi.mock('@/components/impersonation/ImpersonationBanner', () => ({ default: stub('impersonation') }))
 vi.mock('@/hooks/usePlatformSections', () => ({ PlatformSectionsProvider: ({ children }: { children: ReactElement }) => children }))
 vi.mock('@/lib/request-user', () => ({ getRequestUser: async () => s.user }))
-vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: [] }) }))
+vi.mock('@/lib/platform/sections', () => ({ visibleSectionsFor: async () => ({ sections: [], hiddenPaths: s.hiddenPaths }) }))
 vi.mock('@/lib/platform/facts', () => ({ getRequestUserFacts: async () => s.facts }))
 vi.mock('@/lib/access/request-access', () => ({ getRequestAccess: async () => ({ sections: { point_a: false, point_b: false, market: false, gri_full: false } }) }))
 vi.mock('@/lib/supabase-service', () => ({
@@ -64,6 +65,7 @@ beforeEach(() => {
   s.user = { id: 'u-1', email: 'owner@example.kz' }
   s.facts = { role: 'client', status: 'approved', is_staff: false }
   s.staffRow = null
+  s.hiddenPaths = []
 })
 
 describe('R-028: a client in the old shell gets the cabinet bar', () => {
@@ -89,6 +91,17 @@ describe('R-028: a client in the old shell gets the cabinet bar', () => {
     expect(html).toContain('href="/client/home"')
     expect(html).toContain('href="/client/onboarding"')
     expect(html).not.toContain('href="/client/point-a"')
+  })
+
+  it('WA-1: the old menu\'s other sections are under «Ещё» — only those visible by platform_sections', async () => {
+    let html = await render()
+    expect(html).toContain('aria-label="Ещё разделы"')
+    for (const href of ['/pulse', '/simulator', '/metrics', '/profile/psych']) expect(html, href).toContain(`href="${href}"`)
+    // prod: simulator / metrics / pulse are staff_only → hidden for a client
+    s.hiddenPaths = ['/simulator', '/metrics', '/pulse']
+    html = await render()
+    for (const href of ['/pulse', '/simulator', '/metrics']) expect(html, href).not.toContain(`href="${href}"`)
+    expect(html).toContain('href="/profile/psych"')
   })
 
   it('a legacy owner is a client too', async () => {

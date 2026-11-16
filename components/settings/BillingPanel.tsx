@@ -181,6 +181,8 @@ function BillingRequest({ mode }: { mode: BillingRequestMode }) {
 
 export function BillingPanel() {
   const [plan, setPlan] = useState<BillingPlan | null>(null)
+  // R4 (review WB-6): the server says whether this account may ask for paid access (clients only).
+  const [canRequest, setCanRequest] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -195,6 +197,7 @@ export function BillingPanel() {
           setError(json.error || `Ошибка ${res.status}`)
         } else {
           setPlan(json.data as BillingPlan)
+          setCanRequest(json.canRequestAccess === true)
         }
       } catch {
         if (!cancelled) setError('Не удалось загрузить данные тарифа')
@@ -216,7 +219,7 @@ export function BillingPanel() {
       </div>
     )
   }
-  const requestMode = billingRequestMode(plan)
+  const requestMode = canRequest ? billingRequestMode(plan) : null
 
   return (
     <div className="space-y-6">

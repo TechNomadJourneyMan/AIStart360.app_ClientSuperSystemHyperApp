@@ -174,7 +174,8 @@ export async function runBulkUserAction(actor: GigaActor, input: BulkInput, req?
           const plan = await setPlan({ userId: id, tier: input.tier as 'free' | 'pro', periodEnd: null, source: 'admin', actor, req, meta: { via: 'bulk' }, catchUpAi: false })
           if (!plan.applied) return { id, ok: false, error: 'Тариф не изменён' }
           if (plan.after?.accessTier === 'pro') paidNow.push(id)
-          await completePaidAccessGrant({ userId: id, actor, before: plan.before, after: plan.after, via: 'bulk' })
+          // Review WB-5: «Доступ открыт» leaves from the queue of client notices, not inside this request.
+          await completePaidAccessGrant({ userId: id, actor, before: plan.before, after: plan.after, via: 'bulk', queueNotice: true })
           await audit(id, 'user.access_changed', { oldValue: { tier: t.tier }, newValue: { tier: input.tier } })
           return { id, ok: true, error: null }
         }

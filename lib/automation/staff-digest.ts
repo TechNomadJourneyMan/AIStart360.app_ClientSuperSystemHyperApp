@@ -8,8 +8,9 @@
  *       – заявки на ОПЛАТУ (admin_requests, пейволл) — сколько открыто, сколько
  *         ждут дольше request_sla_hours, возраст самой старой;
  *       – РЕГИСТРАЦИИ, ждущие одобрения (profiles pending_approval) — так же;
- *       – у кого платный доступ кончается в ближайшие 7 суток и кого ночной
- *         крон перевёл на бесплатный за последние сутки;
+ *       – окончание платного доступа: кому за последние сутки ушло
+ *         предупреждение «за 7 дней», «за сутки» и «закончился» — по журналу
+ *         отправок клиенту, поэтому каждый клиент и этап — ОДИН раз (WB-3);
  *       – вчерашние регистрации, отправленные анкеты и пройденные GRI.
  *   • Каждому исполнителю — его собственный список просроченных staff_tasks
  *     (notifyClient, категория «team»; ключ staff_tasks:<исполнитель>:<дата>).
@@ -28,12 +29,11 @@ import {
   fetchOpenPaidRequests,
   fetchOverdueStaffTasks,
   fetchPendingRequests,
-  fetchProEndedSince,
-  fetchProEnding,
+  fetchProNoticesSince,
   fetchProfileLabels,
   type DayCounts,
   type PendingRequest,
-  type ProEndingRow,
+  type ProNoticeRow,
   type StaffTask,
 } from '@/lib/automation/data'
 import { addDays, hoursBetween, localDate, startOfLocalDay } from '@/lib/automation/time'
@@ -80,7 +80,7 @@ function slaLine(kind: 'paid' | 'registration', sla: SlaSummary, slaHours: numbe
 
 const DATE_FMT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' })
 
-function proList(rows: ProEndingRow[], labels: Map<string, string>): string {
+function proList(rows: ProNoticeRow[], labels: Map<string, string>): string {
   const shown = rows.slice(0, 5).map((r) => `${labels.get(r.userId) ?? 'клиент'} (${DATE_FMT.format(new Date(r.endsAt))})`)
   return `${shown.join(', ')}${rows.length > 5 ? ` и ещё ${rows.length - 5}` : ''}`
 }
@@ -94,9 +94,8 @@ export function buildStaffSummaryLines(input: {
   slaHours: number
   yesterday: DayCounts
   unassignedOverdue: number
-  /** Платный доступ кончается в ближайшие 7 суток / закончился за сутки (N4B-10). */
-  proEnding?: ProEndingRow[]
-  proEnded?: ProEndingRow[]
+  /** Предупреждения об окончании платного доступа, ушедшие клиентам за сутки (N4B-10, WB-3). */
+  proNotices?: ProNoticeRow[]
   labels?: Map<string, string>
 }): string[] {
   const lines: string[] = []
@@ -105,8 +104,13 @@ export function buildStaffSummaryLines(input: {
   if (paid) lines.push(paid)
   const reg = slaLine('registration', input.sla, input.slaHours)
   if (reg) lines.push(reg)
-  if (input.proEnding?.length) lines.push(`Платный доступ кончается в ближайшие 7 дней: ${input.proEnding.length} — ${proList(input.proEnding, labels)}.`)
-  if (input.proEnded?.length) lines.push(`Платный доступ закончился за сутки, кабинет переведён на бесплатный: ${input.proEnded.length} — ${proList(input.proEnded, labels)}.`)
+  const byStage = (stage: ProNoticeRow['stage']) => (input.proNotices ?? []).filter((r) => r.stage === stage)
+  const d7 = byStage('d7')
+  const d1 = byStage('d1')
+  const ended = byStage('ended')
+  if (d7.length) lines.push(`Платный доступ кончается в течение недели (клиент предупреждён): ${d7.length} — ${proList(d7, labels)}.`)
+  if (d1.length) lines.push(`Платный доступ кончается в течение суток (клиент предупреждён): ${d1.length} — ${proList(d1, labels)}.`)
+  if (ended.length) lines.push(`Платный доступ закончился, кабинет переведён на бесплатный: ${ended.length} — ${proList(ended, labels)}.`)
   if (input.unassignedOverdue > 0) lines.push(`Просроченных задач без исполнителя: ${input.unassignedOverdue}.`)
   const y = input.yesterday
   if (y.registrations || y.surveysCompleted || y.griCompleted) {
@@ -139,7 +143,7 @@ export interface StaffDigestStats {
   /** Заявки на оплату (N4B-1). */
   paidPending: number
   paidOverSla: number
-  /** Платный доступ кончается в 7 суток / закончился за сутки (N4B-10). */
+  /** Предупреждения клиентам за сутки: «кончается» (7 дней и сутки) / «закончился» (N4B-10, WB-3). */
   proEnding: number
   proEnded: number
   assigneesNotified: number
@@ -159,7 +163,7 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
   const yesterdayTo = startOfLocalDay(today).toISOString()
 
   const DAY = 24 * 3_600_000
-  const [pending, paidRows, tasks, yesterday, proEnding, proEnded] = await Promise.all([
+  const [pending, paidRows, tasks, yesterday, proNotices] = await Promise.all([
     fetchPendingRequests(),
     // Заявки на оплату: сбой чтения не отменяет остальную сводку.
     fetchOpenPaidRequests().catch((err) => {
@@ -168,8 +172,8 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
     }),
     fetchOverdueStaffTasks(now.toISOString()),
     fetchDayCounts(yesterdayFrom, yesterdayTo),
-    fetchProEnding(now.toISOString(), new Date(now.getTime() + 7 * DAY).toISOString()),
-    fetchProEndedSince(new Date(now.getTime() - DAY).toISOString()),
+    // Сутки до этой сводки: ночной крон billing-expiry (00:15 UTC) попадает ровно в одну сводку.
+    fetchProNoticesSince(new Date(now.getTime() - DAY).toISOString()),
   ])
   const sla = summarizePending(pending, slaHours, now)
   const paid = summarizePending(paidRows, slaHours, now)
@@ -182,8 +186,8 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
     pendingOverSla: sla.overdue,
     paidPending: paid.pending,
     paidOverSla: paid.overdue,
-    proEnding: proEnding.length,
-    proEnded: proEnded.length,
+    proEnding: proNotices.filter((r) => r.stage !== 'ended').length,
+    proEnded: proNotices.filter((r) => r.stage === 'ended').length,
     assigneesNotified: 0,
     overdueTasks: tasks.length,
   }
@@ -191,8 +195,7 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
   // 1. Каждому исполнителю — его просроченные задачи.
   const clientIds = Array.from(new Set([
     ...tasks.map((t) => t.clientId),
-    ...proEnding.map((r) => r.userId),
-    ...proEnded.map((r) => r.userId),
+    ...proNotices.map((r) => r.userId),
   ].filter((v): v is string => Boolean(v))))
   const labels = clientIds.length ? await fetchProfileLabels(clientIds) : new Map<string, string>()
   for (const [assigneeId, list] of Array.from(byAssignee.entries())) {
@@ -218,7 +221,7 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
   }
 
   // 2. Сводка администраторам.
-  const lines = buildStaffSummaryLines({ paid, sla, slaHours, yesterday, unassignedOverdue: unassigned, proEnding, proEnded, labels })
+  const lines = buildStaffSummaryLines({ paid, sla, slaHours, yesterday, unassignedOverdue: unassigned, proNotices, labels })
   // Идемпотентно: одна сводка в сутки, даже если cron перезапустили.
   const claim = lines.length
     ? await claimSend({ userId: null, kind: 'staff_digest', dedupeKey: `staff_digest:${today}`, countsTowardCap: false, channels: ['admin'] })

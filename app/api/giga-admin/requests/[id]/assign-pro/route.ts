@@ -9,6 +9,7 @@ import { billingErrorResponse } from '@/lib/payments/billing-http'
 import { planPeriodEnd, proAssignment } from '@/lib/payments/plan-period'
 import { claimAccessRequest, completePaidAccessGrant, releaseAccessRequest } from '@/lib/access/paid-access-grant'
 import { featureLabel, isTariffAccessRequest, OPEN_REQUEST_STATUSES } from '@/lib/access/upgrade-requests'
+import { decidesPaidRequests } from '@/lib/admin/rbac'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -35,11 +36,16 @@ const invalid = (message: string) => NextResponse.json({ ok: false, error: 'inva
  * the client) is closed as approved, and the client gets ONE notice
  * «Доступ открыт» in the feed. Nobody decides on his own request.
  * Only an OPEN request for paid access qualifies (registrations → 404).
+ * R4 (WB-9, PO 2026-11-16): requests for paid access are decided by Admin and
+ * Super Admin only — a CRM manager (who holds users.manage) gets 403.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.manage')
   if (guard.response) return guard.response
   const actor = guard.actor
+  if (!decidesPaidRequests(actor.role)) {
+    return NextResponse.json({ ok: false, error: 'paid_deciders_only', message: 'Заявки на оплату разбирают Admin и Super Admin' }, { status: 403 })
+  }
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
   if (!body || typeof body !== 'object') return invalid('body required')

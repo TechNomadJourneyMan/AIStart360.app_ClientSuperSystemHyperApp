@@ -8,10 +8,9 @@ import type { StaffTask } from '@/lib/automation/data'
 const h = vi.hoisted(() => ({
   pending: [] as Array<{ userId: string; createdAt: string }>,
   paid: [] as Array<{ userId: string; createdAt: string }>,
-  ending: [] as Array<{ userId: string; endsAt: string }>,
-  ended: [] as Array<{ userId: string; endsAt: string }>,
-  endingRange: [] as string[],
-  endedSince: '' as string,
+  /** The journal of client notices (automation_sends): what each client was told, and when. */
+  journal: [] as Array<{ userId: string; stage: 'd7' | 'd1' | 'ended'; endsAt: string; sentAt: string }>,
+  noticesSince: [] as string[],
   tasks: [] as StaffTask[],
   counts: { registrations: 0, surveysCompleted: 0, griCompleted: 0 },
   sends: [] as Array<{ dedupeKey: string | null }>,
@@ -24,13 +23,9 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/automation/data', () => ({
   fetchPendingRequests: async () => h.pending,
   fetchOpenPaidRequests: async () => h.paid,
-  fetchProEnding: async (from: string, to: string) => {
-    h.endingRange = [from, to]
-    return h.ending
-  },
-  fetchProEndedSince: async (since: string) => {
-    h.endedSince = since
-    return h.ended
+  fetchProNoticesSince: async (since: string) => {
+    h.noticesSince.push(since)
+    return h.journal.filter((j) => j.sentAt >= since).map(({ userId, stage, endsAt }) => ({ userId, stage, endsAt }))
   },
   fetchOverdueStaffTasks: async () => h.tasks,
   fetchDayCounts: async (from: string, to: string) => {
@@ -82,8 +77,8 @@ const task = (id: string, assigneeId: string | null, dueHoursAgo: number, client
 beforeEach(() => {
   h.pending = []
   h.paid = []
-  h.ending = []
-  h.ended = []
+  h.journal = []
+  h.noticesSince = []
   h.tasks = []
   h.counts = { registrations: 0, surveysCompleted: 0, griCompleted: 0 }
   h.sends = []
@@ -161,18 +156,34 @@ describe('runStaffDigest', () => {
     expect(data.lines[1]).toBe('Регистрации ждут одобрения: 1 (все моложе 4 ч).')
   })
 
-  it('R4 (N4B-10): у кого Pro кончается за 7 дней и у кого закончился за сутки — с именами', async () => {
-    h.ending = [{ userId: 'c1', endsAt: '2026-09-30T23:59:59.000Z' }]
-    h.ended = [{ userId: 'c2', endsAt: '2026-09-23T23:59:59.000Z' }]
-    const stats = await runStaffDigest(NOW)
-    expect(stats).toMatchObject({ proEnding: 1, proEnded: 1, adminSummarySent: true })
-    // окно — следующие 7 суток; «закончился» — за последние сутки
-    expect(h.endingRange).toEqual([NOW.toISOString(), new Date(NOW.getTime() + 7 * 24 * 3_600_000).toISOString()])
-    expect(h.endedSince).toBe(new Date(NOW.getTime() - 24 * 3_600_000).toISOString())
-    const [, data] = h.admins.mock.calls[0] as [string, { lines: string[] }]
-    const text = data.lines.join('\n')
-    expect(text).toContain('Платный доступ кончается в ближайшие 7 дней: 1 — Клиент c1 (30 сентября)')
-    expect(text).toContain('Платный доступ закончился за сутки, кабинет переведён на бесплатный: 1 — Клиент c2 (23 сентября)')
+  it('R4 (N4B-10, ревью WB-3): окончание Pro — каждый клиент и этап ОДИН раз (7 дней / сутки / закончился), как клиенту', async () => {
+    const END = '2026-09-30T23:59:59.000Z'
+    // Ночью 24.09 (00:15 UTC) клиент c1 получил «через 7 дней», c2 — «закончился».
+    h.journal = [
+      { userId: 'c1', stage: 'd7', endsAt: END, sentAt: '2026-09-24T00:15:00.000Z' },
+      { userId: 'c2', stage: 'ended', endsAt: '2026-09-23T23:59:59.000Z', sentAt: '2026-09-24T00:15:00.000Z' },
+    ]
+    const first = await runStaffDigest(NOW)
+    expect(first).toMatchObject({ proEnding: 1, proEnded: 1, adminSummarySent: true })
+    // окно — сутки до сводки
+    expect(h.noticesSince).toEqual([new Date(NOW.getTime() - 24 * 3_600_000).toISOString()])
+    const text = (h.admins.mock.calls[0][1] as { lines: string[] }).lines.join('\n')
+    expect(text).toContain('Платный доступ кончается в течение недели (клиент предупреждён): 1 — Клиент c1 (30 сентября)')
+    expect(text).toContain('Платный доступ закончился, кабинет переведён на бесплатный: 1 — Клиент c2 (23 сентября)')
+
+    // Следующие утра: c1 всё ещё в 7-дневном окне, но нового предупреждения нет → в сводке его нет.
+    for (let day = 1; day <= 5; day += 1) {
+      const next = await runStaffDigest(new Date(NOW.getTime() + day * 24 * 3_600_000))
+      expect(next.proEnding, `day +${day}`).toBe(0)
+      expect(next.proEnded, `day +${day}`).toBe(0)
+    }
+    // За сутки до конца клиент получил «меньше чем через сутки» — и персонал видит это один раз.
+    h.journal.push({ userId: 'c1', stage: 'd1', endsAt: END, sentAt: '2026-09-30T00:15:00.000Z' })
+    h.pending = [{ userId: 'p1', createdAt: '2026-09-30T00:00:00.000Z' }] // чтобы сводка вообще ушла
+    h.admins.mockReset()
+    const d1 = await runStaffDigest(new Date('2026-09-30T03:00:00Z'))
+    expect(d1.proEnding).toBe(1)
+    expect((h.admins.mock.calls[0][1] as { lines: string[] }).lines.join('\n')).toContain('Платный доступ кончается в течение суток (клиент предупреждён): 1 — Клиент c1 (30 сентября)')
   })
 
   it('тихий день — без сводки админам', async () => {

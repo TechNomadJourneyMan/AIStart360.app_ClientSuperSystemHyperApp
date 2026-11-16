@@ -117,14 +117,49 @@ describe('the day it ends: the expiry job downgrades and tells the client once',
     expect(state.sent).toHaveLength(2)
   })
 
-  it('findPlansEndedSince: the subscriptions the job canceled since a moment (for the staff summary)', async () => {
+  it('review WB-4: a second live paid subscription keeps the access → the downgrade of the first says nothing', async () => {
+    const ago = (h: number) => new Date(Date.now() - h * H).toISOString().replace('Z', '')
     db.tables.subscriptions = [
-      { orgId: U2, tier: 'pro', status: 'canceled', source: 'system', currentPeriodEnd: at(-3 * H), updatedAt: at(-2 * H) },
-      { orgId: U4, tier: 'pro', status: 'canceled', source: 'system', currentPeriodEnd: at(-50 * H), updatedAt: at(-48 * H) },
-      { orgId: U5, tier: 'pro', status: 'canceled', source: 'admin', currentPeriodEnd: at(-3 * H), updatedAt: at(-2 * H) },
+      // company key: ended an hour ago → downgraded …
+      { orgId: 'company-1', tier: 'pro', status: 'active', currentPeriodEnd: ago(1), source: 'admin', updatedAt: ago(2) },
+      // … but the user key of the same client is open-ended Pro (data before migration 106)
+      { orgId: U1, tier: 'pro', status: 'active', currentPeriodEnd: null, source: 'admin', updatedAt: ago(2) },
     ]
-    const rows = await notices.findPlansEndedSince(state.client as never, new Date(NOW.getTime() - 24 * H))
-    expect(rows.map((x) => x.userId)).toEqual([U2])
+    // billing_set_plan keeps profiles.tier 'pro' when another live paid row remains (kept_access).
+    const keptAccess: typeof sqlModel = (name, args, d) => {
+      const res = sqlModel(name, args, d)
+      if (name === 'billing_set_plan' && args.p_tier === 'free') {
+        const other = (d.tables.subscriptions ?? []).some((x) => x.orgId !== args.p_org_id && x.status === 'active')
+        const p = (d.tables.profiles ?? []).find((x) => x.id === args.p_user_id)
+        if (other && p) {
+          p.tier = 'pro'
+          return { data: { ...(res.data as object), profile_tier: 'pro', kept_access: true } }
+        }
+      }
+      return res
+    }
+    state.client = fakeClient(db, keptAccess)
+    const r = await billing.expireDuePlans({ now: new Date() }, state.client as never)
+    expect(r).toMatchObject({ due: 1, downgraded: 1 })
+    expect(state.sent).toEqual([])
+  })
+})
+
+describe('review WB-4: no warning while another live paid subscription carries the access further', () => {
+  it('a company row ending in 3 days next to an open-ended or a later user row → nothing; alone → d7', async () => {
+    db.tables.subscriptions = [
+      { orgId: 'company-1', tier: 'pro', status: 'active', currentPeriodEnd: at(3 * 24 * H), source: 'admin', updatedAt: at(-H) },
+      { orgId: U1, tier: 'pro', status: 'active', currentPeriodEnd: null, source: 'admin', updatedAt: at(-H) },
+    ]
+    expect(await notices.findPlansEnding(state.client as never, NOW, new Date(NOW.getTime() + 7 * 24 * H))).toEqual([])
+    db.tables.subscriptions[1].currentPeriodEnd = at(40 * 24 * H)
+    expect(await notices.findPlansEnding(state.client as never, NOW, new Date(NOW.getTime() + 7 * 24 * H))).toEqual([])
+    // The later row ends inside the window → it is the one warned about (its own end date).
+    db.tables.subscriptions[1].currentPeriodEnd = at(5 * 24 * H)
+    const one = await notices.findPlansEnding(state.client as never, NOW, new Date(NOW.getTime() + 7 * 24 * H))
+    expect(one).toEqual([expect.objectContaining({ userId: U1, orgId: U1, endsAt: new Date(NOW.getTime() + 5 * 24 * H).toISOString() })])
+    db.tables.subscriptions = [db.tables.subscriptions[0]]
+    expect((await notices.findPlansEnding(state.client as never, NOW, new Date(NOW.getTime() + 7 * 24 * H))).map((p) => p.orgId)).toEqual(['company-1'])
   })
 })
 

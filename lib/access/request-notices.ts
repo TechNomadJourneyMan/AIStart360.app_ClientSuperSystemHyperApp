@@ -4,16 +4,27 @@
  *
  *   • Новая заявка или новый раздел к открытой заявке → СРАЗУ запись в ленте
  *     персонала (notification_events, ГИГА «Уведомления») и Telegram тем Admin /
- *     Super Admin, кто привязал Telegram к аккаунту (lib/notifications/staff.ts).
- *     Ключ дедупликации — заявка (и раздел): повтор того же раздела, двойной клик
- *     или повторный вызов ничего второй раз не шлют.
+ *     Super Admin, кто привязал Telegram к аккаунту (lib/notifications/staff.ts) —
+ *     и в тихие часы тоже (WB-1: это деньги, а не шум; «без звука» и уровни
+ *     уведомлений сотрудника действуют). Ключ дедупликации — заявка (и раздел):
+ *     повтор того же раздела, двойной клик или повторный вызов ничего второй раз
+ *     не шлют.
+ *   • В тексте — имя и компания клиента, раздел и ссылка в ГИГА; e-mail клиента
+ *     НЕ пишется (WB-2): ленту видит любой сотрудник панели, а e-mail положен
+ *     только ролям с users.sensitive — он в карточке заявки и в User 360.
+ *   • Адресаты Telegram — только Admin и Super Admin. Нет ни одного одобренного
+ *     или список не прочитался → только лента ГИГА (WB-7), без рассылки всему
+ *     персоналу и в чаты администраторов из окружения.
  *   • Срок ответа — настройка request_sla_hours (по умолчанию 4 ч) от создания
  *     заявки. Его видно в карточке заявки («Заявки» → «Доступы»), просрочка
  *     подсвечивается, у пункта «Заявки» — бейдж (GET /api/giga-admin/nav-badges).
  *   • Просроченная открытая заявка → ОДНО напоминание-эскалация тем же людям
  *     (ключ access_request.overdue:<id>), крон /api/cron/access-requests каждые
  *     15 минут. В тихие часы уведомлений (ночью) напоминание ждёт утра: иначе
- *     Telegram его пропустил бы, а второго не будет.
+ *     Telegram его пропустил бы, а второго не будет. Прерванную отправку
+ *     (процесс убит, сбой базы после записи в ленту) следующие проходы в течение
+ *     часа досылают тем же ключом (WB-8); отказ самого Telegram окончателен —
+ *     заявка остаётся в ленте, красным бейджем и в утренней сводке.
  *
  * Тумблер «Заявка на оплату» в «Настройки → Уведомления администраторам»
  * (admin_notifications.access_requested, по умолчанию включён) выключает и
@@ -96,15 +107,13 @@ export async function requestDeciders(sb: Sb): Promise<string[]> {
 }
 
 /**
- * Адресаты Telegram: Admin / Super Admin. Никого нет — null (все привязанные
- * сотрудники и чаты администраторов из окружения, как у SLA экспертов).
- * Список не прочитался — [] (только лента: лучше тишина в Telegram, чем рассылка
- * всем подряд).
+ * Адресаты Telegram: Admin / Super Admin. Никого нет или список не прочитался —
+ * [] (только лента ГИГА, WB-7): заявку с данными клиента не рассылаем всему
+ * персоналу и в чаты администраторов из окружения.
  */
-async function audienceOf(sb: Sb): Promise<string[] | null> {
+async function audienceOf(sb: Sb): Promise<string[]> {
   try {
-    const ids = await requestDeciders(sb)
-    return ids.length ? ids : null
+    return await requestDeciders(sb)
   } catch (err) {
     console.error('[request-notices] deciders unavailable:', err instanceof Error ? err.message : err)
     return []
@@ -127,7 +136,7 @@ function who(person: RequestPerson): string {
 }
 
 /** Уведомление персоналу о новой заявке / новом разделе (чистая функция). */
-export function accessRequestNotice(info: AccessRequestInfo, opts: { slaHours: number; now: Date; audience: string[] | null }): StaffNotification {
+export function accessRequestNotice(info: AccessRequestInfo, opts: { slaHours: number; now: Date; audience: string[] }): StaffNotification {
   const labels = info.features.map(featureLabel).join(', ')
   const due = requestSlaDueAt(info.createdAt ?? opts.now, opts.slaHours)
   const added = info.added
@@ -138,7 +147,7 @@ export function accessRequestNotice(info: AccessRequestInfo, opts: { slaHours: n
       ? `Раздел к заявке на оплату: ${featureLabel(added)} — ${who(info.person)}`
       : `Новая заявка на оплату: ${who(info.person)}`).slice(0, 200),
     lines: [
-      `Клиент: ${who(info.person)} (${info.person.email})`,
+      `Клиент: ${who(info.person)}`,
       `Разделы: ${labels || '—'}`,
       ...(due ? [`Ответить до ${almatyTime(due)} (Алматы) — срок ${opts.slaHours} ч.`] : []),
       'Онлайн-оплата не подключена: свяжитесь с клиентом и нажмите «Назначить Pro» в «Заявки» → «Доступы» (или отклоните с причиной).',
@@ -150,6 +159,8 @@ export function accessRequestNotice(info: AccessRequestInfo, opts: { slaHours: n
     audienceUserIds: opts.audience,
     // Ключ уже ограничивает повтор; общий cooldown по типу заглушил бы заявку другого клиента.
     skipCooldown: true,
+    // WB-1: «сразу» — и ночью; «без звука» и уровни сотрудника действуют.
+    quietHoursExempt: true,
     data: { requestId: info.requestId, userId: info.userId, features: info.features, ...(added ? { added } : {}) },
   }
 }
@@ -225,14 +236,14 @@ export function summarizeRequestSla(rows: Array<{ createdAt: string }>, slaHours
 }
 
 /** Напоминание-эскалация по одной просроченной заявке (чистая функция). */
-export function overdueNotice(r: OpenPaidRequest, opts: { slaHours: number; now: Date; audience: string[] | null }): StaffNotification {
+export function overdueNotice(r: OpenPaidRequest, opts: { slaHours: number; now: Date; audience: string[] }): StaffNotification {
   const age = (opts.now.getTime() - Date.parse(r.createdAt)) / HOUR_MS
   return {
     level: 'WARNING',
     type: ACCESS_REQUEST_OVERDUE,
     title: `Заявка на оплату ждёт дольше ${opts.slaHours} ч: ${who(r.person)}`.slice(0, 200),
     lines: [
-      `Клиент: ${who(r.person)} (${r.person.email})`,
+      `Клиент: ${who(r.person)}`,
       `Разделы: ${r.features.map(featureLabel).join(', ') || '—'}`,
       `Заявка оставлена ${almatyTime(r.createdAt)} (Алматы), ждёт ${waitLabel(age)}.`,
       'Свяжитесь с клиентом: «Назначить Pro» или «Отклонить» с причиной в «Заявки» → «Доступы». Это единственное напоминание по заявке.',
@@ -256,21 +267,36 @@ export interface OverdueReport {
   skipped?: 'disabled' | 'quiet_hours'
 }
 
-/** Ключи напоминаний, которые уже есть в ленте (чтобы не дёргать notifyStaff каждые 15 минут). */
-async function alreadyEscalated(sb: Sb, keys: string[]): Promise<Set<string>> {
-  if (!keys.length) return new Set()
+/**
+ * WB-8: сколько после записи в ленту проходы ещё зовут notifyStaff тем же ключом.
+ * notifyStaff идемпотентен: отправленным второй раз ничего не уходит, а доставку,
+ * которую прервал убитый процесс (нет строки или «queued» старше 120 с), он
+ * досылает. Четыре прохода по 15 минут — достаточно, дальше не нагружаем базу.
+ */
+export const RESUME_WINDOW_MS = 60 * 60_000
+
+/** Когда напоминание попало в ленту, по ключу (чтобы не дёргать notifyStaff каждые 15 минут вечно). */
+async function escalatedAt(sb: Sb, keys: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (!keys.length) return out
   try {
-    const { data, error } = await sb.from('notification_events').select('dedupe_key').in('dedupe_key', keys)
-    if (error) return new Set()
-    return new Set(((data ?? []) as Array<{ dedupe_key: string | null }>).map((r) => r.dedupe_key ?? '').filter(Boolean))
+    const { data, error } = await sb.from('notification_events').select('dedupe_key, created_at').in('dedupe_key', keys)
+    if (error) return out
+    for (const r of (data ?? []) as Array<{ dedupe_key: string | null; created_at: string | null }>) {
+      if (!r.dedupe_key) continue
+      const at = Date.parse(String(r.created_at ?? ''))
+      out.set(r.dedupe_key, Number.isFinite(at) ? at : 0)
+    }
   } catch {
-    return new Set()
+    /* no pre-check: notifyStaff dedupes by the key anyway */
   }
+  return out
 }
 
 /**
  * Проход крона: каждая открытая заявка старше срока получает ОДНО напоминание.
- * Повторный проход ничего не повторяет (ключ в ленте). Ночью — пропуск до утра.
+ * Повторный проход ничего не повторяет (ключ в ленте); прерванную отправку
+ * досылает в течение часа (WB-8). Ночью — пропуск до утра.
  */
 export async function escalateOverdueAccessRequests(sb: Sb, now: Date = new Date(), deps: {
   notifyStaff?: (n: StaffNotification) => Promise<{ duplicate?: boolean } | unknown>
@@ -284,8 +310,12 @@ export async function escalateOverdueAccessRequests(sb: Sb, now: Date = new Date
   const { inQuietHours, routingConfig } = await import('@/lib/notifications/levels')
   if (inQuietHours('WARNING', routingConfig(), now)) return { ...report, skipped: 'quiet_hours' }
 
-  const done = await alreadyEscalated(sb, overdue.map((r) => `${ACCESS_REQUEST_OVERDUE}:${r.id}`))
-  const fresh = overdue.filter((r) => !done.has(`${ACCESS_REQUEST_OVERDUE}:${r.id}`))
+  const recorded = await escalatedAt(sb, overdue.map((r) => `${ACCESS_REQUEST_OVERDUE}:${r.id}`))
+  // Not yet in the feed, or recorded less than an hour ago (a run killed midway is resumed).
+  const fresh = overdue.filter((r) => {
+    const at = recorded.get(`${ACCESS_REQUEST_OVERDUE}:${r.id}`)
+    return at === undefined || now.getTime() - at < RESUME_WINDOW_MS
+  })
   if (!fresh.length) return report
   const audience = await audienceOf(sb)
   const send = deps.notifyStaff ?? (async (n: StaffNotification) => (await import('@/lib/notifications/staff')).notifyStaff(n))
@@ -294,7 +324,9 @@ export async function escalateOverdueAccessRequests(sb: Sb, now: Date = new Date
       const res = (await send(overdueNotice(r, { slaHours, now, audience }))) as { duplicate?: boolean } | null | undefined
       if (!res?.duplicate) report.notified += 1
     } catch (err) {
-      // One failed notice does not stop the pass; the next pass retries (no event row yet).
+      // One failed notice does not stop the pass. The next passes call notifyStaff with the
+      // same key again (within RESUME_WINDOW_MS of the feed row, or until there is one): it
+      // records nothing twice and delivers to whoever this run did not reach.
       console.error('[request-notices] overdue notice failed:', r.id, err instanceof Error ? err.message : err)
     }
   }

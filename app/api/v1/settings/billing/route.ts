@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { BillingError, getEffectivePlan } from '@/lib/payments/billing'
+import { createServiceClient } from '@/lib/supabase-service'
+import { isClientAccount } from '@/lib/access/upgrade-requests'
 
 // Self-scoped read of the caller's effective plan for Settings › Биллинг.
 // The person comes from the SESSION only — never from client input. The plan
@@ -16,9 +18,12 @@ export async function GET() {
 
   try {
     const plan = await getEffectivePlan({ userId: user.id })
+    // R4 (review WB-6): the «Оставить заявку» block is for clients only (staff / experts: false).
+    const canRequestAccess = await isClientAccount(createServiceClient(), user.id).catch(() => false)
     // The administrator's note is internal: it never reaches the client.
     return NextResponse.json({
       ok: true,
+      canRequestAccess,
       data: {
         tier: plan.tier,
         status: plan.status,

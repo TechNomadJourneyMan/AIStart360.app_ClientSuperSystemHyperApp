@@ -46,7 +46,9 @@ vi.mock('@/lib/access/request-access', () => ({
 }))
 
 const { ClientNav } = await import('@/components/client/ClientNav')
-const { buildClientNav } = await import('@/lib/client-shell/nav')
+const { buildClientNav, buildClientMoreNav, bellUnreadCount } = await import('@/lib/client-shell/nav')
+const { useNotificationsStore } = await import('@/stores/notifications.store')
+const { publishOneRead, publishUnreadCount } = await import('@/components/notifications/unread-sync')
 const { staffPanelLink } = await import('@/lib/client-shell/staff-links')
 const { clientShellData, loadClientShellAccount, loadDashboardClientShell } = await import('@/lib/client-shell/server')
 
@@ -62,6 +64,7 @@ beforeEach(() => {
   s.unreadNotifications = 0
   s.notificationsFail = false
   s.accessReads = 0
+  useNotificationsStore.setState({ unreadCount: 0, synced: false })
 })
 
 describe('ClientNav markup', () => {
@@ -88,7 +91,7 @@ describe('ClientNav markup', () => {
   })
 
   it('staff get «Вернуться в панель» to their panel', () => {
-    const html = render(staffPanelLink({ profileRole: 'super_admin', staffRole: null, status: 'approved' }))
+    const html = render(staffPanelLink({ profileRole: 'super_admin', staffRole: 'super_admin', status: 'approved' }))
     expect(html).toContain('Вернуться в панель')
     expect(html).toContain('href="/admin-giga-panel"')
     const expert = render(staffPanelLink({ profileRole: 'expert', staffRole: null, status: 'approved' }))
@@ -110,7 +113,7 @@ describe('ClientNav markup', () => {
   })
 
   it('uses design tokens only — no hard-coded colours', () => {
-    expect(render(staffPanelLink({ profileRole: 'super_admin', staffRole: null, status: 'approved' }))).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(render(staffPanelLink({ profileRole: 'super_admin', staffRole: 'super_admin', status: 'approved' }))).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
   })
 })
 
@@ -251,5 +254,103 @@ describe('R-028: loadDashboardClientShell — the cabinet bar for a client in th
     expect(await loadDashboardClientShell(user)).toBeNull()
     expect(await loadDashboardClientShell(null)).toBeNull()
     expect(s.accessReads).toBe(0)
+  })
+})
+
+describe('WA-1: «Ещё» in the cabinet bar', () => {
+  const more = buildClientMoreNav({ approved: true, hiddenPaths: [] })
+  const withMore = (m: typeof more) => renderToStaticMarkup(createElement(ClientNav, { items, panel: null, email: null, more: m }))
+
+  it('a button outside the scrolling row, with the visible sections in its (closed) list', () => {
+    const html = withMore(more)
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-label="Ещё разделы"/)
+    for (const [label, href] of [['Клиенты (CRM)', '/pulse'], ['Симулятор', '/simulator'], ['Метрики', '/metrics'], ['Психопрофиль', '/profile/psych']]) {
+      expect(html, label).toContain(label)
+      expect(html, href).toContain(`href="${href}"`)
+    }
+    // the drop-down is not inside the <nav> row (overflow-x would clip it on a phone)
+    const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'))
+    expect(nav).not.toContain('/simulator')
+    expect(html).toMatch(/<div[^>]*hidden=""[^>]*>[\s\S]*href="\/simulator"/)
+  })
+
+  it('marks the current section and the button', () => {
+    s.pathname = '/simulator'
+    const html = withMore(more)
+    expect(html).toMatch(/<a aria-current="page"[^>]*href="\/simulator"/)
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1) // nothing of the main row is current
+  })
+
+  it('no «Ещё» when nothing is visible (prod: the three are staff_only, and Психопрофиль hidden too)', () => {
+    expect(withMore([])).not.toContain('Ещё разделы')
+    expect(render()).not.toContain('Ещё разделы')
+    expect(withMore(buildClientMoreNav({ approved: true, hiddenPaths: ['/simulator', '/metrics', '/pulse'] }))).not.toContain('/simulator')
+  })
+
+  it('the server hands «Ещё» to both layouts', async () => {
+    s.facts = { role: 'client', status: 'approved', is_staff: false }
+    expect(clientShellData(await loadClientShellAccount({ id: 'u-1', email: 'owner@example.kz' }), []).more.map((i) => i.key)).toEqual(['pulse', 'simulator', 'metrics', 'psych'])
+    for (const f of ['app/client/layout.tsx', 'app/(dashboard)/layout.tsx']) expect(readFileSync(f, 'utf8'), f).toContain('more={shell.more}')
+  })
+})
+
+describe('WA-2: no dead «Вернуться в панель»', () => {
+  it('a legacy super_admin profile without a staff_roles row gets no panel button in the cabinet', async () => {
+    s.facts = { role: 'super_admin', status: 'approved', is_staff: true }
+    s.staffRow = null
+    const acc = await loadClientShellAccount({ id: 'u-1', email: 'owner@example.kz' })
+    expect(acc.panel).toBeNull()
+    s.staffRow = { role: 'super_admin' }
+    expect((await loadClientShellAccount({ id: 'u-1', email: 'owner@example.kz' })).panel?.href).toBe('/admin-giga-panel')
+  })
+})
+
+describe('WA-4: the feed page updates the bell at once (one store)', () => {
+  // The bell reads the store in the browser (zustand renders the INITIAL state
+  // on the server), so its rule is checked as a function + the store itself.
+  const bell = (server: number, onFeed = false) => {
+    const st = useNotificationsStore.getState()
+    return bellUnreadCount({ onFeed, synced: st.synced, live: st.unreadCount, server })
+  }
+
+  it('until the first sync — the server count; after it — the store; on the feed page — none', () => {
+    expect(bell(3)).toBe(3)
+    useNotificationsStore.getState().setUnreadCount(5)
+    expect(bell(3)).toBe(5)
+    expect(bell(3, true)).toBe(0)
+  })
+
+  it('«Прочитать все» on /notifications → 0 at once for the bar that stays mounted (no 60 s wait)', () => {
+    useNotificationsStore.getState().setUnreadCount(3)
+    publishUnreadCount(0)
+    expect(bell(3)).toBe(0)
+  })
+
+  it('the feed loaded before any poll → its count counts (synced)', () => {
+    publishUnreadCount(4)
+    expect(useNotificationsStore.getState().synced).toBe(true)
+    expect(bell(1)).toBe(4)
+  })
+
+  it('opening one entry → one less, never below zero', () => {
+    publishUnreadCount(2)
+    publishOneRead()
+    expect(bell(9)).toBe(1)
+    publishOneRead()
+    publishOneRead()
+    expect(bell(9)).toBe(0)
+  })
+
+  it('the bell of ClientNav uses this rule with the store\'s synced flag', () => {
+    const src = readFileSync('components/client/ClientNav.tsx', 'utf8')
+    expect(src).toContain('useNotificationsStore((s) => s.synced)')
+    expect(src).toContain('bellUnreadCount({ onFeed: current, synced, live, server: link.unread })')
+  })
+
+  it('the feed publishes on load, on «Прочитать все» and on opening an entry', () => {
+    const src = readFileSync('components/notifications/NotificationsFeed.tsx', 'utf8')
+    expect(src).toContain('publishUnreadCount(json.unread ?? 0)')
+    expect(src).toContain('publishUnreadCount(0)')
+    expect(src).toContain('publishOneRead()')
   })
 })

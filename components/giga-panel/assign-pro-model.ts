@@ -19,8 +19,15 @@ export const ASSIGN_PRO_NO_RIGHT = 'Назначить тариф может с�
 /** The client is outside the actor's scope («свои клиенты») — the server would answer 403 (verify L-3). */
 export const ASSIGN_PRO_OUT_OF_SCOPE = 'Клиент не назначен вам — тариф назначает его ответственный или сотрудник с доступом ко всем клиентам'
 
-/** Why «Назначить Pro» is inactive for this request; null — it is active. */
-export function assignProBlockedReason(canAssign: boolean, request: { assignable?: boolean }): string | null {
+/** R4 (review WB-9, PO): who decides on a request for paid access. */
+export const PAID_DECIDERS_ONLY = 'Заявки на оплату разбирают Admin и Super Admin'
+
+/**
+ * Why «Назначить Pro» is inactive for this request; null — it is active.
+ * `paidDecider` — the actor is Admin / Super Admin (WB-9); other roles see the reason.
+ */
+export function assignProBlockedReason(canAssign: boolean, request: { assignable?: boolean }, paidDecider = true): string | null {
+  if (!paidDecider) return PAID_DECIDERS_ONLY
   if (!canAssign) return ASSIGN_PRO_NO_RIGHT
   if (request.assignable === false) return ASSIGN_PRO_OUT_OF_SCOPE
   return null

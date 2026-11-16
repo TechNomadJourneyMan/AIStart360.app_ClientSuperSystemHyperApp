@@ -77,7 +77,7 @@ beforeEach(() => {
   s.slaHours = 4
   s.db = newRequestsDb()
   s.db.profiles.push(
-    { id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz' },
+    { id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz', role: 'client' },
     { id: ADMIN, status: 'approved' },
     { id: SUPER, status: 'approved' },
     { id: SEXPERT, status: 'approved' },
@@ -117,6 +117,51 @@ describe('N4B-1: a request for paid access reaches Admin / Super Admin at once',
     expect(text).toContain('Разделы: Точка А')
     expect(text).toContain('срок 4 ч')
     expect(text).toContain('Назначить Pro')
+  })
+
+  it('review WB-2: no client e-mail in the text — the GIGA feed is open to every staff role (analyst, content manager)', async () => {
+    const r = await lib.submitAccessRequest(fakeService(s.db) as never, { userId: ME, featureKey: 'point_a' })
+    await lib.submitAccessRequest(fakeService(s.db) as never, { userId: ME, featureKey: 'market' })
+    await settle()
+    expect(s.notices).toHaveLength(2)
+    for (const n of s.notices) {
+      expect(JSON.stringify([n.title, n.lines])).not.toContain('ivan@corp.kz')
+      expect((n.lines as string[])[0]).toBe('Клиент: Иван Петров · ТОО Ромашка')
+    }
+    expect(s.notices[0].entityId).toBe(r.id)
+  })
+
+  it('review WB-1: the notice about a request is delivered «at once» — also in the quiet hours (the overdue reminder still waits for the morning)', async () => {
+    await lib.submitAccessRequest(fakeService(s.db) as never, { userId: ME, featureKey: 'point_a' })
+    await lib.submitAccessRequest(fakeService(s.db) as never, { userId: ME, featureKey: 'market' })
+    await settle()
+    expect(s.notices.map((n) => n.quietHoursExempt)).toEqual([true, true])
+    const person = { name: 'Иван', email: 'ivan@corp.kz', company: null }
+    const reminder = notices.overdueNotice({ id: 'x', userId: ME, person, features: ['point_a'], createdAt: hoursBefore(DAY, 5) + 'Z' }, { slaHours: 4, now: DAY, audience: [ADMIN] })
+    expect(reminder.quietHoursExempt).toBeUndefined()
+  })
+
+  it('review WB-6: staff and experts do not leave a request for paid access (403, nothing stored, nobody notified)', async () => {
+    const post = () => route.POST(new NextRequest('http://x/api/v1/upgrade-request', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ featureKey: 'point_a' }),
+    }))
+    // A staff member with a client profile (staff_roles row) …
+    s.db.extra!.staff_roles.push({ user_id: ME, role: 'support' })
+    const staff = await post()
+    expect(staff.status).toBe(403)
+    expect(await staff.json()).toMatchObject({ error: 'not_client' })
+    // … and an expert.
+    s.db.extra!.staff_roles = s.db.extra!.staff_roles.filter((r) => r.user_id !== ME)
+    s.db.profiles[0].role = 'expert'
+    expect((await post()).status).toBe(403)
+    await settle()
+    expect(s.db.rows).toHaveLength(0)
+    expect(s.notices).toHaveLength(0)
+    // A client — as before.
+    s.db.profiles[0].role = 'client'
+    expect((await post()).status).toBe(200)
+    await settle() // its background notice belongs to this test
+    expect(s.notices).toHaveLength(1)
   })
 
   it('the same section again (a second click, the other paywall) sends NOTHING more', async () => {
@@ -173,11 +218,11 @@ describe('N4B-1: a request for paid access reaches Admin / Super Admin at once',
     expect((s.notices[0].lines as string[]).join('\n')).toContain('Полный GRI')
   })
 
-  it('without any approved Admin / Super Admin the notice goes to every linked staff member (audience null); a failed read → feed only ([])', async () => {
+  it('review WB-7: without any approved Admin / Super Admin — the GIGA feed only (audience []), never every linked staff member or the env chats; a failed read → the same', async () => {
     s.db.extra!.staff_roles = []
     const info = { requestId: 'req-y', userId: ME, person: { name: 'Иван', email: 'ivan@corp.kz', company: null }, features: ['point_a'], added: null, createdAt: null }
     await notices.notifyStaffAccessRequested(fakeService(s.db) as never, info, DAY)
-    expect(s.notices[0].audienceUserIds).toBeNull()
+    expect(s.notices[0].audienceUserIds).toEqual([])
     const broken = { from: (t: string) => (t === 'staff_roles' ? { select: () => ({ in: async () => ({ data: null, error: { message: 'down' } }) }) } : fakeService(s.db).from(t)) }
     await notices.notifyStaffAccessRequested(broken as never, { ...info, requestId: 'req-z' }, DAY)
     expect(s.notices[1].audienceUserIds).toEqual([])
@@ -215,6 +260,29 @@ describe('N4B-1: the 4 h answer deadline and ONE reminder when it passes', () =>
     const third = await notices.escalateOverdueAccessRequests(fakeService(s.db) as never, later)
     expect(third).toMatchObject({ overdue: 2, notified: 1 })
     expect(s.notices.map((n) => n.dedupeKey)).toEqual(['access_request.overdue:old', 'access_request.overdue:young'])
+  })
+
+  it('review WB-8: a run killed after the feed row → the next passes (within an hour) call notifyStaff with the same key again; later they leave it', async () => {
+    s.db.rows.push(open('old', hoursBefore(DAY, 5)))
+    const calls: string[] = []
+    let crash = true
+    const send = async (n: { dedupeKey?: string | null }) => {
+      calls.push(String(n.dedupeKey))
+      // The event row is written, then the process dies before Telegram.
+      if (crash) {
+        s.db.extra!.notification_events.push({ dedupe_key: n.dedupeKey, created_at: DAY.toISOString() })
+        crash = false
+        throw new Error('killed')
+      }
+      return { duplicate: true }
+    }
+    expect(await notices.escalateOverdueAccessRequests(fakeService(s.db) as never, DAY, { notifyStaff: send })).toMatchObject({ notified: 0 })
+    const later = new Date(DAY.getTime() + 15 * 60_000)
+    await notices.escalateOverdueAccessRequests(fakeService(s.db) as never, later, { notifyStaff: send })
+    expect(calls).toEqual(['access_request.overdue:old', 'access_request.overdue:old'])
+    const muchLater = new Date(DAY.getTime() + 2 * 3_600_000)
+    await notices.escalateOverdueAccessRequests(fakeService(s.db) as never, muchLater, { notifyStaff: send })
+    expect(calls).toHaveLength(2)
   })
 
   it('at night (quiet hours) the reminder waits for the morning instead of being swallowed', async () => {

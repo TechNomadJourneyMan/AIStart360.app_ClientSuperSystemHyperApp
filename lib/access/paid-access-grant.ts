@@ -25,6 +25,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
 import { notifyPaidAccessOpened } from '@/lib/notifications/product'
+import { enqueueClientNotice } from '@/lib/notifications/client-notice-queue'
 import type { EffectivePlan } from '@/lib/payments/plan-state'
 import { ACCESS_REQUEST_SOURCES, OPEN_REQUEST_STATUSES } from './upgrade-requests'
 
@@ -108,6 +109,8 @@ export interface GrantResult {
   notified: boolean
   /** Closing the requests failed (the plan is changed anyway). */
   requestsError?: boolean
+  /** The notice was put in the queue of client notices (bulk action, review WB-5). */
+  noticeQueued?: boolean
 }
 
 export async function completePaidAccessGrant(args: {
@@ -122,6 +125,12 @@ export async function completePaidAccessGrant(args: {
   claimed?: string[]
   ipAddress?: string
   svc?: SupabaseClient
+  /**
+   * Review WB-5: send the notice from the queue of client notices (≤ 2 at a time,
+   * outside the request) instead of waiting for Resend here — the bulk «Тариф Pro»
+   * for hundreds of clients must not run into the 60 s deadline.
+   */
+  queueNotice?: boolean
 }): Promise<GrantResult> {
   if (!args.after || args.after.accessTier !== 'pro') return { closed: [], notified: false }
   const claimed = args.claimed ?? []
@@ -137,9 +146,15 @@ export async function completePaidAccessGrant(args: {
   const opened = args.before?.accessTier !== 'pro'
   if (!opened && closed.length === 0) return { closed, notified: false, ...(requestsError ? { requestsError } : {}) }
   const key = args.requestId ?? [...closed].sort()[0] ?? null
+  const notice = { periodEnd: args.after.periodEnd ?? null, dedupeKey: key ? `paid_access_opened:${key}` : null, renewed: !opened }
+  if (args.queueNotice) {
+    const userId = args.userId
+    void enqueueClientNotice('paid-access-opened', () => notifyPaidAccessOpened(userId, notice))
+    return { closed, notified: false, noticeQueued: true, ...(requestsError ? { requestsError } : {}) }
+  }
   let notified = false
   try {
-    const res = await notifyPaidAccessOpened(args.userId, { periodEnd: args.after.periodEnd ?? null, dedupeKey: key ? `paid_access_opened:${key}` : null, renewed: !opened })
+    const res = await notifyPaidAccessOpened(args.userId, notice)
     notified = res.delivered.inApp
   } catch (err) {
     console.error('[paid-access-grant] notice failed:', err instanceof Error ? err.message : err)

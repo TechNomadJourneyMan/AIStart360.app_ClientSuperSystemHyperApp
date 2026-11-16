@@ -42,7 +42,7 @@ export default async function DashboardLayout({
       <div className="min-h-screen bg-background">
         <ActivityTracker />
         <ImpersonationBanner />
-        <ClientNav items={shell.items} panel={shell.panel} email={shell.email} notifications={shell.notifications} />
+        <ClientNav items={shell.items} panel={shell.panel} email={shell.email} notifications={shell.notifications} more={shell.more} />
         <main>
           {/* pb reserves space for the floating assistant FAB (bottom-6). */}
           <div className="px-4 md:px-6 lg:px-8 pt-6 pb-24 max-w-[1600px] mx-auto">

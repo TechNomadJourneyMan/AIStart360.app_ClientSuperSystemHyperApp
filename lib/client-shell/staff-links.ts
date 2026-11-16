@@ -51,15 +51,19 @@ export interface ViewerRoles {
  * The panel a staff member returns to from the client cabinet, or null for a
  * regular client (and for any account that is not approved).
  * Same landing rules as lib/role-landing.ts: a SuperExpert → /super-expert,
- * every other staff role (and a super_admin profile) → GIGA-CRM, an expert
- * (or a legacy admin profile without a staff row) → the expert portal.
+ * every other staff role → GIGA-CRM, an expert (or a legacy admin profile
+ * without a staff row) → the expert portal.
+ *
+ * WA-2 / R-002: GIGA only with a staff_roles row — the panel gate admits
+ * nobody else. A legacy profiles.role 'super_admin' without the row got
+ * «Вернуться в панель» and was bounced to /giga-login (a dead end).
  */
 export function staffPanelLink(v: ViewerRoles): PanelLink | null {
   if (v.status !== 'approved') return null
   const staffRole = isStaffRole(v.staffRole) ? v.staffRole : null
   let panel: StaffPanel | null = null
   if (staffRole === 'super_expert') panel = 'super_expert'
-  else if (staffRole || v.profileRole === 'super_admin') panel = 'giga'
+  else if (staffRole) panel = 'giga'
   else if (v.profileRole && EXPERT_PROFILE_ROLES.has(v.profileRole)) panel = 'expert'
   return panel ? { ...PANELS[panel], label: BACK_TO_PANEL_LABEL } : null
 }
@@ -80,7 +84,12 @@ export function gigaCabinetLink(me: { kind: 'session' | 'staff_cookie' } | null 
   return { href: CLIENT_CABINET_HREF, label: CABINET_CHECK_LABEL }
 }
 
-/** The same button in the expert portal: the viewer must hold an expert-portal role. */
+/**
+ * The same button in the expert portal: the viewer must hold an expert-portal
+ * role (staff, an expert, or a super_admin profile — middleware lets it into
+ * /expert; the button only opens its own /client/home).
+ */
 export function expertCabinetLink(v: ViewerRoles): CabinetLink | null {
-  return staffPanelLink(v) ? { href: CLIENT_CABINET_HREF, label: CABINET_CHECK_LABEL } : null
+  const portal = staffPanelLink(v) || (v.status === 'approved' && v.profileRole === 'super_admin')
+  return portal ? { href: CLIENT_CABINET_HREF, label: CABINET_CHECK_LABEL } : null
 }

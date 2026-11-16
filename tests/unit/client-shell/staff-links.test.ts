@@ -17,7 +17,7 @@ const approved = (profileRole: string, staffRole: string | null = null) => ({ pr
 describe('staffPanelLink — «Вернуться в панель» (role → target)', () => {
   it.each([
     // profiles.role, staff_roles.role, target
-    ['super_admin', null, '/admin-giga-panel'],
+    ['super_admin', 'super_admin', '/admin-giga-panel'],
     ['client', 'super_admin', '/admin-giga-panel'],
     ['client', 'admin', '/admin-giga-panel'],
     ['admin', 'admin', '/admin-giga-panel'],
@@ -40,6 +40,13 @@ describe('staffPanelLink — «Вернуться в панель» (role → ta
     expect(staffPanelLink(approved('client'))).toBeNull()
     expect(staffPanelLink(approved('owner'))).toBeNull()
     expect(staffPanelLink({ profileRole: null, staffRole: null, status: null })).toBeNull()
+  })
+
+  it('WA-2 / R-002: a legacy super_admin profile WITHOUT a staff_roles row gets no «Вернуться в панель» (the panel would bounce it to /giga-login)', () => {
+    expect(staffPanelLink(approved('super_admin'))).toBeNull()
+    expect(staffPanelLink(approved('super_admin', 'god_mode'))).toBeNull()
+    // the expert portal still lets it check its own cabinet
+    expect(expertCabinetLink(approved('super_admin'))?.href).toBe('/client/home')
   })
 
   it('an unknown staff_roles value grants nothing', () => {

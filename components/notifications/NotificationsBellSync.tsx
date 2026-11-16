@@ -6,9 +6,26 @@ import { useNotificationsStore } from '@/stores/notifications.store'
 /** A focus right after a fetch does not fetch again (tab hopping, dialogs). */
 const FOCUS_MIN_GAP_MS = 15_000
 
-// Hydrates the header bell's unread badge from the real feed (app_notifications).
+/**
+ * WA-5: the bell needs the NUMBER only — one `count` (head request), not the
+ * 100 latest entries with their texts (app/api/v1/notifications ?count=1).
+ */
+export const UNREAD_COUNT_URL = '/api/v1/notifications?count=1'
+
+/** Unread notifications of the session user, or null when the answer is not usable. */
+export async function fetchUnreadCount(fetchFn: typeof fetch = fetch): Promise<number | null> {
+  try {
+    const r = await fetchFn(UNREAD_COUNT_URL, { credentials: 'include' })
+    const j = (await r.json()) as { ok?: boolean; unread?: unknown }
+    return j?.ok ? Math.max(0, Math.floor(Number(j.unread) || 0)) : null
+  } catch {
+    return null
+  }
+}
+
+// Hydrates the bell's unread badge from the real feed (app_notifications).
 // Polls lightly; a realtime channel can replace the interval later.
-// A hidden tab does not poll (each poll is an Auth check + a DB read on the
+// A hidden tab does not poll (each poll is an Auth check + a DB count on the
 // server); the count is refreshed as soon as the tab is back.
 export function NotificationsBellSync() {
   const setUnreadCount = useNotificationsStore((s) => s.setUnreadCount)
@@ -18,10 +35,7 @@ export function NotificationsBellSync() {
     let lastAt = 0
     const tick = () => {
       lastAt = Date.now()
-      fetch('/api/v1/notifications?filter=unread', { credentials: 'include' })
-        .then((r) => r.json())
-        .then((j) => { if (!cancelled && j?.ok) setUnreadCount(j.unread ?? 0) })
-        .catch(() => {})
+      void fetchUnreadCount().then((n) => { if (!cancelled && n !== null) setUnreadCount(n) })
     }
     const hidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
     tick()

@@ -47,7 +47,7 @@ export default async function ClientLayout({ children }: { children: React.React
       {/* One navigation for every cabinet page (Точка А / Б open inside it);
           hidden on the gate and full-screen flows — see clientShellMode.
           R-096: with the bell of the notification feed. */}
-      <ClientNav items={shell.items} panel={shell.panel} email={shell.email} notifications={shell.notifications} />
+      <ClientNav items={shell.items} panel={shell.panel} email={shell.email} notifications={shell.notifications} more={shell.more} />
       <div className="mx-auto max-w-5xl px-4 pt-3 empty:hidden">
         <AnnouncementBar />
       </div>

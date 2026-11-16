@@ -289,28 +289,41 @@ export async function fetchOpenPaidRequests(): Promise<PendingRequest[]> {
   return rows.map((r) => ({ userId: r.userId ?? '', createdAt: r.createdAt }))
 }
 
-export interface ProEndingRow {
+export type ProNoticeStage = 'd7' | 'd1' | 'ended'
+
+export interface ProNoticeRow {
   userId: string
+  stage: ProNoticeStage
   endsAt: string
 }
 
-/** R4 (N4B-10): у кого платный доступ кончается в (from, to]. Ошибка — пусто (сводка не падает). */
-export async function fetchProEnding(fromIso: string, toIso: string): Promise<ProEndingRow[]> {
+/**
+ * R4 (N4B-10, ревью WB-3): какие предупреждения об окончании платного доступа
+ * клиенты получили начиная с `sinceIso` — по журналу automation_sends, куда
+ * notifyClient пишет каждое отправленное уведомление (event paid_access_expiring /
+ * paid_access_ended, ключ pro_expiry:<этап>:<подписка>:<дата>). Каждое
+ * предупреждение уходит клиенту один раз — значит, и в сводку персонала оно
+ * попадает один раз: за 7 дней, за сутки и в день окончания. Ошибка — пусто
+ * (сводка не падает).
+ */
+export async function fetchProNoticesSince(sinceIso: string): Promise<ProNoticeRow[]> {
   try {
-    const { findPlansEnding } = await import('@/lib/payments/expiry-notices')
-    const rows = await findPlansEnding(createServiceClient(), new Date(fromIso), new Date(toIso))
-    return rows.map((r) => ({ userId: r.userId, endsAt: r.endsAt }))
-  } catch {
-    return []
-  }
-}
-
-/** R4 (N4B-10): кого ночной крон перевёл с платного на бесплатный начиная с `sinceIso`. */
-export async function fetchProEndedSince(sinceIso: string): Promise<ProEndingRow[]> {
-  try {
-    const { findPlansEndedSince } = await import('@/lib/payments/expiry-notices')
-    const rows = await findPlansEndedSince(createServiceClient(), new Date(sinceIso))
-    return rows.map((r) => ({ userId: r.userId, endsAt: r.endsAt }))
+    const { data, error } = await createServiceClient()
+      .from('automation_sends')
+      .select('user_id, kind, metadata, sent_at')
+      .in('kind', ['paid_access_expiring', 'paid_access_ended'])
+      .gte('sent_at', sinceIso)
+      .order('sent_at', { ascending: true })
+      .limit(QUERY_LIMIT)
+    if (error) return []
+    const out: ProNoticeRow[] = []
+    for (const r of (data ?? []) as Array<{ user_id: string | null; kind: string; metadata: Record<string, unknown> | null }>) {
+      const m = r.metadata ?? {}
+      const stage = r.kind === 'paid_access_ended' ? 'ended' : m.stage === 'd1' ? 'd1' : m.stage === 'd7' ? 'd7' : null
+      if (!r.user_id || !stage || typeof m.endsAt !== 'string') continue
+      out.push({ userId: r.user_id, stage, endsAt: m.endsAt })
+    }
+    return out
   } catch {
     return []
   }

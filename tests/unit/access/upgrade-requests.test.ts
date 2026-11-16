@@ -48,7 +48,7 @@ beforeEach(() => {
   s.impersonating = false
   s.rlKeys = []
   s.db = newRequestsDb()
-  s.db.profiles.push({ id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz' })
+  s.db.profiles.push({ id: ME, full_name: 'Иван Петров', email: 'ivan@corp.kz', role: 'client' })
   s.db.companies.push({ user_id: ME, name: 'ТОО Ромашка' })
 })
 

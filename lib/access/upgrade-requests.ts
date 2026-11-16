@@ -72,6 +72,21 @@ export function featureLabel(key: string): string {
   return FEATURES[key]?.label ?? key
 }
 
+/**
+ * R4 (ревью WB-6): заявку на оплату оставляет только КЛИЕНТ — профиль с ролью
+ * 'client' без строки staff_roles. У сотрудников и экспертов доступ к разделам
+ * по роли; их «заявка» только отвлекала бы Admin и Super Admin. Ошибка чтения —
+ * исключение (вызывающий отвечает 500, а не пропускает).
+ */
+export async function isClientAccount(service: Pick<SupabaseClient, 'from'>, userId: string): Promise<boolean> {
+  const [{ data: profile, error }, { data: staff, error: staffError }] = await Promise.all([
+    service.from('profiles').select('role').eq('id', userId).maybeSingle(),
+    service.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
+  ])
+  if (error || staffError) throw new Error('profile role unavailable')
+  return (profile as { role?: string | null } | null)?.role === 'client' && !staff
+}
+
 /** Тариф-заявка (а не регистрация): решение по ней не меняет profiles.status. */
 export function isTariffAccessRequest(row: { type?: unknown; source?: unknown } | null | undefined): boolean {
   return !!row && row.type === 'access' && (ACCESS_REQUEST_SOURCES as readonly string[]).includes(String(row.source ?? ''))

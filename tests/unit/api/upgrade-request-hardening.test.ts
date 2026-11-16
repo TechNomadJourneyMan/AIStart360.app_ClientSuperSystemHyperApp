@@ -43,6 +43,8 @@ beforeEach(() => {
   s.limited = false
   s.rlKeys = []
   s.db = newRequestsDb()
+  // R4 (review WB-6): only a client asks for paid access.
+  s.db.profiles.push({ id: '44444444-4444-4444-8444-444444444444', role: 'client' })
 })
 
 describe('R-225 upgrade-request', () => {

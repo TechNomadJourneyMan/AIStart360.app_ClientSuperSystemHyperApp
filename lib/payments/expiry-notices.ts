@@ -79,32 +79,19 @@ interface SubRow {
   status: string
   trialEndsAt: unknown
   currentPeriodEnd: unknown
-  updatedAt?: unknown
 }
 
 function endOf(r: SubRow): string | null {
   return utcIso(r.status === 'trialing' ? r.trialEndsAt : r.currentPeriodEnd)
 }
 
-async function toPeople(sb: Sb, rows: SubRow[], pick: (r: SubRow, end: string) => boolean): Promise<PlanEnding[]> {
-  const hits = rows
-    .filter((r) => r.tier && r.tier !== 'free')
-    .map((r) => ({ r, end: endOf(r) }))
-    .filter((x): x is { r: SubRow; end: string } => x.end !== null && pick(x.r, x.end))
-  const people = await resolvePeople(sb, Array.from(new Set(hits.map((h) => h.r.orgId))))
-  const seen = new Set<string>()
-  const out: PlanEnding[] = []
-  // Nearest end first; one entry per person (a company row and a user row of the same client).
-  for (const h of hits.sort((a, b) => a.end.localeCompare(b.end))) {
-    const userId = people.get(h.r.orgId)
-    if (!userId || seen.has(userId)) continue
-    seen.add(userId)
-    out.push({ orgId: h.r.orgId, userId, tier: h.r.tier, trial: h.r.status === 'trialing' || h.r.tier === 'pilot', endsAt: h.end })
-  }
-  return out
-}
-
-/** Живые платные подписки, срок которых кончается в (from, to]. Ошибка чтения — исключение. */
+/**
+ * Живые платные подписки, после которых доступ человека кончается в (from, to].
+ * Ревью WB-4: у человека может быть две живые строки (ключ компании и ключ
+ * пользователя, данные до миграции 106). Доступ кончается по ПОСЛЕДНЕЙ из них:
+ * есть бессрочная или более поздняя — предупреждать не о чем. Ошибка чтения —
+ * исключение.
+ */
 export async function findPlansEnding(sb: Sb, from: Date, to: Date): Promise<PlanEnding[]> {
   const { data, error } = await sb
     .from('subscriptions')
@@ -112,29 +99,29 @@ export async function findPlansEnding(sb: Sb, from: Date, to: Date): Promise<Pla
     .in('status', LIVE)
     .limit(READ_LIMIT)
   if (error) throw new Error(`subscriptions: ${String(error.message ?? '').slice(0, 160)}`)
+  const paid = ((data ?? []) as SubRow[]).filter((r) => r.tier && r.tier !== 'free')
+  const people = await resolvePeople(sb, Array.from(new Set(paid.map((r) => r.orgId))))
+  // Per person: the row whose end is the latest; null = open-ended (never ends).
+  const last = new Map<string, { row: SubRow; end: string | null }>()
+  for (const row of paid) {
+    const userId = people.get(row.orgId)
+    if (!userId) continue
+    const end = endOf(row)
+    const cur = last.get(userId)
+    if (!cur) { last.set(userId, { row, end }); continue }
+    if (cur.end === null) continue
+    if (end === null || Date.parse(end) > Date.parse(cur.end)) last.set(userId, { row, end })
+  }
   const lo = from.getTime()
   const hi = to.getTime()
-  return toPeople(sb, (data ?? []) as SubRow[], (_r, end) => {
+  const out: PlanEnding[] = []
+  for (const [userId, { row, end }] of Array.from(last.entries())) {
+    if (end === null) continue
     const t = Date.parse(end)
-    return t > lo && t <= hi
-  })
-}
-
-/** Подписки, которые ночной крон перевёл на бесплатный доступ начиная с `since` (source 'system'). */
-export async function findPlansEndedSince(sb: Sb, since: Date): Promise<PlanEnding[]> {
-  const { data, error } = await sb
-    .from('subscriptions')
-    .select('orgId,tier,status,trialEndsAt,currentPeriodEnd,updatedAt')
-    .eq('status', 'canceled')
-    .eq('source', 'system')
-    .order('updatedAt', { ascending: false })
-    .limit(READ_LIMIT)
-  if (error) throw new Error(`subscriptions: ${String(error.message ?? '').slice(0, 160)}`)
-  const lo = since.getTime()
-  return toPeople(sb, (data ?? []) as SubRow[], (r) => {
-    const at = utcIso(r.updatedAt)
-    return at !== null && Date.parse(at) >= lo
-  })
+    if (!(t > lo && t <= hi)) continue
+    out.push({ orgId: row.orgId, userId, tier: row.tier, trial: row.status === 'trialing' || row.tier === 'pilot', endsAt: end })
+  }
+  return out.sort((a, b) => a.endsAt.localeCompare(b.endsAt))
 }
 
 export interface ExpiryWarningsReport {
