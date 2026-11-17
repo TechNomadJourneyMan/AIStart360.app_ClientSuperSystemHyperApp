@@ -1,11 +1,13 @@
 'use client'
 
-import { SURVEY_MODE_INFO, SURVEY_MODE_ORDER, type SurveyMode } from '@/lib/survey/modes'
+import { SURVEY_MODE_INFO, surveyModeCardOrder, type SurveyMode } from '@/lib/survey/modes'
 
 /**
- * «Как удобнее заполнить анкету?» (spec 2026-10-23 §5.2): three cards — the
- * full questionnaire (the main one, PO §18.3), express + blocks, the AI chat —
- * with time estimates. A mode that is not available yet is shown as «Скоро».
+ * «Как удобнее заполнить анкету?» (spec 2026-10-23 §5.2): the cards of the
+ * modes switched on in GIGA — the full questionnaire, express + blocks, the AI
+ * chat — with time estimates. R4-B4 (PO, Round 4): the default mode of the
+ * setting (express unless changed) comes first and is marked «Рекомендуем»;
+ * a switched-off mode is not shown at all (it is not «coming soon»).
  */
 export function SurveyModeChooser({ enabled, recommended, busy = null, onChoose }: {
   enabled: readonly SurveyMode[]
@@ -14,6 +16,7 @@ export function SurveyModeChooser({ enabled, recommended, busy = null, onChoose 
   busy?: SurveyMode | null
   onChoose: (mode: SurveyMode) => void
 }) {
+  const cards = surveyModeCardOrder(enabled, recommended)
   return (
     <section aria-labelledby="survey-mode-title" className="mx-auto max-w-4xl px-4 py-8 sm:py-12">
       <p className="text-[10px] font-mono uppercase tracking-[0.15em] text-primary/60">Анкета</p>
@@ -21,30 +24,28 @@ export function SurveyModeChooser({ enabled, recommended, busy = null, onChoose 
       <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
         Вопросы и ответы одни и те же — меняется только способ. По вашим ответам мы построим Точку А и план роста.
       </p>
-      <ul className="mt-6 grid gap-4 md:grid-cols-3">
-        {SURVEY_MODE_ORDER.map((mode) => {
+      <ul className={`mt-6 grid gap-4 ${cards.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+        {cards.map((mode) => {
           const info = SURVEY_MODE_INFO[mode]
-          const on = enabled.includes(mode)
-          const rec = on && mode === recommended
+          const rec = mode === recommended
           return (
-            <li key={mode}>
+            <li key={mode} data-mode={mode}>
               <button
                 type="button"
-                disabled={!on || busy !== null}
+                disabled={busy !== null}
                 aria-describedby={`survey-mode-${mode}-sub`}
-                onClick={() => on && onChoose(mode)}
-                className={`group flex h-full w-full flex-col rounded-2xl border p-5 text-left transition-colors ${
-                  on ? 'border-white/[0.08] bg-surface-container-low hover:border-primary/40 hover:bg-primary/[0.04]' : 'cursor-not-allowed border-white/[0.04] bg-surface-container-lowest opacity-70'
-                } ${rec ? 'border-primary/40' : ''}`}
+                onClick={() => onChoose(mode)}
+                className={`group flex h-full w-full flex-col rounded-2xl border bg-surface-container-low p-5 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.04] ${
+                  rec ? 'border-primary/40' : 'border-white/[0.08]'
+                }`}
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
                     <span className="material-symbols-outlined text-lg text-primary" aria-hidden="true">{info.icon}</span>
                   </span>
-                  {/* PO 2026-10-23: the full questionnaire is the main one — it alone counts as «анкета заполнена». */}
-                  {mode === 'full' && on && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Основная</span>}
-                  {rec && mode !== 'full' && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-on-surface">Быстрый старт</span>}
-                  {!on && <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-on-surface-variant">Скоро</span>}
+                  {/* R4-B4: one mark — the mode the platform offers first (the GIGA setting). The full
+                      questionnaire stays the one that counts as «анкета заполнена» (its subtitle says so). */}
+                  {rec && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Рекомендуем</span>}
                 </span>
                 <span className="mt-4 text-base font-bold text-on-surface">{info.title}</span>
                 <span id={`survey-mode-${mode}-sub`} className="mt-1 flex-1 text-xs leading-relaxed text-on-surface-variant">{info.subtitle}</span>
@@ -58,7 +59,7 @@ export function SurveyModeChooser({ enabled, recommended, busy = null, onChoose 
           )
         })}
       </ul>
-      <p className="mt-5 text-xs text-on-surface-variant">Способ можно сменить в любой момент — ответы сохранятся.</p>
+      <p className="mt-5 text-xs text-on-surface-variant">Способ можно сменить в любой момент — ответы сохранятся. Полная анкета доступна всегда.</p>
     </section>
   )
 }

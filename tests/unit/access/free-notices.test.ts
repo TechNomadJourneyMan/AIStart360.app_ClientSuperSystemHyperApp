@@ -11,10 +11,12 @@ import { readFileSync } from 'node:fs'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-const s = vi.hoisted(() => ({ closed: true, sent: [] as Array<Record<string, unknown>> }))
+const s = vi.hoisted(() => ({ closed: true, express: true, sent: [] as Array<Record<string, unknown>> }))
 
 vi.mock('@/lib/access/recipient', () => ({ pointAClosedFor: async () => s.closed, sectionClosedFor: async () => s.closed }))
 vi.mock('@/lib/notifications/notify', () => ({ notifyClient: async (o: Record<string, unknown>) => { s.sent.push(o); return { ok: true } } }))
+// R4-B4: «Снимок бизнеса» is a screen of «Экспресс + блоки» (GIGA setting survey_modes).
+vi.mock('@/lib/survey/modes-server', () => ({ freeSnapshotAvailable: async () => s.express }))
 
 const product = await import('@/lib/notifications/product')
 const { buildClientNotice } = await import('@/lib/survey/completion-notice')
@@ -22,6 +24,7 @@ const { pickNextBestAction } = await import('@/lib/dashboard/next-best-action')
 
 beforeEach(() => {
   s.closed = true
+  s.express = true
   s.sent = []
 })
 
@@ -50,6 +53,51 @@ describe('notices', () => {
   it('the in-app completion notice: Free → the snapshot link; otherwise /client/point-a', () => {
     expect(buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'ООО' }, { pointALocked: true })).toMatchObject({ link: '/client/onboarding/snapshot' })
     expect(buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'ООО' })).toMatchObject({ link: '/client/point-a' })
+  })
+
+  // R4-B4: the express mode switched off in GIGA → the snapshot page sends the client away, so
+  // no Free notice leads there or promises an «экспресс-оценка» (before: always the snapshot).
+  it('express switched off: «Анкета принята» / «Точка А пересчитана» for Free lead to the cabinet, no snapshot promised', async () => {
+    s.express = false
+    await product.notifyQuestionnaireCompleted('u-1', { completedSteps: 12, totalSteps: 12 })
+    expect(s.sent[0].ctaUrl).toBe('/client/home')
+    expect(s.sent[0].ctaLabel).toBe('Открыть кабинет')
+    expect(String(s.sent[0].body)).not.toMatch(/экспресс-оценка|[Сс]нимок/)
+    expect(String(s.sent[0].body)).toContain('в платном доступе')
+    await product.notifyPointARecalculated('u-1', { diagnosticId: 'd-1', overallScore: 61 })
+    expect(s.sent[1].ctaUrl).toBe('/client/home')
+    expect(`${s.sent[1].title} ${s.sent[1].body}`).not.toMatch(/[Сс]нимок|[Ээ]кспресс/)
+    expect(String(s.sent[1].body)).not.toContain('61')
+    // Pro is not affected by the setting
+    s.closed = false
+    await product.notifyQuestionnaireCompleted('u-1', { completedSteps: 12, totalSteps: 12 })
+    expect(s.sent[2].ctaUrl).toBe('/client/point-a')
+  })
+
+  it('express switched off: the in-app completion notice — the cabinet when full, the questionnaire otherwise; no «экспресс-оценка»', () => {
+    const full = buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'ООО' }, { pointALocked: true, snapshot: false })
+    expect(full.link).toBe('/client/home')
+    expect(full.body).not.toMatch(/[Ээ]кспресс-оценка/)
+    expect(buildClientNotice({ completedSteps: 5, totalSteps: 12, company: 'ООО' }, { pointALocked: true, snapshot: false }).link).toBe('/client/onboarding')
+    expect(buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'ООО' }, { snapshot: false }).link).toBe('/client/point-a')
+  })
+
+  it('express switched off: the feed record written by claimCompletionNotice follows the setting', async () => {
+    const { claimCompletionNotice } = await import('@/lib/survey/completion-notice')
+    const inserts: Array<Record<string, unknown>> = []
+    const chain: Record<string, unknown> = {}
+    Object.assign(chain, {
+      select: () => chain, eq: () => chain, contains: () => chain,
+      limit: async () => ({ data: [], error: null }),
+      insert: async (row: Record<string, unknown>) => { inserts.push(row); return { error: null } },
+    })
+    const sb = { from: () => chain } as never
+    s.express = false
+    await claimCompletionNotice(sb, 'u-1', { completedSteps: 12, totalSteps: 12, company: 'ООО' })
+    expect(inserts[0]).toMatchObject({ link: '/client/home' })
+    s.express = true
+    await claimCompletionNotice(sb, 'u-2', { completedSteps: 12, totalSteps: 12, company: 'ООО' })
+    expect(inserts[1]).toMatchObject({ link: '/client/onboarding/snapshot' })
   })
 })
 

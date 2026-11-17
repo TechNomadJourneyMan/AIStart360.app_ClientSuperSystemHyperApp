@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { friendlyAuthError } from '@/lib/auth/login-links'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { getSiteUrl } from '@/lib/site-url'
+import { INVITE_ONLY_MESSAGE, isSignupBlocked } from '@/lib/auth/invite-only-shared'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,13 +80,36 @@ export async function POST(request: Request) {
       return denied('authentication_failed', friendlyAuthError(error?.message))
     }
 
+    // R4 B3 (review W3A-1 / W3A-2, verify NV3-2): an account created around
+    // the invitation (app_metadata.signup_blocked) — e.g. a password set
+    // through recovery — gets a session here only as everywhere else: staff
+    // approved it, or it has been invited (GoTrue invited_at or a
+    // platform_invitations row — inviteOnlyDecision, as in /auth/callback and
+    // /auth/verify). Then the mark goes and the browser gets a token without it.
+    let session = data.session
+    if (isSignupBlocked(data.user)) {
+      const { createServiceClient } = await import('@/lib/supabase-service')
+      const { clearSignupBlocked, inviteOnlyDecision } = await import('@/lib/auth/invite-only-gate')
+      const admin = createServiceClient()
+      const { data: prof } = await admin.from('profiles').select('status').eq('id', data.user.id).maybeSingle()
+      if ((prof as { status?: string } | null)?.status === 'approved') {
+        await clearSignupBlocked(admin, data.user.id)
+      } else if ((await inviteOnlyDecision(admin, data.user)).decision !== 'allow') {
+        await supabase.auth.signOut().catch(() => undefined)
+        return denied('invite_only', INVITE_ONLY_MESSAGE)
+      }
+      // Approved, or invited (inviteOnlyDecision cleared the mark): a token without it.
+      const refreshed = await supabase.auth.refreshSession()
+      if (refreshed.data.session) session = refreshed.data.session
+    }
+
     // The browser SSR client writes its usual session cookies via setSession,
     // keeping its in-memory state and every authenticated query in sync.
     return NextResponse.json({
       ok: true,
       session: {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
       },
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch {

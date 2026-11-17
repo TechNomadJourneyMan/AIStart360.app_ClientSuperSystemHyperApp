@@ -11,6 +11,7 @@ import { profanityResponse } from '@/lib/moderation/http'
 import { dbError } from '@/lib/api-error'
 import { parseJsonBody } from '@/lib/validation/http'
 import { ClientRegisterBody } from '@/lib/validation/schemas'
+import { INVITE_ONLY_MESSAGE, isSignupBlocked, pendingSignupVerdictServer } from '@/lib/auth/invite-only-gate'
 
 /**
  * POST /api/client/register
@@ -95,6 +96,24 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
     if (profReadError) return dbError('client/register:status', profReadError)
     const alreadyApproved = prof?.status === 'approved'
+
+    // R4 B3 (review W3A-1): registration is by invitation. An account created
+    // around it (Google, a sign-up with the anon key — every new GoTrue user
+    // gets a pending profile from the handle_new_user trigger) files no request
+    // for the GIGA queue and sends no staff notice: marked, or pending, not
+    // invited and created after 'invite' was switched on. A failed read of the
+    // mode / invitations — no request now (the caller may retry), nothing marked.
+    if (!alreadyApproved) {
+      const verdict = isSignupBlocked(authUser)
+        ? 'block'
+        : await pendingSignupVerdictServer(createServiceClient(), authUser)
+      if (verdict === 'block') {
+        return NextResponse.json({ ok: false, error: INVITE_ONLY_MESSAGE, code: 'invite_only' }, { status: 403 })
+      }
+      if (verdict === 'unknown') {
+        return NextResponse.json({ ok: false, error: 'Не удалось проверить режим регистрации. Попробуйте ещё раз.' }, { status: 503 })
+      }
+    }
 
     // 2. Company record — once per user (companies_user_id_uidx, migration 013).
     let companyCreated = false

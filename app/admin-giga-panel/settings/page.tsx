@@ -13,6 +13,7 @@ import {
   gigaFetch, inputClass, useGigaQuery,
 } from '@/components/giga-panel/kit'
 import { PointBSettingsCard } from '@/components/giga-panel/settings/PointBSettingsCard'
+import { SurveySettingsCard } from '@/components/giga-panel/settings/SurveySettingsCard'
 import { ScheduledJobsBlock, opsCounts, type OpsData, type OpsFailure } from '@/components/giga-panel/settings/ScheduledJobsBlock'
 import { NOTIFICATION_TYPES, SETTINGS, type AdminNotificationType, type SettingKey, type SettingValue } from '@/lib/settings/registry'
 
@@ -81,7 +82,7 @@ export default function SettingsPage() {
       <PageHeader
         crumbs={[{ label: 'GIGA-CRM', href: '/admin-giga-panel' }, { label: 'Настройки' }]}
         title="Настройки платформы"
-        description="Регистрация, тарифы, кабинет клиента, безопасность, аналитика и уведомления. Каждое изменение записывается в журнал аудита."
+        description="Регистрация, тарифы, анкета, кабинет клиента, безопасность, аналитика и уведомления. Каждое изменение записывается в журнал аудита."
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} onClick={() => void q.reload()}>Обновить</Button>}
       />
       {!canEdit && q.data && (
@@ -150,6 +151,9 @@ export default function SettingsPage() {
               { href: '/admin-giga-panel/content', label: 'Материалы (CMS)' },
             ]} />
           </Panel>
+
+          {/* R4-B4 (R-027): способы заполнения анкеты — настройка, а не флаг сборки; ИИ-помощник и его потолок. */}
+          <SurveySettingsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onSave={save} />
 
           <AnnouncementCard value={v.announcement} meta={meta} disabled={!canEdit} saving={saving === 'announcement'} onSave={(a) => save({ announcement: a }, 'Объявление')} />
           <MaintenanceCard value={v.maintenance} meta={meta} disabled={!canEdit} saving={saving === 'maintenance'} onSave={(m) => save({ maintenance: m }, 'Технические работы')} />
@@ -777,7 +781,7 @@ function NotificationsCard({ value, meta, disabled, saving, onSave }: {
 
 interface Health {
   checkedAt: string
-  runtime: { node: string; env: string; commit: string | null }
+  runtime: { node: string; env: string; commit: string | null; deployment?: string | null }
   db: { ok: boolean; ms: number }
   env: Array<{ key: string; label: string; required: boolean; configured: boolean }>
   tables: Array<{ name: string; ok: boolean; rows: number | null; error: string | null }>
@@ -869,6 +873,7 @@ function HealthCard() {
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Среда</span><span className="text-slate-300">{h.data.runtime.env}</span></li>
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Node.js</span><span className="text-slate-300">{h.data.runtime.node}</span></li>
               {h.data.runtime.commit && <li className="flex justify-between text-[11px]"><span className="text-slate-500">Сборка</span><span className="font-mono text-slate-300">{h.data.runtime.commit}</span></li>}
+              {h.data.runtime.deployment && <li className="flex justify-between text-[11px]"><span className="text-slate-500">Деплой Railway</span><span className="font-mono text-slate-300">{h.data.runtime.deployment}</span></li>}
               <li className="flex justify-between text-[11px]"><span className="text-slate-500">Проверено</span><span className="text-slate-300">{fmtDateTime(h.data.checkedAt)}</span></li>
             </ul>
             <div className="mt-3 flex flex-wrap gap-2">

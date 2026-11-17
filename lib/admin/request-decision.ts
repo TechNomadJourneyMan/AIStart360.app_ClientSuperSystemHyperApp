@@ -56,6 +56,9 @@ export async function decideRequest(
     if (res.reason === 'paid_deciders_only') {
       return { ok: false, httpStatus: 403, error: 'Заявки на оплату разбирают Admin и Super Admin', userId: res.userId }
     }
+    if (res.reason === 'send_invite_required') {
+      return { ok: false, httpStatus: 409, error: 'Запрос приглашения закрывается кнопкой «Отправить приглашение» (или отклоните его с причиной).' }
+    }
     if (res.reason === 'assign_plan_required') {
       return { ok: false, httpStatus: 409, error: 'Заявка на платный доступ одобряется назначением тарифа: «Назначить Pro» (или User 360 → Биллинг). Отклонить можно с причиной.', userId: res.userId }
     }

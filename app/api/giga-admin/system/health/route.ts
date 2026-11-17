@@ -80,7 +80,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     checkedAt: new Date().toISOString(),
-    runtime: { node: process.version, env: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'unknown', commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null },
+    // R4 (A4 follow-up): the portal runs on Railway — VERCEL_* are empty there. Railway sets RAILWAY_DEPLOYMENT_ID for
+    // every deploy (`railway up` included) and RAILWAY_GIT_COMMIT_SHA only for deploys from GitHub (/api/healthz, runbook §8).
+    runtime: {
+      node: process.version,
+      env: process.env.RAILWAY_ENVIRONMENT_NAME || process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown',
+      commit: (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA)?.slice(0, 7) || null,
+      deployment: process.env.RAILWAY_DEPLOYMENT_ID?.slice(0, 8) || null,
+    },
     db: { ok: tables.every((t) => t.ok), ms: dbMs },
     env,
     tables,

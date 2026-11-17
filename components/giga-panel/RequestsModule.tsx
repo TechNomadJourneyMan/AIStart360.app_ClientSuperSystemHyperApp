@@ -20,11 +20,13 @@ import {
   AlarmClock,
   UserRound,
   MessageCircle,
+  Send,
+  Phone,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
-import { RejectModal } from './RejectModal'
+import { REJECT_REASON_STAFF_ONLY, REJECT_REASON_TO_USER, RejectModal } from './RejectModal'
 import { UserDetailPanel } from './UserDetailPanel'
 import { RegistrationModeControl } from './RegistrationModeControl'
 import { useStaff } from './StaffContext'
@@ -47,6 +49,18 @@ import {
   type AssignProForm,
 } from './assign-pro-model'
 import { NAV_BADGES_CHANGED } from './agents/model'
+import {
+  BULK_INVITE_NOTE,
+  BULK_REJECT_INVITE_NOTE,
+  INVITE_REQUEST_BADGE,
+  SEND_INVITE_LABEL,
+  SEND_INVITE_NO_RIGHT,
+  SEND_INVITE_PERMISSION,
+  isInviteRequest,
+  otherRequestText,
+  sendInviteDialogText,
+  sendInviteFromRequest,
+} from './invite-request-model'
 import { decidesPaidRequests } from '@/lib/admin/rbac'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -92,11 +106,16 @@ export function RequestCard({
   paidDecider = true,
   selected,
   onToggleSelect,
+  onSendInvite,
+  canInvite = false,
 }: {
   request: GigaRequest
   onApprove: (id: string) => void
   onReject: (req: GigaRequest) => void
   onArchive: (id: string) => void
+  /** R4 B3: a request for an invitation is accepted by sending the invitation. */
+  onSendInvite?: (req: GigaRequest) => void
+  canInvite?: boolean
   /** R2-C (M-5): a request for paid access is approved by assigning Pro. */
   onAssignPro?: (req: GigaRequest) => void
   canAssignPro?: boolean
@@ -114,6 +133,9 @@ export function RequestCard({
   // R4 (N4B-1 / N4B-9): the answer deadline (4 h) and the way to the client.
   const sla = tariff ? requestSlaView(request) : null
   const links = tariff ? requestClientLinks(request.userId) : null
+  // R4 B3 (N4B-3): «Запрос приглашения» — no account yet; accepted by sending the invitation.
+  const invite = isInviteRequest(request)
+  const inviteBlocked = invite && !(canInvite && onSendInvite) ? SEND_INVITE_NO_RIGHT : null
 
   const initials = request.userName
     .split(' ')
@@ -170,6 +192,15 @@ export function RequestCard({
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
+                {invite && (
+                  <span
+                    data-invite-request
+                    title="Человек без аккаунта просит приглашение: регистрация по приглашению"
+                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/25 text-blue-300 text-[9px] font-mono tracking-wide"
+                  >
+                    {INVITE_REQUEST_BADGE}
+                  </span>
+                )}
                 {(request.source === 'upgrade_modal' || request.source === 'paywall') && (
                   <span
                     title="Заявка на платный доступ: «Назначить Pro» назначает тариф и закрывает заявку"
@@ -198,6 +229,25 @@ export function RequestCard({
                 <span className="text-[10px] text-slate-500">{formattedDate}</span>
               </div>
             </div>
+
+            {invite && (request.contact || request.accountExists || (request.repeats ?? 1) > 1 || !!request.otherRequests?.length) && (
+              <div className="mt-2 space-y-1 text-[11px] text-slate-400" data-invite-details>
+                {request.contact && (
+                  <p className="inline-flex items-center gap-1.5">
+                    <Phone size={11} className="text-slate-600" aria-hidden />
+                    Телефон или Telegram: <span className="text-slate-300">{request.contact}</span>
+                  </p>
+                )}
+                {request.accountExists && <p>Аккаунт с этой почтой уже есть — приглашение придёт как ссылка для входа.</p>}
+                {(request.repeats ?? 1) > 1 && <p>Запросов с этой почты: {request.repeats} — заявка одна.</p>}
+                {/* Review W3A-5: a repeat with other data never replaces the first request — it is shown apart. */}
+                {(request.otherRequests ?? []).map((o, i) => (
+                  <p key={`${o.at ?? ''}-${i}`} data-invite-other className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-amber-200">
+                    {otherRequestText(o)}
+                  </p>
+                ))}
+              </div>
+            )}
 
             {sla && (
               <p
@@ -262,8 +312,9 @@ export function RequestCard({
                 )}
               </div>
 
-              {/* Full user detail: survey (editable) + diagnostics + documents + portal */}
-              {request.category === 'registration' && (
+              {/* Full user detail: survey (editable) + diagnostics + documents + portal.
+                  A request for an invitation has no account yet — nothing to show. */}
+              {request.category === 'registration' && !invite && (
                 <UserDetailPanel userId={request.id} />
               )}
             </div>
@@ -275,9 +326,28 @@ export function RequestCard({
       {isPending && tariff && assignBlocked && (
         <p className="px-3 md:px-4 pb-1.5 text-[10px] text-slate-500" data-assign-blocked>{assignBlocked}</p>
       )}
+      {isPending && inviteBlocked && (
+        <p className="px-3 md:px-4 pb-1.5 text-[10px] text-slate-500" data-invite-blocked>{inviteBlocked}</p>
+      )}
       {isPending && (
         <div className="px-3 md:px-4 pb-3 md:pb-4 flex flex-wrap items-center gap-1.5 md:gap-2">
-          {tariff ? (
+          {invite ? (
+            <motion.button
+              onClick={() => onSendInvite?.(request)}
+              disabled={!!inviteBlocked}
+              title={inviteBlocked ?? 'Письмо-приглашение на почту из заявки — заявка закроется как принятая'}
+              data-action="send-invite"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
+                bg-emerald-500/15 border border-emerald-500/25 text-emerald-300
+                hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all
+                disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Send size={13} />
+              {SEND_INVITE_LABEL}
+            </motion.button>
+          ) : tariff ? (
             <motion.button
               onClick={() => onAssignPro?.(request)}
               disabled={!!assignBlocked}
@@ -430,6 +500,10 @@ export function RequestsModule() {
   const paidDecider = decidesPaidRequests(me?.role)
   // R2-C (M-5): «Назначить Pro» — the rights of the plan editor (User 360 → Биллинг).
   const canAssignPro = can(ASSIGN_PRO_PERMISSION)
+  // R4 B3: «Отправить приглашение» by a request for an invitation.
+  const canInvite = can(SEND_INVITE_PERMISSION)
+  const [inviteTarget, setInviteTarget] = useState<GigaRequest | null>(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
   const [proTarget, setProTarget] = useState<GigaRequest | null>(null)
   const [proForm, setProForm] = useState<AssignProForm>(DEFAULT_ASSIGN_PRO_FORM)
   const [proBusy, setProBusy] = useState(false)
@@ -531,6 +605,23 @@ export function RequestsModule() {
     }
   }
 
+  const runSendInvite = async () => {
+    if (!inviteTarget) return
+    setInviteBusy(true)
+    try {
+      const r = await sendInviteFromRequest(fetch, inviteTarget.id)
+      if (r.ok) {
+        toast.success(r.text)
+        setInviteTarget(null)
+      } else {
+        toast.error(r.text)
+      }
+    } finally {
+      setInviteBusy(false)
+      await fetchRequests() // reconcile with the DB — source of truth
+    }
+  }
+
   const filtered = requests.filter((r) => r.category === activeRequestTab)
   const pendingFiltered = filtered.filter((r) => r.status === 'pending')
   // WB-9: a request for paid access is selectable for bulk only by Admin / Super Admin.
@@ -538,6 +629,8 @@ export function RequestsModule() {
   const pickedHere = selectable.filter((r) => picked.has(r.id))
   // R2-C (M-5): a request for paid access is approved only by «Назначить Pro» — no bulk «Принять» for it.
   const pickedTariff = pickedHere.some((r) => isTariffRequest(r))
+  // R4 B3: a request for an invitation is accepted only by «Отправить приглашение».
+  const pickedInvite = pickedHere.some((r) => isInviteRequest(r))
   const allPicked = selectable.length > 0 && selectable.every((r) => picked.has(r.id))
 
   // Массовое решение: каждая заявка решается тем же кодом, что и одиночная,
@@ -698,7 +791,9 @@ export function RequestsModule() {
                       <div className="ml-auto flex flex-wrap gap-1.5">
                         {pickedTariff
                           ? <span className="self-center text-[11px] text-slate-500">Заявки на платный доступ одобряются кнопкой «{ASSIGN_PRO_LABEL}»</span>
-                          : <Button size="sm" variant="primary" icon={<CheckCircle size={12} />} onClick={() => setBulk('approve')}>Принять все</Button>}
+                          : pickedInvite
+                            ? <span className="self-center text-[11px] text-slate-500" data-bulk-invite-note>{BULK_INVITE_NOTE}</span>
+                            : <Button size="sm" variant="primary" icon={<CheckCircle size={12} />} onClick={() => setBulk('approve')}>Принять все</Button>}
                         <Button size="sm" variant="danger" icon={<XCircle size={12} />} onClick={() => setBulk('reject')}>Отклонить все</Button>
                         <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Снять</Button>
                       </div>
@@ -715,6 +810,8 @@ export function RequestsModule() {
                           onArchive={handleArchive}
                           onAssignPro={openAssignPro}
                           canAssignPro={canAssignPro}
+                          onSendInvite={setInviteTarget}
+                          canInvite={canInvite}
                           selected={picked.has(req.id)}
                           paidDecider={paidDecider}
                           onToggleSelect={canDecide ? togglePick : undefined}
@@ -766,6 +863,7 @@ export function RequestsModule() {
             <p>{bulk === 'approve'
               ? 'Каждый получит доступ к порталу и письмо «доступ открыт».'
               : 'Каждый получит письмо об отклонении с причиной, если она указана.'}</p>
+            {bulk === 'reject' && pickedInvite && <p>{BULK_REJECT_INVITE_NOTE}</p>}
             <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px] text-slate-300">
               {pickedHere.slice(0, 30).map((r) => <li key={r.id} className="truncate">· {r.userName} — {r.userEmail}</li>)}
               {pickedHere.length > 30 && <li className="text-slate-500">…и ещё {pickedHere.length - 30}</li>}
@@ -780,6 +878,23 @@ export function RequestsModule() {
         )}
       </ConfirmDialog>
 
+      {/* R4 B3: «Отправить приглашение» from a request for an invitation */}
+      <ConfirmDialog
+        open={!!inviteTarget}
+        onClose={() => setInviteTarget(null)}
+        onConfirm={() => void runSendInvite()}
+        loading={inviteBusy}
+        tone="primary"
+        title={`${SEND_INVITE_LABEL}: ${inviteTarget?.userName ?? ''}`}
+        confirmLabel={SEND_INVITE_LABEL}
+        text={
+          <div className="space-y-1">
+            {(inviteTarget ? sendInviteDialogText(inviteTarget) : []).map((t) => <p key={t}>{t}</p>)}
+            {inviteTarget?.company && <p className="text-slate-300">{inviteTarget.company}</p>}
+          </div>
+        }
+      />
+
       {/* R2-C (M-5): «Назначить Pro» from a request for paid access */}
       <AssignProDialog target={proTarget} form={proForm} setForm={setProForm} busy={proBusy} onClose={() => setProTarget(null)} onConfirm={() => void runAssignPro()} />
 
@@ -788,6 +903,7 @@ export function RequestsModule() {
         isOpen={!!rejectTarget}
         requestId={rejectTarget?.id ?? ''}
         userName={rejectTarget?.userName ?? ''}
+        reasonHint={rejectTarget && isInviteRequest(rejectTarget) ? REJECT_REASON_STAFF_ONLY : REJECT_REASON_TO_USER}
         onConfirm={handleReject}
         onClose={() => setRejectTarget(null)}
       />

@@ -43,6 +43,8 @@ import { expressSummary } from '@/lib/survey/express'
 import { recommendedBlocks } from '@/lib/survey/blocks'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
 import { maintenanceSkipReason, type MaintenanceSkipReason } from '@/lib/automation/maintenance-gate'
+import type { SurveyMode } from '@/lib/survey/modes'
+import { getSurveyModes } from '@/lib/survey/modes-server'
 
 export type ReminderKind = 'gri_draft_reminder' | 'survey_reminder' | 'welcome' | 'gri_start_reminder' | 'pulse_reminder'
 
@@ -71,6 +73,12 @@ export interface ReminderInput {
    * «N из 12 шагов».
    */
   survey?: SurveyModeFacts & { answers?: Readonly<Record<string, unknown>> }
+  /**
+   * R4 W3B-7: the modes switched on in GIGA (getSurveyModes().enabled). A mode
+   * that is off gets the classic «шаг N» text into the full questionnaire, not a
+   * link to its page. Absent → every mode (as before the setting).
+   */
+  enabledModes?: readonly SurveyMode[]
 }
 
 const QUESTION_COUNT = Object.keys(SURVEY_KEY_STEP).length
@@ -183,8 +191,10 @@ function classicSurveyTouch(input: ReminderInput, age: number): SurveyTouchText 
 export function modeSurveyTouch(input: ReminderInput, age: number): SurveyTouchText | null {
   const s = input.survey
   if (!s) return null
+  // W3B-7: never into a mode switched off in GIGA — then the chat (if on) or the classic text (the full questionnaire).
+  const on = (m: SurveyMode) => !input.enabledModes || input.enabledModes.includes(m)
   const answers = s.answers ?? {}
-  if (s.expressCompletedAt) {
+  if (s.expressCompletedAt && on('express')) {
     const blocks = recommendedBlocks(answers, null, 3).map((r) => `«${r.block.title}» (~${r.block.minutes} мин)`)
     return {
       title: 'Первичная Точка А готова — уточните её',
@@ -196,7 +206,7 @@ export function modeSurveyTouch(input: ReminderInput, age: number): SurveyTouchT
       ctaLabel: 'Открыть блоки',
     }
   }
-  if (s.mode === 'express') {
+  if (s.mode === 'express' && !s.expressCompletedAt && on('express')) {
     const e = expressSummary(answers)
     const left = Math.max(1, Math.round((e.skipped * SECONDS_PER_QUESTION) / 60))
     return {
@@ -208,7 +218,7 @@ export function modeSurveyTouch(input: ReminderInput, age: number): SurveyTouchT
       ctaLabel: 'Продолжить быстрый старт',
     }
   }
-  if (s.mode === 'chat') {
+  if (s.mode === 'chat' && on('chat')) {
     return {
       title: 'Продолжите беседу с помощником анкеты',
       body:
@@ -389,12 +399,14 @@ export async function runReminders(now: Date = new Date()): Promise<ReminderRunS
   const isFriday = isoWeekday(localDate(now)) === 5
   const pulseIds = isFriday ? states.filter((s) => s.gri_completed_at).map((s) => s.user_id) : []
 
-  const [surveyRows, drafts, pulse, modes] = await Promise.all([
+  const [surveyRows, drafts, pulse, modes, surveyModes] = await Promise.all([
     surveyIds.length ? fetchSurveyRows(surveyIds) : Promise.resolve(new Map<string, SurveyStepRow[]>()),
     draftIds.length ? fetchGriDrafts(draftIds) : Promise.resolve(new Map<string, GriDraft>()),
     pulseIds.length ? fetchPulseWeeks(pulseIds, addDays(localDate(now), -84)) : Promise.resolve(new Map<string, string[]>()),
     // The questionnaire mode (survey Ф5); a failure keeps the classic text.
     surveyIds.length ? fetchSurveyModes(surveyIds).catch(() => new Map<string, SurveyModeFacts>()) : Promise.resolve(new Map<string, SurveyModeFacts>()),
+    // R4 W3B-7: the GIGA setting of the modes (never throws; a failed read → the defaults).
+    getSurveyModes(),
   ])
 
   const plans = states.map((state) => {
@@ -405,7 +417,7 @@ export async function runReminders(now: Date = new Date()): Promise<ReminderRunS
       ? { ...mode, answers: Object.fromEntries((rows ?? []).map((r) => [r.question_key, fromAnswerEnvelope(r.answer)])) }
       : undefined
     return planReminders(
-      { state, surveySteps, draft: drafts.get(state.user_id) ?? null, pulseWeeks: pulse.get(state.user_id) ?? [], survey },
+      { state, surveySteps, draft: drafts.get(state.user_id) ?? null, pulseWeeks: pulse.get(state.user_id) ?? [], survey, enabledModes: surveyModes.enabled },
       now,
     )
   })

@@ -6,9 +6,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const settings = vi.hoisted(() => ({ expertSla: null as null | { enabled: boolean; reaction_hours: number; answer_hours: number; auto_assign: boolean } }))
+const settings = vi.hoisted(() => ({
+  expertSla: null as null | { enabled: boolean; reaction_hours: number; answer_hours: number; auto_assign: boolean },
+  surveyModes: null as null | { express: boolean; default_mode: string },
+}))
 vi.mock('@/lib/settings/store', () => ({
-  getSetting: vi.fn(async (k: string) => (k === 'comm_escalation_minutes' ? 30 : k === 'comm_bot_auto_default' ? false : k === 'expert_sla' ? settings.expertSla : null)),
+  getSetting: vi.fn(async (k: string) => (k === 'comm_escalation_minutes' ? 30 : k === 'comm_bot_auto_default' ? false : k === 'expert_sla' ? settings.expertSla : k === 'survey_modes' ? settings.surveyModes : null)),
 }))
 vi.mock('@/lib/notifications/staff', () => ({ notifyStaff: vi.fn(async () => ({ eventId: 'e', duplicate: false, deliveries: [] })) }))
 vi.mock('@/lib/telegram', () => ({ sendTelegramMessage: vi.fn(async () => true) }))
@@ -228,7 +231,7 @@ describe('runBotReply', () => {
     expect(reply.body).toBe(`${BOT_INTRO} Нет, но могу позвать эксперта.`)
   })
 
-  it('«позовите человека» → «Позову эксперта…», a request linked to the user and the thread, waiting_staff with a deadline, staff notified — no LLM', async () => {
+  it('«позовите человека» → «Передаю ваш вопрос команде AIStart360…», a request linked to the user and the thread, waiting_staff with a deadline, staff notified — no LLM', async () => {
     const { sb, db } = seed({
       messages: [{ id: 'm-in', thread_id: 't-1', group_id: 'g', direction: 'in', channel: 'app', author_kind: 'user', body: 'Позовите человека, пожалуйста', status: 'delivered', created_at: '2026-10-16T09:59:00.000Z', metadata: {} }],
     })
@@ -319,7 +322,7 @@ describe('runBotReply', () => {
       settings.expertSla = { enabled: true, reaction_hours: 24, answer_hours: 48, auto_assign: true }
       const on = seed({ messages: [msg] })
       await runBotReply(JOB, botDeps(on.sb).d)
-      expect(on.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${caseQueuedText('Эксперт ответит в течение 48 часов.')}`)
+      expect(on.db.comm_messages.find((m) => m.author_kind === 'bot')!.body).toBe(`${BOT_INTRO} ${caseQueuedText('Команда AIStart360 ответит в течение 48 часов.')}`)
 
       // Migration 145 not applied / rolled back: the ledger read fails → no promise.
       const missing = seed({ messages: [msg] })
@@ -440,6 +443,30 @@ describe('the questionnaire mode in the bot facts (survey Ф5)', () => {
     expect(surveyModeFact(buildSurveyStaffStatus({ preferences: { survey: { mode: 'full' } } }), false)).toBeNull()
     expect(surveyModeFact(buildSurveyStaffStatus({ expressCompleted: { at: '2026-10-11T09:00:00Z' } }), true)).toBeNull()
     expect(surveyModeFact(null, false)).toBeNull()
+  })
+
+  // R4 W3B-7: the bot is never told to suggest a mode switched off in GIGA.
+  it('a mode switched off in GIGA is not a next step — the full questionnaire is', async () => {
+    const express = buildSurveyStaffStatus({ preferences: { survey: { mode: 'express' } } })
+    const off = surveyModeFact(express, false, ['full', 'chat'])!
+    expect(off).toContain('/client/onboarding)')
+    expect(off).not.toContain('/client/onboarding/express')
+    const chatOff = surveyModeFact(buildSurveyStaffStatus({ preferences: { survey: { mode: 'chat' } } }), false, ['full', 'express'])!
+    expect(chatOff).not.toContain('/client/onboarding/chat')
+    expect(chatOff).toContain('Не предлагай беседу')
+
+    const { sb, db } = seed()
+    db.profiles[0].preferences = { survey: { mode: 'express', chosen_at: '2026-10-10T00:00:00.000Z' } }
+    db.user_events = [{ id: 'e1', user_id: USER, event_name: 'SURVEY_EXPRESS_COMPLETED', created_at: '2026-10-11T09:00:00.000Z', metadata: {}, source: 'server' }]
+    settings.surveyModes = { express: false, default_mode: 'express' }
+    try {
+      const facts = (await loadUserFacts(sb, USER)).join('\n')
+      expect(facts).toContain('быстрый старт пройден 11.10.2026')
+      expect(facts).not.toContain('/client/onboarding/blocks')
+      expect(facts).toContain('Следующий шаг — полная анкета (/client/onboarding)')
+    } finally {
+      settings.surveyModes = null
+    }
   })
 })
 

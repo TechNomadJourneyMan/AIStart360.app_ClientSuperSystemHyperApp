@@ -43,6 +43,7 @@ import { ShareButton } from '@/components/share/ShareButton'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
 import { getRequestAccess } from '@/lib/access/request-access'
 import { freeNextStep } from '@/lib/client-shell/free-step'
+import { getSurveyModes } from '@/lib/survey/modes-server'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -364,8 +365,9 @@ export default async function DashboardPage() {
       const sections = await getRequestAccess(user.id).then((a) => a.sections, () => null)
       const pointAOpen = sections?.point_a ?? false
       const griOpen = sections?.gri_full ?? false
-      // R2-C (verify): the free step of a closed GRI — «Снимок бизнеса» only while the express survey mode is on.
-      const freeStep = freeNextStep()
+      // R2-C (verify): the free step of a closed GRI — «Снимок бизнеса» only while the express survey mode is on
+      // (R4-B4: the GIGA setting, read on the server — not the build flag).
+      const freeStep = freeNextStep((await getSurveyModes()).enabled)
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.

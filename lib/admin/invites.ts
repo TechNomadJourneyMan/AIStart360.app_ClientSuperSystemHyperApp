@@ -58,6 +58,11 @@ export interface InviteInput {
    * маршруте, сюда приходит уже разрешённое значение.
    */
   staffRole?: StaffRole | null
+  /**
+   * R4 B3 (ревью W3A-6): приглашение по заявке «Запросить приглашение» — письмо
+   * от имени AIStart360, без компании, подписи и записки (lib/email/templates.ts).
+   */
+  byRequest?: boolean
 }
 
 /** Уже заходил ли человек на платформу (тогда шлём ссылку для входа, а не приглашение). */
@@ -180,14 +185,15 @@ export async function sendPlatformInvite(input: InviteInput): Promise<InviteResu
     email,
     {
       name: input.name ?? profile?.full_name ?? null,
-      company: input.company ?? null,
+      company: input.byRequest ? null : input.company ?? null,
       roleLabel: input.staffRole ? STAFF_ROLE_LABELS[input.staffRole] : null,
-      note: input.note ?? null,
-      invitedByLabel: input.invitedByLabel ?? null,
+      note: input.byRequest ? null : input.note ?? null,
+      invitedByLabel: input.byRequest ? null : input.invitedByLabel ?? null,
       invitedAt: sentAt,
       expiresAt,
       url: url.toString(),
       existingAccount: existing,
+      byRequest: !!input.byRequest,
     },
     { userId: profile?.id ?? null, invitationId },
   )

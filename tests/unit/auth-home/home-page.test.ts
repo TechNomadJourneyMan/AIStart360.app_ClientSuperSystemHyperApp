@@ -18,6 +18,11 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/',
 }))
+// R4 B3: the page reads the registration mode on the server (approval here — the old form).
+vi.mock('@/lib/settings/system-settings', () => ({
+  getRegistrationMode: async () => 'approval',
+  getAutoApproveClients: async () => false,
+}))
 vi.mock('@/stores/auth.store', () => {
   const state = {
     user: null, isLoading: false, error: null,
@@ -49,12 +54,23 @@ describe('главная / — гость', () => {
     expect(html).not.toContain('id="register-email"')
   })
 
-  it('ведёт на внешний сайт продукта и юридические страницы', async () => {
-    const html = await render()
-    expect(html).toContain('href="https://aistart360.app"')
-    expect(html).toContain('rel="noopener noreferrer"')
-    expect(html).toContain('href="/privacy"')
-    expect(html).toContain('href="/terms"')
+  it('ведёт на юридические страницы; «О платформе» — только когда сайт продукта снова открыт (R4 B3: сейчас 402)', async () => {
+    const prev = process.env.PRODUCT_SITE_LINK
+    try {
+      delete process.env.PRODUCT_SITE_LINK
+      let html = await render()
+      expect(html).not.toContain('href="https://aistart360.app"')
+      expect(html).not.toContain('О платформе')
+      expect(html).toContain('href="/privacy"')
+      expect(html).toContain('href="/terms"')
+      process.env.PRODUCT_SITE_LINK = 'on'
+      html = await render()
+      expect(html).toContain('href="https://aistart360.app"')
+      expect(html).toContain('rel="noopener noreferrer"')
+    } finally {
+      if (prev === undefined) delete process.env.PRODUCT_SITE_LINK
+      else process.env.PRODUCT_SITE_LINK = prev
+    }
   })
 
   it('лендинга больше нет: ни цен, ни A/B-вариантов', async () => {

@@ -20,7 +20,7 @@
  *                        latest Point A) — everything from the user is fenced
  *                        as untrusted. The model answers, or asks for handoff /
  *                        a request. No model / an error → handoff.
- *   handoff          «Позову эксперта — он ответит, как только освободится»
+ *   handoff          «Передаю ваш вопрос команде AIStart360 — ответим здесь…» (HANDOFF_TEXT)
  *                    (or the request confirmation), an expert_cases request
  *                    linked to the user and the conversation (comm_thread_id,
  *                    122), the thread → waiting_staff with a new reply
@@ -39,6 +39,8 @@ import { surveyProgressFromRows } from '@/lib/survey/steps'
 import { loadSurveyStaffStatuses } from '@/lib/survey/staff-status-load'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
 import type { SurveyStaffStatus } from '@/lib/survey/staff-status'
+import { DEFAULT_SURVEY_MODES_CONFIG, type SurveyMode } from '@/lib/survey/modes'
+import { getSurveyModes } from '@/lib/survey/modes-server'
 import { computeSlaDueAt, getSlaHours } from '@/lib/admin/escalations'
 import { clientPromiseText } from '@/lib/expert-sla/policy'
 import {
@@ -81,7 +83,7 @@ export interface BotDeps {
   deadline?: () => Promise<ReplyDeadlineConfig>
   slaDueAt?: (now: Date) => Promise<string | null>
   /**
-   * «Эксперт ответит в течение N часов.» for a NEW request that is really queued (expert SLA, R2-B);
+   * «Команда AIStart360 ответит в течение N часов.» for a NEW request that is really queued (expert SLA, R2-B);
    * null — SLA off, the SLA ledger missing (migration 145 not applied / rolled back) or unreadable →
    * no promise. Default: the setting expert_sla + a read of expert_sla_tasks.
    */
@@ -179,15 +181,32 @@ export async function planBotReply(job: BotJob, deps: BotDeps = {}): Promise<Bot
  * The questionnaire mode as a fact for the bot (survey Ф5): after the express
  * the next step is the blocks or the full questionnaire — not «N из 12 шагов».
  * PO §18.3 item 1: the express is not «анкета заполнена».
+ * R4 W3B-7: `enabled` — the modes switched on in GIGA; a mode that is off is
+ * never offered as the next step (the full questionnaire is).
  */
-export function surveyModeFact(status: SurveyStaffStatus | null | undefined, complete: boolean): string | null {
+export function surveyModeFact(
+  status: SurveyStaffStatus | null | undefined,
+  complete: boolean,
+  enabled: readonly SurveyMode[] = DEFAULT_SURVEY_MODES_CONFIG.enabled,
+): string | null {
   if (!status || complete) return null
+  const expressOn = enabled.includes('express')
   if (status.express) {
     return `Анкета: быстрый старт пройден ${formatAttributionDate(status.express.completedAt) ?? ''}, первичная Точка А посчитана по быстрым данным; ` +
-      'полная анкета не отправлена. Следующий шаг — блоки углубления (/client/onboarding/blocks) или полная анкета (/client/onboarding)'
+      (expressOn
+        ? 'полная анкета не отправлена. Следующий шаг — блоки углубления (/client/onboarding/blocks) или полная анкета (/client/onboarding)'
+        : 'полная анкета не отправлена. Следующий шаг — полная анкета (/client/onboarding), ответы быстрого старта уже в ней. Быстрый старт и блоки сейчас недоступны — не предлагай их')
   }
-  if (status.mode === 'express') return 'Анкета: клиент проходит быстрый старт (/client/onboarding/express) — 15 коротких экранов до первичной Точки А'
-  if (status.mode === 'chat') return 'Анкета: клиент заполняет её в беседе с ИИ-помощником (/client/onboarding/chat)'
+  if (status.mode === 'express') {
+    return expressOn
+      ? 'Анкета: клиент проходит быстрый старт (/client/onboarding/express) — 15 коротких экранов до первичной Точки А'
+      : 'Анкета: клиент начинал быстрый старт, сейчас он недоступен — следующий шаг полная анкета (/client/onboarding), ответы быстрого старта уже в ней. Не предлагай быстрый старт'
+  }
+  if (status.mode === 'chat') {
+    return enabled.includes('chat')
+      ? 'Анкета: клиент заполняет её в беседе с ИИ-помощником (/client/onboarding/chat)'
+      : 'Анкета: клиент заполнял её в беседе с ИИ-помощником, сейчас беседа недоступна — следующий шаг полная анкета (/client/onboarding), записанное в беседе уже в ней. Не предлагай беседу'
+  }
   return null
 }
 
@@ -195,12 +214,14 @@ export function surveyModeFact(status: SurveyStaffStatus | null | undefined, com
 export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise<string[]> {
   const facts: string[] = []
   try {
-    const [{ data: profile }, { data: company }, { data: answers }, statuses] = await Promise.all([
+    const [{ data: profile }, { data: company }, { data: answers }, statuses, modes] = await Promise.all([
       sb.from('profiles').select('full_name').eq('id', userId).maybeSingle(),
       sb.from('companies').select('id, name').eq('user_id', userId).limit(1).maybeSingle(),
       sb.from('survey_answers').select('question_key, step, answer').eq('user_id', userId).limit(2000),
       // The questionnaire mode (survey Ф5); never throws, an empty map keeps the step line only.
       loadSurveyStaffStatuses(sb, [userId], { fullSubmittedAt: new Map() }),
+      // R4 W3B-7: the modes switched on in GIGA (never throws).
+      getSurveyModes(),
     ])
     const name = (profile as { full_name?: string | null } | null)?.full_name?.trim()
     if (name) facts.push(`Имя: ${name}`)
@@ -212,7 +233,7 @@ export async function loadUserFacts(sb: SupabaseClient, userId: string): Promise
       : progress.completed > 0
         ? `Анкета: начато ${progress.completed} из ${progress.total_steps} шагов, глубина ${progress.percent}%, ключевые вопросы Точки А ${progress.minimum.answered} из ${progress.minimum.total}`
         : 'Анкета: ещё не начата')
-    const modeFact = surveyModeFact(statuses.get(userId), progress.is_complete)
+    const modeFact = surveyModeFact(statuses.get(userId), progress.is_complete, modes.enabled)
     if (modeFact) facts.push(modeFact)
     // R2-A (ревью L-3): Точка А is a paid section — for a client without it the
     // bot (free «Сообщения») does not name the score or the weak blocks.

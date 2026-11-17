@@ -156,10 +156,14 @@ export function hoursGenitive(n: number): string {
   return n % 10 === 1 && n % 100 !== 11 ? 'часа' : 'часов'
 }
 
-/** Честный текст клиенту — только там, где задача реально поставлена в очередь. */
+/**
+ * Честный текст клиенту — только там, где задача реально поставлена в очередь.
+ * R4 (R-024, решение PO): «команда AIStart360», не «эксперт» — задачу держит
+ * эксперт или персонал (Admin / Super Admin), одобренных экспертов на проде нет.
+ */
 export function clientPromiseText(answerHours: number = DEFAULT_EXPERT_SLA.answer_hours): string {
   const h = Math.max(1, Math.round(answerHours))
-  return `Эксперт ответит в течение ${h} ${hoursGenitive(h)}.`
+  return `Команда AIStart360 ответит в течение ${h} ${hoursGenitive(h)}.`
 }
 
 /** «17 ноября, 14:00» (Алматы) — срок задачи, как его читает клиент (152: «Эксперт проверит до …», «План готовит: …, до …»). */

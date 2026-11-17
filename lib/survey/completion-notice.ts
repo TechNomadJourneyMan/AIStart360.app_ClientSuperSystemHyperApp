@@ -17,6 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { pointAClosedFor } from '@/lib/access/recipient'
+import { freeSnapshotAvailable } from '@/lib/survey/modes-server'
 
 export const SURVEY_COMPLETED_EVENT = 'survey_completed'
 export const SURVEY_NOTICE_CATEGORY = 'survey'
@@ -44,9 +45,24 @@ export function shouldAnnounceCompletion(opts: {
   return opts.finalSubmitted || justCompleted
 }
 
-/** Текст записи в клиентской ленте уведомлений. */
-export function buildClientNotice(input: SurveyNoticeInput, opts: { pointALocked?: boolean } = {}): { title: string; body: string; link: string } {
+/**
+ * Текст записи в клиентской ленте уведомлений. `snapshot` — открыт ли бесплатный
+ * «Снимок бизнеса» (экран способа «Экспресс + блоки», настройка ГИГА survey_modes,
+ * R4-B4); по умолчанию да.
+ */
+export function buildClientNotice(input: SurveyNoticeInput, opts: { pointALocked?: boolean; snapshot?: boolean } = {}): { title: string; body: string; link: string } {
   const full = input.completedSteps >= input.totalSteps
+  // R4-B4: no paid Точка А and no snapshot (express switched off) — no promise of an
+  // «экспресс-оценка»: the cabinet when the questionnaire is full, the questionnaire otherwise.
+  if (opts.pointALocked && opts.snapshot === false) {
+    return {
+      title: full ? 'Анкета заполнена полностью' : 'Анкета отправлена',
+      body: full
+        ? `Все ${input.totalSteps} шагов заполнены. Полный разбор «Точки А» и GRI — в платном доступе.`
+        : `Заполнено ${input.completedSteps} из ${input.totalSteps} шагов. Незаполненные шаги можно дополнить в любой момент — точность оценки вырастет.`,
+      link: full ? '/client/home' : '/client/onboarding',
+    }
+  }
   // R2-A (ревью L-6): without the paid Точка А — the free «Снимок бизнеса», not a paywall.
   if (opts.pointALocked) {
     return {
@@ -79,6 +95,7 @@ export async function claimCompletionNotice(
 ): Promise<boolean> {
   // R2-A: decided before the marker lookup, so nothing awaits between the lookup and the insert.
   const pointALocked = await pointAClosedFor(userId)
+  const snapshot = pointALocked ? await freeSnapshotAvailable() : true
   try {
     const { data: existing, error: selErr } = await service
       .from('app_notifications')
@@ -94,7 +111,7 @@ export async function claimCompletionNotice(
     }
     if (existing && existing.length > 0) return false
 
-    const notice = buildClientNotice(input, { pointALocked })
+    const notice = buildClientNotice(input, { pointALocked, snapshot })
     const { error: insErr } = await service.from('app_notifications').insert({
       user_id: userId,
       category: SURVEY_NOTICE_CATEGORY,

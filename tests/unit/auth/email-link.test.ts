@@ -11,28 +11,56 @@ const s = vi.hoisted(() => ({
   sent: [] as Array<{ to: string; subject: string; ctaUrl?: string }>,
   limited: false,
   sendResult: undefined as unknown,
+  account: true,
+  bg: [] as Array<Promise<unknown>>,
+  ipKeys: [] as string[],
 }))
 
 vi.mock('@/lib/supabase-service', () => ({
-  createServiceClient: () => ({ auth: { admin: { generateLink: async () => s.link } } }),
+  createServiceClient: () => ({
+    auth: { admin: { generateLink: async () => s.link } },
+    // R4 B3: the link (generateLink creates a GoTrue user for an unknown address)
+    // is made only for an existing account — the profile lookup answers here.
+    from: () => {
+      const q: Record<string, unknown> = {}
+      Object.assign(q, {
+        select: () => q, ilike: () => q, limit: () => q,
+        maybeSingle: async () => ({ data: s.account ? { id: 'u-1' } : null, error: null }),
+      })
+      return q
+    },
+  }),
 }))
 vi.mock('@/lib/email', () => ({
   sendNotificationEmail: async (o: { to: string; subject: string; ctaUrl?: string }) => { s.sent.push(o); return s.sendResult },
 }))
-vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
+// Review W3A-4: the per-address limit by the trusted client IP (checkRateLimitForRequest), the e-mail one by the address.
+vi.mock('@/lib/rate-limit', () => ({
+  checkRateLimit: async () => ({ limited: s.limited }),
+  checkRateLimitForRequest: async (req: Request) => { s.ipKeys.push(req.headers.get('x-real-ip') ?? ''); return { limited: s.limited } },
+}))
+// Review W3A-4: the lookup, the link and the letter go after the answer.
+vi.mock('@/lib/background', () => ({ runInBackground: (_l: string, work: () => Promise<unknown>) => { const p = work(); s.bg.push(p); return p } }))
 vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://portal.aistart360.app' }))
 
 const { POST } = await import('@/app/api/v1/auth/email-link/route')
 
-const post = (body: unknown) => POST(new NextRequest('http://localhost/api/v1/auth/email-link', {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-}))
+const post = async (body: unknown) => {
+  const res = await POST(new NextRequest('http://localhost/api/v1/auth/email-link', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }))
+  await Promise.all(s.bg.splice(0))
+  return res
+}
 
 beforeEach(() => {
   s.link = { data: { properties: { hashed_token: 'hash-123' } }, error: null }
   s.sent = []
   s.limited = false
   s.sendResult = { data: { id: 'msg-1' }, error: null }
+  s.account = true
+  s.bg = []
+  s.ipKeys = []
 })
 
 describe('POST /api/v1/auth/email-link', () => {
@@ -98,5 +126,34 @@ describe('POST /api/v1/auth/email-link', () => {
     expect(logged).toMatch(/not verified/)
     expect(logged).not.toMatch(/hash-123/)
     spy.mockRestore()
+  })
+
+  it('W3A-4: ответ одинаков и приходит до поиска аккаунта и письма — время не выдаёт, есть ли адрес', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    s.link = gate.then(() => ({ data: { properties: { hashed_token: 'hash-123' } }, error: null }))
+    const known = await POST(new NextRequest('http://localhost/api/v1/auth/email-link', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.com', purpose: 'login' }),
+    }))
+    // GoTrue has not answered yet, the letter is not sent — the answer is already here.
+    expect(known.status).toBe(200)
+    expect(s.sent).toHaveLength(0)
+    s.account = false
+    const unknown = await POST(new NextRequest('http://localhost/api/v1/auth/email-link', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'nobody@example.com', purpose: 'login' }),
+    }))
+    const [a, b] = [await known.json(), await unknown.json()]
+    expect(a).toEqual(b)
+    expect(a.message).toContain('Если аккаунт с таким адресом существует')
+    release()
+    await Promise.all(s.bg.splice(0))
+    expect(s.sent).toHaveLength(1)
+  })
+
+  it('W3A-4: ограничение по адресу — через доверенный IP (тот же помощник, что у «Запросить приглашение»)', async () => {
+    await POST(new NextRequest('http://localhost/api/v1/auth/email-link', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '1.2.3.4' }, body: JSON.stringify({ email: 'user@example.com' }),
+    }))
+    expect(s.ipKeys).toEqual(['203.0.113.7'])
   })
 })

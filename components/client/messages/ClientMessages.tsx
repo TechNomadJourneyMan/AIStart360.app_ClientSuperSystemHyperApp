@@ -1,11 +1,16 @@
 'use client'
 
 /**
- * Кабинет → «Сообщения»: переписка пользователя с экспертами AIStart360.
+ * Кабинет → «Сообщения»: переписка пользователя с командой AIStart360.
  * Лента — все сообщения диалога (что пришло в Telegram, WhatsApp или на почту,
- * тоже видно здесь), ответ отсюда уходит эксперту. Данные: /api/v1/comm/*
+ * тоже видно здесь), ответ отсюда уходит команде. Данные: /api/v1/comm/*
  * (только своя переписка — пользователь берётся из сессии). Обновляется сама:
  * Realtime по новым сообщениям диалога + редкий опрос, пока вкладка открыта.
+ *
+ * R4 (R-024, решение PO): «кто и когда ответит» — «Ответит команда AIStart360»
+ * (экспертов на проде нет, отвечает персонал); срок «Ответим до …» — только по
+ * открытому обращению с SLA (GET /api/v1/expert-sla, lib/comm/reply-note.ts),
+ * иначе общий текст без даты.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -13,6 +18,7 @@ import { createClient } from '@/lib/supabase/client'
 import { BTN_PRIMARY, CARD, CHIP, Icon } from '@/components/point-a-v4/ui'
 import { cn } from '@/lib/utils'
 import type { ClientMessage } from '@/lib/comm/client'
+import { messagesReplyNote, slaTasksFromResponse, type ClientSlaTaskView, type MessagesReplyNote } from '@/lib/comm/reply-note'
 import { CHANNEL_LABELS, MAX_BODY } from '@/lib/comm/types'
 
 interface ThreadResponse {
@@ -26,15 +32,42 @@ const POLL_MS = 60_000
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
+/** The client's open SLA tasks; any failure → none (the common text, never an error on the page). */
+async function loadSlaTasks(): Promise<ClientSlaTaskView[]> {
+  try {
+    const res = await fetch('/api/v1/expert-sla', { cache: 'no-store' })
+    if (!res.ok) return []
+    return slaTasksFromResponse(await res.json().catch(() => null))
+  } catch {
+    return []
+  }
+}
+
+/** «Кто и когда ответит» (R-024). */
+export function ReplyNote({ note }: { note: MessagesReplyNote }) {
+  return (
+    <div role="note" data-reply-state={note.state} data-reply-due={note.dueAt ?? ''} className="flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5">
+      <Icon name={note.state === 'due' ? 'schedule' : note.state === 'answered' ? 'mark_chat_read' : 'support_agent'} className="mt-0.5 text-base text-primary/80" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-on-surface">{note.who}</p>
+        <p className="text-xs text-on-surface-variant">{note.text}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ClientMessages() {
   const [messages, setMessages] = useState<ClientMessage[] | null>(null)
   const [threadId, setThreadId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [slaTasks, setSlaTasks] = useState<ClientSlaTaskView[] | null>(null)
   const feedRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
+    // The reply deadline follows the conversation: a request may open after a message (the bot hands over).
+    void loadSlaTasks().then(setSlaTasks)
     try {
       const res = await fetch('/api/v1/comm/thread', { cache: 'no-store' })
       const body = (await res.json().catch(() => null)) as ThreadResponse | null
@@ -97,9 +130,12 @@ export default function ClientMessages() {
             <Icon name="arrow_back" className="text-sm" /> Мой профиль
           </Link>
           <h1 className="mt-1 font-headline text-2xl font-black">Сообщения</h1>
-          <p className="text-sm text-on-surface-variant">Переписка с экспертами AIStart360. Ответы из Telegram, WhatsApp и почты тоже появляются здесь.</p>
+          <p className="text-sm text-on-surface-variant">Переписка с командой AIStart360. Ответы из Telegram, WhatsApp и почты тоже появляются здесь.</p>
         </div>
       </div>
+
+      {/* W3B-6: no deadline once the team has answered after the client's last question. */}
+      <ReplyNote note={messagesReplyNote(slaTasks, new Date(), messages)} />
 
       <section className={cn(CARD, 'flex flex-col p-0 sm:p-0')}>
         <div ref={feedRef} className="max-h-[60vh] min-h-[280px] space-y-3 overflow-y-auto p-4 sm:p-5" aria-live="polite">
@@ -107,8 +143,8 @@ export default function ClientMessages() {
           {messages?.length === 0 && (
             <div className="py-10 text-center">
               <Icon name="forum" className="text-3xl text-primary/70" />
-              <p className="mt-2 text-sm text-on-surface">Здесь будет ваша переписка с экспертом</p>
-              <p className="mt-1 text-xs text-on-surface-variant">Задайте вопрос — эксперт ответит здесь же, а уведомление придёт туда, где вам удобно.</p>
+              <p className="mt-2 text-sm text-on-surface">Здесь будет ваша переписка с командой AIStart360</p>
+              <p className="mt-1 text-xs text-on-surface-variant">Задайте вопрос — ответит команда AIStart360, здесь же. Уведомление о новом ответе придёт туда, где вам удобно.</p>
             </div>
           )}
           {messages?.map((m) => {
@@ -149,7 +185,7 @@ export default function ClientMessages() {
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() } }}
             rows={3}
             maxLength={MAX_BODY}
-            placeholder="Напишите эксперту…"
+            placeholder="Напишите ваш вопрос…"
             className="w-full resize-y rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-base text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary/40 focus:outline-none sm:text-sm"
           />
           {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}

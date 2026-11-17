@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase-client'
 import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import type { ApprovalStatus } from '@/types/onboarding'
 import { trackLogout } from '@/lib/events/client'
+import { APPROVAL_WAIT_NOTE } from '@/lib/registration/wait-text'
 
 type StatusConfig = {
   label: string
@@ -163,11 +164,12 @@ export default function WaitingRoomPage() {
               {cfg.sublabel}
             </p>
 
-            {/* Estimated time */}
+            {/* What happens next (R-104: no promised term — nobody set one; the
+                e-mail is real: approval goes through applyApprovalDecision) */}
             {status === 'pending_approval' && (
-              <div className="mt-5 inline-flex items-center gap-2 bg-surface-container px-4 py-2 rounded-xl">
-                <span className="material-symbols-outlined text-base text-on-surface-variant">timer</span>
-                <span className="text-xs text-on-surface-variant">Обычно в течение <strong className="text-on-surface">24 часов</strong></span>
+              <div data-wait-note className="mt-5 inline-flex items-start gap-2 bg-surface-container px-4 py-2 rounded-xl text-left">
+                <span className="material-symbols-outlined text-base text-on-surface-variant">mail</span>
+                <span className="text-xs text-on-surface-variant">{APPROVAL_WAIT_NOTE}</span>
               </div>
             )}
 

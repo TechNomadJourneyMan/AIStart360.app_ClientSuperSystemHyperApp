@@ -21,6 +21,7 @@ import { openRouterSurveyLlm } from '@/lib/survey/chat/model'
 import { chatPost, loadChatView } from '@/lib/survey/chat/session'
 import { CHAT_SCOPES, type ChatBudgetDTO } from '@/lib/survey/chat/types'
 import { withDeadline } from '@/lib/runtime/deadline'
+import { getSurveyModes } from '@/lib/survey/modes-server'
 
 const KEY_RE = /^[a-z][a-z0-9_]{1,79}$/
 const Body = z.object({
@@ -60,7 +61,9 @@ async function handleGet() {
   const who = await sessionUser()
   if (who instanceof NextResponse) return who
   try {
-    const view = await loadChatView(createServiceClient(), who.id, await budgetFor(who.id))
+    // R4 W3B-7: no «Быстрый старт» button into a mode switched off in GIGA.
+    const [budget, modes] = await Promise.all([budgetFor(who.id), getSurveyModes()])
+    const view = await loadChatView(createServiceClient(), who.id, budget, modes.enabled)
     return NextResponse.json({ ok: true, data: view })
   } catch (err) {
     console.error('[survey/chat] GET failed', err instanceof Error ? err.message : err)
@@ -77,13 +80,14 @@ async function handlePost(req: NextRequest) {
     || await isRateLimitedKey(who.id, 'survey-chat-hour', { max: 150, windowMs: 60 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много сообщений подряд — подождите минуту. Ответы можно ввести и в форме.' }, { status: 429 })
   }
-  const budget = await budgetFor(who.id)
+  const [budget, modes] = await Promise.all([budgetFor(who.id), getSurveyModes()])
   try {
     const out = await chatPost({
       db: createServiceClient(),
       userId: who.id,
       llm: budget.exhausted ? null : openRouterSurveyLlm(who.id),
       budget,
+      enabledModes: modes.enabled,
       track: (name, metadata) => { void trackEvent({ userId: who.id, name, entityType: 'survey', entityId: who.id, metadata, source: 'server' }) },
     }, parsed.data)
     if (!out.ok) return NextResponse.json({ ok: false, error: out.error }, { status: out.status })

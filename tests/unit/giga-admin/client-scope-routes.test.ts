@@ -136,6 +136,9 @@ describe('R-047: inventory of client-specific GIGA routes', () => {
     // yet; the target's rank and the status transition are checked in
     // lib/users/access-requests.ts decideAccessRequest (R-007).
     'requests/[id]/route.ts': 'intake decision, R-007',
+    // R4 B3: a request for an invitation — there is no account (client) yet; the
+    // e-mail is taken from the request, the right is users.invite (as /invites).
+    'requests/[id]/invite/route.ts': 'invitation request, no client yet (R4 B3)',
   }
 
   it('R-047: every route that works with ONE client checks the client scope through a shared helper', () => {

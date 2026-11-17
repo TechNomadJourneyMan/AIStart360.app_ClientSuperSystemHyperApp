@@ -7,6 +7,7 @@ import { scopedClientIds } from '@/lib/admin/client-scope'
 import { hasPermission } from '@/lib/admin/rbac'
 import { loadFullSubmissions } from '@/lib/survey/staff-status-load'
 import { FUNNEL_EVENT_NAMES, computeModeFunnel, scopeFunnelLists, type FunnelEvent } from '@/lib/survey/mode-funnel'
+import { getSurveyModes } from '@/lib/survey/modes-server'
 
 /**
  * GET /api/giga-admin/surveys/modes?days=30 — the funnel of the questionnaire
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient()
 
   try {
-    const [period, allTime, submissions, allowed] = await Promise.all([
+    const [period, allTime, submissions, allowed, modes] = await Promise.all([
       // Everything of the funnel within the period…
       readEvents(sb, FUNNEL_EVENT_NAMES, since.toISOString()),
       // …and the rare once-per-client facts of all time: the FIRST choice decides
@@ -57,6 +58,8 @@ export async function GET(req: NextRequest) {
       readEvents(sb, ['SURVEY_MODE_CHOSEN', 'SURVEY_EXPRESS_COMPLETED', 'QUESTIONNAIRE_COMPLETED'], null),
       loadFullSubmissions(sb),
       scopedClientIds(guard.actor),
+      // R4-B4: what clients get now (the GIGA setting survey_modes + survey_chat_enabled); never throws.
+      getSurveyModes(),
     ])
     const funnel = scopeFunnelLists(
       computeModeFunnel({ events: [...allTime, ...period], submissions, since, until, listLimit: Number.MAX_SAFE_INTEGER }),
@@ -79,7 +82,7 @@ export async function GET(req: NextRequest) {
         people[p.id] = { name: p.full_name?.trim() || (sensitive ? p.email : null) || `Пользователь ${p.id.slice(0, 8)}`, company: companyOf.get(p.id) || p.organization || null }
       }
     }
-    return NextResponse.json({ ok: true, data: { days, ...funnel, people, submissionsSource: submissions ? 'completions' : 'events' } })
+    return NextResponse.json({ ok: true, data: { days, ...funnel, people, submissionsSource: submissions ? 'completions' : 'events', modes } })
   } catch (e) {
     console.error('[giga-admin/surveys/modes]', e instanceof Error ? e.message : e)
     return NextResponse.json({ ok: false, error: 'Не удалось посчитать воронку способов заполнения' }, { status: 500 })

@@ -8,11 +8,11 @@ Staging — отдельное окружение `staging` в Railway-прое�
 
 | Что | Адрес |
 | --- | --- |
-| API Supabase (Envoy) | `https://envoy-staging-2d1d8e5b.up.railway.app` |
-| База (TCP-прокси staging) | `junction.proxy.rlwy.net:48460`, БД `postgres`, пользователь `supabase_admin`, **`sslmode=disable`** (сервер не поддерживает TLS; трафик открытый, поэтому в базе только обезличенные данные) |
+| API Supabase (Envoy) | домен staging-сервиса Envoy (Railway → окружение staging → Envoy → Networking) |
+| База (TCP-прокси staging) | `<staging-db-proxy>` (host:port — в файле `addr` рядом с файлом пароля, вне репозитория), БД `postgres`, пользователь `supabase_admin`, **`sslmode=disable`** (сервер не поддерживает TLS; трафик открытый, поэтому в базе только обезличенные данные) |
 | Пароль `supabase_admin` | хранится вне репозитория (файл с правами 600); в командную строку, логи и файлы не попадает |
 
-Прод (`reseau.proxy.rlwy.net`, `postgres-sfat.railway.internal`, `supabase.aistart360.app`,
+Прод (свой TCP-прокси, приватная сеть Railway, `supabase.aistart360.app`,
 облачный `*.supabase.co`) скрипты staging не трогают. Railway-команды для staging — только с `-e staging`.
 
 ## Правило
@@ -42,7 +42,8 @@ Staging — отдельное окружение `staging` в Railway-прое�
 
 ```bash
 PW=~/AI-Portal-backups/staging-secrets/pg     # файл с паролем supabase_admin staging
-STG="host=junction.proxy.rlwy.net port=48460 dbname=postgres user=supabase_admin sslmode=disable"
+ADDR="$(cat ~/AI-Portal-backups/staging-secrets/addr)"  # host:port TCP-прокси staging, вне репозитория
+STG="host=${ADDR%:*} port=${ADDR##*:} dbname=postgres user=supabase_admin sslmode=disable"
 
 # 1. очистить (только staging; спросит метку и confirm)
 PGPASSWORD="$(cat "$PW")" psql "$STG" -X -v ON_ERROR_STOP=1 -v confirm=staging -1 -f scripts/staging/reset.sql

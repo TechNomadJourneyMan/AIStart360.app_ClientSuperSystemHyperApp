@@ -57,9 +57,17 @@ export interface InvitationEmailInput {
   url: string
   /** У человека уже есть аккаунт — это ссылка для входа, а не приглашение. */
   existingAccount?: boolean
+  /**
+   * R4 B3 (ревью W3A-6): приглашение по заявке «Запросить приглашение». Письмо
+   * от имени AIStart360 — без компании и подписи из анонимной формы («<компания>
+   * приглашает вас» отправлял бы с нашего домена текст любого анонима), и
+   * честно: после принятия аккаунт ждёт одобрения команды.
+   */
+  byRequest?: boolean
 }
 
 export function buildInvitationEmail(input: InvitationEmailInput): BuiltEmail {
+  if (input.byRequest) return buildRequestedInvitationEmail(input)
   const existing = !!input.existingAccount
   const company = nameOrNull(input.company)
   const invitedBy = nameOrNull(input.invitedByLabel)
@@ -95,6 +103,44 @@ export function buildInvitationEmail(input: InvitationEmailInput): BuiltEmail {
         ? `Ссылка срабатывает один раз и действует до ${expires.full}. Если срок истёк — запросите новую у пригласившего.`
         : 'Ссылка срабатывает один раз. Если срок истёк — запросите новую у пригласившего.',
       footnote: 'Если вы не ждали это письмо — просто проигнорируйте его, доступ не откроется.',
+    },
+  }
+}
+
+/** Приглашение по заявке «Запросить приглашение» — от имени AIStart360 (ревью W3A-6). */
+function buildRequestedInvitationEmail(input: InvitationEmailInput): BuiltEmail {
+  const existing = !!input.existingAccount
+  const expires = formatMoment(input.expiresAt)
+  const facts: EmailFact[] = [
+    ...momentFacts(input.invitedAt ?? new Date(), existing ? 'Ссылка создана' : 'Приглашение создано'),
+    { label: 'Действует до', value: expires ? expires.full : null },
+  ]
+  return {
+    subject: existing ? 'Ссылка для входа в AIStart360' : 'Приглашение в AIStart360',
+    content: {
+      preheader: existing
+        ? 'По вашей заявке: одноразовая ссылка для входа в AIStart360.'
+        : 'По вашей заявке: примите приглашение и задайте пароль. Кабинет откроется после одобрения командой AIStart360.',
+      eyebrow: existing ? 'Вход в кабинет' : 'Приглашение',
+      title: existing ? 'Ссылка для входа по вашей заявке' : 'Приглашение в AIStart360 по вашей заявке',
+      // The name came from the anonymous form too — the greeting does not repeat it.
+      greeting: greeting(null),
+      paragraphs: existing
+        ? [
+            'По вашей заявке — ссылка для входа в AIStart360. Нажмите кнопку, чтобы войти без пароля.',
+            'Если аккаунт ещё ждёт одобрения, после входа вы увидите статус заявки. Когда команда AIStart360 откроет доступ, придёт письмо.',
+          ]
+        : [
+            'По вашей заявке команда AIStart360 приглашает вас на платформу — диагностика бизнеса, «Точка А», GRI-оценка и план роста.',
+            'Что дальше:\n1. Примите приглашение по кнопке ниже.\n2. Задайте пароль для входа.\n3. Аккаунт рассмотрит команда AIStart360 — когда доступ откроют, придёт письмо.',
+          ],
+      facts,
+      quote: null,
+      cta: { label: existing ? 'Войти' : 'Принять приглашение', url: input.url },
+      note: expires
+        ? `Ссылка срабатывает один раз и действует до ${expires.full}. Если срок истёк — снова оставьте заявку на странице входа.`
+        : 'Ссылка срабатывает один раз. Если срок истёк — снова оставьте заявку на странице входа.',
+      footnote: 'Если вы не оставляли заявку — просто проигнорируйте письмо, доступ не откроется.',
     },
   }
 }

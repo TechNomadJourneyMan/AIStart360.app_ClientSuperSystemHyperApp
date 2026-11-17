@@ -4,13 +4,13 @@
  * call for both).
  *
  * «Снимок бизнеса» (/client/onboarding/snapshot) is a screen of the survey mode
- * «Экспресс + блоки», switched on by NEXT_PUBLIC_SURVEY_MODES (the page itself
- * does not check the flag). So it is offered only while the express mode is
- * enabled — the same helper the questionnaire uses (lib/survey/modes.ts
- * enabledSurveyModes). Otherwise the step is the questionnaire (free), with a
- * text that promises nothing else.
+ * «Экспресс + блоки», switched on in GIGA (setting `survey_modes`, R4-B4; the
+ * page sends the client to the full questionnaire when it is off). So it is
+ * offered only while the express mode is enabled — the server passes the modes
+ * (lib/survey/modes-server.ts getSurveyModes). Otherwise the step is the
+ * questionnaire (free), with a text that promises nothing else.
  */
-import { enabledSurveyModes, type SurveyMode } from '@/lib/survey/modes'
+import type { SurveyMode } from '@/lib/survey/modes'
 
 export interface FreeNextStep {
   kind: 'snapshot' | 'survey'
@@ -29,7 +29,12 @@ export interface FreeNextStep {
 export const FREE_SNAPSHOT_HREF = '/client/onboarding/snapshot'
 export const FREE_SURVEY_HREF = '/client/onboarding'
 
-export function freeNextStep(modes: readonly SurveyMode[] = enabledSurveyModes()): FreeNextStep {
+/**
+ * `modes` — the server decision (getSurveyModes().enabled). Without it (a
+ * component rendered without the server value) — the questionnaire: always
+ * open, never a page that may be switched off.
+ */
+export function freeNextStep(modes: readonly SurveyMode[] = ['full']): FreeNextStep {
   if (modes.includes('express')) {
     return {
       kind: 'snapshot',

@@ -243,7 +243,7 @@ describe('GET /api/v1/expert-sla (client)', () => {
     s.serverUser = { id: C2 }
     const body = await (await GET()).json()
     expect(body.data.map((t: { id: string }) => t.id).sort()).toEqual([T(2), T(4)])
-    expect(body.promise).toBe('Эксперт ответит в течение 48 часов.')
+    expect(body.promise).toBe('Команда AIStart360 ответит в течение 48 часов.')
     expect(JSON.stringify(body)).not.toContain(E2)
 
     s.serverUser = { id: 'dddddddd-0000-4000-8000-000000000009' }
@@ -253,7 +253,7 @@ describe('GET /api/v1/expert-sla (client)', () => {
   it('п. 10: no promise for plan approval only (Admin decides) or for an overdue task', async () => {
     const { GET } = await import('@/app/api/v1/expert-sla/route')
     s.serverUser = { id: C3 } // T3 open expert work, T6 plan approval
-    expect((await (await GET()).json()).promise).toBe('Эксперт ответит в течение 48 часов.')
+    expect((await (await GET()).json()).promise).toBe('Команда AIStart360 ответит в течение 48 часов.')
     s.world!.db.expert_sla_tasks = s.world!.db.expert_sla_tasks.filter((t) => t.id !== T(3))
     expect((await (await GET()).json())).toMatchObject({ promise: null, data: [{ id: T(6) }] })
     const past = new Date(Date.now() - 60 * 3_600_000)
@@ -268,6 +268,17 @@ describe('GET /api/v1/expert-sla (client)', () => {
     s.serverUser = { id: C2 }
     s.world!.failing.add('expert_sla_tasks')
     expect(await (await GET()).json()).toMatchObject({ data: [], promise: null, unavailable: true })
+  })
+
+  it('R4 R-024: «Сообщения» read it — each task carries only the work, the dates and the state: no staff id, title or thresholds', async () => {
+    const { GET } = await import('@/app/api/v1/expert-sla/route')
+    s.serverUser = { id: C2 }
+    const body = await (await GET()).json()
+    for (const t of body.data as Array<Record<string, unknown>>) {
+      expect(Object.keys(t).sort()).toEqual(['answerDueAt', 'id', 'inProgress', 'label', 'overdue', 'receivedAt', 'source'])
+    }
+    const raw = JSON.stringify(body)
+    for (const leak of [E1, E2, ADMIN, SE, 'assignee_id', 'reaction_due_at', 'title', 'Задача', '@']) expect(raw).not.toContain(leak)
   })
 
   it('SLA switched off → no promise; signed out → 401', async () => {

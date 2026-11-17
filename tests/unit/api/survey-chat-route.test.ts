@@ -28,6 +28,7 @@ const s = vi.hoisted(() => ({
   inbound: [] as Array<Record<string, unknown>>,
   expert: { ok: true, viewer: { id: '', role: 'expert', email: 'e@x.kz' } } as Record<string, unknown>,
   giga: { actor: { id: '', kind: 'session', role: 'expert', clientScope: 'assigned' } } as Record<string, unknown>,
+  settings: {} as Record<string, unknown>,
 }))
 
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: s.user } }) } }) }))
@@ -39,7 +40,7 @@ vi.mock('@/lib/events/track', () => ({ trackEvent: async (e: { name: string; met
 vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: (e: Record<string, unknown>) => { s.platform.push(e) } }))
 vi.mock('@/lib/audit', () => ({ logAudit: async () => undefined }))
 vi.mock('@/lib/background', () => ({ runInBackground: () => undefined }))
-vi.mock('@/lib/settings/store', () => ({ getSetting: async () => true }))
+vi.mock('@/lib/settings/store', () => ({ getSetting: async (k: string) => (k in s.settings ? s.settings[k] : true) }))
 vi.mock('@/lib/comm/inbound', () => ({ recordInbound: async (input: Record<string, unknown>) => { s.inbound.push(input); return { message: null } } }))
 vi.mock('@/lib/survey/chat/budget', () => ({ checkSurveyAssistantBudget: async () => s.budget }))
 vi.mock('@/lib/survey/chat/model', async (orig) => ({
@@ -68,6 +69,7 @@ const answersSnapshot = () => JSON.stringify(s.db.db.survey_answers)
 const cards = () => s.db.db.ai_pending_actions ?? []
 
 beforeEach(() => {
+  s.settings = {}
   s.user = { id: CLIENT }
   s.limited = false
   s.budget = { exhausted: false, reason: null, message: null, tier: 'free', unlimited: false }
@@ -221,6 +223,20 @@ describe('budget', () => {
     expect(r.body.data.messages.at(-1).buttons.map((b: { href: string }) => b.href)).toEqual(['/client/onboarding/express', '/client/onboarding?step=1'])
     expect(s.llmCalls).toHaveLength(0)
     expect((await post({ action: 'where' })).body.data.messages.at(-1).kind).toBe('where')
+  })
+
+  // R4 W3B-7: «Быстрый старт» never leads into the express switched off in GIGA (survey_modes).
+  it('express switched off in GIGA: no «Быстрый старт» button — neither in a new message nor in a stored one', async () => {
+    await startExpress()
+    s.budget = { exhausted: true, reason: 'cap', message: 'Лимит ИИ-помощника на анкету для вашего тарифа исчерпан.', tier: 'free', unlimited: false }
+    await post({ message: 'торговля' }) // stored with both buttons while express is on
+    s.settings = { survey_modes: { express: false, default_mode: 'express' } }
+    const r = await post({ message: 'услуги' })
+    expect(r.body.data.messages.at(-1).buttons.map((b: { href: string }) => b.href)).toEqual(['/client/onboarding?step=1'])
+    const view = (await (await chat.GET(new NextRequest('http://t/api/v1/survey/chat'))).json()).data
+    const hrefs = view.messages.flatMap((m: { buttons?: Array<{ href?: string }> }) => (m.buttons ?? []).map((b) => b.href))
+    expect(hrefs).toContain('/client/onboarding?step=1')
+    expect(hrefs).not.toContain('/client/onboarding/express')
   })
 })
 

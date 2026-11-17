@@ -85,6 +85,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
 /** What GET /api/giga-admin/nav-badges answers (a badge the actor may not see is absent). */
 export interface WorkBadges {
   accessRequests?: { open: number; overdue: number; slaHours: number }
+  /** R4 B3: open requests for an invitation («Запросить приглашение») — also on «Заявки». */
+  inviteRequests?: { open: number }
   planWaiting?: { open: number; overdue: number }
 }
 
@@ -100,9 +102,13 @@ export interface WorkBadgeView {
 export function workBadgeView(badge: GigaNavBadge, data: WorkBadges | null | undefined): WorkBadgeView | null {
   if (badge === 'accessRequests') {
     const v = data?.accessRequests
-    if (!v || v.open <= 0) return null
-    const late = v.overdue > 0 ? `, ждут дольше ${v.slaHours} ч: ${v.overdue}` : ''
-    return { count: v.open, urgent: v.overdue > 0, title: `Заявки на оплату: ${v.open}${late}` }
+    const invites = Math.max(0, data?.inviteRequests?.open ?? 0)
+    const paid = v && v.open > 0 ? v.open : 0
+    if (paid + invites <= 0) return null
+    const parts: string[] = []
+    if (paid) parts.push(`Заявки на оплату: ${paid}${v && v.overdue > 0 ? `, ждут дольше ${v.slaHours} ч: ${v.overdue}` : ''}`)
+    if (invites) parts.push(`Запросы приглашения: ${invites}`)
+    return { count: paid + invites, urgent: !!v && v.overdue > 0, title: parts.join('; ') }
   }
   if (badge === 'planWaiting') {
     const v = data?.planWaiting

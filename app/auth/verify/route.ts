@@ -6,6 +6,8 @@ import { safeInternalPath } from '@/lib/safe-redirect'
 import { requestOrigin } from '@/lib/site-url'
 import { acceptInvitation } from '@/lib/admin/invites'
 import { CABINET_ENTRY_PATH } from '@/lib/role-landing'
+import { createServiceClient } from '@/lib/supabase-service'
+import { clearSignupBlocked, inviteOnlyDecision, inviteOnlyRedirect, isSignupBlocked, refreshAfterClear } from '@/lib/auth/invite-only-gate'
 
 /**
  * GET /auth/verify — приземление ссылки, отправленной нами (см.
@@ -54,6 +56,7 @@ export async function GET(request: NextRequest) {
   // совпадение e-mail без токена роль не даёт никогда.
   const inviteToken = searchParams.get('invite')
   let destination = response
+  let invitationAccepted = false
   if (inviteToken) {
     const accepted = await acceptInvitation({
       inviteToken,
@@ -68,6 +71,38 @@ export async function GET(request: NextRequest) {
       destination = NextResponse.redirect(new URL('/auth/reset-password', origin))
       for (const c of response.cookies.getAll()) destination.cookies.set(c)
     }
+    invitationAccepted = accepted.accepted
+  }
+
+  // R4 B3 (N4B-14): an account created around the invitation (marked by
+  // /auth/callback or middleware in 'invite' mode) does not get in through an
+  // e-mail link («Войти по ссылке», «Забыли пароль») either — unless this link
+  // accepted an invitation, the person has been invited meanwhile, or staff
+  // APPROVED the account (review W3A-2). Then the mark goes and the session
+  // gets a token without it.
+  if (isSignupBlocked(data.user)) {
+    const admin = createServiceClient()
+    let allowed = invitationAccepted
+    if (!allowed) {
+      const { data: prof } = await admin.from('profiles').select('status').eq('id', data.user.id).maybeSingle()
+      allowed = (prof as { status?: string } | null)?.status === 'approved'
+    }
+    if (allowed) {
+      await clearSignupBlocked(admin, data.user.id)
+    } else {
+      const verdict = await inviteOnlyDecision(admin, data.user)
+      if (verdict.decision === 'block') {
+        try {
+          await supabase.auth.signOut()
+        } catch (e) {
+          console.warn('[auth/verify] sign-out of a blocked sign-up failed:', e instanceof Error ? e.message : e)
+        }
+        return inviteOnlyRedirect(origin, request, response)
+      }
+    }
+    await refreshAfterClear(supabase)
+    // The secured-account redirect copied the cookies before the refresh.
+    if (destination !== response) for (const c of response.cookies.getAll()) destination.cookies.set(c)
   }
 
   void trackEvent({

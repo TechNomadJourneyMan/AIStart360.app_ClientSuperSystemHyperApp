@@ -16,13 +16,17 @@ import { getSiteUrl } from '@/lib/site-url'
 import { ruLongDate } from '@/lib/format/ru-date'
 
 import { pointAClosedFor } from '@/lib/access/recipient'
+import { freeSnapshotAvailable } from '@/lib/survey/modes-server'
 import { featureLabel } from '@/lib/access/upgrade-requests'
 import { plural } from '@/lib/crm/digest'
 
 // R2-A (ревью L-6): Точка А is a paid section. For an account without it the
 // notices name no score and lead to the free «Снимок бизнеса» instead of a paywall.
+// R4-B4: the snapshot is a screen of «Экспресс + блоки» (GIGA setting survey_modes);
+// while that mode is off the notice leads to the cabinet home and promises no snapshot.
 
 const FREE_SNAPSHOT_URL = '/client/onboarding/snapshot'
+const FREE_HOME_URL = '/client/home'
 
 /**
  * «Анкета принята». Запись в ленте ставит claimCompletionNotice
@@ -34,18 +38,21 @@ export async function notifyQuestionnaireCompleted(
   input: { name?: string | null; company?: string | null; completedSteps: number; totalSteps: number; completedAt?: Date | string | null },
 ): Promise<NotifyClientResult> {
   const closed = await pointAClosedFor(userId)
-  const target = closed ? FREE_SNAPSHOT_URL : '/client/point-a'
+  const snapshot = closed && await freeSnapshotAvailable()
+  const target = !closed ? '/client/point-a' : snapshot ? FREE_SNAPSHOT_URL : FREE_HOME_URL
   const email = buildQuestionnaireCompletedEmail({ ...input, url: getSiteUrl(target) })
   return notifyClient({
     userId,
     category: 'gri',
     event: 'questionnaire_completed',
     title: email.content.title,
-    body: closed
-      ? 'Спасибо — ответы сохранены, экспресс-оценка готова. Полный разбор «Точки А» и GRI — в платном доступе.'
-      : 'Спасибо — ответы сохранены, «Точка А» пересчитана. Следующий шаг — GRI-оценка.',
+    body: !closed
+      ? 'Спасибо — ответы сохранены, «Точка А» пересчитана. Следующий шаг — GRI-оценка.'
+      : snapshot
+        ? 'Спасибо — ответы сохранены, экспресс-оценка готова. Полный разбор «Точки А» и GRI — в платном доступе.'
+        : 'Спасибо — ответы сохранены. Полный разбор «Точки А» и GRI — в платном доступе.',
     ctaUrl: target,
-    ctaLabel: closed ? 'Открыть снимок' : 'Открыть результат',
+    ctaLabel: !closed ? 'Открыть результат' : snapshot ? 'Открыть снимок' : 'Открыть кабинет',
     // Тот же ключ, что был у письма раньше: уже отправленные письма не повторятся.
     dedupeKey: `questionnaire_completed:${userId}`,
     channels: { inApp: false },
@@ -231,6 +238,7 @@ export async function notifyPointARecalculated(
   input: { diagnosticId?: string | null; overallScore?: number | null },
 ): Promise<NotifyClientResult> {
   const closed = await pointAClosedFor(userId)
+  const snapshot = closed && await freeSnapshotAvailable()
   const score =
     !closed && typeof input.overallScore === 'number' && Number.isFinite(input.overallScore)
       ? ` Общий балл: ${Math.round(input.overallScore)}.`
@@ -239,12 +247,14 @@ export async function notifyPointARecalculated(
     userId,
     category: 'reports',
     event: 'point_a_recalculated',
-    title: closed ? 'Экспресс-оценка обновлена' : '«Точка А» пересчитана',
-    body: closed
-      ? 'Снимок бизнеса обновлён по последним ответам анкеты. Подробный разбор «Точки А» — в платном доступе.'
-      : `Снимок текущего состояния обновлён по последним ответам анкеты.${score}`,
-    ctaUrl: closed ? FREE_SNAPSHOT_URL : '/client/point-a',
-    ctaLabel: closed ? 'Открыть снимок' : 'Открыть «Точку А»',
+    title: !closed ? '«Точка А» пересчитана' : snapshot ? 'Экспресс-оценка обновлена' : 'Оценка по анкете обновлена',
+    body: !closed
+      ? `Снимок текущего состояния обновлён по последним ответам анкеты.${score}`
+      : snapshot
+        ? 'Снимок бизнеса обновлён по последним ответам анкеты. Подробный разбор «Точки А» — в платном доступе.'
+        : 'Мы пересчитали оценку по последним ответам анкеты. Подробный разбор «Точки А» — в платном доступе.',
+    ctaUrl: !closed ? '/client/point-a' : snapshot ? FREE_SNAPSHOT_URL : FREE_HOME_URL,
+    ctaLabel: !closed ? 'Открыть «Точку А»' : snapshot ? 'Открыть снимок' : 'Открыть кабинет',
     dedupeKey: input.diagnosticId ? `point_a_recalculated:${input.diagnosticId}` : null,
     metadata: { diagnosticId: input.diagnosticId ?? null },
   })

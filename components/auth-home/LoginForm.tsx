@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { CABINET_ENTRY_PATH, postLoginPath } from '@/lib/role-landing'
 import { loginNotice } from '@/lib/auth/login-links'
+import type { RegistrationMode } from '@/lib/settings/system-settings'
 
 /**
  * Форма входа — общая для /login и главной (/).
@@ -19,8 +20,18 @@ import { loginNotice } from '@/lib/auth/login-links'
  *
  * `footer` заменяет строку «Нет аккаунта? Зарегистрироваться» (на главной она
  * переключает вкладку вместо перехода на /register).
+ *
+ * R4 B3 (R-051): кнопка «Демо-доступ» — только когда демо реально открыто
+ * (`demoOpen` считает сервер страницы тем же условием, что и
+ * /api/auth/demo-access: lib/registration/entry.ts demoAccessOpen). По умолчанию
+ * скрыта — закрытое демо давало 403 после нажатия. В режиме «по приглашению»
+ * строка внизу ведёт к запросу приглашения, а не к регистрации.
  */
-export function LoginForm({ footer }: { footer?: React.ReactNode }) {
+export function LoginForm({ footer, demoOpen = false, registrationMode }: {
+  footer?: React.ReactNode
+  demoOpen?: boolean
+  registrationMode?: RegistrationMode
+}) {
   const [isHydrated, setIsHydrated] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -168,26 +179,29 @@ export function LoginForm({ footer }: { footer?: React.ReactNode }) {
 
   return (
     <>
-      {/* Demo access */}
-      <button
-        type="button"
-        onClick={handleDemoAccess}
-        disabled={busy}
-        aria-busy={demoLoading}
-        className="w-full min-h-12 mb-6 px-3 py-2 bg-surface-container/60 border border-white/[0.08] rounded-2xl flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors disabled:cursor-not-allowed"
-      >
-        {demoLoading ? (
-          <>
-            <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm font-medium">Создаём демо-аккаунт…</span>
-          </>
-        ) : (
-          <>
-            <SymbolIcon name="public" className="text-lg text-primary" />
-            <span className="text-sm font-medium">Демо-доступ — войти как гость</span>
-          </>
-        )}
-      </button>
+      {/* Demo access — only while the demo is really open (R-051) */}
+      {demoOpen && (
+        <button
+          type="button"
+          onClick={handleDemoAccess}
+          disabled={busy}
+          aria-busy={demoLoading}
+          data-demo-access
+          className="w-full min-h-12 mb-6 px-3 py-2 bg-surface-container/60 border border-white/[0.08] rounded-2xl flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors disabled:cursor-not-allowed"
+        >
+          {demoLoading ? (
+            <>
+              <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-medium">Создаём демо-аккаунт…</span>
+            </>
+          ) : (
+            <>
+              <SymbolIcon name="public" className="text-lg text-primary" />
+              <span className="text-sm font-medium">Демо-доступ — войти как гость</span>
+            </>
+          )}
+        </button>
+      )}
       {demoError && (
         <div role="alert" className="relative mb-4 p-4 pr-16 bg-error/10 border border-error/20 rounded-xl flex items-start gap-3">
           <SymbolIcon name="error" className="text-error text-lg mt-1" />
@@ -316,7 +330,9 @@ export function LoginForm({ footer }: { footer?: React.ReactNode }) {
       {footer ?? (
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0 mt-4 text-sm text-on-surface-variant">
           <span>Нет аккаунта?</span>
-          <Link href="/register" className="inline-flex min-h-11 min-w-11 items-center text-primary font-bold hover:underline">Зарегистрироваться</Link>
+          <Link href="/register" className="inline-flex min-h-11 min-w-11 items-center text-primary font-bold hover:underline">
+            {registrationMode === 'invite' ? 'Запросить приглашение' : 'Зарегистрироваться'}
+          </Link>
         </div>
       )}
     </>

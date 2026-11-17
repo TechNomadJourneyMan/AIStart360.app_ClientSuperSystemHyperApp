@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { isRateLimited } from '@/lib/rate-limit'
 import { getRegistrationMode } from '@/lib/settings/system-settings'
+import { demoAccessOpen } from '@/lib/registration/entry'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -59,7 +60,8 @@ export async function POST(request: Request) {
 
   // Demo accounts are approved accounts: they follow the platform's
   // registration policy (closed in invite-only mode) and can be switched off.
-  if (process.env.DEMO_ACCESS_ENABLED === 'false' || (await getRegistrationMode()) === 'invite') {
+  // R4 B3 (R-051): the same condition hides the button on the sign-in form.
+  if (!demoAccessOpen(await getRegistrationMode())) {
     return NextResponse.json(
       { ok: false, error: 'demo_access_disabled', detail: 'Демо-доступ сейчас выключен' },
       { status: 403 },

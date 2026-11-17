@@ -5,13 +5,33 @@ import Link from 'next/link'
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
 import { Badge, EmptyState, ErrorState, Panel, Select, Skeleton, StatTile, useGigaQuery } from '@/components/giga-panel/kit'
 import { SURVEY_MODE_STAFF_NAME, shortDate } from '@/lib/survey/staff-status'
-import { SURVEY_MODE_ORDER } from '@/lib/survey/modes'
+import { SURVEY_MODE_ORDER, type SurveyModesConfig } from '@/lib/survey/modes'
 import type { ModeFunnel } from '@/lib/survey/mode-funnel'
+import { GIGA_BASE } from '@/lib/admin/nav'
 
 export interface ModeFunnelPayload extends ModeFunnel {
   days: number
   people: Record<string, { name: string; company: string | null }>
   submissionsSource: 'completions' | 'events'
+  /** R4-B4: the modes clients get now (GIGA setting); absent in an older response. */
+  modes?: SurveyModesConfig
+}
+
+/**
+ * Where the modes come from (R4-B4): a GIGA setting, not the build flag.
+ * The settings page is GIGA's; the SuperExpert cabinet gets the text only.
+ */
+export function SurveyModesSource({ modes, base }: { modes?: SurveyModesConfig; base: string }) {
+  return (
+    <p className="text-[11px] leading-relaxed text-slate-400" data-testid="survey-modes-source">
+      {modes && (
+        <>Сейчас у клиентов: {modes.enabled.map((m) => SURVEY_MODE_STAFF_NAME[m]).join(' · ')}; новым первым — {SURVEY_MODE_STAFF_NAME[modes.defaultMode]}. </>
+      )}
+      Способы и способ по умолчанию для новых клиентов — настройка {base === GIGA_BASE
+        ? <Link href={`${GIGA_BASE}/settings`} className="text-blue-300 hover:underline">«Настройки → Анкета»</Link>
+        : '«Настройки → Анкета» в GIGA-CRM'}; выбор видят новые клиенты, когда кроме полной анкеты включён ещё хотя бы один способ.
+    </p>
+  )
 }
 
 const PERIODS = [
@@ -45,10 +65,11 @@ export function SurveyModesFunnelView({ data, base, period, onPeriod }: {
       description="Когорта — клиенты, впервые выбравшие способ за период. Шаги не строгие: выбравший полную анкету сразу попадает в последний шаг. «Анкета отправлена» — только полная анкета."
       actions={onPeriod && period ? <Select label="Период" value={period} onChange={onPeriod} options={PERIODS} /> : undefined}
     >
+      <div className="mb-4"><SurveyModesSource modes={data.modes} base={base} /></div>
       {data.cohort === 0 ? (
         <EmptyState
           title="За период никто не выбирал способ заполнения"
-          text="Выбор появляется у клиентов, когда включены режимы (переменная NEXT_PUBLIC_SURVEY_MODES)."
+          text="Выбор видят новые клиенты (без ответов и без выбранного способа), когда кроме полной анкеты включён ещё хотя бы один способ."
         />
       ) : (
         <div className="space-y-5">

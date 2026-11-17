@@ -7,6 +7,7 @@ import { actorClientScope } from '@/lib/admin/actor-scope'
 import { createServiceClient } from '@/lib/supabase-service'
 import { loadOpenPaidRequests, requestSlaHours, summarizeRequestSla } from '@/lib/access/request-notices'
 import { visibleTo, type SlaVisibility } from '@/lib/expert-sla/store'
+import { countOpenInviteRequests } from '@/lib/registration/invite-requests'
 import type { WorkBadges } from '@/lib/admin/nav'
 
 /**
@@ -16,6 +17,7 @@ import type { WorkBadges } from '@/lib/admin/nav'
  *   accessRequests — открытые заявки на оплату и сколько из них ждут дольше
  *                    срока ответа (request_sla_hours, 4 ч): бейдж «Заявки»
  *                    (users.view; это очередь приёма — видна целиком, как в списке);
+ *   inviteRequests — открытые запросы приглашения (R4 B3), в том же бейдже «Заявки»;
  *   planWaiting    — клиенты ждут план Точки Б (открытые задачи plan_prep) в
  *                    скоупе сотрудника: бейдж у «Точка Б — на одобрении»
  *                    (clients.review, как GET /api/giga-admin/expert-sla).
@@ -37,6 +39,15 @@ export async function GET(req: NextRequest) {
       out.accessRequests = { open: s.open, overdue: s.overdue, slaHours }
     } catch (err) {
       console.warn('[giga-admin/nav-badges] requests:', err instanceof Error ? err.message : err)
+    }
+    // R4 B3: requests for an invitation wait in the same «Заявки» (tab «Регистрация»),
+    // counted for those who see them in the list (review W3A-7): the right to
+    // invite or the whole client base.
+    try {
+      const seesInvites = hasPermission(actor.role, 'users.invite') || (await actorClientScope(actor)).scope === 'all'
+      if (seesInvites) out.inviteRequests = { open: await countOpenInviteRequests(sb) }
+    } catch (err) {
+      console.warn('[giga-admin/nav-badges] invite requests:', err instanceof Error ? err.message : err)
     }
   }
 
