@@ -23,6 +23,12 @@ const s = vi.hoisted(() => ({
   background: [] as Array<{ label: string; work: () => Promise<unknown> }>,
   batches: [] as Array<{ ids: string[]; concurrency?: number }>,
   billingThrows: new Set<string>(),
+  revokes: [] as Array<{ kind: 'creator' | 'assignee'; userId: string; arg: string }>,
+}))
+// SR-19 / R-136: public report links are revoked through lib/share/tokens (PostgREST) — captured here.
+vi.mock('@/lib/share/tokens', () => ({
+  revokeSharesOfCreator: async (userId: string, reason: string) => { s.revokes.push({ kind: 'creator', userId, arg: reason }); return { ok: true, revoked: 1 } },
+  revokeSharesOfAssignee: async (clientId: string, assigneeId: string) => { s.revokes.push({ kind: 'assignee', userId: clientId, arg: assigneeId }); return 1 },
 }))
 // verify Н-3: the AI catch-up of the bulk run is ONE bounded batch in the background.
 vi.mock('@/lib/background', () => ({ runInBackground: (label: string, work: () => Promise<unknown>) => { s.background.push({ label, work }); return Promise.resolve() } }))
@@ -133,6 +139,7 @@ beforeEach(() => {
   s.audits = []
   s.approvals = []
   s.dbTouched = 0
+  s.revokes = []
 })
 
 describe('POST /api/giga-admin/users/bulk — права на действие', () => {
@@ -173,6 +180,18 @@ describe('POST /api/giga-admin/users/bulk — ранг и частичный у�
     expect(body.failed).toBe(2)
     expect(s.bans).toEqual([C2])
     expect(s.updates.some((u) => u.id === ADMIN2)).toBe(false)
+    // SR-19: the blocked person's public report links stop working — only for the one actually blocked.
+    expect(s.revokes).toEqual([{ kind: 'creator', userId: C2, arg: 'status:blocked' }])
+  })
+
+  it('SR-19: архивация отзывает публичные ссылки архивированного и завершает имперсонации; несостоявшаяся — не трогает ничего', async () => {
+    s.failUpdate = new Set([C1])
+    const body = await (await post({ action: 'archive', ids: [C1, C2, ADMIN2], reason: 'просьба клиента' })).json()
+    expect(body.results.find((r: { id: string }) => r.id === C2)).toMatchObject({ ok: true })
+    expect(body.results.find((r: { id: string }) => r.id === C1)).toMatchObject({ ok: false, error: 'Статус не обновлён' })
+    expect(s.revokes).toEqual([{ kind: 'creator', userId: C2, arg: 'status:archived' }])
+    expect(s.bans).toEqual([C2])
+    expect(s.updates.filter((u) => u.table === 'impersonation_sessions').map((u) => [u.id, u.patch.end_reason])).toEqual([[C2, 'user_archived']])
   })
 
   it('crm_manager не трогает SuperExpert-а, но меняет тариф клиенту', async () => {

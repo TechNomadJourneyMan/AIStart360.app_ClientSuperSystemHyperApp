@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   jar: new Map<string, string>(),
   audit: [] as Array<{ action: string; entityId?: string }>,
   updates: [] as Array<Record<string, unknown>>,
+  deletes: [] as Array<Record<string, unknown>>,
   signOuts: [] as unknown[],
   bindingRow: null as null | { impersonation_session_id: string },
   bindingError: false,
@@ -49,6 +50,9 @@ function builder(table: string) {
   for (const m of ['eq', 'is', 'limit', 'order']) b[m] = () => b
   b.select = () => b
   b.update = (patch: Record<string, unknown>) => { mode = 'update'; h.updates.push({ table, ...patch }); return b }
+  // SR-01: the step-up records of the ended sessions (lib/mfa/step-up-session.ts)
+  b.delete = () => { mode = 'delete'; h.deletes.push({ table }); return b }
+  b.eq = (col: string, v: unknown) => { if (mode === 'delete') Object.assign(h.deletes[h.deletes.length - 1], { [col]: v }); return b }
   b.maybeSingle = async () => {
     if (table === 'admin_audit_log') return h.bindingError ? { data: null, error: { message: 'down' } } : { data: h.bindingRow, error: null }
     if (table === 'impersonation_sessions') return { data: h.sessionRow, error: null }
@@ -90,6 +94,7 @@ beforeEach(() => {
   h.jar = new Map()
   h.audit = []
   h.updates = []
+  h.deletes = []
   h.signOuts = []
   h.bindingRow = null
   h.bindingError = false
@@ -103,6 +108,7 @@ describe('SR-06: «Выйти» в кабинете во время impersonatio
     const res = await signOut()
     expect(res.status).toBe(200)
     expect(h.signOuts).toEqual([{ scope: 'local' }])
+    expect(h.deletes, 'the client keeps the step-up records of their own devices').toEqual([])
     expect(h.updates).toContainEqual(expect.objectContaining({ table: 'impersonation_sessions', end_reason: 'sign_out' }))
     expect(h.audit).toContainEqual(expect.objectContaining({ action: 'impersonation.ended', entityId: SID }))
     const body = await res.json()
@@ -131,6 +137,8 @@ describe('SR-06: «Выйти» в кабинете во время impersonatio
     const res = await signOut()
     expect(h.signOuts).toEqual(['DEFAULT(global)'])
     expect(await res.json()).toMatchObject({ ok: true, impersonation: false, redirect: '/login' })
+    // SR-01: the step-up records of every ended session go with them.
+    expect(h.deletes).toEqual([{ table: 'staff_mfa_sessions', user_id: UID }])
   })
 
   it('SR-06: выход разрешён и в режиме «только просмотр»', () => {

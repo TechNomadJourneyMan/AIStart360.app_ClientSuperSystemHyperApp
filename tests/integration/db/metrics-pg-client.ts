@@ -9,8 +9,10 @@
  *
  * Supported: from(t).select(cols) with `alias:col->key`, eq, in, or (eq / is
  * null / and(...)), order, limit, maybeSingle; upsert(rows, { onConflict });
- * delete().eq().in(). Timestamps come back as ISO strings, numerics as numbers
- * (like PostgREST's JSON).
+ * delete().eq().in(); rpc(fn, namedArgs) like PostgREST /rpc, so the data-layer
+ * sync (lib/data-layer/sync.ts → public.replace_metric_facts) runs its real SQL
+ * function. Timestamps come back as ISO strings, numerics as numbers (like
+ * PostgREST's JSON).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import pg from 'pg'
@@ -219,5 +221,27 @@ export function pgSupabase(db: Db, userId: string | null): SupabaseClient {
     chain = next.catch(() => undefined)
     return next
   }
-  return { from: (table: string) => new Query(table, run) } as unknown as SupabaseClient
+  return {
+    from: (table: string) => new Query(table, run),
+    // A function call with named arguments, like PostgREST /rpc (as tests/helpers/pg-postgrest.ts): objects and
+    // arrays of objects go as JSON (jsonb arguments), arrays of scalars as Postgres arrays. A set-returning
+    // function gives its rows; a scalar one gives the value.
+    rpc: async (fn: string, args: Record<string, unknown> = {}) => {
+      try {
+        const names = Object.keys(args)
+        const values = names.map((k) => {
+          const v = args[k]
+          const scalarArray = Array.isArray(v) && v.every((x) => x === null || typeof x !== 'object')
+          return v !== null && typeof v === 'object' && !(v instanceof Date) && !scalarArray ? JSON.stringify(v) : v
+        })
+        const call = `public.${ident(fn)}(${names.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')})`
+        const rows = await run(`SELECT * FROM ${call}`, values)
+        const scalar = rows.length === 1 && Object.keys(rows[0]).length === 1 && Object.keys(rows[0])[0] === fn
+        return { data: scalar ? rows[0][fn] : rows, error: null, status: 200 }
+      } catch (err) {
+        const e = err as { message?: string; code?: string; details?: string; hint?: string }
+        return { data: null, error: { message: e.message ?? String(err), code: e.code, details: e.details ?? null, hint: e.hint ?? null }, status: 400 }
+      }
+    },
+  } as unknown as SupabaseClient
 }

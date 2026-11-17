@@ -17,7 +17,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto'
 import PDFDocument from 'pdfkit'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedCompany, seedUser } from '../../helpers/pg-rls'
 
@@ -190,7 +190,8 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
   let companyB: string
   const reaperTasks: string[] = []
 
-  const openrouter = vi.fn(async (_url: unknown, init: { body: string }) => {
+  // The model: OpenRouter's /chat/completions (lib/ai/providers/router.ts), and nothing else.
+  const openrouter = vi.fn(async (_url: string, init: { body: string }) => {
     const body = JSON.parse(init.body) as { messages: Array<{ content: string }> }
     const [system, user] = [body.messages[0].content, body.messages[1].content]
     const content = system.includes('каталогом метрик')
@@ -209,6 +210,32 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
       choices: [{ message: { content: JSON.stringify(content) } }],
       usage: { prompt_tokens: 900, completion_tokens: 120, cost: 0.00453 },
     }), { status: 200 })
+  })
+
+  // The service client (lib/supabase-service.ts) talks PostgREST at NEXT_PUBLIC_SUPABASE_URL — a dead
+  // address in tests. Once a document is parsed the agent records DOCUMENT_PARSED (user_events) and
+  // stores survey suggestions (document_survey_suggestions) through it: these requests are recorded
+  // and answered as PostgREST would. Before, the model stub got them too (an insert has no
+  // `messages`, a GET no body) and both side effects failed with only a log line.
+  type RestCall = { method: string; table: string; query: string; body: any }
+  const rest: RestCall[] = []
+  const restRows = (table: string) => rest.filter((c) => c.table === table && c.method === 'POST').flatMap((c) => [c.body].flat())
+  const ok = (status: number, body = '') => new Response(body || null, { status, headers: { 'content-type': 'application/json' } })
+  const network = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.origin === 'https://openrouter.ai' && url.pathname === '/api/v1/chat/completions') {
+      if (!process.env.OPENROUTER_API_KEY) throw new Error('model called without a key')
+      return openrouter(url.href, init as { body: string })
+    }
+    const table = /^\/rest\/v1\/([a-z_]+)$/.exec(url.pathname)?.[1]
+    if (url.origin === new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).origin && table) {
+      const method = (init.method ?? 'GET').toUpperCase()
+      rest.push({ method, table, query: url.search, body: typeof init.body === 'string' ? JSON.parse(init.body) : null })
+      if (method === 'POST' && (table === 'user_events' || table === 'document_survey_suggestions')) return ok(201)
+      // The owner has typed no survey answer: every suggestion is new.
+      if (method === 'GET' && table === 'survey_answers') return ok(200, '[]')
+    }
+    throw new TypeError(`documents-pipeline test: unexpected request ${init.method ?? 'GET'} ${url.origin}${url.pathname}`)
   })
 
   async function upload(owner: string, company: string, name: string, bytes: Buffer, opts: { emit?: boolean; docType?: string } = {}) {
@@ -257,6 +284,13 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
     await prisma.$executeRaw`INSERT INTO public.companies (id, name, user_id, "updatedAt") VALUES (${companyB}, 'Doc B', ${ownerB}::uuid, now())`
   })
 
+  beforeEach(() => {
+    rest.length = 0
+    openrouter.mockClear()
+    network.mockClear()
+    vi.stubGlobal('fetch', network)
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     delete process.env.OPENROUTER_API_KEY
@@ -273,7 +307,6 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
   })
 
   it('upload → FILE_UPLOADED → agent: parsed with field provenance, FILE_PROCESSED and recorded model cost', async () => {
-    vi.stubGlobal('fetch', openrouter)
     process.env.OPENROUTER_API_KEY = 'test-key'
     const pdf = await makePdf(['Annual report of Test LLP for 2025.', 'Revenue for 2025: 12 500 000 KZT. Offices: 3.'])
     const up = await upload(ownerA, companyA, 'annual.pdf', pdf)
@@ -308,6 +341,23 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
       ['FILE_UPLOADED', `file_uploaded:${id}`],
       ['FILE_PROCESSED', `file_processed:${id}:1`],
     ])
+
+    // For the owner: the product event DOCUMENT_PARSED (fire-and-forget) …
+    await vi.waitFor(() => expect(restRows('user_events')).toEqual([expect.objectContaining({
+      user_id: ownerA, event_name: 'DOCUMENT_PARSED', entity_type: 'document', entity_id: id, source: 'server',
+      metadata: expect.objectContaining({ doc_type: 'pl_report', fields: 1, agent: 'document_intelligence' }),
+    })]))
+    // … and the survey suggestion of the verified revenue (an annual figure without a month → per month),
+    // after checking which of these questions the owner already answered.
+    const answered = rest.filter((c) => c.table === 'survey_answers')
+    expect(answered).toEqual([expect.objectContaining({ method: 'GET' })])
+    expect(decodeURIComponent(answered[0].query)).toContain(`user_id=eq.${ownerA}`)
+    const suggestions = restRows('document_survey_suggestions')
+    expect(suggestions).toEqual([expect.objectContaining({
+      user_id: ownerA, question_key: 's1_current_revenue_month', source_document_id: id, status: 'pending',
+    })])
+    expect(Math.round(Number(suggestions[0].value))).toBe(Math.round(12_500_000 / 12))
+    expect(openrouter).toHaveBeenCalled() // the PDF's fields came from the model
 
     const [run] = await prisma.$queryRaw<Array<Record<string, any>>>`SELECT * FROM public.agent_runs WHERE task_id = ${task.id}::uuid`
     expect(run).toMatchObject({ status: 'succeeded', prompt_version: EXTRACTION_PROMPT_VERSION, model: 'anthropic/claude-sonnet-4.5' })
@@ -362,6 +412,9 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
     expect(await doc(id)).toMatchObject({ parse_status: 'parsed', attempts: 2 })
     expect((await events(id)).filter((e) => e.name === 'FILE_PROCESSED').map((e) => e.dedupe_key))
       .toEqual([`file_processed:${id}:1`, `file_processed:${id}:2`])
+    // each parse is announced to the owner; a CSV table needs no model
+    await vi.waitFor(() => expect(restRows('user_events').filter((e) => e.event_name === 'DOCUMENT_PARSED' && e.entity_id === id)).toHaveLength(2))
+    expect(openrouter).not.toHaveBeenCalled()
   })
 
   it('a scan without text layer ends as needs_ocr with an explanation and no FILE_PROCESSED', async () => {

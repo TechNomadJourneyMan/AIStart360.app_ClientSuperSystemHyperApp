@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   upsertGoal: vi.fn(),
   resolveTarget: vi.fn(),
   createUser: vi.fn(),
+  staffNotices: [] as Array<Record<string, unknown>>,
 }))
 
 // settings/profile + goals: session client
@@ -71,7 +72,16 @@ vi.mock('@/lib/rate-limit', async (orig) => ({
   isRateLimited: async () => false,
   isRateLimitedKey: async () => false,
 }))
-vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ auth: { admin: { createUser: h.createUser } } }) }))
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => ({
+    auth: { admin: { createUser: h.createUser } },
+    // goals: the owner's goal goes to the assigned expert for review (lib/point-b/plan/notify.ts)
+    from: (table: string) => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: table === 'user_assignments' ? { assignee_id: 'expert-1' } : null, error: null }) }) }),
+    }),
+  }),
+}))
+vi.mock('@/lib/notifications/staff', () => ({ notifyStaff: async (n: Record<string, unknown>) => { h.staffNotices.push(n); return { ok: true } } }))
 vi.mock('@/lib/settings/system-settings', () => ({ getRegistrationMode: async () => 'invite', getAutoApproveClients: async () => false }))
 
 const BAD = 'Это полная хуйня'
@@ -88,6 +98,7 @@ const out = async (res: Response) => ({ status: res.status, body: await res.json
 beforeEach(() => {
   h.profileUpdates = []
   h.companyWrites = []
+  h.staffNotices = []
   h.upsertGoal.mockReset().mockImplementation(async (_s, _c, input) => ({
     id: 'g1', metricId: input.metricId, label: input.label ?? null, unit: '%', targetValue: input.targetValue, direction: 'higher_is_better',
     periodLabel: input.periodLabel, deadline: null, baselineValue: null, baselinePeriod: null, source: 'owner', note: null, createdAt: '2026-10-16T00:00:00Z',
@@ -161,6 +172,8 @@ describe('POST /api/v1/goals (подпись цели)', () => {
     const res = await goals.POST(new Request('http://localhost/api/v1/goals', { method: 'POST', body: JSON.stringify({ ...goal, label: 'Маржа 40%' }) }))
     expect(res.status).toBe(200)
     expect(h.upsertGoal).toHaveBeenCalledOnce()
+    // the owner's goal is sent to the assigned expert for review
+    expect(h.staffNotices).toEqual([expect.objectContaining({ type: 'point_b.goal.needs_review', companyId: 'co-1', audienceUserIds: ['expert-1'] })])
   })
 })
 

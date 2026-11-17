@@ -12,12 +12,27 @@
  * Real SQL + real RLS policies (scripts/test-db/setup.mjs); every test rolls back.
  * Run: npm run test:db:setup && npm run test:db
  */
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { closeTestPool, inRollback, seedCompany, seedStaff, seedUser, type Db } from '../../helpers/pg-rls'
 import { pgSupabase } from './metrics-pg-client'
 import { materializeForTenant } from '@/lib/metrics/materialize-tenant'
 import { aggregatePointA } from '@/lib/point-a/aggregator'
+
+// The recalculation announces METRIC_UPDATED (which queues the Point A recalculation). The real emitter
+// writes public.platform_events through Prisma — its own connection, outside this test's rolled-back
+// transaction: the rows stayed in the shared test DB, and the queue request it makes could not see the
+// uncommitted company (23503 on point_a_recalc_queue, logged after the test). The announcement is
+// recorded here and asserted instead.
+const events = vi.hoisted(() => ({ emitted: [] as Array<{ name: string; companyId?: string | null }> }))
+vi.mock('@/lib/events/platform', () => ({
+  emitPlatformEventSafely: (e: { name: string; companyId?: string | null }) => { events.emitted.push(e) },
+}))
+
+/** METRIC_UPDATED announcements of `company` so far. */
+const metricUpdated = (company: string) => events.emitted.filter((e) => e.name === 'METRIC_UPDATED' && e.companyId === company).length
+
+beforeEach(() => { events.emitted = [] })
 
 interface Fixture {
   owner: string
@@ -76,6 +91,15 @@ async function snapshot(db: Db, company: string): Promise<Array<{ metric_key: st
   return rows
 }
 
+/** The data layer of the company (public.metric_facts, written by public.replace_metric_facts). */
+async function facts(db: Db, company: string): Promise<Array<{ metric_key: string; period_key: string; v: number; source_kind: string }>> {
+  const { rows } = await db.query(
+    `SELECT metric_key, period_key, value::float8 AS v, source_kind FROM public.metric_facts WHERE company_id = $1 ORDER BY metric_key, period_key, source_kind, value`,
+    [company],
+  )
+  return rows
+}
+
 /** The owner's P&L (company_id NULL) as a revenue hit the resolver read, whichever source won. */
 async function revenueDocumentHits(db: Db, company: string): Promise<unknown[]> {
   const { rows } = await db.query(
@@ -97,6 +121,13 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
 
       const ownerRun = await materializeForTenant(pgSupabase(db, fx.owner), service, { companyId: fx.company, userId: fx.owner, role: 'owner' })
       expect(ownerRun.result.errors).toEqual([])
+      // The data layer ran on the real SQL function: facts written, no error.
+      expect(ownerRun.dataLayer?.error).toBeNull()
+      const ownerFacts = await facts(db, fx.company)
+      expect(ownerRun.dataLayer?.facts).toBeGreaterThan(0)
+      expect(ownerFacts).toHaveLength(ownerRun.dataLayer!.facts)
+      expect(ownerFacts).toContainEqual(expect.objectContaining({ metric_key: 'biz.finansy.vyruchka_god', v: 72_000_000, source_kind: 'document' }))
+      expect(metricUpdated(fx.company)).toBe(1)
       const afterOwner = await snapshot(db, fx.company)
       const byKey = new Map(afterOwner.map((r) => [r.metric_key, r]))
       // Owner inputs without company_id + the member's company upload all count.
@@ -116,7 +147,11 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
         expect(run.result.superseded ?? 0, `${role}: superseded`).toBe(0)
         expect(await snapshot(db, fx.company), `${role}: rows`).toEqual(afterOwner)
         expect(await revenueDocumentHits(db, fx.company), `${role}: owner's P&L read`).toEqual([expect.objectContaining({ numeric: 72_000_000 })])
+        expect(run.dataLayer?.error, `${role}: data layer`).toBeNull()
+        expect(await facts(db, fx.company), `${role}: facts`).toEqual(ownerFacts)
       }
+      // each of the 4 recalculations announced its write (→ a Point A recalculation)
+      expect(metricUpdated(fx.company)).toBe(4)
     }))
 
   it('Point A aggregate (POST) by a member reads the inputs with the service client: owner rows intact', () =>
@@ -127,12 +162,18 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
       const afterOwner = await snapshot(db, fx.company)
       expect(afterOwner.length).toBeGreaterThan(5)
 
+      const ownerFacts = await facts(db, fx.company)
+      expect(ownerFacts.length).toBeGreaterThan(0)
+
       await aggregatePointA(pgSupabase(db, fx.member), fx.owner, fx.company, {
         documentsScope: 'company',
         inputClient: service,
         writeClient: service,
       })
       expect(await snapshot(db, fx.company)).toEqual(afterOwner)
+      expect(await facts(db, fx.company)).toEqual(ownerFacts)
+      // only the owner's recalculation announced; the aggregate does not request another one
+      expect(metricUpdated(fx.company)).toBe(1)
     }))
 
   it('the owner\'s uploads to ANOTHER company (where they are a member) do not feed this company', () =>
@@ -146,8 +187,14 @@ describe.skipIf(!dbTestsEnabled)('metrics recalculation by a non-owner (RLS-hidd
         [fx.owner, other, JSON.stringify({ fields: [{ key: 'cac', label: 'CAC', value: 99_000 }] })],
       )
       const service = pgSupabase(db, null)
-      await materializeForTenant(pgSupabase(db, fx.member), service, { companyId: fx.company, userId: fx.member, role: 'member' })
+      const run = await materializeForTenant(pgSupabase(db, fx.member), service, { companyId: fx.company, userId: fx.member, role: 'member' })
       const rows = await snapshot(db, fx.company)
       expect(rows.find((r) => r.metric_key === 'biz.marketing.cac')).toMatchObject({ v: 18_500 })
+      expect(run.dataLayer?.error).toBeNull()
+      const cacFacts = (await facts(db, fx.company)).filter((f) => f.metric_key === 'biz.marketing.cac')
+      expect(cacFacts.map((f) => f.v)).toEqual([18_500])
+      expect(await facts(db, other)).toEqual([])
+      expect(metricUpdated(fx.company)).toBe(1)
+      expect(metricUpdated(other)).toBe(0)
     }))
 })

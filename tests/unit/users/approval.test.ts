@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Records what the helper writes / filters on, and lets each test configure the
 // simulated update result.
-const calls = vi.hoisted(() => ({ update: null as any, eqCol: '', eqVal: '' }))
+const calls = vi.hoisted(() => ({ update: null as any, eqCol: '', eqVal: '', authUpdates: [] as Array<[string, any]> }))
 const config = vi.hoisted(() => ({ updated: [] as any[], error: null as any }))
 const emailMock = vi.hoisted(() => ({ fn: vi.fn() }))
 
@@ -20,6 +20,8 @@ vi.mock('@/lib/supabase-service', () => ({
         }
       },
     }),
+    // W3A-2: approval clears the invite-only mark (app_metadata) through GoTrue admin.
+    auth: { admin: { updateUserById: async (id: string, attrs: any) => { calls.authUpdates.push([id, attrs]); return { data: null, error: null } } } },
   }),
 }))
 
@@ -54,6 +56,7 @@ describe('applyApprovalDecision — single source of truth for profiles.status',
     calls.update = null
     calls.eqCol = ''
     calls.eqVal = ''
+    calls.authUpdates = []
     config.updated = []
     config.error = null
     emailMock.fn.mockReset()
@@ -72,6 +75,8 @@ describe('applyApprovalDecision — single source of truth for profiles.status',
     expect(r.emailSent).toBe(true)
     // «Доступ открыт» ещё и в ленте клиента (notifyClient, категория security).
     expect(inApp.fn).toHaveBeenCalledWith('u1')
+    // W3A-2: the invite-only mark is cleared for the approved account.
+    expect(calls.authUpdates).toEqual([['u1', { app_metadata: { signup_blocked: null, signup_blocked_at: null } }]])
   })
 
   it('affected=0 and NO email when no profile matches (never silent success)', async () => {

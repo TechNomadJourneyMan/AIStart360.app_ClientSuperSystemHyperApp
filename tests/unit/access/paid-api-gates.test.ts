@@ -83,6 +83,20 @@ vi.mock('@/lib/share/tokens', () => ({ createShare: async () => ({ token: 'tok' 
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined, trackEventOnce: async () => undefined }))
 vi.mock('@/lib/events/server', () => ({ trackUserAction: async () => undefined }))
 vi.mock('@/lib/point-a/v4/state', () => ({ loadPointAState: async () => { throw new Error('not in this test') } }))
+// POST point-a/recalculate holds the company in the recalculation queue (lib/point-a/snapshot.ts default lock →
+// claimCompany / finish). The real queue writes through Prisma to the test DB, where company c-1 does not exist:
+// every pass got 23503, the lock rethrew it and the route answered 500 — «not 402» held for the wrong reason.
+const queue = vi.hoisted(() => ({
+  claimCompany: vi.fn(async (companyId: string, reason: string) => ({ company_id: companyId, reasons: [reason], started_at: new Date(), attempts: 1 })),
+  finish: vi.fn(async (_claimed: { company_id: string }) => undefined),
+  requestPointARecalc: vi.fn(async () => true),
+}))
+vi.mock('@/lib/point-a/recalc-queue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/point-a/recalc-queue')>()),
+  claimCompany: queue.claimCompany,
+  finish: queue.finish,
+  requestPointARecalc: queue.requestPointARecalc,
+}))
 
 const UUID = '22222222-2222-4222-8222-222222222222'
 const { ALL_QUESTION_KEYS } = await import('@/lib/market-analysis/questions')
@@ -174,6 +188,9 @@ beforeEach(() => {
   s.role = 'client'
   s.user = { id: '11111111-1111-4111-8111-111111111111' }
   s.fromCalls = []
+  queue.claimCompany.mockClear()
+  queue.finish.mockClear()
+  queue.requestPointARecalc.mockClear()
 })
 
 describe('Free with the gates on: 402 on every paid API, no data read', () => {
@@ -183,8 +200,44 @@ describe('Free with the gates on: 402 on every paid API, no data read', () => {
       expect(status).toBe(402)
       expect(body).toMatchObject({ ok: false, error: 'upgrade_required', feature: c.feature })
       expect(s.fromCalls).toEqual([])
+      // nor a recalculation queued or locked
+      expect(queue.claimCompany).not.toHaveBeenCalled()
+      expect(queue.requestPointARecalc).not.toHaveBeenCalled()
     })
   }
+})
+
+describe('POST point-a/recalculate past the gate: the company is held in the recalculation queue while it is rebuilt', () => {
+  const recalc = CASES.find((x) => x.name === 'POST point-a/recalculate')!
+
+  it('Pro, staff, gates off: claimCompany(c-1, manual) → build → finish, every time', async () => {
+    const answers: Array<{ status: number; body: Record<string, unknown> | null }> = []
+    s.tier = 'pro'
+    answers.push(await call(recalc))
+    s.tier = 'free'
+    s.role = 'admin'
+    answers.push(await call(recalc))
+    s.role = 'client'
+    s.gates = false
+    answers.push(await call(recalc))
+
+    expect(queue.claimCompany.mock.calls).toEqual([['c-1', 'manual'], ['c-1', 'manual'], ['c-1', 'manual']])
+    expect(queue.finish).toHaveBeenCalledTimes(3)
+    expect(queue.finish.mock.calls.map(([claimed]) => claimed.company_id)).toEqual(['c-1', 'c-1', 'c-1'])
+    // the build itself ran: the fake company has no owner → 422 «нет владельца», not a failed lock (500)
+    expect(answers.map((a) => a.status)).toEqual([422, 422, 422])
+    expect(s.fromCalls).toContain('companies')
+  })
+
+  it('a recalculation already running (no claim): 409 «уже пересчитывается», nothing built, nothing released', async () => {
+    s.tier = 'pro'
+    queue.claimCompany.mockResolvedValueOnce(null as never)
+    const { status } = await call(recalc)
+    expect(status).toBe(409)
+    expect(queue.claimCompany).toHaveBeenCalledWith('c-1', 'manual')
+    expect(queue.finish).not.toHaveBeenCalled()
+    expect(s.fromCalls).toEqual([])
+  })
 })
 
 describe('the gate lets the others through (status is anything but 402)', () => {

@@ -52,6 +52,9 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   const reportRoute = await import('@/app/api/giga-admin/reports/[id]/route')
   const reviewRoute = await import('@/app/api/giga-admin/ai-review/[kind]/[id]/route')
   const { asUser, closeTestPool, inRollback, pgErrorCode, seedStaff, seedUser } = await import('../../helpers/pg-rls')
+  const { pdfObjectPath, setReportPdfStorage } = await import('@/lib/reports/pdf-store')
+  /** The report PDFs the agent stores (report-pdfs bucket), in memory: no Storage request leaves the test. */
+  const pdfs = new Map<string, Buffer>()
 
   const users: string[] = []
   const companies: string[] = []
@@ -143,6 +146,11 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     unlockReportConfig = await lockAgentConfig('report')
     process.env.AGENT_INLINE_EXECUTION = 'false'
     __useTestAgents([reportAgent])
+    setReportPdfStorage({
+      configured: () => true,
+      upload: async (path, bytes) => { pdfs.set(path, bytes) },
+      download: async (path) => pdfs.get(path) ?? null,
+    })
   }, 180_000) // may wait for the other file to release the lock
 
   afterEach(async () => {
@@ -150,11 +158,13 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     delete process.env.OPENROUTER_API_KEY
     audit.fail = false
     audit.role = 'admin'
+    pdfs.clear()
     await prisma.$executeRaw`DELETE FROM public.agent_configs WHERE agent_key = 'report'`
   })
 
   afterAll(async () => {
     await unlockReportConfig?.()
+    setReportPdfStorage(null)
     if (companies.length) {
       await prisma.$executeRaw`DELETE FROM public.platform_events WHERE company_id = ANY(${companies}::text[])`
       await prisma.$executeRaw`DELETE FROM public.notification_events WHERE company_id = ANY(${companies}::text[])`
@@ -194,6 +204,16 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     })
     expect(v.provenance.sources).toEqual(expect.arrayContaining([{ type: 'diagnostic', ref: s.diagnosticId }, { type: 'finding', ref: s.reviewedAi }]))
     expect(task.result_summary).toMatchObject({ created: true, version: 1, hidden_hypotheses: 1 })
+
+    // The review PDF (watermarked «на проверке») is stored once, at the version's review path.
+    const reviewPath = pdfObjectPath({ company_id: s.companyId, id: v.id, version: 1 }, 'review')
+    expect(reviewPath).toBe(`${s.companyId}/${v.id}/review-v1.pdf`)
+    expect([...pdfs.keys()]).toEqual([reviewPath])
+    expect(pdfs.get(reviewPath)!.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const [stored] = await prisma.$queryRaw<Array<{ pdf_storage_path: string | null; pdf_rendered_at: Date | null }>>`
+      SELECT pdf_storage_path, pdf_rendered_at FROM public.report_versions WHERE id = ${v.id}::uuid`
+    expect(stored.pdf_storage_path).toBe(reviewPath)
+    expect(stored.pdf_rendered_at).toBeInstanceOf(Date)
 
     const ev = await generatedEvents(s.companyId)
     expect(ev).toHaveLength(1)
@@ -440,6 +460,8 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
       await run(s.companyId)
       expect(calls).toHaveLength(1)
       expect(await versions(s.companyId)).toHaveLength(1)
+      // The model stub saw only the model call; the review PDF went to storage.
+      expect([...pdfs.keys()]).toEqual([`${s.companyId}/${v.id}/review-v1.pdf`])
     })
 
     it('a narrative with invented figures is dropped and the version is created without it', async () => {
@@ -462,11 +484,11 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
       vi.stubGlobal('fetch', fetchSpy)
       const { rep } = await run(s.companyId)
       expect(rep?.summary).toContain('модель не настроена')
-      // No model call. The only network traffic allowed is the PDF upload to Storage (lib/reports/pdf-store).
-      const nonStorage = fetchSpy.mock.calls.map(([url]) => String(url)).filter((url) => !url.includes('/storage/v1/object/report-pdfs/'))
-      expect(nonStorage).toEqual([])
+      // No model call, and the review PDF goes to the (in-memory) storage: no network at all.
+      expect(fetchSpy).not.toHaveBeenCalled()
       const [v] = await versions(s.companyId)
       expect(v.provenance.staff.narrative).toEqual({ state: 'unavailable', reason: 'OPENROUTER_API_KEY не задан' })
+      expect(pdfs.has(`${s.companyId}/${v.id}/review-v1.pdf`)).toBe(true)
     })
   })
 })

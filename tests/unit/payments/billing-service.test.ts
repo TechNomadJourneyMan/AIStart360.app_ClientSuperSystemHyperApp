@@ -10,8 +10,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeClient, fakeDb, sqlModel, type FakeDb } from './_fake-supabase'
 
-const state = vi.hoisted(() => ({ client: null as unknown }))
+const state = vi.hoisted(() => ({
+  client: null as unknown,
+  /** automation_sends claims of client notices (lib/notifications/store.ts claimSend). */
+  sends: [] as Array<Record<string, unknown>>,
+  /** in-app notices (lib/notifications/create.ts — its own supabase-js client). */
+  inApp: [] as Array<Record<string, unknown>>,
+}))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => state.client }))
+vi.mock('@/lib/notifications/create', () => ({
+  createNotification: async (input: Record<string, unknown>) => { state.inApp.push(input); return true },
+}))
 
 import {
   BillingError,
@@ -36,7 +45,27 @@ function world(extra: { subscriptions?: Record<string, unknown>[]; tier?: string
     companies: [{ id: COMPANY, user_id: USER }],
     subscriptions: extra.subscriptions ?? [],
   })
-  state.client = fakeClient(db, sqlModel)
+  state.sends = []
+  state.inApp = []
+  state.client = withSends(fakeClient(db, sqlModel))
+}
+
+/** The fake client plus the automation_sends journal the client notices claim their send in. */
+function withSends(base: ReturnType<typeof fakeClient>) {
+  const sends = {
+    insert: (row: Record<string, unknown>) => ({
+      select: () => ({
+        single: async () => {
+          if (row.dedupe_key && state.sends.some((x) => x.dedupe_key === row.dedupe_key)) return { data: null, error: { code: '23505', message: 'duplicate key' } }
+          state.sends.push(row)
+          return { data: { id: `send-${state.sends.length}` }, error: null }
+        },
+      }),
+    }),
+    select: () => ({ eq: () => ({ eq: () => ({ gte: async () => ({ count: 0, error: null }) }) }) }),
+    delete: () => ({ eq: async () => ({ error: null }) }),
+  }
+  return { ...base, from: (t: string) => (t === 'automation_sends' ? sends : base.from(t)) }
 }
 
 const iso = (d: Date) => d.toISOString().replace('Z', '')
@@ -125,9 +154,16 @@ describe('expireDuePlans', () => {
     expect(db.tables.admin_audit_log[0]).toMatchObject({ actor_id: 'system:billing-expiry', actor_kind: 'system' })
     expect(db.rpcCalls.find((c) => c.name === 'billing_set_plan')?.args.p_only_if_expired).toBe(true)
 
+    // The client is told once that the plan ended (in the cabinet).
+    await vi.waitFor(() => expect(state.inApp).toHaveLength(1))
+    expect(state.inApp[0]).toMatchObject({ userId: USER })
+    expect(state.sends).toHaveLength(1)
+
     const second = await expireDuePlans()
     expect(second).toEqual({ due: 0, downgraded: 0, skipped: 0, failed: 0 })
     expect(db.tables.admin_audit_log).toHaveLength(1)
+    await vi.dynamicImportSettled()
+    expect(state.inApp).toHaveLength(1)
   })
 
   it('leaves live and open-ended plans alone', async () => {

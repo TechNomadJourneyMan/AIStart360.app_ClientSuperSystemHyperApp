@@ -9,13 +9,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { fakeClient, fakeDb, sqlModel, type FakeDb } from './_fake-supabase'
 
-const state = vi.hoisted(() => ({ client: null as unknown }))
+const state = vi.hoisted(() => ({
+  client: null as unknown,
+  /** Work handed to runInBackground — captured, run by the test (nothing outlives the file). */
+  background: [] as Array<{ label: string; work: () => Promise<unknown> }>,
+  catchUp: [] as string[],
+}))
 const prismaMock = vi.hoisted(() => ({
   tx: null as Record<string, unknown> | null,
   update: vi.fn(),
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => state.client }))
 vi.mock('@/lib/audit', () => ({ logAudit: vi.fn(async () => {}) }))
+// R2-A (M-3): a payment that gives Pro schedules the paid AI catch-up in the background.
+vi.mock('@/lib/background', () => ({
+  runInBackground: (label: string, work: () => Promise<unknown>) => { state.background.push({ label, work }); return Promise.resolve() },
+}))
+vi.mock('@/lib/point-a/diagnostic-row', () => ({ catchUpPaidAi: async (userId: string) => { state.catchUp.push(userId) } }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     paymentTransaction: {
@@ -53,6 +63,8 @@ describe('kaspi webhook → billing service', () => {
     state.client = fakeClient(db, sqlModel)
     prismaMock.tx = { id: 'tx-1', orgId: COMPANY, provider: 'kaspi', status: 'pending', planKey: 'pro_monthly', amount: 30000, currency: 'USD', metadata: { amountKzt: 157650 } }
     prismaMock.update.mockReset().mockResolvedValue({})
+    state.background = []
+    state.catchUp = []
   })
   afterEach(() => {
     if (saved === undefined) delete process.env.KASPI_WEBHOOK_SECRET
@@ -74,6 +86,16 @@ describe('kaspi webhook → billing service', () => {
     expect(prismaMock.update).not.toHaveBeenCalled()
   })
 
+  it('a payment that gives Pro schedules the paid AI catch-up for the client (background, after the answer)', async () => {
+    const res = await POST(signed({ paymentId: 'pay_1', status: 'success', amount: 157650 }))
+    expect(res.status).toBe(200)
+    await vi.dynamicImportSettled()
+    expect(state.background.map((b) => b.label)).toEqual(['paid-ai-catch-up'])
+    expect(state.catchUp).toEqual([]) // scheduled, not run inside the request
+    await state.background[0].work()
+    expect(state.catchUp).toEqual([USER])
+  })
+
   it('a one-time purchase gives open-ended Pro', async () => {
     prismaMock.tx = { ...prismaMock.tx!, planKey: 'pro_onetime', metadata: {} }
     await POST(signed({ paymentId: 'pay_1', status: 'paid' }))
@@ -87,6 +109,8 @@ describe('kaspi webhook → billing service', () => {
     const res = await POST(signed({ paymentId: 'pay_1', status: 'success' }))
     expect(res.status).toBe(500)
     expect(prismaMock.update).not.toHaveBeenCalled()
+    await vi.dynamicImportSettled()
+    expect(state.background, 'no Pro → no catch-up').toEqual([])
   })
 
   it('already finalised payments are not applied twice', async () => {
@@ -94,6 +118,8 @@ describe('kaspi webhook → billing service', () => {
     const res = await POST(signed({ paymentId: 'pay_1', status: 'success' }))
     expect((await res.json()).note).toBe('already_finalized')
     expect(db.rpcCalls).toHaveLength(0)
+    await vi.dynamicImportSettled()
+    expect(state.background).toEqual([])
   })
 
   it('rejects a bad signature without touching the plan', async () => {

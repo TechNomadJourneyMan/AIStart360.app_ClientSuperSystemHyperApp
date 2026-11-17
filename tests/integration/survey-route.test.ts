@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { SURVEY_KEY_STEP } from '@/lib/survey/steps'
+import { MODE_HEADERS } from '@/lib/survey/export'
 import { memoryClient } from '../unit/data-layer/memory-client'
 
 // ─── in-memory Supabase ──────────────────────────────────────────────────────
@@ -24,7 +25,15 @@ const db = {
   answers: [] as AnswerRow[],
   companies: [] as Array<{ id: string; user_id: string; target_revenue_12m_kzt: number | null; target_revenue_3y_kzt: number | null; updated_at?: string }>,
   notifications: [] as Record<string, unknown>[],
+  /** profiles.preferences of the client (the survey mode they chose). */
+  preferences: null as unknown,
+  /** user_events rows (SURVEY_MODE_CHOSEN / SURVEY_EXPRESS_COMPLETED …) read for the «Режим анкеты» columns. */
+  events: [] as Array<{ user_id: string; event_name: string; created_at: string; metadata?: unknown; source?: string | null }>,
 }
+
+/** `.in(col, values)` filters of a mocked select, applied to the rows. */
+const applyIn = <T extends Record<string, unknown>>(rows: T[], filters: Array<[string, unknown[]]>) =>
+  rows.filter((r) => filters.every(([c, vs]) => vs.includes(r[c])))
 
 const USER = 'user-qa-1'
 
@@ -80,17 +89,21 @@ const fakeServiceClient = {
     const chain: Record<string, unknown> = {}
     const ret = () => chain
     // Product analytics (user_events) is not under test here.
+    // The survey staff status (lib/survey/staff-status-load.ts) reads the mode events here.
     if (t === 'user_events') {
+      const inFilters: Array<[string, unknown[]]> = []
       Object.assign(chain, {
         insert: () => Promise.resolve({ error: null }),
-        select: ret, eq: ret,
-        limit: () => Promise.resolve({ data: [], error: null }),
+        select: ret, eq: ret, order: ret,
+        in: (c: string, vs: unknown[]) => { inFilters.push([c, vs]); return chain },
+        limit: () => Promise.resolve({ data: inFilters.length ? applyIn(db.events, inFilters) : [], error: null }),
       })
       return chain
     }
     if (t === 'metric_targets' || t === 'companies') return goalsDb.client.from(t)
     if (t === 'survey_answers') {
-      const rows = () => db.answers.map((r) => ({ question_key: r.question_key, step: r.step, answer: r.answer }))
+      // updated_via (the answer path, migration 134) is read back for the «Путь ответов» column.
+      const rows = () => db.answers.map((r) => ({ question_key: r.question_key, step: r.step, answer: r.answer, updated_via: (r as AnswerRow & { updated_via?: string }).updated_via }))
       Object.assign(chain, {
         select: ret,
         eq: () => Object.assign(Promise.resolve({ data: rows(), error: null }), {
@@ -108,7 +121,12 @@ const fakeServiceClient = {
       return chain
     }
     if (t === 'profiles') {
-      Object.assign(chain, { select: ret, eq: ret, maybeSingle: () => Promise.resolve({ data: { email: PROFILE_EMAIL }, error: null }) })
+      Object.assign(chain, {
+        select: ret, eq: ret,
+        maybeSingle: () => Promise.resolve({ data: { email: PROFILE_EMAIL }, error: null }),
+        // the chosen survey mode (profiles.preferences) for the staff status
+        in: (c: string, vs: unknown[]) => Promise.resolve({ data: applyIn([{ id: USER, preferences: db.preferences }], [[c, vs]]), error: null }),
+      })
       return chain
     }
     Object.assign(chain, {
@@ -186,6 +204,8 @@ beforeEach(() => {
   db.companies = [{ id: 'co-1', user_id: USER, target_revenue_12m_kzt: null, target_revenue_3y_kzt: null }]
   goalsDb = memoryClient({ companies: db.companies, metric_targets: [] })
   db.notifications = []
+  db.preferences = null
+  db.events = []
   notifyAdmins.mockClear()
   clientEmail.mockClear()
   upsertRowByKey.mockClear()
@@ -291,6 +311,34 @@ describe('POST /api/v1/onboarding/survey', () => {
     const values = upsertRowByKey.mock.calls[0][1]
     expect(values[0]).toBe(USER)
     expect(values[2], 'не email сотрудника из сессии').toBe(PROFILE_EMAIL)
+    // A client who never met the survey modes: no mode, no express; every answer came by the full questionnaire.
+    expect(values.slice(-3)).toEqual(['', '', 'полная 12'])
+  })
+
+  it('колонки «Режим анкеты» / «Экспресс» / «Путь ответов»: режим клиента, экспресс, пути ответов (события «от имени» — не выбор клиента)', async () => {
+    db.preferences = { survey: { mode: 'express', chosen_at: '2026-10-20T12:00:00Z', switched_at: '2026-10-23T12:00:00Z' } }
+    db.events = [
+      { user_id: USER, event_name: 'SURVEY_EXPRESS_COMPLETED', created_at: '2026-10-24T12:00:00Z', metadata: { answered: 20, skipped: 5, unknown: 3 }, source: 'web' },
+      { user_id: 'other-user', event_name: 'SURVEY_EXPRESS_COMPLETED', created_at: '2026-10-01T12:00:00Z', metadata: { answered: 1, skipped: 0 }, source: 'web' },
+    ]
+    await post(1, oneAnswerPerStep())
+    await drain()
+    expect(upsertRowByKey).toHaveBeenCalledTimes(1)
+    const [headers, values] = upsertRowByKey.mock.calls[0]
+    expect(headers.slice(-3)).toEqual([...MODE_HEADERS])
+    expect(values).toHaveLength(headers.length)
+    expect(values.slice(-3)).toEqual(['Экспресс + блоки с 23.10.2026', 'пройден 24.10.2026 · ответов 20 из 25, «не знаю» — 3', 'полная 12'])
+
+    // No preference saved: the last mode the CLIENT chose; a choice made «от имени» by staff is not theirs.
+    upsertRowByKey.mockClear()
+    db.preferences = null
+    db.events = [
+      { user_id: USER, event_name: 'SURVEY_MODE_CHOSEN', created_at: '2026-10-21T12:00:00Z', metadata: { mode: 'chat', from: 'chooser' }, source: 'web' },
+      { user_id: USER, event_name: 'SURVEY_MODE_CHOSEN', created_at: '2026-10-25T12:00:00Z', metadata: { mode: 'full', previous: 'chat', from: 'switch' }, source: 'impersonation' },
+    ]
+    await post(2, { s2n_what_blocks_growth: 'Нет продаж' })
+    await drain()
+    expect(upsertRowByKey.mock.calls[0][1].slice(-3)).toEqual(['Беседа с ИИ с 21.10.2026', '', 'полная 13'])
   })
 
   it('ответ не ждёт Google Sheets (кнопка «Далее» висела 6–19 с)', async () => {
