@@ -7,6 +7,7 @@ import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { revokeSharesOfCreator } from '@/lib/share/tokens'
 
 /**
  * POST /api/giga-admin/users/:id/block { reason }
@@ -19,7 +20,8 @@ import { guardClientAccess } from '@/lib/admin/client-scope'
  *      compensating `user.block_failed` entry is written (the journal is
  *      append-only);
  *   3. bans the GoTrue user (ban_duration) so existing refresh tokens die and
- *      new sign-ins are rejected at the auth layer.
+ *      new sign-ins are rejected at the auth layer;
+ *   4. revokes the person's public report links (SR-19), as archive and bulk block do.
  * (The legacy NextAuth `sessions` cleanup went away with NextAuth itself.)
  */
 const bodySchema = z.object({
@@ -103,6 +105,10 @@ export async function POST(
     } catch (e) {
       console.error('[giga-admin/block] GoTrue ban failed (status still blocked):', e)
     }
+
+    // 3. SR-19: the person's public report links stop working, as on archive and bulk block
+    //    (a failure is reported to staff by revokeSharesOfCreator itself).
+    await revokeSharesOfCreator(id, 'status:blocked')
 
     return NextResponse.json({ success: true, message: 'Пользователь заблокирован' })
   } catch (error) {
