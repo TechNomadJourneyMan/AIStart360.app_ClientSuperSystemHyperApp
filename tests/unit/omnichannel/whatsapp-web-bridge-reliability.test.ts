@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import { createHash, createHmac } from 'node:crypto'
 import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { assertBridgeDependencies } from './_bridge-deps'
 import {
   compactCommandCache,
   FixedWindowRateLimiter,
@@ -135,6 +136,8 @@ async function stopBridge(child: ReturnType<typeof spawn>) {
 }
 
 describe('WhatsApp Web bridge reliability', () => {
+  beforeAll(() => assertBridgeDependencies())
+
   it('isolates trusted and public fixed-window rate-limit budgets', () => {
     let now = 1_000
     const publicLimiter = new FixedWindowRateLimiter({
