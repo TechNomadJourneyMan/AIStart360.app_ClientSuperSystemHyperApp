@@ -78,6 +78,14 @@ describe.skipIf(!dbTestsEnabled)('pulse api', () => {
       const admin = await seedStaff(db, 'super_admin')
       // health 30 → risk 70, high, «call»; finance 12 → avgCheck 120 000 (revenue at risk)
       const risky = await client(db, 'Риск Co', 'Ритейл', { health: 30, finance: 12, sales: 40, daysAgo: 3 })
+      // …and an older calculation of it kept as history (not current), dated later: only the current
+      // row counts (the read used to take every row, history included, and the newest by date)
+      await db.query(
+        `INSERT INTO public.diagnostics (user_id, overall_score, health_index, finance_score, sales_score, calculated_at, is_current)
+         VALUES ($1, 90, 90, '{"score": 1}'::jsonb, '{"score": 1}'::jsonb, now(), false)`, [risky])
+      // (the versioning trigger demotes the current row on every insert: put the state back — the
+      // calculation of 3 days ago is current, the later-dated one is history)
+      await db.query(`UPDATE public.diagnostics SET is_current = (calculated_at < now() - interval '1 day') WHERE user_id = $1`, [risky])
       // health 55 → medium, «message»
       const middle = await client(db, 'Средняя Co', 'Услуги', { health: 55, finance: 5, sales: 60, daysAgo: 1 })
       // health 85 → low, «monitor»: NOT processed today
@@ -135,7 +143,13 @@ describe.skipIf(!dbTestsEnabled)('pulse api', () => {
       expect(h.getDailyBriefing).toHaveBeenCalledTimes(1)
       const [briefUser, prompt] = h.getDailyBriefing.mock.calls[0] as [string, string]
       expect(briefUser).toBe(admin)
-      expect(prompt).toContain('"Риск Co"')
+      // The briefing lists the five riskiest clients of the whole platform: other test files may
+      // commit clients of their own, so the check is the rule itself — the risks in the prompt are the
+      // five highest of the answer — and «Риск Co» is there whenever fewer than five others are as risky.
+      const risks = [...prompt.matchAll(/^\d+\. ".+?" — .*?, риск (\d+)\/100/gm)].map((m) => Number(m[1]))
+      expect(risks).toEqual(payload.todayClients.map((c) => c.riskScore).sort((a, b) => b - a).slice(0, 5))
+      const riskyRisk = byId.get(risky)!.riskScore
+      if (others.filter((c) => c.riskScore >= riskyRisk).length < 5) expect(prompt).toContain('"Риск Co"')
       expect(payload.aiBriefing).toBe('Позвоните «Риск» первым.')
     }))
 
