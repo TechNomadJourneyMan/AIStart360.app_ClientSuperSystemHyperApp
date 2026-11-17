@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 
+// null = unknown (GET /api/pulse): a client without an official Point A score has no risk, and the
+// platform has no order data (check, volume change). Never render a null as 0.
 export interface PulseMetric {
   id: string
   clientId: string
-  lastOrder: string | Date
-  daysSince: number
-  avgCheck: number
-  volumeChange: number
-  riskScore: number
-  churnProb: number
-  churnLevel: 'high' | 'medium' | 'low'
-  comment: string
+  lastOrder: string | Date | null
+  daysSince: number | null
+  avgCheck: number | null
+  volumeChange: number | null
+  riskScore: number | null
+  churnProb: number | null
+  churnLevel: 'high' | 'medium' | 'low' | null
+  comment: string | null
   action: 'call' | 'message' | 'monitor'
   history: number[]
   client: {

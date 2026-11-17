@@ -81,6 +81,26 @@ const defaultDeps: BriefingDeps = {
   },
 }
 
+/** Hourly limit bucket of the uncached briefing — not the «Пульс» page's 'pulse-briefing-ai'. */
+export const UNCACHED_BRIEFING_RATE_KEY = 'pulse-api-briefing-ai'
+
+/**
+ * The same generation and daily AI budget without the daily cache, and with an hourly limit of
+ * its own. The cache is keyed by user and day only (ai_briefing_cache) and holds the «Пульс» page's
+ * briefing (POST /api/pulse/briefing); a briefing over other data (GET /api/pulse, platform
+ * clients) must neither read nor replace it — nor, generating on every call, spend the page's
+ * 10 generations an hour.
+ */
+export const UNCACHED_BRIEFING_DEPS: BriefingDeps = {
+  ...defaultDeps,
+  readCache: async () => null,
+  writeCache: async () => undefined,
+  async isLimited(userId) {
+    const { isRateLimitedKey } = await import('@/lib/rate-limit')
+    return isRateLimitedKey(userId, UNCACHED_BRIEFING_RATE_KEY, PULSE_BRIEFING_RATE_LIMIT)
+  },
+}
+
 /**
  * Today's briefing for `userId`: cached text if present, otherwise a fresh,
  * validated generation (subject to the hourly rate limit). Never throws.
