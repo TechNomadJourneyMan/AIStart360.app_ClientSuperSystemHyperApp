@@ -13,7 +13,10 @@ import path from 'path'
  * all the other files and one file at a time, so nothing holds a lock they need. They are found by
  * their content: a new test of that kind joins the serial project without anyone listing it.
  */
-export const SCHEMA_CHANGE = /supabase\/migrations\/|\b(?:ALTER|DROP|CREATE(?:\s+OR\s+REPLACE)?)\s+(?:TABLE|(?:UNIQUE\s+)?INDEX|TRIGGER|POLICY|FUNCTION)\b/
+export const SCHEMA_CHANGE = /supabase\/migrations\/|\b(?:ALTER|DROP|CREATE(?:\s+OR\s+REPLACE)?)\s+(?:TABLE|(?:UNIQUE\s+)?INDEX|TRIGGER|POLICY|FUNCTION|(?:MATERIALIZED\s+)?VIEW|TYPE|SCHEMA|SEQUENCE|EXTENSION)\b|\bTRUNCATE\s+(?:TABLE\s+)?[a-z_".]+|\bLOCK\s+TABLE\b|\bREINDEX\b|\bVACUUM\s+FULL\b/i
+
+/** A file path as a glob that matches only itself (include / exclude are globs: «[id]» is a class). */
+export const literalGlob = (file: string): string => file.replace(/[\\[\]{}()*?!+@]/g, '\\$&')
 
 export function schemaChangingTests(root: string = __dirname): string[] {
   const dir = path.join(root, 'tests/integration')
@@ -24,7 +27,7 @@ export function schemaChangingTests(root: string = __dirname): string[] {
     .sort()
 }
 
-const SERIAL = schemaChangingTests()
+const SERIAL = schemaChangingTests().map(literalGlob)
 
 export default defineConfig({
   // tsconfig sets jsx:"preserve" for Next, which makes the transformer skip

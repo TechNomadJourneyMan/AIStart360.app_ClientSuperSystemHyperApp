@@ -5,7 +5,12 @@
  * `profiles`), and the migration-150 test failed now and then under a full run.
  */
 import { describe, expect, it } from 'vitest'
-import config, { SCHEMA_CHANGE, schemaChangingTests } from '../../../vitest.config'
+import { createRequire } from 'node:module'
+import config, { SCHEMA_CHANGE, literalGlob, schemaChangingTests } from '../../../vitest.config'
+
+// The glob matcher vitest itself matches include / exclude with (its own dependency, not the project's).
+const fromVitest = createRequire(createRequire(import.meta.url).resolve('vitest/package.json'))
+const picomatch = fromVitest('picomatch') as { isMatch(path: string, glob: string | string[]): boolean }
 
 type Project = { test?: { name?: string; include?: string[]; exclude?: string[]; fileParallelism?: boolean; sequence?: { groupOrder?: number } } }
 
@@ -28,6 +33,12 @@ describe('vitest: schema-changing DB tests run serially, last', () => {
     expect(serial.every((f) => f.startsWith('tests/integration/'))).toBe(true)
   })
 
+  it('a path with glob characters ([id], braces, *) is matched literally, not as a pattern', () => {
+    const file = 'tests/integration/db/[id]/{a,b}*.test.ts'
+    expect(picomatch.isMatch(file, literalGlob(file))).toBe(true)
+    expect(picomatch.isMatch('tests/integration/db/i/a.test.ts', literalGlob(file))).toBe(false)
+  })
+
   it('the pattern: DDL and migration files yes, plain queries no', () => {
     for (const yes of [
       "readFileSync('supabase/migrations/150_point_a_ai_review.sql')",
@@ -36,12 +47,18 @@ describe('vitest: schema-changing DB tests run serially, last', () => {
       'DROP INDEX IF EXISTS public.i',
       'CREATE UNIQUE INDEX i ON public.t (a)',
       'DROP POLICY p ON public.t',
+      'alter table public.t add column x int', // any case
+      'TRUNCATE public.metrics',
+      'LOCK TABLE public.profiles IN ACCESS EXCLUSIVE MODE',
+      'CREATE OR REPLACE VIEW public.v AS SELECT 1',
+      'REINDEX TABLE public.t',
     ]) expect(SCHEMA_CHANGE.test(yes), yes).toBe(true)
     for (const no of [
       'SELECT * FROM public.profiles',
       'INSERT INTO public.diagnostics (user_id) VALUES ($1)',
       "UPDATE public.profiles SET status = 'approved'",
       'DELETE FROM public.admin_requests',
+      'the text is truncated to 100 characters',
     ]) expect(SCHEMA_CHANGE.test(no), no).toBe(false)
   })
 
@@ -55,9 +72,11 @@ describe('vitest: schema-changing DB tests run serially, last', () => {
     expect(main.test?.name).toBe('tests')
     expect(main.test?.include).toEqual(['tests/**/*.test.ts'])
     expect(main.test?.sequence?.groupOrder).toBe(0)
-    for (const f of serial) expect(main.test?.exclude).toContain(f)
+    for (const f of serial) expect(main.test?.exclude).toContain(literalGlob(f))
     expect(ddl.test?.name).toBe('schema-changing')
-    expect(ddl.test?.include).toEqual(serial)
+    expect(ddl.test?.include).toEqual(serial.map(literalGlob))
+    // include / exclude are globs: every serial file is matched by its own pattern, and only by it
+    for (const f of serial) expect(picomatch.isMatch(f, literalGlob(f))).toBe(true)
     expect(ddl.test?.fileParallelism).toBe(false)
     expect(ddl.test?.sequence?.groupOrder).toBe(1)
   })

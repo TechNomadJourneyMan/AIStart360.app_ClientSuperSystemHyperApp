@@ -242,6 +242,9 @@ describe.skipIf(!dbTestsEnabled)('backups (142)', async () => {
       const dump = join(bucket(), 'latest.dump')
       expect(field('rows.public.profiles')).toBe(String(rowsInDump(dump, 'public', 'profiles')))
       expect(field('rows.auth.users')).toBe(String(rowsInDump(dump, 'auth', 'users')))
+      // …and not two empty sides: this file's two staff members are committed, so they are in the dump.
+      expect(rowsInDump(dump, 'public', 'profiles')).toBeGreaterThanOrEqual(2)
+      expect(rowsInDump(dump, 'auth', 'users')).toBeGreaterThanOrEqual(2)
       expect(Number(field('tables'))).toBeGreaterThan(100)
 
       expect(readFileSync(join(bucket(), 'storage', 'current', 'stub', 'documents', 'contract.pdf'), 'utf8')).toBe('pdf-bytes')

@@ -1,8 +1,9 @@
 name: Install dependencies
 description: >-
   Node 22 and the root node_modules. node_modules is restored from the cache keyed on the exact Node
-  version, package-lock.json and the Prisma schema (postinstall runs `prisma generate` into
-  node_modules); on a miss `npm ci` installs it, from the ~/.npm cache when there is one. Only the job
+  version, package.json, package-lock.json and the Prisma schema (postinstall runs `prisma generate`
+  into node_modules; package.json is in the key so a package.json out of sync with the lockfile still
+  reaches `npm ci`, which refuses it — as Railway's build would); on a miss `npm ci` installs it, from the ~/.npm cache when there is one. Only the job
   with `save: 'true'` writes the caches back, so the parallel jobs do not race to save the same key.
 inputs:
   save:
@@ -21,7 +22,7 @@ runs:
       id: modules
       with:
         path: node_modules
-        key: node-modules-${{ runner.os }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'prisma/schema.prisma') }}
+        key: node-modules-${{ runner.os }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package.json', 'package-lock.json', 'prisma/schema.prisma') }}
     # ~/.npm (~430 MB) only on a node_modules miss: with node_modules restored nothing reads it.
     - name: Restore the npm download cache
       if: steps.modules.outputs.cache-hit != 'true'
