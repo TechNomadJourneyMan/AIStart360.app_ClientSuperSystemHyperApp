@@ -40,6 +40,10 @@ export const POINT_A_TRIGGER_EVENTS: ReadonlySet<string> = new Set([
 ])
 
 /** The queue table itself is missing (migration 111 not applied) — not any other error. */
+export function isMissingQueueTable(err: unknown): boolean {
+  return missingTable(err)
+}
+
 function missingTable(err: unknown): boolean {
   const meta = (err as { meta?: { code?: string } } | null)?.meta
   if (meta?.code === '42P01') return true
