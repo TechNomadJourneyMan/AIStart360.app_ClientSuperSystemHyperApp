@@ -371,9 +371,15 @@ export function snapshotsByDiagnostic(rows: ReadonlyArray<OfficialSnapshotRow & 
 
 /**
  * The snapshots that wrote these diagnostics (point_a_snapshots.diagnostic_id),
- * in chunks. A failed read degrades to «no snapshot» (the rows alone).
+ * in chunks. A failed read degrades to «no snapshot» (the rows alone) — unless
+ * `strict`: then it throws, for a caller that must not present the raw row as
+ * official (a raw health_index can hold a number the official reader drops).
  */
-export async function loadSnapshotsByDiagnostic(client: Pick<SupabaseClient, 'from'>, diagnosticIds: readonly string[]): Promise<Map<string, OfficialSnapshotRow>> {
+export async function loadSnapshotsByDiagnostic(
+  client: Pick<SupabaseClient, 'from'>,
+  diagnosticIds: readonly string[],
+  opts: { strict?: boolean } = {},
+): Promise<Map<string, OfficialSnapshotRow>> {
   const ids = [...new Set(diagnosticIds.filter(Boolean))]
   const rows: Array<OfficialSnapshotRow & { created_at?: unknown }> = []
   try {
@@ -382,10 +388,14 @@ export async function loadSnapshotsByDiagnostic(client: Pick<SupabaseClient, 'fr
         .from('point_a_snapshots')
         .select(`${OFFICIAL_SNAPSHOT_COLUMNS}, created_at`)
         .in('diagnostic_id', ids.slice(i, i + 150))
-      if (error) return new Map()
+      if (error) {
+        if (opts.strict) throw new Error(`point_a_snapshots: ${error.message}`)
+        return new Map()
+      }
       rows.push(...((data ?? []) as unknown as Array<OfficialSnapshotRow & { created_at?: unknown }>))
     }
-  } catch {
+  } catch (err) {
+    if (opts.strict) throw err
     return new Map()
   }
   return snapshotsByDiagnostic(rows)
