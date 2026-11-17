@@ -133,8 +133,11 @@ const defaultDeps: SnapshotDeps = {
       const claimed = await q.claimCompany(companyId, 'manual')
       return claimed ? { release: () => q.finish(claimed) } : null
     } catch (err) {
-      // Before migration 111 there is no queue to lock in: run unlocked.
-      console.error('[point-a/snapshot] lock unavailable', err instanceof Error ? err.message : err)
+      // Only before migration 111 — no queue to lock in — may the recalculation run unlocked. Any
+      // other failure of the claim (pool or statement timeout, overload) fails it: unlocked, it could
+      // run alongside the recalculation of the same company that the drain holds.
+      if (!q.isMissingQueueTable(err)) throw err
+      console.error('[point-a/snapshot] lock unavailable (no recalculation queue before migration 111)')
       return { release: async () => undefined }
     }
   },

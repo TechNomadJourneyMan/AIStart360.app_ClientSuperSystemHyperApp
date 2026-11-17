@@ -32,6 +32,9 @@ function makeMockSupabase(canned: CannedResponses = {}) {
     error: canned.metrics?.error ?? null,
   })
 
+  // The data-layer sync (lib/data-layer/sync.ts) replaces the facts with one RPC (public.replace_metric_facts).
+  const rpc = vi.fn().mockResolvedValue({ data: 0, error: null })
+
   const surveyRows = canned.survey_answers ?? []
   const docRows = canned.documents ?? []
 
@@ -64,8 +67,9 @@ function makeMockSupabase(canned: CannedResponses = {}) {
   })
 
   return {
-    client: { from } as unknown as SupabaseClient,
+    client: { from, rpc } as unknown as SupabaseClient,
     upsert,
+    rpc,
     from,
   }
 }
@@ -249,11 +253,17 @@ describe('aggregatePointA', () => {
   })
 
   it('skipMaterialize=false (default) attempts to upsert metrics', async () => {
-    const { client, upsert } = makeMockSupabase({
+    const { client, upsert, rpc } = makeMockSupabase({
       survey_answers: sampleSurveyRows(),
     })
     await aggregatePointA(client, 'u', 'c')
     expect(upsert).toHaveBeenCalled()
+    // and the data layer of the same inputs: the facts of company c, in one call
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('replace_metric_facts', { p_company_id: 'c', p_rows: expect.any(Array) })
+    const facts = rpc.mock.calls[0][1].p_rows as Array<{ company_id: string; metric_key: string }>
+    expect(facts.length).toBeGreaterThan(0)
+    expect(facts.every((f) => f.company_id === 'c')).toBe(true)
   })
 
   it('writes metrics with the writeClient (service role), never the read client', async () => {
@@ -264,6 +274,9 @@ describe('aggregatePointA', () => {
     expect(write.upsert).toHaveBeenCalled()
     const rows = write.upsert.mock.calls[0][0] as Array<{ company_id: string; source: string }>
     expect(rows.every((r) => r.company_id === 'c')).toBe(true)
+    // the facts too: through the write client only
+    expect(read.rpc).not.toHaveBeenCalled()
+    expect(write.rpc).toHaveBeenCalledWith('replace_metric_facts', expect.objectContaining({ p_company_id: 'c' }))
   })
 })
 

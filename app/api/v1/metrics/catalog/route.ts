@@ -44,6 +44,10 @@ import { isLowerBetter } from '@/components/metrics/catalog-model'
 import { currentMetricRows } from '@/lib/metrics/company-metrics'
 import { resolveFeature } from '@/lib/access/decision'
 
+// Per request (the session and query decide the answer). Without it `next build` tries to render the
+// route statically, trips over request.url and prints «Dynamic server usage» into the build log.
+export const dynamic = 'force-dynamic'
+
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 /** History rows read per request (newest first) — enough for the previous value of every metric. */
 const HISTORY_LIMIT = 5000

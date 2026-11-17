@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const state = vi.hoisted(() => ({
   stub: null as any,
   role: 'super_admin' as string | null,
+  authUpdates: [] as Array<[string, any]>,
+  inApp: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('@/lib/supabase-service', () => ({
@@ -32,6 +34,10 @@ vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
 vi.mock('@/lib/audit', () => ({
   logAudit: vi.fn().mockResolvedValue(undefined),
 }))
+// The «Доступ открыт» record in the client's feed (app_notifications, own supabase-js client).
+vi.mock('@/lib/notifications/create', () => ({
+  createNotification: async (input: Record<string, unknown>) => { state.inApp.push(input); return true },
+}))
 
 import { NextRequest } from 'next/server'
 import { PATCH } from '@/app/api/giga-admin/requests/[id]/route'
@@ -52,6 +58,8 @@ function makeSbStub({
   profileUpdate: { data: any[] | null; error: any }
 }) {
   return {
+    // W3A-2: approval clears the invite-only mark through GoTrue admin.
+    auth: { admin: { updateUserById: async (id: string, attrs: any) => { state.authUpdates.push([id, attrs]); return { data: null, error: null } } } },
     from(table: string) {
       if (table === 'admin_requests') {
         return {
@@ -86,6 +94,8 @@ describe('PATCH /api/giga-admin/requests/[id] — approve reliability', () => {
   beforeEach(() => {
     state.role = 'super_admin'
     state.stub = null
+    state.authUpdates = []
+    state.inApp = []
   })
 
   it('returns 200 { ok:true } when the profile row is actually updated', async () => {
@@ -95,6 +105,8 @@ describe('PATCH /api/giga-admin/requests/[id] — approve reliability', () => {
     const json = await res.json()
     expect(json.ok).toBe(true)
     expect(json.status).toBe('approved')
+    expect(state.authUpdates.map(([id]) => id)).toEqual([USER])
+    expect(state.inApp).toEqual([expect.objectContaining({ userId: USER })])
   })
 
   it('returns 404 (NOT ok:true) when zero profile rows change — regression for the silent-success bug', async () => {

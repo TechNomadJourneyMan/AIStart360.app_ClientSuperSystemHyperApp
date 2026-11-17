@@ -20,6 +20,10 @@ const state = vi.hoisted(() => ({
   profile: { id: '', role: 'client', status: 'approved' } as { id: string; role: string; status: string },
   target: { staffRole: null as string | null, profileRole: 'client' as string | null, status: 'approved', email: 'c@x.io' },
 }))
+// SR-19: public report links are revoked through lib/share/tokens (PostgREST) — captured in the call order.
+vi.mock('@/lib/share/tokens', () => ({
+  revokeSharesOfCreator: async (userId: string, reason: string) => { state.calls.push(`revoke:${userId}:${reason}`); return { ok: true, revoked: 2 } },
+}))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
   const { makeRequireGiga } = await import('../_giga-guard')
@@ -83,10 +87,11 @@ describe('block', () => {
     expect(state.calls).toEqual([])
   })
 
-  it('журнал (с ролью и email сотрудника) → статус → бан', async () => {
+  it('журнал (с ролью и email сотрудника) → статус → бан → отзыв публичных ссылок (SR-19)', async () => {
     const res = await block.POST(req('block', { reason: 'спам в чатах' }), { params: { id: UID } })
     expect(res.status).toBe(200)
-    expect(state.calls).toEqual(['audit:user.blocked', 'update:profiles:blocked', 'ban:87600h'])
+    // SR-19: a blocked person's public report links stop working, as on archive and bulk block.
+    expect(state.calls).toEqual(['audit:user.blocked', 'update:profiles:blocked', 'ban:87600h', `revoke:${UID}:status:blocked`])
     expect(state.audits[0].actor).toMatchObject({ role: 'super_admin', email: 'boss@x.io' })
     expect(state.audits[0].metadata).toMatchObject({ reason: 'спам в чатах' })
   })
@@ -139,7 +144,7 @@ describe('archive', () => {
   it('архивирует: журнал → статус → бан → завершение имперсонаций', async () => {
     const res = await archive.POST(req('archive', { action: 'archive', reason: 'просьба клиента' }), { params: { id: UID } })
     expect(res.status).toBe(200)
-    expect(state.calls).toEqual(['audit:user.archived', 'update:profiles:archived', 'ban:87600h', 'update:impersonation_sessions:user_archived'])
+    expect(state.calls).toEqual(['audit:user.archived', 'update:profiles:archived', 'ban:87600h', `revoke:${UID}:status:archived`, 'update:impersonation_sessions:user_archived'])
   })
 
   it('статус не записался → user.archive_failed, бан не ставится', async () => {
@@ -148,6 +153,13 @@ describe('archive', () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toMatch(/Не удалось изменить статус/)
     expect(state.calls).toEqual(['audit:user.archived', 'update:profiles:archived', 'audit:user.archive_failed'])
+  })
+
+  it('восстановление из архива ссылки не отзывает', async () => {
+    state.target = { ...state.target, status: 'archived' }
+    const res = await archive.POST(req('archive', { action: 'restore', reason: 'ошибка оператора' }), { params: { id: UID } })
+    expect(res.status).toBe(200)
+    expect(state.calls).toEqual(['audit:user.restored', 'update:profiles:approved', 'ban:none'])
   })
 
   it('восстановление не записалось → user.restore_failed', async () => {

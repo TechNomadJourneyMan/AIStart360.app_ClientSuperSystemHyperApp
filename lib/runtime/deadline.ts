@@ -119,11 +119,14 @@ export async function runWithDeadline<R>(
 ): Promise<R> {
   const outerFrame = currentFrame()
   const outer = outerFrame?.deadline ?? null
-  const at = Math.min(now() + ms, outer?.at ?? Number.POSITIVE_INFINITY)
+  // One reading of the clock for both the deadline and its timer: with two, a millisecond between
+  // them set the timer to ms − 1 and the budget ended early (a CI flake of route-deadlines.test.ts).
+  const startedAt = now()
+  const at = Math.min(startedAt + ms, outer?.at ?? Number.POSITIVE_INFINITY)
   const controller = new AbortController()
   const deadline: Deadline = { at, signal: controller.signal, label }
   const frame: Frame = { deadline, outer: outerFrame, open: true }
-  const timer = setTimeout(() => controller.abort(new DeadlineExceededError(label, ms)), Math.max(0, at - now()))
+  const timer = setTimeout(() => controller.abort(new DeadlineExceededError(label, ms)), Math.max(0, at - startedAt))
   const onOuterAbort = () => controller.abort(outer?.signal.reason)
   outer?.signal.addEventListener('abort', onOuterAbort, { once: true })
   try {

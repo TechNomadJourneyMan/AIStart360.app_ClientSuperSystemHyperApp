@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { assertBridgeDependencies } from './_bridge-deps'
 import {
   verifySignedBridgeRequest,
   WHATSAPP_WEB_PORTAL_AUDIENCE,
@@ -33,6 +34,8 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 describe('WhatsApp Web bridge — pull control end to end', () => {
+  beforeAll(() => assertBridgeDependencies())
+
   it('pushes status, claims a command, executes it and acks it', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'wa-bridge-pull-control-'))
     cleanups.push(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))

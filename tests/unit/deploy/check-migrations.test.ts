@@ -39,9 +39,27 @@ describe('the real supabase/migrations', () => {
 
   it('CI runs it, before anything else needs dependencies', () => {
     const ci = readFileSync(path.resolve(__dirname, '../../../.github/workflows/ci.yml'), 'utf8')
-    const step = ci.indexOf('run: node scripts/deploy/check-migrations.mjs')
+    // The static job: the check, then the install (.github/actions/install — cached node_modules or npm ci).
+    const job = ci.slice(ci.indexOf('\n  static:'), ci.indexOf('\n  tests:'))
+    const step = job.indexOf('run: node scripts/deploy/check-migrations.mjs')
     expect(step).toBeGreaterThan(0)
-    expect(step).toBeLessThan(ci.indexOf('run: npm ci'))
+    expect(job.indexOf('uses: ./.github/actions/install')).toBeGreaterThan(step)
+    const install = readFileSync(path.resolve(__dirname, '../../../.github/actions/install/action.yml'), 'utf8')
+    expect(install).toContain('run: npm ci')
+  })
+
+  it('the check preflight requires is the job that needs every other CI job and fails unless all succeeded', () => {
+    const ci = readFileSync(path.resolve(__dirname, '../../../.github/workflows/ci.yml'), 'utf8')
+    const jobs = [...ci.slice(ci.indexOf('\njobs:')).matchAll(/^ {2}([a-z][a-z0-9_-]*):\n/gm)].map((m) => m[1])
+    expect(jobs).toEqual(['static', 'tests', 'build', 'checks'])
+    const checks = ci.slice(ci.indexOf('\n  checks:'))
+    expect(checks).toContain('name: typecheck · lint · tests (with prod-mirror DB)')
+    expect(checks).toContain('if: always()')
+    expect(checks).toContain('needs: [static, tests, build]')
+    expect(checks).toContain(`all(.[]; .result == "success")`)
+    // No other job may carry the required prefix: preflight would accept it instead.
+    const names = [...ci.matchAll(/^ {4}name: (.+)$/gm)].map((m) => m[1])
+    expect(names.filter((n) => n.startsWith('typecheck · lint · tests'))).toEqual(['typecheck · lint · tests (with prod-mirror DB)'])
   })
 
   it('without the two new rollbacks the real folder would fail (what the check is for)', () => {

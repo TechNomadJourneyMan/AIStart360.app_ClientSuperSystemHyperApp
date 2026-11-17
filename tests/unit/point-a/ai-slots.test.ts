@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   inFlight: 0,
   peak: 0,
   hypotheses: 0,
+  fetched: 0,
   hold: 30,
 }))
 
@@ -22,15 +23,26 @@ async function aiJob(): Promise<void> {
   h.inFlight -= 1
 }
 
-vi.mock('@/lib/agents/queue', () => ({ enqueueAgentTask: async () => ({ id: 't-1' }) }))
+// The three modules below are imported DYNAMICALLY by the code under test, by many snapshots at
+// once (snapshot.ts runAfterWrite → `import('@/lib/events/platform')`, addHypotheses →
+// `import('@/lib/ai/budget')`, diagnostic-row.ts startDiagnosticPipeline → `import('@/lib/agents/queue')`).
+// A factory mock (`vi.mock(id, () => …)`) is NOT reliable there in vitest 4: to spot a factory that
+// imports its own module, vitest pushes «mock:<id>» onto the importer's callstack array while it
+// awaits the factory's exports, and the module runner shares ONE callstack array between all the
+// imports of a module. A concurrent `import()` of the same id from the same module during that await
+// is taken for such a self-import and gets the ORIGINAL module: of 10 concurrent snapshots, 8–9
+// reached the real queue («unknown agent diagnostic_orchestrator») and the real platform events
+// (POINT_A_UPDATED rows for co-0…9 in the test DB). An auto-spied module has no such check: once
+// imported below, every later import returns the same spied exports. The spies get fakes here.
+vi.mock('@/lib/agents/queue', { spy: true })
+vi.mock('@/lib/events/platform', { spy: true })
+vi.mock('@/lib/ai/budget', { spy: true })
 vi.mock('@/lib/background', () => ({
   runInBackground: async (_l: string, work: () => Promise<unknown>) => { await work() },
   trackBackground: () => undefined,
 }))
-vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: () => undefined }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))
 vi.mock('@/lib/internal-auth', () => ({ internalBaseUrl: () => 'https://app.test', internalFetchHeaders: () => ({}) }))
-vi.mock('@/lib/ai/budget', () => ({ assertAiBudget: async () => undefined, isAiBudgetError: () => false }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }),
@@ -46,6 +58,13 @@ vi.mock('@/lib/point-a/v4/hypotheses', () => ({
   },
 }))
 
+const queue = await import('@/lib/agents/queue')
+const platformEvents = await import('@/lib/events/platform')
+const aiBudget = await import('@/lib/ai/budget')
+const enqueueAgentTask = vi.mocked(queue.enqueueAgentTask)
+const emitPlatformEventSafely = vi.mocked(platformEvents.emitPlatformEventSafely)
+const assertAiBudget = vi.mocked(aiBudget.assertAiBudget)
+
 const { fireAiFanOut } = await import('@/lib/point-a/diagnostic-row')
 const { runAfterWrite } = await import('@/lib/point-a/snapshot')
 const { pointAAiSlots, resetPointAAiSlotsForTests } = await import('@/lib/point-a/ai-slots')
@@ -58,17 +77,34 @@ const ANALYZE = '/api/v1/diagnostics/ai-analyze' as const
 const BLOCK_NEEDING = { key: 'marketing', title: 'Маркетинг', weight: 0.2, hiddenForClient: false, informational: false, order: 1, status: 'insufficient_data', score: null, coverage: 0.2, confidence: 0.1, earned: 1, possible: 2, checks: [], top_issues: [], recommendations: [], needs: [], conflicts: [], inputsHash: 'x' }
 
 const fetchImpl: typeof fetch = async () => {
+  h.fetched += 1
   await aiJob()
   return new Response('{"ok":true}', { status: 200 })
+}
+
+/** What runAfterWrite must have done for companies co-0 … co-(n-1): one event, one pipeline, one budget check each. */
+function expectAfterWriteOf(n: number) {
+  const ids = Array.from({ length: n }, (_, i) => `co-${i}`)
+  expect(emitPlatformEventSafely).toHaveBeenCalledTimes(n)
+  expect(emitPlatformEventSafely.mock.calls.map(([e]) => e.name)).toEqual(Array(n).fill('POINT_A_UPDATED'))
+  expect(emitPlatformEventSafely.mock.calls.map(([e]) => e.companyId).sort()).toEqual(ids)
+  expect(enqueueAgentTask).toHaveBeenCalledTimes(n)
+  expect(enqueueAgentTask.mock.calls.map(([t]) => t.agentKey)).toEqual(Array(n).fill('diagnostic_orchestrator'))
+  expect(enqueueAgentTask.mock.calls.map(([t]) => t.companyId).sort()).toEqual(ids)
+  expect(assertAiBudget).toHaveBeenCalledTimes(n)
 }
 
 beforeEach(() => {
   h.inFlight = 0
   h.peak = 0
   h.hypotheses = 0
+  h.fetched = 0
   h.hold = 30
   resetPointAAiSlotsForTests()
   process.env.OPENROUTER_API_KEY = 'k'
+  enqueueAgentTask.mockReset().mockImplementation(async () => ({ id: 't-1', created: true }))
+  emitPlatformEventSafely.mockReset().mockImplementation(() => undefined)
+  assertAiBudget.mockReset().mockImplementation(async () => undefined)
 })
 
 afterEach(() => {
@@ -144,7 +180,9 @@ describe('N4A-12 the Point A AI slots', () => {
     await vi.waitFor(() => expect(pointAAiSlots().active() + pointAAiSlots().waiting()).toBe(0), { timeout: 5_000 })
 
     expect(h.hypotheses).toBe(10)
+    expect(h.fetched).toBe(10) // and the 10 analyses
     expect(h.peak).toBe(2)
+    expectAfterWriteOf(10)
   })
 })
 
@@ -166,6 +204,8 @@ describe('RA-2: the AI hypotheses are never dropped for want of a slot', () => {
 
     expect(h.hypotheses).toBe(6)
     expect(h.peak).toBe(1)
+    expect(h.fetched).toBe(0)
+    expectAfterWriteOf(6)
   })
 })
 

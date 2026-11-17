@@ -305,8 +305,13 @@ export async function GET() {
       if (profiles?.length) {
         const { data: diagnostics } = await sb
           .from('diagnostics')
-          .select('user_id, overall_score, health_index, stage, finance_score, sales_score, created_at')
-          .order('created_at', { ascending: false })
+          // diagnostics has no created_at (it is calculated_at): selecting it failed the
+          // whole read, and every client showed as «Анкета не заполнена».
+          .select('user_id, overall_score, health_index, stage, finance_score, sales_score, created_at:calculated_at')
+          // Only the current Point A of each client: every recalculation keeps the old row (not
+          // current), and the history would fill PostgREST's row cap before every client's current row.
+          .eq('is_current', true)
+          .order('calculated_at', { ascending: false })
 
         const diagMap = new Map<string, {
           health: number; financeScore: number; salesScore: number; createdAt: string

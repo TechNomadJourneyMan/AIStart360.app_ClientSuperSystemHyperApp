@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
 
 function fakeClient(name: string) {
   return {
+    clientName: name,
     auth: { getUser: async () => ({ data: { user: h.user }, error: null }) },
     from(table: string) {
       const q: Call = { table, op: 'select', filters: [] }
@@ -70,6 +71,11 @@ const narrativeMock = vi.hoisted(() => ({ generate: vi.fn() }))
 vi.mock('@/lib/point-a/narrative', () => ({ generateNarrative: (...a: unknown[]) => narrativeMock.generate(...a) }))
 const analyzerMock = vi.hoisted(() => ({ analyze: vi.fn() }))
 vi.mock('@/lib/ai/point-a-analyzer', () => ({ analyzePointA: (...a: unknown[]) => analyzerMock.analyze(...a) }))
+// Решение PO «гибрид»: a stored analysis opens the expert's review task at once (lib/expert-sla/immediate.ts,
+// its own tests). Here: the route announces it, with the service client, after the analysis is saved — the
+// real one ran against the in-memory double above and failed («sb.rpc is not a function»), unnoticed.
+const slaMock = vi.hoisted(() => ({ announce: vi.fn(), statusAtCall: [] as unknown[] }))
+vi.mock('@/lib/expert-sla/immediate', () => ({ announceAiReviewNow: (...a: unknown[]) => slaMock.announce(...a) }))
 
 const narrativeRoute = await import('@/app/api/v1/point-a/narrative/route')
 const analyzeRoute = await import('@/app/api/v1/diagnostics/ai-analyze/route')
@@ -116,9 +122,20 @@ beforeEach(() => {
   }
   narrativeMock.generate.mockReset()
   analyzerMock.analyze.mockReset()
+  slaMock.statusAtCall = []
+  slaMock.announce.mockReset().mockImplementation(async () => {
+    slaMock.statusAtCall.push(h.tables.diagnostics[0]?.ai_status)
+    return { opened: true, notified: null }
+  })
 })
 
 const updates = () => h.calls.filter((c) => c.op === 'update')
+/** The expert's review task was announced once, for DIAG, with the service client, after ai_status = completed. */
+const expectAnnouncedOnce = () => {
+  expect(slaMock.announce).toHaveBeenCalledTimes(1)
+  expect(slaMock.announce).toHaveBeenCalledWith({ sb: expect.objectContaining({ clientName: 'service' }), diagnosticId: DIAG })
+  expect(slaMock.statusAtCall).toEqual(['completed'])
+}
 
 describe('POST /api/v1/point-a/narrative', () => {
   it('401 without a session', async () => {
@@ -187,6 +204,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
       expect(u.filters).toEqual([['id', DIAG], ['user_id', USER]])
       expect(u.payload).not.toHaveProperty('ai_narrative')
     }
+    expectAnnouncedOnce()
   })
 
   it('replaces a legacy narrative in ai_analysis with a real analysis', async () => {
@@ -194,6 +212,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     analyzerMock.analyze.mockResolvedValue(ANALYSIS)
     await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
     expect(h.tables.diagnostics[0].ai_analysis).toEqual(ANALYSIS)
+    expectAnnouncedOnce()
   })
 
   it('refuses a diagnostic that does not belong to user_id before any model call', async () => {
@@ -201,6 +220,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     expect(res.status).toBe(404)
     expect(analyzerMock.analyze).not.toHaveBeenCalled()
     expect(updates()).toEqual([])
+    expect(slaMock.announce).not.toHaveBeenCalled()
   })
 
   it('a failed save is written as ai_status failed, not left «processing»', async () => {
@@ -209,6 +229,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
     expect(res.status).toBe(500)
     expect(h.tables.diagnostics[0].ai_status).toBe('failed')
+    expect(slaMock.announce).not.toHaveBeenCalled() // nothing stored, nothing for the expert to confirm
   })
 
   it('an exception after the body was read still marks the verified diagnostic failed', async () => {
@@ -250,6 +271,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
     expect(await res.json()).toMatchObject({ ok: false, ai_status: 'failed' })
     expect(h.tables.diagnostics[0]).toMatchObject({ ai_status: 'failed', ai_analysis: ANALYSIS })
+    expect(slaMock.announce).not.toHaveBeenCalled()
   })
 
   // I2 (R-033): the official Point A, never `?? calculatePointA(answers)`.
@@ -260,6 +282,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     expect(await res.json()).toMatchObject({ ok: false, ai_status: 'none', reason: 'no_score' })
     expect(h.tables.diagnostics[0].ai_status).toBe('none')
     expect(analyzerMock.analyze).not.toHaveBeenCalled()
+    expect(slaMock.announce).not.toHaveBeenCalled()
   })
 
   it('blocks without data reach the model as «no data», not as a v1 recalculation', async () => {
@@ -271,6 +294,7 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     expect(pointA.overall_score).toBe(47)
     expect(pointA.blocks.operations.score).toBe(62)
     expect(blocksWithoutData).toEqual(['finance', 'sales', 'marketing', 'strategy'])
+    expectAnnouncedOnce()
   })
 })
 

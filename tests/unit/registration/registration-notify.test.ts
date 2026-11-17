@@ -11,6 +11,9 @@ const s = vi.hoisted(() => ({
   existingProfile: null as { id: string; status: string; role?: string } | null,
   staff: null as { role: string } | null,
   noUser: false,
+  /** The user's registration request already on record (a repeated /register call). */
+  existingRequest: null as { id: string } | null,
+  created: 0,
 }))
 
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notify }))
@@ -22,7 +25,15 @@ vi.mock('@/lib/rate-limit', () => ({
   rateLimitResponse: () => new Response(null, { status: 429 }),
 }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => {} }))
-vi.mock('@/lib/db', () => ({ prisma: { adminRequest: { create: async () => ({ id: 'req-1' }) } } }))
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    adminRequest: {
+      // /register first looks the user's registration request up (a repeated call must not add a second one).
+      findFirst: async () => s.existingRequest,
+      create: async () => { s.created++; return { id: 'req-1' } },
+    },
+  },
+}))
 const fakeFrom = vi.hoisted(() => (table: string) => ({
   upsert: async () => ({ error: null }),
   insert: async () => ({ error: null }),
@@ -63,6 +74,8 @@ beforeEach(() => {
   s.existingProfile = null
   s.staff = null
   s.noUser = false
+  s.existingRequest = null
+  s.created = 0
 })
 
 const body = { userId: 'u-1', email: 'a@corp.kz', name: 'Айдар', company: 'ТОО Ромашка' }
@@ -78,6 +91,14 @@ describe('registration notifications (GAP-20)', () => {
     expect(userId).toBe('u-1')
     expect(data).toMatchObject({ name: 'Айдар', email: 'a@corp.kz', organization: 'ТОО Ромашка', status: 'pending_approval', requestId: 'req-1' })
     expect(JSON.stringify(data)).not.toMatch(/password|token/i)
+    expect(s.created).toBe(1)
+  })
+
+  it('a repeated /register keeps the request already on record: no second request, no second announcement (200)', async () => {
+    s.existingRequest = { id: 'req-0' }
+    expect((await register(post())).status).toBe(200)
+    expect(s.created).toBe(0)
+    expect(s.notify).not.toHaveBeenCalled()
   })
 
   it('OPEN mode (already approved) still announces the sign-up', async () => {

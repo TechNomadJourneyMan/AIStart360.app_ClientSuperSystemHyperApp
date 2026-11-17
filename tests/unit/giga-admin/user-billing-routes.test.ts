@@ -8,7 +8,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 import type { StaffRole } from '@/lib/admin/rbac'
 
-const s = vi.hoisted(() => ({ role: 'super_admin' as string, targetDenied: false }))
+const s = vi.hoisted(() => ({
+  role: 'super_admin' as string,
+  targetDenied: false,
+  /** Updates of admin_requests: a paid plan closes the client's open access requests (lib/access/paid-access-grant.ts). */
+  requestUpdates: [] as Array<{ patch: Record<string, unknown>; filters: Record<string, unknown> }>,
+}))
 const billing = vi.hoisted(() => ({
   setPlan: vi.fn(),
   getEffectivePlan: vi.fn(),
@@ -23,6 +28,21 @@ vi.mock('@/lib/admin/giga-actor', async () => {
       s.targetDenied ? NextResponse.json({ ok: false, error: 'Недостаточно прав для действий с этим сотрудником' }, { status: 403 }) : null,
   }
 })
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => ({
+    from: (table: string) => {
+      if (table !== 'admin_requests') throw new Error(`unexpected table ${table}`)
+      const filters: Record<string, unknown> = {}
+      const q = {
+        update: (patch: Record<string, unknown>) => { s.requestUpdates.push({ patch, filters }); return q },
+        eq: (c: string, v: unknown) => { filters[c] = v; return q },
+        in: (c: string, v: unknown[]) => { filters[c] = v; return q },
+        select: async () => ({ data: [], error: null }), // no open request of this client
+      }
+      return q
+    },
+  }),
+}))
 vi.mock('@/lib/payments/billing', async () => {
   const actual = await vi.importActual<typeof import('@/lib/payments/billing')>('@/lib/payments/billing')
   return { ...actual, setPlan: billing.setPlan, getEffectivePlan: billing.getEffectivePlan, listPayments: billing.listPayments }
@@ -51,6 +71,7 @@ describe('GIGA billing routes', () => {
   beforeEach(() => {
     s.role = 'super_admin'
     s.targetDenied = false
+    s.requestUpdates = []
     billing.setPlan.mockReset().mockImplementation(async (input: { tier: string; periodEnd: Date | null }) => ({
       applied: true, orgId: UID, userId: UID, before: plan({ tier: 'free' }),
       after: plan({ tier: input.tier, periodEnd: input.periodEnd ? input.periodEnd.toISOString() : null }),
@@ -100,7 +121,11 @@ describe('GIGA billing routes', () => {
       const months = (input.periodEnd.getTime() - before) / 864e5
       expect(months).toBeGreaterThan(88)
       expect(months).toBeLessThan(93)
-      expect((await res.json()).plan.tier).toBe('enterprise')
+      const body = await res.json()
+      expect(body.plan.tier).toBe('enterprise')
+      // A paid plan closes the client's open access requests (none here) as approved.
+      expect(body.closedRequests).toEqual([])
+      expect(s.requestUpdates).toEqual([{ patch: expect.objectContaining({ status: 'approved' }), filters: expect.objectContaining({ type: 'access', 'payload->>userId': UID }) }])
     })
 
     it('a bare date means the end of that day; no end = open-ended Pro', async () => {

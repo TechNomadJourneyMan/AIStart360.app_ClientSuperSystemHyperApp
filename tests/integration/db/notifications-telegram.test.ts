@@ -33,6 +33,13 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
   const analyst = { id: randomUUID(), tg: admin.tg + 1 }
   const type = `test.t${Date.now()}`
   const env: Record<string, string | undefined> = {}
+  // notifyStaff writes to EVERY linked staff member in the database, and other test files running in
+  // parallel commit their own (backup.test.ts: chat 910…, ops-job-runs.test.ts: 920…). The assertions
+  // are about this file's two users: deliveries and messages are filtered to their chats.
+  const ours = new Set([String(admin.tg), String(analyst.tg)])
+  const mine = <D extends { target: string }>(deliveries: D[]) => deliveries.filter((d) => ours.has(d.target))
+  const myCalls = (method?: string) => calls.filter((c) => (!method || c.method === method) && (c.method !== 'sendMessage' || ours.has(String(c.body.chat_id))))
+  const sentTo = (tg: number) => calls.find((c) => c.method === 'sendMessage' && String(c.body.chat_id) === String(tg))
 
   async function staffUser(id: string, role: string) {
     await prisma.$executeRaw`INSERT INTO auth.users (id, email) VALUES (${id}::uuid, ${`${id}@staff.local`})`
@@ -79,15 +86,16 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
 
   it('routes by level: WARNING to linked staff, INFO only to the feed, duplicates once', async () => {
     const warn = await notifyStaff({ level: 'WARNING', type, title: 'Очередь растёт', lines: ['20 задач ждут'], dedupeKey: `${type}:w1` }, { fetchImpl: fakeFetch })
-    expect(warn.deliveries.filter((d) => d.status === 'sent').map((d) => d.target).sort()).toEqual([String(admin.tg), String(analyst.tg)].sort())
-    expect(calls[0].body.text).toContain('[AIStart360]')
-    expect(calls[0].body.reply_markup).toBeUndefined()
+    expect(mine(warn.deliveries).filter((d) => d.status === 'sent').map((d) => d.target).sort()).toEqual([String(admin.tg), String(analyst.tg)].sort())
+    expect(sentTo(admin.tg)?.body.text).toContain('[AIStart360]')
+    expect(sentTo(admin.tg)?.body.reply_markup).toBeUndefined()
 
     const info = await notifyStaff({ level: 'INFO', type: `${type}.info`, title: 'Файл загружен' }, { fetchImpl: fakeFetch })
     expect(info.deliveries.every((d) => d.status === 'skipped' && d.reason === 'below_platform_level')).toBe(true)
 
     const dup = await notifyStaff({ level: 'WARNING', type, title: 'Очередь растёт', dedupeKey: `${type}:w1` }, { fetchImpl: fakeFetch })
-    expect(dup).toEqual({ eventId: warn.eventId, duplicate: true, deliveries: [] })
+    expect(dup).toMatchObject({ eventId: warn.eventId, duplicate: true })
+    expect(mine(dup.deliveries)).toEqual([])
   })
 
   it('a repeated dedupe key resumes recipients a crashed run never reached, and nobody twice (#38)', async () => {
@@ -103,14 +111,14 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
     const resumed = await notifyStaff({ level: 'WARNING', type: `${type}.crash`, title: 'Агент упал', dedupeKey: key }, { fetchImpl: fakeFetch })
     expect(resumed.duplicate).toBe(true)
     expect(resumed.eventId).toBe(ev.id)
-    expect(resumed.deliveries.filter((d) => d.status === 'sent').map((d) => d.target).sort()).toEqual([String(admin.tg), String(analyst.tg)].sort())
-    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(2)
+    expect(mine(resumed.deliveries).filter((d) => d.status === 'sent').map((d) => d.target).sort()).toEqual([String(admin.tg), String(analyst.tg)].sort())
+    expect(myCalls('sendMessage')).toHaveLength(2)
 
     // Everyone is handled now: a further repeat sends nothing.
     calls.length = 0
     const again = await notifyStaff({ level: 'WARNING', type: `${type}.crash`, title: 'Агент упал', dedupeKey: key }, { fetchImpl: fakeFetch })
-    expect(again.deliveries).toEqual([])
-    expect(calls).toHaveLength(0)
+    expect(mine(again.deliveries)).toEqual([])
+    expect(myCalls()).toHaveLength(0)
 
     // A fresh claim belongs to a run still in flight: it is not taken over.
     const key2 = `${type}:inflight`
@@ -121,14 +129,15 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
       INSERT INTO public.notification_deliveries (event_id, channel, target, status, attempts)
       VALUES (${ev2.id}::uuid, 'telegram', ${String(admin.tg)}, 'queued', 0)`
     const inflight = await notifyStaff({ level: 'CRITICAL', type: `${type}.inflight`, title: 'В работе', dedupeKey: key2 }, { fetchImpl: fakeFetch })
-    expect(inflight.deliveries.map((d) => d.target)).toEqual([String(analyst.tg)])
+    expect(mine(inflight.deliveries).map((d) => d.target)).toEqual([String(analyst.tg)])
   })
 
   it('cools down repeated warnings of the same type but always delivers CRITICAL', async () => {
     const again = await notifyStaff({ level: 'WARNING', type, title: 'Очередь всё ещё растёт' }, { fetchImpl: fakeFetch })
-    expect(again.deliveries.every((d) => d.reason === 'cooldown')).toBe(true)
+    expect(mine(again.deliveries)).toHaveLength(2)
+    expect(mine(again.deliveries).every((d) => d.reason === 'cooldown')).toBe(true)
     const crit = await notifyStaff({ level: 'CRITICAL', type, title: 'Очередь стоит' }, { fetchImpl: fakeFetch })
-    expect(crit.deliveries.filter((d) => d.status === 'sent')).toHaveLength(2)
+    expect(mine(crit.deliveries).filter((d) => d.status === 'sent')).toHaveLength(2)
   })
 
   it('holds back warnings at night (Asia/Almaty) but not critical alerts', async () => {
@@ -136,9 +145,10 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
     try {
       const night = new Date('2026-10-06T20:30:00Z') // 01:30 in Almaty (UTC+5)
       const w = await notifyStaff({ level: 'WARNING', type: `${type}.night`, title: 'Ночью' }, { fetchImpl: fakeFetch, now: night })
-      expect(w.deliveries.every((d) => d.reason === 'quiet_hours')).toBe(true)
+      expect(mine(w.deliveries)).toHaveLength(2)
+      expect(mine(w.deliveries).every((d) => d.reason === 'quiet_hours')).toBe(true)
       const c = await notifyStaff({ level: 'CRITICAL', type: `${type}.night2`, title: 'Ночью критично' }, { fetchImpl: fakeFetch, now: night })
-      expect(c.deliveries.some((d) => d.status === 'sent')).toBe(true)
+      expect(mine(c.deliveries).some((d) => d.status === 'sent')).toBe(true)
     } finally {
       process.env.NOTIFY_QUIET_HOURS = ''
     }
@@ -180,8 +190,8 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
       RETURNING id`
 
     const sent = await notifyStaff({ level: 'APPROVAL_REQUIRED', type: 'agent.approval', title: 'Агент просит одобрения', approvalId: approval.id }, { fetchImpl: fakeFetch })
-    expect(sent.deliveries.map((d) => d.target)).toEqual([String(admin.tg)]) // analyst has no approvals.decide
-    const keyboard = calls[0].body.reply_markup.inline_keyboard[0]
+    expect(mine(sent.deliveries).map((d) => d.target)).toEqual([String(admin.tg)]) // analyst has no approvals.decide
+    const keyboard = sentTo(admin.tg)!.body.reply_markup.inline_keyboard[0]
     expect(keyboard.map((b: { text: string }) => b.text)).toEqual(['✅ Одобрить', '❌ Отклонить'])
     const approveData = keyboard[0].callback_data as string
     expect(approveData).toBe(approvalCallbackData(approval.id, 'approve'))

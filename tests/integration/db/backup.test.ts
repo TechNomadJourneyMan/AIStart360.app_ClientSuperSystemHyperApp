@@ -22,15 +22,19 @@ describe.skipIf(!dbTestsEnabled)('backups (142)', async () => {
   const { prisma } = await import('@/lib/db')
   const { runBackupFreshness } = await import('@/lib/ops/backup-freshness')
 
-  const sent: Array<{ chat: string; text: string }> = []
-  const fakeFetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? '{}'))
-    if (String(url).endsWith('/sendMessage')) sent.push({ chat: String(body.chat_id), text: String(body.text) })
-    return new Response(JSON.stringify({ ok: true, result: { message_id: sent.length } }), { status: 200 })
-  })
-
   const superAdmin = { id: randomUUID(), tg: 910_000_000 + Math.floor(Math.random() * 1e6) }
   const admin = { id: randomUUID(), tg: superAdmin.tg + 1 }
+  // Alerts go to every linked staff member in the database, and other test files running in parallel
+  // commit their own (notifications-telegram.test.ts, ops-job-runs.test.ts). Only the messages to this
+  // file's two staff members are recorded: «to the Super Admin only» means not to OUR admin.
+  const ours = new Set([String(superAdmin.tg), String(admin.tg)])
+  const sent: Array<{ chat: string; text: string }> = []
+  let messageId = 0
+  const fakeFetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}'))
+    if (String(url).endsWith('/sendMessage') && ours.has(String(body.chat_id))) sent.push({ chat: String(body.chat_id), text: String(body.text) })
+    return new Response(JSON.stringify({ ok: true, result: { message_id: ++messageId } }), { status: 200 })
+  })
   const env: Record<string, string | undefined> = {}
   const H = 3600_000
 
@@ -189,6 +193,20 @@ describe.skipIf(!dbTestsEnabled)('backups (142)', async () => {
       return { status: res.status, out: `${res.stdout}\n${res.stderr}` }
     }
 
+    /** Rows of one table in a custom-format dump: the lines of its COPY block (one line per row). */
+    function rowsInDump(dump: string, schema: string, table: string): number {
+      const r = spawnSync(join(pgBin!, 'pg_restore'), ['--data-only', '--schema', schema, '--table', table, '--file', '-', dump], {
+        encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+      })
+      expect(r.status, r.stderr).toBe(0)
+      const lines = r.stdout.split('\n')
+      const start = lines.findIndex((l) => l.startsWith(`COPY ${schema}.${table} `))
+      expect(start, `no COPY block of ${schema}.${table} in the dump`).toBeGreaterThanOrEqual(0)
+      const end = lines.indexOf('\\.', start)
+      expect(end, `the COPY block of ${schema}.${table} is not closed`).toBeGreaterThan(start)
+      return end - start - 1
+    }
+
     const journal = () => prisma.$queryRaw<Array<{ kind: string; ok: boolean; bytes: bigint | null; tables: number | null; sha256: string | null; object_key: string | null; error: string | null }>>`
       SELECT kind, ok, bytes, tables, sha256, object_key, error FROM public.ops_backup_runs ORDER BY started_at, kind`
     const ls = (p: string) => (existsSync(p) ? readdirSync(p).sort() : [])
@@ -218,10 +236,15 @@ describe.skipIf(!dbTestsEnabled)('backups (142)', async () => {
       const month = name.slice(0, 7)
       expect(ls(join(bucket(), 'monthly'))).toEqual([`${month}.dump`, `${month}.manifest`])
 
-      const [counts] = await prisma.$queryRaw<Array<{ profiles: bigint; users: bigint }>>`
-        SELECT (SELECT count(*) FROM public.profiles) AS profiles, (SELECT count(*) FROM auth.users) AS users`
-      expect(field('rows.public.profiles')).toBe(String(counts.profiles))
-      expect(field('rows.auth.users')).toBe(String(counts.users))
+      // The counts are taken in the dump's own snapshot: they must equal the rows IN THE DUMP. (A
+      // live count after the run raced with the other test files writing profiles in parallel —
+      // «expected '3' to be '5'» under load.)
+      const dump = join(bucket(), 'latest.dump')
+      expect(field('rows.public.profiles')).toBe(String(rowsInDump(dump, 'public', 'profiles')))
+      expect(field('rows.auth.users')).toBe(String(rowsInDump(dump, 'auth', 'users')))
+      // …and not two empty sides: this file's two staff members are committed, so they are in the dump.
+      expect(rowsInDump(dump, 'public', 'profiles')).toBeGreaterThanOrEqual(2)
+      expect(rowsInDump(dump, 'auth', 'users')).toBeGreaterThanOrEqual(2)
       expect(Number(field('tables'))).toBeGreaterThan(100)
 
       expect(readFileSync(join(bucket(), 'storage', 'current', 'stub', 'documents', 'contract.pdf'), 'utf8')).toBe('pdf-bytes')

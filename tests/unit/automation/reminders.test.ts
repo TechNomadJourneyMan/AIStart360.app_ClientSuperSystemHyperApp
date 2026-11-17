@@ -50,6 +50,9 @@ vi.mock('@/lib/notifications/create', () => ({
   },
 }))
 vi.mock('@/lib/telegram', () => ({ sendTelegramMessage: async () => false }))
+// The clients' questionnaire mode (profiles + user_events): none chosen here — the classic texts.
+// The mode-specific reminders are tested in reminders-modes.test.ts.
+vi.mock('@/lib/automation/survey-modes', () => ({ fetchSurveyModes: async () => new Map() }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (key: string) => h.settings[key] }))
 
 const { runReminders, planReminders, firstMissingStep } = await import('@/lib/automation/reminders')
