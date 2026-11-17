@@ -4,7 +4,7 @@
  * deadline signal; the ambient deadline bounds the work below the handler (the AI failover).
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 beforeAll(() => {
   // Next puts AsyncLocalStorage on globalThis (next/dist/server/node-environment.js); vitest does not.
@@ -150,5 +150,29 @@ describe('R-015 ambient deadline', () => {
       })
     })
     expect(deadlineRemainingMs()).toBeNull()
+  })
+})
+
+describe('R4 CI flake: the timer of a deadline', () => {
+  // runWithDeadline read the clock twice — `at = now() + ms`, then `setTimeout(…, at - now())`. A
+  // millisecond between the two reads (a busy CI runner) set the timer to ms − 1, and the route
+  // answered 504 a millisecond before its budget (route-deadlines.test.ts failed in CI 2026-11-17).
+  it('is set from one reading of the clock: a tick between reads does not shorten the budget', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let t = 1_000_000
+      const ticking = () => t++ // every read is one ms later than the last: the worst case of a slow runner
+      let aborted = false
+      const run = runWithDeadline('tick', 1_000, (d) => new Promise<void>((resolve) => {
+        d.signal.addEventListener('abort', () => { aborted = true; resolve() }, { once: true })
+      }), ticking)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(aborted, 'the deadline fired before its budget was spent').toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await run
+      expect(aborted, 'the deadline did not fire when its budget was spent').toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
