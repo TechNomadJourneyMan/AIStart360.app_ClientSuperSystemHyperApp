@@ -127,13 +127,23 @@ describe.skipIf(!dbTestsEnabled)('migration 155', () => {
       const columns = async () =>
         (await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'crm_clients' AND column_name LIKE 'external%' ORDER BY 1`)).rows.map((r) => r.column_name)
 
+      // SEC-P2-18: every auth.uid() of these policies in the initplan form (SELECT auth.uid()), in both states.
+      const perRowAuthCalls = async () =>
+        (await db.query(
+          `SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('crm_interactions', 'crm_reminders')
+              AND (coalesce(qual, '') ~ '(?<!SELECT )auth\\.uid\\(\\)' OR coalesce(with_check, '') ~ '(?<!SELECT )auth\\.uid\\(\\)')`,
+        )).rows.map((r) => r.policyname)
+      expect(await perRowAuthCalls()).toEqual([])
+
       await db.query(DOWN)
       await db.query(DOWN)
       expect(await columns()).toEqual([])
       expect(await pgErrorCode(addInteraction(db, stranger, ownersClient))).toBeNull() // the 044 hole
+      expect(await perRowAuthCalls()).toEqual([])
 
       await db.query(UP)
       await db.query(UP)
+      expect(await perRowAuthCalls()).toEqual([])
       expect(await columns()).toEqual(['external_id', 'external_source'])
       expect(await pgErrorCode(addInteraction(db, stranger, ownersClient))).toBe('42501')
       expect(await pgErrorCode(addReminder(db, stranger, ownersClient))).toBe('42501')
