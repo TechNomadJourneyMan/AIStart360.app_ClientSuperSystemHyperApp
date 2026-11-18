@@ -4,11 +4,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { parseClientsCsv } from '@/lib/crm/csv-import'
 import { parseDocument, detectDocumentType } from '@/lib/documents/parse'
+import { planImport, type ClientFields, type ExistingClient } from '@/lib/crm/import-merge'
+import { PAGE_SIZE, readAllById } from '@/lib/crm/today'
 
 const MAX_ROWS = 2000
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 МБ — с запасом на 2000 строк CSV/XLSX
-const CHUNK = 200 // размер батча для .in()-поиска и массовых вставок
+const CHUNK = 200 // размер батча массовых вставок
 
+/**
+ * POST /api/v1/crm/clients/import — CSV / XLSX into the owner's base.
+ *
+ * Rows are matched to the base by phone, else by e-mail, else (no phone, no e-mail) an identical
+ * anonymous row; a match is updated with the row's non-empty values only — an empty cell never
+ * wipes a field. Re-importing the same file creates nothing and changes nothing. Rules:
+ * lib/crm/import-merge.ts.
+ *
+ * Answer: { inserted, updated, unchanged, duplicates (rows repeating a contact of the same file),
+ * skipped (nameless rows and rows the DB refused) }.
+ */
 export async function POST(request: NextRequest) {
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
@@ -56,81 +69,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'too many rows' }, { status: 413 })
   }
 
+  // The owner's whole base (page by page — no silent cut), matched in memory.
+  const base = await readAllById<ExistingClient>((after) => {
+    let q = sb
+      .from('crm_clients')
+      .select('id, name, phone, phone_raw, email, note, avg_check, created_at')
+      .eq('user_id', userId)
+    if (after) q = q.gt('id', after)
+    return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<{
+      data: ExistingClient[] | null
+      error: unknown
+    }>
+  })
+  // A failed read must not be swallowed: every row would then become a second copy of a client.
+  if (!base.ok) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
+
+  const plan = planImport(rows, base.rows)
   let inserted = 0
   let updated = 0
   let skipped = parseSkipped
 
-  // Какие из телефонов уже есть у пользователя → карта phone -> id.
-  // Поиск чанками, чтобы не упереться в лимит длины URL у .in().
-  const phones = rows.map((r) => r.phone).filter((p): p is string => !!p)
-  const existing = new Map<string, string>()
-  for (let i = 0; i < phones.length; i += CHUNK) {
-    const slice = phones.slice(i, i + CHUNK)
-    const { data: existRows, error: lookupErr } = await sb
-      .from('crm_clients')
-      .select('id, phone')
-      .eq('user_id', userId)
-      .in('phone', slice)
-    // Проглотить ошибку нельзя: иначе existing пуст → всё уходит в insert →
-    // ловит уникальный индекс → тихо «импортировалось почти ничего».
-    if (lookupErr) {
-      return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
-    }
-    for (const e of existRows ?? []) {
-      if (e.phone) existing.set(e.phone as string, e.id as string)
-    }
-  }
-
-  // Разделяем на массовую вставку (обычно большинство) и точечные апдейты.
-  const toInsert = rows.filter((r) => !(r.phone && existing.has(r.phone)))
-  const toUpdate = rows.filter((r) => r.phone && existing.has(r.phone))
-
-  // Массовые вставки чанками: ceil(N/CHUNK) запросов вместо N.
-  for (let i = 0; i < toInsert.length; i += CHUNK) {
-    const slice = toInsert.slice(i, i + CHUNK)
-    const { data, error } = await sb
-      .from('crm_clients')
-      .insert(
-        slice.map((row) => ({
-          user_id: userId,
-          name: row.name,
-          phone: row.phone,
-          phone_raw: row.phone_raw,
-          email: row.email,
-          note: row.note,
-          avg_check: row.avg_check,
-          source: 'csv',
-        })),
-      )
-      .select('id')
-    if (error) {
-      // Дедуп в parseClientsCsv делает конфликты маловероятными; при ошибке чанка
-      // (напр. гонка 23505) считаем строки пропущенными, но не валим весь импорт.
-      skipped += slice.length
-    } else {
+  // Inserts in chunks: ceil(N/CHUNK) requests instead of N.
+  const insertRow = (f: ClientFields) => ({ ...f, user_id: userId, source: 'csv' })
+  for (let i = 0; i < plan.inserts.length; i += CHUNK) {
+    const slice = plan.inserts.slice(i, i + CHUNK)
+    const { data, error } = await sb.from('crm_clients').insert(slice.map(insertRow)).select('id')
+    if (!error) {
       inserted += data?.length ?? slice.length
+      continue
+    }
+    // A chunk refused (e.g. a phone added meanwhile — 23505): retry its rows one by one, so one
+    // conflict does not drop the other rows of the chunk.
+    for (const f of slice) {
+      const one = await sb.from('crm_clients').insert(insertRow(f)).select('id')
+      if (one.error || !one.data || one.data.length === 0) skipped++
+      else inserted++
     }
   }
 
-  // Апдейты — по одному (у каждой строки свои данные); их обычно немного (пересечение).
-  for (const row of toUpdate) {
-    const existingId = existing.get(row.phone as string)!
+  // Updates only where the file changes something (re-importing the same file writes nothing).
+  for (const u of plan.updates) {
     const { data, error } = await sb
       .from('crm_clients')
-      .update({
-        name: row.name,
-        phone_raw: row.phone_raw,
-        email: row.email,
-        note: row.note,
-        avg_check: row.avg_check,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', existingId)
+      .update({ ...u.fields, updated_at: new Date().toISOString() })
+      .eq('id', u.id)
       .eq('user_id', userId)
       .select('id')
     if (error || !data || data.length === 0) skipped++
     else updated++
   }
 
-  return NextResponse.json({ ok: true, data: { inserted, updated, skipped } })
+  return NextResponse.json({
+    ok: true,
+    data: { inserted, updated, unchanged: plan.unchanged, duplicates: plan.duplicates, skipped },
+  })
 }
