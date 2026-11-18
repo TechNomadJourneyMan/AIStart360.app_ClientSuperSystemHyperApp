@@ -23,7 +23,19 @@ export function normaliseSyncStatus(value: unknown): CrmSyncStatus | null {
   return null
 }
 
-/** How the automatic sync runs (lib/crm/sync-cron.ts, lib/cron/schedule.ts), in words for the UI. */
+/**
+ * How the sync runs, in words for the UI. True at every hour: the first sync is started by the
+ * screen right after connecting; the automatic one (lib/crm/sync-cron.ts, lib/cron/schedule.ts)
+ * runs at :17 and :47 outside 21:00–22:59 UTC (02:00–03:59 Astana), every connection about every
+ * 6 h, a CRM larger than one run (2000 contacts / deals) continued at the next run.
+ */
 export const CRM_AUTO_SYNC_DESCRIPTION =
-  'Автосинхронизация: каждое подключение обновляется примерно раз в 6 часов (проверка — дважды в час, кроме ночного ' +
-  'перерыва 02:00–04:00 по времени Астаны), новое — в течение получаса. Кнопка «Синхронизировать» обновляет сразу.'
+  'Первая синхронизация запускается сразу после подключения. Дальше — автоматически, примерно раз в 6 часов; ' +
+  'CRM, где больше 2000 контактов или сделок, догружается частями — следующая часть через полчаса. ' +
+  'Ночью, 02:00–04:00 по времени Астаны, автоматических запусков нет. Кнопка «Синхронизировать» обновляет сразу.'
+
+/** What avg_check of a CRM client means (lib/crm/provider-sync.ts, crm_sync_apply_deal_totals). */
+export const CRM_AVG_CHECK_DESCRIPTION =
+  'Средний чек клиента из CRM — среднее по суммам его открытых и выигранных сделок в тенге (проигранные и сделки ' +
+  'в другой валюте не считаются); он обновляется, когда прочитаны все сделки. Средний чек, который вы ввели сами, ' +
+  'синхронизация не меняет.'

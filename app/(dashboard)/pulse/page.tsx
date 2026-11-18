@@ -12,7 +12,7 @@ import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
 import { seedFromQueueRow } from '@/lib/crm/client-form'
 import { briefingNetworkError, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
-import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_AVG_CHECK_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
 
 // ─── Adapters → the drawer's minimal client seed ─────────────────────────────
 function crmToDrawer(c: CrmClient): DrawerClient {
@@ -560,6 +560,7 @@ function CrmIntegrationTab() {
             Портал только читает CRM и ничего в ней не меняет.
           </p>
           <p className="text-[11px] text-on-surface-variant/70 mt-1">{CRM_AUTO_SYNC_DESCRIPTION}</p>
+          <p className="text-[11px] text-on-surface-variant/70 mt-1">{CRM_AVG_CHECK_DESCRIPTION}</p>
         </div>
         <button
           onClick={() => setShowConnect(true)}

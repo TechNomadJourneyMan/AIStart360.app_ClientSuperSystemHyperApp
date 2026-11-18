@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus } from '@/lib/crm/sync-status'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_AVG_CHECK_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus } from '@/lib/crm/sync-status'
 
 // ── Types of /api/integrations ─────────────────────────────────────────────
 interface CatalogField { name: string; label: string; target: 'secret' | 'setting'; input: 'password' | 'text' | 'textarea'; placeholder?: string; help?: string; maxLength: number }
@@ -391,7 +391,8 @@ function CrmIntegrations() {
     }
   }
 
-  const act = async (fn: () => Promise<Response>, ok: string) => {
+  /** Runs a request; the answer's body when it succeeded, else null. */
+  const act = async (fn: () => Promise<Response>, ok: string): Promise<Record<string, unknown> | null> => {
     setBusy(true)
     try {
       const res = await fn()
@@ -401,15 +402,17 @@ function CrmIntegrations() {
       setOpen(null)
       setForm({ baseUrl: '', token: '' })
       await load()
+      return body
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Не удалось выполнить действие')
+      return null
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Card title="CRM" subtitle={`Контакты Bitrix24 / amoCRM становятся клиентами, суммы сделок — средним чеком; портал только читает CRM. ${CRM_AUTO_SYNC_DESCRIPTION}`}>
+    <Card title="CRM" subtitle={`Контакты Bitrix24 / amoCRM становятся клиентами, суммы сделок — средним чеком; портал только читает CRM. ${CRM_AUTO_SYNC_DESCRIPTION} ${CRM_AVG_CHECK_DESCRIPTION}`}>
       {loading ? <div className="h-24 bg-surface-container-high rounded-xl animate-pulse" /> : failed ? (
         <p className="text-sm text-error">Не удалось загрузить подключения CRM.</p>
       ) : (
@@ -445,7 +448,11 @@ function CrmIntegrations() {
                     void act(() => fetch('/api/v1/crm/connections', {
                       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(crmPayload(p.key, form)),
-                    }), `${p.name} подключена — первая синхронизация в течение получаса или по кнопке «Синхронизировать»`)
+                    }), `${p.name} подключена — загружаем клиентов`).then((body) => {
+                      // The first sync right away (the copy promises it); afterwards the automatic one.
+                      const id = (body?.data as { id?: unknown } | undefined)?.id
+                      if (typeof id === 'string') void syncNow(id)
+                    })
                   }}>
                     <ol className="text-[11px] text-on-surface-variant pl-4 space-y-0.5 list-decimal">
                       {howTo[p.key].map((step) => <li key={step}>{step}</li>)}
