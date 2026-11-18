@@ -9,6 +9,15 @@
 import { resolveChannels } from '@/lib/notifications/preferences'
 import { formatGri } from '@/lib/format/gri'
 
+/**
+ * The platform's rule for background work (GET /api/cron/crm-digest): ≤ 2 owners at a time, the
+ * run within 45 s. No owner's delivery is STARTED with less than DIGEST_MIN_START_MS left; one
+ * already running is not cut off (its providers time out on their own); the rest is «deferred».
+ */
+export const DIGEST_CONCURRENCY = 2
+export const DIGEST_RUN_MS = 44_000
+export const DIGEST_MIN_START_MS = 10_000
+
 /** Русская форма множественного числа (1 / 2-4 / 5+). */
 export function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10

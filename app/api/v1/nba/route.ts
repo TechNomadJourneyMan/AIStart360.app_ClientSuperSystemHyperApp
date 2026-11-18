@@ -10,6 +10,7 @@ import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
 import { trackUserAction } from '@/lib/events/server'
 import { nbaEventMetadata } from '@/lib/nba/events'
 import { actionItemSection, resolveAccess } from '@/lib/access/decision'
+import { readOverdueClients } from '@/lib/crm/today'
 
 const POINT_A_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -103,25 +104,13 @@ export async function GET(_req: NextRequest) {
     input.hasPsychProfile = !!data
   } catch { /* skip */ }
 
-  // Overdue CRM reminders (S1) — reads the GRI/CRM tables directly (no code dep).
-  // Only OPEN reminders: a dismissed one keeps done_at = null (only «done» sets it), so filtering on
-  // done_at counted every dismissed reminder as overdue forever.
+  // Overdue CRM clients (S1): the «Просрочено» of «Кому звонить сегодня» — the same queue rule and
+  // Almaty day (lib/crm/today.ts). Counted in CLIENTS (it counted reminders, dismissed ones too: a
+  // dismissed reminder keeps done_at = null) and a contact after the planned time answers it.
   try {
-    const nowIso = new Date().toISOString()
-    const { data, count } = await sb
-      .from('crm_reminders')
-      .select('client_id', { count: 'exact' })
-      .eq('user_id', user.id)
-      .eq('status', 'open')
-      .lt('due_at', nowIso)
-    if ((count ?? 0) > 0) {
-      let sampleName: string | undefined
-      const firstClientId = (data ?? [])[0]?.client_id
-      if (firstClientId) {
-        const { data: c } = await sb.from('crm_clients').select('name').eq('id', firstClientId).eq('user_id', user.id).maybeSingle()
-        sampleName = c?.name ?? undefined
-      }
-      input.crmOverdue = { count: count ?? 0, sampleName }
+    const overdue = await readOverdueClients(sb, user.id, Date.now())
+    if (overdue.ok && overdue.clients.length > 0) {
+      input.crmOverdue = { count: overdue.clients.length, sampleName: overdue.clients[0].name }
     }
   } catch { /* crm tables absent — skip */ }
 

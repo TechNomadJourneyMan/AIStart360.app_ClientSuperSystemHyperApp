@@ -26,7 +26,11 @@ export interface NbaSignalInput {
   /** Whether a GRI assessment / report exists. */
   hasReport?: boolean
   documentsCount?: number
-  /** Overdue CRM reminders [DEP: GRI/CRM]. */
+  /**
+   * CRM clients overdue in today's queue — «Просрочено» of «Кому звонить сегодня» (an open reminder
+   * or next contact before today's Almaty midnight that no later contact answered): a number of
+   * CLIENTS, not of reminders (lib/crm/today.ts readOverdueClients).
+   */
   crmOverdue?: { count: number; sampleName?: string } | null
 }
 
@@ -37,20 +41,22 @@ const RESCAN_DUE_DAYS = 90
 export function buildNbaSignals(input: NbaSignalInput): NbaSignal[] {
   const signals: NbaSignal[] = []
 
-  // S1 — overdue CRM reminders.
+  // S1 — CRM clients with an overdue planned contact.
   if (input.crmOverdue && input.crmOverdue.count > 0) {
     const { count, sampleName } = input.crmOverdue
+    const one = count % 10 === 1 && count % 100 !== 11
+    const few = count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)
     signals.push({
       key: 'crm_overdue',
       actionKey: 'crm_overdue',
       active: true,
       count,
-      title: count === 1 ? 'Связаться с клиентом из CRM' : `Связаться с ${count} клиентами из CRM`,
+      title: count === 1 ? 'Связаться с клиентом из CRM' : `Связаться с ${count} ${one ? 'клиентом' : 'клиентами'} из CRM`,
       reason: sampleName
-        ? `Просрочены контакты, например ${sampleName}. Тёплые лиды остывают без касания.`
-        : `${count} просроченных напоминаний в CRM.`,
+        ? `Просрочен запланированный контакт${count === 1 ? '' : ', например'} — ${sampleName}. Тёплые лиды остывают без касания.`
+        : `Просрочен запланированный контакт: ${count} ${one ? 'клиент' : few ? 'клиента' : 'клиентов'}.`,
       cta: { label: 'Открыть CRM', href: '/clients' },
-      source: { type: 'crm', ref: 'reminders' },
+      source: { type: 'crm', ref: 'queue' },
     })
   }
 
