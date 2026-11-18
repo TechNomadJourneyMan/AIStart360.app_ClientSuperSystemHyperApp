@@ -3,8 +3,10 @@
 -- NOT part of the migration sequence (appliers read only supabase/migrations/*.sql).
 -- Restores the INSERT / UPDATE policies of crm_interactions and crm_reminders as they were before
 -- 155 (044, in the initplan form 096 gave them: user_id only — the L1 hole comes back), drops the
--- unique index, the CHECK and ONLY the columns migration 155 created (their comment starts with
--- «[155]»): a column that existed before 155 in an environment is kept with its data.
+-- unique index, the CHECK and the columns external_source / external_id when their comment starts
+-- with «[155]». 155 sets that comment unconditionally (COMMENT ON COLUMN after ADD COLUMN IF NOT
+-- EXISTS), so a column of the same name that existed before 155 carries it too and is dropped as
+-- well; the comment only spares a column whose comment was changed after 155.
 -- Data lost with the dropped columns: which CRM contact each client mirrors. The clients
 -- themselves, their notes, statuses, interactions and reminders are not touched. After the
 -- rollback the old code links CRM records by phone again, so roll the portal code back first (the

@@ -125,7 +125,7 @@ describe.skipIf(!dbTestsEnabled)('migration 155', () => {
       const stranger = await seedUser(db, { status: 'approved' })
       const ownersClient = await client(db, owner)
       const columns = async () =>
-        (await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'crm_clients' AND column_name LIKE 'external%' ORDER BY 1`)).rows.map((r) => r.column_name)
+        (await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'crm_clients' AND column_name IN ('external_source', 'external_id') ORDER BY 1`)).rows.map((r) => r.column_name)
 
       // SEC-P2-18: every auth.uid() of these policies in the initplan form (SELECT auth.uid()), in both states.
       const perRowAuthCalls = async () =>
@@ -134,15 +134,31 @@ describe.skipIf(!dbTestsEnabled)('migration 155', () => {
               AND (coalesce(qual, '') ~ '(?<!SELECT )auth\\.uid\\(\\)' OR coalesce(with_check, '') ~ '(?<!SELECT )auth\\.uid\\(\\)')`,
         )).rows.map((r) => r.policyname)
       expect(await perRowAuthCalls()).toEqual([])
+      const definitions = async () =>
+        (await db.query(
+          `SELECT policyname, cmd, qual, with_check FROM pg_policies
+            WHERE schemaname = 'public' AND tablename IN ('crm_interactions', 'crm_reminders') AND policyname ~ '_(ins|upd)_own$'
+            ORDER BY policyname`,
+        )).rows
+      const with155 = await definitions()
+      expect(with155.every((p) => /EXISTS/.test(p.with_check))).toBe(true)
 
       await db.query(DOWN)
       await db.query(DOWN)
       expect(await columns()).toEqual([])
       expect(await pgErrorCode(addInteraction(db, stranger, ownersClient))).toBeNull() // the 044 hole
-      expect(await perRowAuthCalls()).toEqual([])
+      // Exactly the definitions before 155: 044 in the initplan form 096 gave them.
+      const own = '(( SELECT auth.uid() AS uid) = user_id)'
+      expect(await definitions()).toEqual([
+        { policyname: 'crm_interactions_ins_own', cmd: 'INSERT', qual: null, with_check: own },
+        { policyname: 'crm_interactions_upd_own', cmd: 'UPDATE', qual: own, with_check: own },
+        { policyname: 'crm_reminders_ins_own', cmd: 'INSERT', qual: null, with_check: own },
+        { policyname: 'crm_reminders_upd_own', cmd: 'UPDATE', qual: own, with_check: own },
+      ])
 
       await db.query(UP)
       await db.query(UP)
+      expect(await definitions()).toEqual(with155)
       expect(await perRowAuthCalls()).toEqual([])
       expect(await columns()).toEqual(['external_id', 'external_source'])
       expect(await pgErrorCode(addInteraction(db, stranger, ownersClient))).toBe('42501')
