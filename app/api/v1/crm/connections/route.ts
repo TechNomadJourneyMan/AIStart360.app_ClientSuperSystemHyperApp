@@ -72,6 +72,8 @@ export async function POST(req: NextRequest) {
         access_token: sealCrmToken(token),
         connection_name: body.connection_name || null,
         is_active: true,
+        // A new (or re-entered) key is due for the automatic sync at its next run (lib/crm/sync-cron.ts).
+        last_sync_at: null,
         last_sync_status: null,
         last_sync_error: null,
         updated_at: new Date().toISOString(),
