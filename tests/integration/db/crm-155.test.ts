@@ -137,5 +137,14 @@ describe.skipIf(!dbTestsEnabled)('migration 155', () => {
       expect(await columns()).toEqual(['external_id', 'external_source'])
       expect(await pgErrorCode(addInteraction(db, stranger, ownersClient))).toBe('42501')
       expect(await pgErrorCode(addReminder(db, stranger, ownersClient))).toBe('42501')
+      // The upsert target of the sync, without a predicate as PostgREST sends it, works on the re-applied index
+      // (a partial index would refuse it: «no unique or exclusion constraint matching the ON CONFLICT specification»).
+      const upsert = () => db.query(
+        `INSERT INTO public.crm_clients (user_id, name, external_source, external_id) VALUES ($1, 'К', 'bitrix24:acme.bitrix24.kz', '1')
+         ON CONFLICT (user_id, external_source, external_id) DO NOTHING RETURNING id`,
+        [owner],
+      )
+      expect((await upsert()).rows).toHaveLength(1)
+      expect((await upsert()).rows).toHaveLength(0)
     }))
 })
