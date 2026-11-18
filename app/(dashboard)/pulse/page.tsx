@@ -12,6 +12,7 @@ import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
 import { seedFromQueueRow } from '@/lib/crm/client-form'
 import { briefingNetworkError, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
 
 // ─── Adapters → the drawer's minimal client seed ─────────────────────────────
 function crmToDrawer(c: CrmClient): DrawerClient {
@@ -424,7 +425,8 @@ function CrmIntegrationTab() {
           domain: String(r.base_url ?? ''),
           isActive: Boolean(r.is_active),
           lastSyncAt: (r.last_sync_at as string | null) ?? null,
-          lastSyncStatus: (r.last_sync_status as string | null) ?? null,
+          // One vocabulary (lib/crm/sync-status.ts): the legacy 'ok' reads as success (M7).
+          lastSyncStatus: normaliseSyncStatus(r.last_sync_status),
           lastSyncError: (r.last_sync_error as string | null) ?? null,
           syncedDeals: Number(r.synced_deals ?? 0),
           syncedContacts: Number(r.synced_contacts ?? 0),
@@ -436,6 +438,28 @@ function CrmIntegrationTab() {
   }, [])
 
   useEffect(() => { fetchIntegrations() }, [fetchIntegrations])
+
+  const handleSync = async (id: string) => {
+    setSyncingId(id)
+    try {
+      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      const message = typeof data?.data?.message === 'string' ? data.data.message : null
+      if (res.ok && data.ok) {
+        if (data.data?.status === 'partial') toast.warning(message || 'Синхронизация выполнена частично')
+        else toast.success(message || 'Синхронизация выполнена')
+      } else {
+        toast.error(data.error || 'Не удалось синхронизировать')
+      }
+      await fetchIntegrations()
+    } catch {
+      toast.error('Ошибка сети при синхронизации')
+    }
+    setSyncingId(null)
+  }
 
   const handleConnect = async () => {
     setConnectLoading(true)
@@ -471,33 +495,14 @@ function CrmIntegrationTab() {
       setConnectDomain('')
       setConnectToken('')
       setConnectWebhook('')
-      toast.success('CRM подключена')
-      fetchIntegrations()
+      toast.success('CRM подключена — загружаем клиентов')
+      await fetchIntegrations()
+      // The first sync right away; afterwards the automatic one keeps it fresh.
+      if (typeof data?.data?.id === 'string') void handleSync(data.data.id)
     } catch {
       setConnectError('Ошибка сети')
     }
     setConnectLoading(false)
-  }
-
-  const handleSync = async (id: string) => {
-    setSyncingId(id)
-    try {
-      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok && data.ok) {
-        const { inserted = 0, updated = 0, skipped = 0 } = data.data ?? {}
-        toast.success(`Синхронизировано: +${inserted}, обновлено ${updated}, пропущено ${skipped}`)
-      } else {
-        toast.error(data.error || 'Не удалось синхронизировать')
-      }
-      await fetchIntegrations()
-    } catch {
-      toast.error('Ошибка сети при синхронизации')
-    }
-    setSyncingId(null)
   }
 
   const handleDisconnect = async (id: string) => {
@@ -520,7 +525,7 @@ function CrmIntegrationTab() {
       bg: 'bg-blue-400/10 border-blue-400/20',
       gradient: 'from-blue-500/20 to-blue-600/5',
       domainHint: 'mycompany.bitrix24.kz',
-      tokenLabel: 'Webhook URL или OAuth Token',
+      tokenLabel: 'Адрес входящего вебхука',
       docs: 'https://dev.1c-bitrix.ru/rest_help/',
     },
     amocrm: {
@@ -530,7 +535,7 @@ function CrmIntegrationTab() {
       bg: 'bg-cyan-400/10 border-cyan-400/20',
       gradient: 'from-cyan-500/20 to-cyan-600/5',
       domainHint: 'mycompany.amocrm.ru',
-      tokenLabel: 'API ключ (Настройки → Интеграции)',
+      tokenLabel: 'Долгосрочный токен',
       docs: 'https://www.amocrm.ru/developers/',
     },
   }
@@ -551,8 +556,10 @@ function CrmIntegrationTab() {
             CRM-интеграции
           </h2>
           <p className="text-xs text-on-surface-variant mt-1">
-            Подключите Bitrix24 или AmoCRM для автоматической синхронизации сделок и контактов
+            Контакты из Bitrix24 или amoCRM становятся клиентами портала, суммы их сделок — средним чеком.
+            Портал только читает CRM и ничего в ней не меняет.
           </p>
+          <p className="text-[11px] text-on-surface-variant/70 mt-1">{CRM_AUTO_SYNC_DESCRIPTION}</p>
         </div>
         <button
           onClick={() => setShowConnect(true)}
@@ -582,8 +589,8 @@ function CrmIntegrationTab() {
                 <h3 className="text-lg font-bold text-on-surface mb-1">{info.name}</h3>
                 <p className="text-xs text-on-surface-variant mb-4">
                   {provider === 'bitrix24'
-                    ? 'Синхронизация сделок, контактов и компаний. Поддержка вебхуков и OAuth.'
-                    : 'Импорт лидов, сделок и контактов. API v4 с автообновлением.'}
+                    ? 'Контакты → клиенты, суммы сделок → средний чек. Подключение — входящий вебхук с правом «CRM».'
+                    : 'Контакты → клиенты, суммы сделок → средний чек. Подключение — долгосрочный токен.'}
                 </p>
                 <div className="flex items-center gap-4 text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider">
                   <span className="flex items-center gap-1">
@@ -673,12 +680,10 @@ function CrmIntegrationTab() {
                       crm.lastSyncStatus === 'partial' ? 'text-tertiary-container' :
                       crm.lastSyncStatus === 'error' ? 'text-error' : 'text-on-surface-variant'
                     }`}>
-                      {crm.lastSyncStatus === 'success' ? 'Успешно' :
-                       crm.lastSyncStatus === 'partial' ? 'Частично' :
-                       crm.lastSyncStatus === 'error' ? 'Ошибка' : '—'}
+                      {crm.lastSyncStatus ? CRM_SYNC_STATUS_LABEL[crm.lastSyncStatus as CrmSyncStatus] : crm.lastSyncAt ? '—' : 'Ещё не было'}
                     </p>
                     {crm.lastSyncError && (
-                      <p className="text-[10px] text-error/70 mt-0.5 truncate max-w-[200px]" title={crm.lastSyncError}>{crm.lastSyncError}</p>
+                      <p className={`text-[10px] mt-0.5 truncate max-w-[200px] ${crm.lastSyncStatus === 'error' ? 'text-error/70' : 'text-on-surface-variant'}`} title={crm.lastSyncError}>{crm.lastSyncError}</p>
                     )}
                   </div>
                 </div>
@@ -738,9 +743,11 @@ function CrmIntegrationTab() {
                     placeholder="https://b24-xxx.bitrix24.kz/rest/1/ваш_секрет/"
                     className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono text-xs"
                   />
-                  <p className="text-[10px] text-on-surface-variant/50 mt-1.5 pl-1">
-                    Настройки → Разработчикам → Другое → Входящий вебхук
-                  </p>
+                  <ol className="text-[11px] text-on-surface-variant mt-2 pl-4 space-y-1 list-decimal">
+                    <li>В Bitrix24 откройте «Разработчикам» → «Другое» → «Входящий вебхук».</li>
+                    <li>В «Настройке прав» отметьте «CRM (crm)» и нажмите «Сохранить».</li>
+                    <li>Скопируйте «Вебхук для вызова rest api» — адрес вида https://ваш-портал.bitrix24.kz/rest/1/код/ — и вставьте сюда.</li>
+                  </ol>
                 </div>
               ) : (
                 /* AmoCRM: domain + API key */
@@ -763,9 +770,14 @@ function CrmIntegrationTab() {
                       type="password"
                       value={connectToken}
                       onChange={e => setConnectToken(e.target.value)}
-                      placeholder="Вставьте API ключ..."
+                      placeholder="Вставьте долгосрочный токен…"
                       className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono"
                     />
+                    <ol className="text-[11px] text-on-surface-variant mt-2 pl-4 space-y-1 list-decimal">
+                      <li>В amoCRM откройте «amoМаркет» → «⋯» → «Создать интеграцию» → «Внешняя интеграция», дайте ей доступ к данным аккаунта и сохраните.</li>
+                      <li>В интеграции на вкладке «Ключи и доступы» сгенерируйте долгосрочный токен, выберите срок действия и скопируйте его.</li>
+                      <li>Домен — адрес аккаунта вида ваш-аккаунт.amocrm.ru. Когда срок токена закончится, создайте новый и подключите заново.</li>
+                    </ol>
                   </div>
                 </>
               )}

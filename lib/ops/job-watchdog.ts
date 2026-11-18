@@ -144,6 +144,7 @@ const JOB_LABELS: Record<string, string> = {
   '/api/cron/billing-expiry': 'окончание тарифов',
   '/api/cron/staff-digest': 'сводка персоналу',
   '/api/cron/crm-digest': 'сводка CRM',
+  '/api/cron/crm-sync': 'автосинхронизация CRM',
   '/api/cron/agents-digest': 'сводка агентов',
   '/api/cron/client-digest': 'сводка клиентам',
   '/api/telegram/personal/sync': 'синхронизация личного Telegram',

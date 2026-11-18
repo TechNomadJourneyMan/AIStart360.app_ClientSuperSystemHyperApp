@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CRON_JOBS, jobsForRole } from '@/lib/cron/schedule'
+import { CRON_JOBS, dueJobs, jobsForRole } from '@/lib/cron/schedule'
 
 const byPath = (a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path)
 const timesOf = (jobs: readonly { path: string; schedule: string }[]) => jobs.map(({ path, schedule }) => ({ path, schedule }))
@@ -38,6 +38,8 @@ const RAILWAY_ADDED = [
   { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
   // The answer deadline of a request for paid access (R4, N4B-1): every 15 minutes, off the :00/:05 minutes.
   { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
+  // The automatic CRM sync (CRM revival 2026-11-18, lib/crm/sync-cron.ts): :17 and :47, not 21:00–22:59 UTC.
+  { path: '/api/cron/crm-sync', schedule: '17,47 0-20,23 * * *' },
 ]
 /** What one process for everything schedules: the Vercel schedule plus the Railway additions. */
 const PORTAL_SCHEDULE = [...VERCEL_SCHEDULE, ...RAILWAY_ADDED]
@@ -59,6 +61,7 @@ describe('CRON_JOBS', () => {
       { path: '/api/cron/expert-sla', schedule: '*/5 * * * *' },
       { path: '/api/cron/ops-watchdog', schedule: '3-59/10 * * * *' },
       { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
+      { path: '/api/cron/crm-sync', schedule: '17,47 0-20,23 * * *' },
       { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },
     ]
     expect([...CRON_JOBS].sort(byPath)).toEqual(expected.sort(byPath))
@@ -144,5 +147,29 @@ describe('jobsForRole', () => {
     jobs.pop()
     expect([...CRON_JOBS]).toEqual(before)
     expect(jobsForRole('all')).toHaveLength(PORTAL_SCHEDULE.length)
+  })
+})
+
+describe('the automatic CRM sync (/api/cron/crm-sync)', () => {
+  // Every minute of one UTC day, and the jobs one process for everything has due in it.
+  const day = Array.from({ length: 24 * 60 }, (_, m) => new Date(Date.UTC(2026, 10, 18, 0, m)))
+  const crmMinutes = day.filter((minute) => dueJobs(minute, jobsForRole('all')).some((job) => job.path === '/api/cron/crm-sync'))
+
+  it('runs twice an hour, at :17 and :47', () => {
+    expect(new Set(crmMinutes.map((m) => m.getUTCMinutes()))).toEqual(new Set([17, 47]))
+    expect(crmMinutes).toHaveLength(22 * 2)
+  })
+
+  it('never inside 21:45–23:00 UTC, the window of the nightly recalculations of Points A and B', () => {
+    const inWindow = crmMinutes.filter((m) => {
+      const t = m.getUTCHours() * 60 + m.getUTCMinutes()
+      return t >= 21 * 60 + 45 && t < 23 * 60
+    })
+    expect(inWindow).toEqual([])
+  })
+
+  it('shares its minute with no other job (the scheduler has two slots)', () => {
+    const shared = crmMinutes.filter((minute) => dueJobs(minute, jobsForRole('all')).length > 1)
+    expect(shared.map((m) => m.toISOString())).toEqual([])
   })
 })
