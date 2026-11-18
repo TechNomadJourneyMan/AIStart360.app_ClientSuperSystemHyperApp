@@ -1,4 +1,3 @@
-import type { CrmDeal, CrmContact } from './types'
 import { guardCrmEndpoint, type Resolver } from './endpoint-guard'
 import {
   CrmApiError,
@@ -23,9 +22,11 @@ import {
  * so a user-typed domain/webhook can never point the server at internal services. Redirects are
  * not followed (a 3xx surfaces as an HTTP error) and the OAuth token is URL-encoded.
  *
- * Paging (H2): a list method returns at most 50 records per call together with `total` and, while
- * more remain, `next` (the `start` of the following page). listContacts / listDeals follow `next`
- * until the end, the record cap of the run or its time budget, and say which one stopped them.
+ * Reading (H2, M2 of wave 2): a list method returns at most 50 records per call. listContacts /
+ * listDeals read in ascending ID order with the filter `>ID: <last id read>` (no offsets, so a
+ * record added or removed meanwhile never shifts the pages) and `start: 0`, whose `total` is the
+ * number of records left from that point. They stop at the end, the record cap of the run or its
+ * time budget, say which one, and return the last ID read: the next run continues from there.
  */
 
 interface Bitrix24Config {
@@ -67,7 +68,7 @@ function errorMessage(status: number, code: string | null): string {
     return 'У вебхука Bitrix24 нет права «CRM (crm)»: откройте входящий вебхук в Bitrix24 и добавьте это право'
   }
   if (code === 'QUERY_LIMIT_EXCEEDED' || status === 503 || status === 429) {
-    return 'Bitrix24 ограничил частоту запросов — следующая синхронизация загрузит остальное'
+    return 'Bitrix24 ограничил частоту запросов — следующая синхронизация продолжит с этого места'
   }
   if (status === 401 || status === 403 || code === 'expired_token' || code === 'invalid_token' || code === 'NO_AUTH_FOUND') {
     return 'CRM отклонила доступ: проверьте ключ или права интеграции'
@@ -120,14 +121,14 @@ async function callApi(url: string, params: Record<string, unknown> | undefined,
 }
 
 /**
- * Follows `next` from start 0. Records are de-duplicated by id (a record created while paging
- * shifts the offsets, so one can come twice); never more than `maxRecords` are returned. A failure
- * of the FIRST page is thrown; a failure of a later page ends the listing with what was read.
+ * Ascending by ID after `opts.from`. Never more than `maxRecords` are returned and the position is
+ * the ID of the last one returned, so nothing is skipped. A failure of the FIRST page is thrown; a
+ * failure of a later page ends the listing with what was read (and the position after it).
  */
-async function pageList<T extends { id: string }>(
+async function listAfter<T extends { id: string }>(
   endpoint: Endpoint,
   method: string,
-  params: Record<string, unknown>,
+  select: string[],
   map: (row: Record<string, unknown>) => T | null,
   opts: ListOptions,
 ): Promise<ProviderList<T>> {
@@ -136,34 +137,47 @@ async function pageList<T extends { id: string }>(
   const items: T[] = []
   const seen = new Set<string>()
   let total: number | null = null
-  let start = 0
+  let after: string | null = opts.from ?? null
+  const stop = (stoppedBy: ProviderList<T>['stoppedBy'], error?: string): ProviderList<T> => ({
+    items, total, complete: false, stoppedBy, position: after, ...(error ? { error } : {}),
+  })
   for (let page = 0; ; page++) {
-    if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) {
-      return { items, total, complete: false, stoppedBy: 'time' }
-    }
+    if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) return stop('time')
     let data: Record<string, unknown>
     try {
-      data = await callApi(endpoint(method), { ...params, start }, requestTimeoutMs(opts))
+      data = await callApi(endpoint(method), {
+        select,
+        order: { ID: 'ASC' },
+        filter: after ? { '>ID': after } : {},
+        start: 0,
+      }, requestTimeoutMs(opts))
     } catch (e) {
       if (page === 0) throw e
-      return { items, total, complete: false, stoppedBy: 'error', error: (e as Error).message }
+      return stop('error', (e as Error).message)
     }
     const t = Number(data.total)
-    if (data.total !== undefined && Number.isFinite(t) && t >= 0) total = t
+    if (page === 0 && data.total !== undefined && Number.isFinite(t) && t >= 0) total = t
     const rows = Array.isArray(data.result) ? (data.result as Record<string, unknown>[]) : []
+    let lastId: string | null = null
     for (const row of rows) {
       const item = row && typeof row === 'object' ? map(row) : null
+      const id = row && typeof row === 'object' ? text(row.ID) : ''
+      if (!id) continue
+      if (items.length >= max) {
+        // The cap: the rest of this page is read again by the next run.
+        return stop('cap')
+      }
+      lastId = id
+      after = id
       if (item && !seen.has(item.id)) {
         seen.add(item.id)
         items.push(item)
       }
     }
-    const next = typeof data.next === 'number' && data.next > start ? data.next : null
-    if (items.length > max || (items.length === max && next !== null && rows.length > 0)) {
-      return { items: items.slice(0, max), total, complete: false, stoppedBy: 'cap' }
-    }
-    if (next === null || rows.length === 0) return { items, total, complete: true, stoppedBy: null }
-    start = next
+    // `next` is present while more records follow this page.
+    const more = typeof data.next === 'number' && rows.length > 0 && lastId !== null
+    if (!more) return { items, total, complete: true, stoppedBy: null, position: null }
+    if (items.length >= max) return stop('cap')
   }
 }
 
@@ -197,26 +211,20 @@ export function mapBitrixDeal(d: Record<string, unknown>): ProviderDeal | null {
   }
 }
 
-/** Contacts, newest first (ID descending), up to `opts.maxRecords`. */
+/** Contacts in ascending ID order after `opts.from`, up to `opts.maxRecords`. */
 export async function listContacts(config: Bitrix24Config, opts: ListOptions): Promise<ProviderList<ProviderContact>> {
   const endpoint = await endpointFor(config)
-  return pageList(endpoint, 'crm.contact.list', {
-    select: ['ID', 'NAME', 'SECOND_NAME', 'LAST_NAME', 'PHONE', 'EMAIL'],
-    order: { ID: 'DESC' },
-  }, mapBitrixContact, opts)
+  return listAfter(endpoint, 'crm.contact.list', ['ID', 'NAME', 'SECOND_NAME', 'LAST_NAME', 'PHONE', 'EMAIL'], mapBitrixContact, opts)
 }
 
 /**
- * Deals, newest first (ID descending), up to `opts.maxRecords`. CONTACT_ID is the deal's main
- * contact; further contacts of a deal (crm.deal.contact.items.get) would cost one call per deal
+ * Deals in ascending ID order after `opts.from`, up to `opts.maxRecords`. CONTACT_ID is the deal's
+ * main contact; further contacts of a deal (crm.deal.contact.items.get) would cost one call per deal
  * and are not read.
  */
 export async function listDeals(config: Bitrix24Config, opts: ListOptions): Promise<ProviderList<ProviderDeal>> {
   const endpoint = await endpointFor(config)
-  return pageList(endpoint, 'crm.deal.list', {
-    select: ['ID', 'CONTACT_ID', 'OPPORTUNITY', 'CURRENCY_ID', 'STAGE_SEMANTIC_ID'],
-    order: { ID: 'DESC' },
-  }, mapBitrixDeal, opts)
+  return listAfter(endpoint, 'crm.deal.list', ['ID', 'CONTACT_ID', 'OPPORTUNITY', 'CURRENCY_ID', 'STAGE_SEMANTIC_ID'], mapBitrixDeal, opts)
 }
 
 export async function testConnection(config: Bitrix24Config): Promise<{ ok: boolean; error?: string }> {
@@ -230,49 +238,4 @@ export async function testConnection(config: Bitrix24Config): Promise<{ ok: bool
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
-}
-
-/** Recent deals for the Pulse screens (app/api/pulse/*), paged up to `limit`. */
-export async function fetchDeals(config: Bitrix24Config, limit = 50): Promise<CrmDeal[]> {
-  const endpoint = await endpointFor(config)
-  const list = await pageList<CrmDeal>(endpoint, 'crm.deal.list', {
-    select: ['ID', 'TITLE', 'OPPORTUNITY', 'CURRENCY_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID',
-             'DATE_CREATE', 'DATE_MODIFY', 'BEGINDATE', 'CLOSEDATE', 'CONTACT_ID',
-             'COMPANY_TITLE', 'COMMENTS', 'ASSIGNED_BY_ID', 'CATEGORY_ID'],
-    order: { DATE_MODIFY: 'DESC' },
-  }, (row) => {
-    const d = row as Record<string, string>
-    return {
-      id: d.ID,
-      title: d.TITLE || 'Без названия',
-      amount: parseFloat(d.OPPORTUNITY) || 0,
-      currency: d.CURRENCY_ID || 'KZT',
-      stage: d.STAGE_ID || 'NEW',
-      stageSemantic: d.STAGE_SEMANTIC_ID || '', // P=in progress, S=success, F=fail
-      createdAt: d.DATE_CREATE,
-      updatedAt: d.DATE_MODIFY,
-      closeDate: d.CLOSEDATE || null,
-      contactName: d.COMPANY_TITLE || undefined,
-      comment: d.COMMENTS || undefined,
-      assignedById: d.ASSIGNED_BY_ID || undefined,
-      companyTitle: d.COMPANY_TITLE || undefined,
-    }
-  }, { maxRecords: limit })
-  return list.items
-}
-
-export async function fetchContacts(config: Bitrix24Config, limit = 50): Promise<CrmContact[]> {
-  const endpoint = await endpointFor(config)
-  const list = await pageList<CrmContact>(endpoint, 'crm.contact.list', {
-    select: ['ID', 'NAME', 'LAST_NAME', 'EMAIL', 'PHONE', 'DATE_CREATE'],
-    order: { DATE_CREATE: 'DESC' },
-  }, (c) => ({
-    id: String(c.ID),
-    name: [c.NAME, c.LAST_NAME].filter(Boolean).join(' ') || 'Без имени',
-    email: multiValues(c.EMAIL)[0],
-    phone: multiValues(c.PHONE)[0],
-    company: '',
-    createdAt: String(c.DATE_CREATE),
-  }), { maxRecords: limit })
-  return list.items
 }

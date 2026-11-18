@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus } from '@/lib/crm/sync-status'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_AVG_CHECK_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus } from '@/lib/crm/sync-status'
 import { CRM_AUTO_SYNC_INTERVAL_MS } from '@/lib/crm/sync-cron'
 import { CRON_JOBS } from '@/lib/cron/schedule'
 
@@ -70,7 +70,25 @@ describe('M8: the copy says what the portal really does', () => {
     expect(settings).toMatch(/CRM_AUTO_SYNC_DESCRIPTION/)
     expect(CRM_AUTO_SYNC_DESCRIPTION).toMatch(/раз в 6 часов/)
     expect(CRM_AUTO_SYNC_DESCRIPTION).toMatch(/02:00–04:00 по времени Астаны/)
+    // Wave 2: «новое — в течение получаса» was false at night; the first sync is started by the screen.
+    expect(CRM_AUTO_SYNC_DESCRIPTION).not.toMatch(/в течение получаса/)
+    expect(CRM_AUTO_SYNC_DESCRIPTION).toMatch(/сразу после подключения/)
     expect(CRM_AUTO_SYNC_INTERVAL_MS).toBe(6 * 3600_000)
     expect(CRON_JOBS.find((j) => j.path === '/api/cron/crm-sync')?.schedule).toBe('17,47 0-20,23 * * *')
+  })
+})
+
+describe('wave 2: what the copy promises is done', () => {
+  it('«сразу после подключения»: both screens start a sync with the id the connect answer returns', () => {
+    expect(pulseTab).toMatch(/if \(typeof data\?\.data\?\.id === 'string'\) void handleSync\(data\.data\.id\)/)
+    expect(settings).toMatch(/if \(typeof id === 'string'\) void syncNow\(id\)/)
+  })
+
+  it('avg_check: open and won deals in tenge, not lost ones; a figure the owner typed is never changed — shown on both screens', () => {
+    expect(CRM_AVG_CHECK_DESCRIPTION).toMatch(/открытых и выигранных сделок в тенге/)
+    expect(CRM_AVG_CHECK_DESCRIPTION).toMatch(/проигранные/)
+    expect(CRM_AVG_CHECK_DESCRIPTION).toMatch(/ввели сами, синхронизация не меняет/)
+    expect(pulseTab).toMatch(/CRM_AVG_CHECK_DESCRIPTION/)
+    expect(settings).toMatch(/CRM_AVG_CHECK_DESCRIPTION/)
   })
 })

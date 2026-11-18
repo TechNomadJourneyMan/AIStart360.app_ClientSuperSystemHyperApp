@@ -49,7 +49,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (curErr) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
   if (!current) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
 
-  const patch = { ...parsed.value, updated_at: new Date().toISOString() }
+  const patch: Record<string, unknown> = { ...parsed.value, updated_at: new Date().toISOString() }
+  // avg_check provenance (migration 157): a figure the owner sets is theirs — the CRM sync never
+  // changes it; clearing it hands the field back to the CRM.
+  if ('avg_check' in parsed.value) patch.avg_check_source = parsed.value.avg_check == null ? null : 'manual'
 
   const { data, error } = await sb
     .from('crm_clients')

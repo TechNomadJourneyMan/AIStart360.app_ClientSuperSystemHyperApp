@@ -1,4 +1,3 @@
-import type { CrmDeal, CrmContact } from './types'
 import { guardCrmEndpoint, type Resolver } from './endpoint-guard'
 import {
   CrmApiError,
@@ -19,10 +18,12 @@ import {
  * Every call goes through guardCrmEndpoint (allowlisted <account>.amocrm.ru|.amocrm.com|.kommo.com,
  * public addresses only) and does not follow redirects (R-225, as Bitrix24).
  *
- * Paging (H3): a list returns at most 250 records per page (`limit` above 250 is refused); pages are
- * numbered from 1 and `_links.next` is present while more remain. An empty list is HTTP 204 with no
- * body. listContacts / listDeals follow the pages until the end, the record cap of the run or its
- * time budget, and say which one stopped them. amoCRM does not report a total.
+ * Reading (H3, M2 of wave 2): a list returns at most 250 records per page (`limit` above 250 is
+ * refused); an empty page is HTTP 204 with no body; amoCRM reports no total. The API cannot filter
+ * by «id greater than», so listContacts / listDeals read in ascending id order page by page with a
+ * FIXED page size of 250 and return the next page number: the next run continues there. A record
+ * deleted meanwhile shifts the later ones back by one, so one record at a page boundary can be
+ * missed for that pass (it is read on the next pass). The cap is rounded up to whole pages.
  */
 
 interface AmoCrmConfig {
@@ -32,7 +33,7 @@ interface AmoCrmConfig {
   resolve?: Resolver
 }
 
-/** The largest page amoCRM API v4 accepts. */
+/** The largest page amoCRM API v4 accepts, and the fixed page size of the page cursor. */
 export const AMO_PAGE_SIZE = 250
 /** amoCRM's system status «Закрыто и не реализовано» (lost). */
 export const AMO_STATUS_LOST = 143
@@ -46,7 +47,7 @@ async function baseUrl(config: AmoCrmConfig): Promise<string> {
 function errorMessage(status: number): string {
   if (status === 401 || status === 403) return 'CRM отклонила доступ: проверьте ключ или права интеграции'
   if (status === 402) return 'Аккаунт amoCRM не оплачен — API amoCRM недоступен'
-  if (status === 429) return 'amoCRM ограничила частоту запросов — следующая синхронизация загрузит остальное'
+  if (status === 429) return 'amoCRM ограничила частоту запросов — следующая синхронизация продолжит с этого места'
   return `CRM ответила ошибкой (HTTP ${status})`
 }
 
@@ -89,11 +90,11 @@ async function callApi(base: string, token: string, path: string, timeoutMs = 15
 }
 
 /**
- * Pages 1, 2, … of `path` (which has no `page` / `limit`). Records are de-duplicated by id; never
- * more than `maxRecords` are returned. A failure of the FIRST page is thrown; a failure of a later
- * page ends the listing with what was read.
+ * Pages of `path` (ascending id, 250 per page) from page `opts.from` (default 1). Stops at the end,
+ * at a page boundary once `maxRecords` were read, or when the time is up; the position is the next
+ * page to read. A failure of the FIRST page is thrown; a later one ends the listing with what was read.
  */
-async function pageList<T extends { id: string }>(
+async function listPages<T extends { id: string }>(
   config: AmoCrmConfig,
   path: string,
   key: string,
@@ -103,19 +104,21 @@ async function pageList<T extends { id: string }>(
   const base = await baseUrl(config)
   const now = opts.now ?? Date.now
   const max = Math.max(1, Math.floor(opts.maxRecords))
-  const limit = Math.min(AMO_PAGE_SIZE, max)
   const items: T[] = []
   const seen = new Set<string>()
-  for (let page = 1; ; page++) {
-    if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) {
-      return { items, total: null, complete: false, stoppedBy: 'time' }
-    }
+  const first = Math.max(1, Number.parseInt(opts.from ?? '1', 10) || 1)
+  for (let page = first; ; page++) {
+    const stop = (stoppedBy: ProviderList<T>['stoppedBy'], error?: string): ProviderList<T> => ({
+      items, total: null, complete: false, stoppedBy, position: String(page), ...(error ? { error } : {}),
+    })
+    if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) return stop('time')
+    if (items.length >= max) return stop('cap')
     let data: Record<string, unknown> | null
     try {
-      data = await callApi(base, config.accessToken, `${path}${path.includes('?') ? '&' : '?'}limit=${limit}&page=${page}`, requestTimeoutMs(opts))
+      data = await callApi(base, config.accessToken, `${path}&limit=${AMO_PAGE_SIZE}&page=${page}`, requestTimeoutMs(opts))
     } catch (e) {
-      if (page === 1) throw e
-      return { items, total: null, complete: false, stoppedBy: 'error', error: (e as Error).message }
+      if (page === first) throw e
+      return stop('error', (e as Error).message)
     }
     const rows = ((data?._embedded as Record<string, unknown> | undefined)?.[key] ?? []) as Record<string, unknown>[]
     for (const row of Array.isArray(rows) ? rows : []) {
@@ -126,10 +129,9 @@ async function pageList<T extends { id: string }>(
       }
     }
     const hasNext = Boolean((data?._links as { next?: { href?: unknown } } | undefined)?.next?.href)
-    if (items.length > max || (items.length === max && hasNext && rows.length > 0)) {
-      return { items: items.slice(0, max), total: null, complete: false, stoppedBy: 'cap' }
+    if (!data || !hasNext || !Array.isArray(rows) || rows.length === 0) {
+      return { items, total: null, complete: true, stoppedBy: null, position: null }
     }
-    if (!data || !hasNext || !Array.isArray(rows) || rows.length === 0) return { items, total: null, complete: true, stoppedBy: null }
   }
 }
 
@@ -170,21 +172,27 @@ export function mapAmoLead(d: Record<string, unknown>, currency: string | null):
   }
 }
 
-/** The account's currency (ISO code, e.g. KZT or RUB), or null when amoCRM does not say. Throws on a bad token. */
-export async function fetchAccountCurrency(config: AmoCrmConfig, opts: Pick<ListOptions, 'abortAt' | 'now'> = {}): Promise<string | null> {
+export interface AmoAccount {
+  /** The account id: stable when the account moves between amocrm.ru / amocrm.com / kommo.com. */
+  id: string | null
+  /** ISO code (KZT, RUB…), null when amoCRM does not say. */
+  currency: string | null
+}
+
+/** GET /api/v4/account. Throws on a refused token. */
+export async function fetchAccount(config: AmoCrmConfig, opts: Pick<ListOptions, 'abortAt' | 'now'> = {}): Promise<AmoAccount> {
   const data = await callApi(await baseUrl(config), config.accessToken, 'account', requestTimeoutMs(opts))
-  const currency = text(data?.currency).toUpperCase()
-  return currency || null
+  return { id: text(data?.id) || null, currency: text(data?.currency).toUpperCase() || null }
 }
 
-/** Contacts, newest first (id descending), up to `opts.maxRecords`. */
+/** Contacts in ascending id order from page `opts.from`, up to `opts.maxRecords` (whole pages). */
 export async function listContacts(config: AmoCrmConfig, opts: ListOptions): Promise<ProviderList<ProviderContact>> {
-  return pageList(config, 'contacts?order[id]=desc', 'contacts', mapAmoContact, opts)
+  return listPages(config, 'contacts?order[id]=asc', 'contacts', mapAmoContact, opts)
 }
 
-/** Leads with their contacts, newest first (id descending), up to `opts.maxRecords`. */
+/** Leads with their contacts in ascending id order from page `opts.from`, up to `opts.maxRecords`. */
 export async function listDeals(config: AmoCrmConfig, opts: ListOptions & { currency: string | null }): Promise<ProviderList<ProviderDeal>> {
-  return pageList(config, 'leads?with=contacts&order[id]=desc', 'leads', (row) => mapAmoLead(row, opts.currency), opts)
+  return listPages(config, 'leads?with=contacts&order[id]=asc', 'leads', (row) => mapAmoLead(row, opts.currency), opts)
 }
 
 export async function testConnection(config: AmoCrmConfig): Promise<{ ok: boolean; error?: string }> {
@@ -197,33 +205,4 @@ export async function testConnection(config: AmoCrmConfig): Promise<{ ok: boolea
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
-}
-
-/** Recent leads for the Pulse screens (app/api/pulse/*), up to `limit` (paged by 250). */
-export async function fetchDeals(config: AmoCrmConfig, limit = 50): Promise<CrmDeal[]> {
-  const list = await pageList<CrmDeal>(config, 'leads?order[updated_at]=desc&with=contacts', 'leads', (d) => ({
-    id: String(d.id),
-    title: String(d.name || 'Без названия'),
-    amount: Number(d.price) || 0,
-    currency: 'KZT',
-    stage: String(d.status_id || 'new'),
-    createdAt: new Date(Number(d.created_at) * 1000).toISOString(),
-    updatedAt: new Date(Number(d.updated_at) * 1000).toISOString(),
-    contactName: (d._embedded as Record<string, unknown[]>)?.contacts?.[0]
-      ? String((d._embedded as Record<string, Record<string, unknown>[]>).contacts[0].name || '')
-      : undefined,
-  }), { maxRecords: limit })
-  return list.items
-}
-
-export async function fetchContacts(config: AmoCrmConfig, limit = 50): Promise<CrmContact[]> {
-  const list = await pageList<CrmContact>(config, 'contacts?order[id]=desc', 'contacts', (c) => ({
-    id: String(c.id),
-    name: String(c.name || 'Без имени'),
-    email: fieldValues(c, 'EMAIL')[0],
-    phone: fieldValues(c, 'PHONE')[0],
-    company: '',
-    createdAt: new Date(Number(c.created_at) * 1000).toISOString(),
-  }), { maxRecords: limit })
-  return list.items
 }

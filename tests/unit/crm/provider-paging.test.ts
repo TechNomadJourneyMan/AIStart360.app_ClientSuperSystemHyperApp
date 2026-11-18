@@ -1,17 +1,19 @@
 /**
- * CRM revival (2026-11-18) — reading Bitrix24 and amoCRM page by page, with a fake fetch that answers
- * like the real APIs (tests/helpers/fake-crm.ts):
- *   H2: Bitrix24 returns 50 records per call; the client follows `next` until the end, a cap, or
- *       the time budget — and says which one stopped it, with the CRM's `total`;
- *   H3: amoCRM refuses `limit` above 250 (the old sync asked for 500); the client asks for ≤ 250 and
- *       follows `_links.next`, an empty list is HTTP 204;
+ * CRM revival — reading Bitrix24 and amoCRM, with a fake fetch that answers like the real APIs
+ * (tests/helpers/fake-crm.ts):
+ *   H2: Bitrix24 returns 50 records per call; the client reads ascending by ID with the filter
+ *       `>ID: <last read>` until the end, the cap, or the time budget, says which one stopped it,
+ *       reports the CRM's total and returns the last ID read — a later call continues there (M2);
+ *   H3: amoCRM refuses `limit` above 250; the client asks for exactly 250 per page (a fixed page size
+ *       keeps the page cursor stable), follows `_links.next`, an empty page is HTTP 204, and returns
+ *       the next page to read;
  *   mapping: contacts (name, phones, e-mails), deals (main contact, amount «not filled» = null,
- *   currency, lost), Bitrix24 error codes.
+ *   currency, lost), Bitrix24 error codes; identity: amoCRM by account id, Bitrix24 by host.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
-import { fetchProviderSnapshot } from '@/lib/crm/provider-client'
+import { fetchProviderSnapshot, identifyProvider } from '@/lib/crm/provider-client'
 import { amoContact, amoLead, bxContact, bxDeal, fakeAmo, fakeBitrix, publicDns } from '../../helpers/fake-crm'
 
 const B24 = { domain: 'acme.bitrix24.kz', accessToken: 'x', webhookUrl: 'https://acme.bitrix24.kz/rest/1/abc123/', resolve: publicDns }
@@ -20,55 +22,60 @@ const range = (n: number, from = 1) => Array.from({ length: n }, (_, i) => i + f
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('Bitrix24 paging (H2)', () => {
-  it('reads every page of 50 by following `next`, newest first, and reports the total', async () => {
+describe('Bitrix24 reading (H2, M2)', () => {
+  it('reads every page ascending by ID with the `>ID` filter, and reports the total', async () => {
     const crm = fakeBitrix({ contacts: range(120).map((i) => bxContact(i)), deals: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
     const list = await bitrix24.listContacts(B24, { maxRecords: 2000 })
     expect(list.items).toHaveLength(120)
-    expect(list).toMatchObject({ total: 120, complete: true, stoppedBy: null })
-    expect(crm.calls.map((c) => c.body?.start)).toEqual([0, 50, 100])
+    expect(list).toMatchObject({ total: 120, complete: true, stoppedBy: null, position: null })
+    expect(crm.calls.map((c) => c.body?.filter)).toEqual([{}, { '>ID': '50' }, { '>ID': '100' }])
+    expect(crm.calls.every((c) => c.body?.start === 0 && (c.body?.order as Record<string, string>).ID === 'ASC')).toBe(true)
     expect(crm.calls[0].url).toBe('https://acme.bitrix24.kz/rest/1/abc123/crm.contact.list.json')
-    expect(crm.calls[0].body).toMatchObject({ order: { ID: 'DESC' }, select: expect.arrayContaining(['ID', 'NAME', 'LAST_NAME', 'PHONE', 'EMAIL']) })
-    expect(list.items[0].id).toBe('120')
+    expect(list.items[0].id).toBe('1')
     expect(new Set(list.items.map((c) => c.id)).size).toBe(120)
   })
 
-  it('stops at the cap and says so: «N of total», not complete', async () => {
+  it('stops exactly at the cap with the position of the last record returned; the next call continues there', async () => {
     const crm = fakeBitrix({ contacts: range(120).map((i) => bxContact(i)), deals: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    const list = await bitrix24.listContacts(B24, { maxRecords: 60 })
-    expect(list.items).toHaveLength(60)
-    expect(list).toMatchObject({ total: 120, complete: false, stoppedBy: 'cap' })
-    expect(crm.calls).toHaveLength(2)
+    const first = await bitrix24.listContacts(B24, { maxRecords: 60 })
+    expect(first.items.map((c) => c.id)).toEqual(range(60).map(String))
+    expect(first).toMatchObject({ total: 120, complete: false, stoppedBy: 'cap', position: '60' })
+    const second = await bitrix24.listContacts(B24, { maxRecords: 60, from: first.position })
+    expect(second.items.map((c) => c.id)).toEqual(range(60, 61).map(String))
+    expect(second).toMatchObject({ total: 60, complete: true, position: null })
   })
 
-  it('exactly the cap with nothing left is complete', async () => {
-    const crm = fakeBitrix({ contacts: range(50).map((i) => bxContact(i)), deals: [] })
+  it('a record added at the start while reading never shifts the pages (no offsets)', async () => {
+    const contacts = range(100, 10).map((i) => bxContact(i))
+    const crm = fakeBitrix({ contacts, deals: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    const list = await bitrix24.listContacts(B24, { maxRecords: 50 })
-    expect(list).toMatchObject({ complete: true, stoppedBy: null })
-    expect(list.items).toHaveLength(50)
+    const first = await bitrix24.listContacts(B24, { maxRecords: 50 })
+    contacts.push(bxContact(1)) // a smaller ID appears meanwhile
+    const second = await bitrix24.listContacts(B24, { maxRecords: 2000, from: first.position })
+    const ids = [...first.items, ...second.items].map((c) => Number(c.id))
+    expect(ids).toEqual(range(100, 10))
   })
 
-  it('stops asking for pages once the time budget for reading is spent', async () => {
+  it('stops asking for pages once the time budget for reading is spent, and says where it stopped', async () => {
     let t = 0
     const crm = fakeBitrix({ contacts: range(200).map((i) => bxContact(i)), deals: [] })
     vi.stubGlobal('fetch', async (u: string, init?: RequestInit) => { t += 1000; return crm.fetchImpl(u, init) })
     const list = await bitrix24.listContacts(B24, { maxRecords: 2000, fetchUntil: 2000, now: () => t })
-    expect(list).toMatchObject({ complete: false, stoppedBy: 'time', total: 200 })
+    expect(list).toMatchObject({ complete: false, stoppedBy: 'time', total: 200, position: '100' })
     expect(list.items).toHaveLength(100)
   })
 
-  it('a failed later page ends the listing with what was read; a failed first page throws', async () => {
+  it('a failed later page ends the listing with what was read (and its position); a failed first page throws', async () => {
     const later = fakeBitrix({
       contacts: range(120).map((i) => bxContact(i)),
       deals: [],
-      fail: (_m, start) => (start === 50 ? new Response(JSON.stringify({ error: 'QUERY_LIMIT_EXCEEDED', error_description: 'Too many requests' }), { status: 503 }) : null),
+      fail: (_m, _s, after) => (after === '50' ? new Response(JSON.stringify({ error: 'QUERY_LIMIT_EXCEEDED', error_description: 'Too many requests' }), { status: 503 }) : null),
     })
     vi.stubGlobal('fetch', later.fetchImpl)
     const list = await bitrix24.listContacts(B24, { maxRecords: 2000 })
-    expect(list).toMatchObject({ complete: false, stoppedBy: 'error' })
+    expect(list).toMatchObject({ complete: false, stoppedBy: 'error', position: '50' })
     expect(list.items).toHaveLength(50)
     expect(list.error).toMatch(/ограничил частоту/)
 
@@ -95,14 +102,14 @@ describe('Bitrix24 paging (H2)', () => {
         bxDeal(2, null, '99000.00'),
         bxDeal(3, 7, '0.00'),
         bxDeal(4, 7, '5000.00', { CURRENCY_ID: 'USD', STAGE_SEMANTIC_ID: 'F' }),
-        bxDeal(5, 0 as unknown as number, '100.00', { CONTACT_ID: '0' }),
+        bxDeal(5, 7, '100.00', { CONTACT_ID: '0' }),
       ],
     })
     vi.stubGlobal('fetch', crm.fetchImpl)
     const contacts = await bitrix24.listContacts(B24, { maxRecords: 10 })
     expect(contacts.items).toEqual([
-      { id: '8', name: null, phones: [], emails: [] },
       { id: '7', name: 'Иван Сергеевич Петров', phones: ['8 (701) 111-22-33', '+77002223344'], emails: ['c7@example.kz'] },
+      { id: '8', name: null, phones: [], emails: [] },
     ])
     const deals = await bitrix24.listDeals(B24, { maxRecords: 10 })
     const byId = Object.fromEntries(deals.items.map((d) => [d.id, d]))
@@ -112,40 +119,39 @@ describe('Bitrix24 paging (H2)', () => {
     expect(byId['4']).toMatchObject({ currency: 'USD', lost: true })
     expect(byId['5'].contactId).toBeNull()
   })
-
-  it('fetchDeals for the Pulse screens pages too (it used to stop at 50)', async () => {
-    const crm = fakeBitrix({ contacts: [], deals: range(80).map((i) => bxDeal(i, i, '1000')) })
-    vi.stubGlobal('fetch', crm.fetchImpl)
-    expect(await bitrix24.fetchDeals(B24, 100)).toHaveLength(80)
-  })
 })
 
-describe('amoCRM paging (H3)', () => {
-  it('asks for at most 250 per page and follows `_links.next`; the fake refuses more, like amoCRM', async () => {
+describe('amoCRM reading (H3, M2)', () => {
+  it('asks for exactly 250 per page ascending by id and follows `_links.next`; the fake refuses more, like amoCRM', async () => {
     const crm = fakeAmo({ contacts: range(260).map((i) => amoContact(i)), leads: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
     const list = await amocrm.listContacts(AMO, { maxRecords: 2000 })
     expect(list.items).toHaveLength(260)
-    expect(list).toMatchObject({ complete: true, total: null, stoppedBy: null })
+    expect(list).toMatchObject({ complete: true, total: null, stoppedBy: null, position: null })
     const asked = crm.calls.map((c) => new URL(c.url))
     expect(asked.map((u) => u.searchParams.get('limit'))).toEqual(['250', '250'])
     expect(asked.map((u) => u.searchParams.get('page'))).toEqual(['1', '2'])
-    expect(asked[0].pathname).toBe('/api/v4/contacts')
+    expect(asked[0].searchParams.get('order[id]')).toBe('asc')
+    expect(list.items[0].id).toBe('1')
     expect(crm.calls.every((c) => c.method === 'GET')).toBe(true)
   })
 
   it('an empty list is HTTP 204 without a body: complete and empty, not an error', async () => {
     const crm = fakeAmo({ contacts: [], leads: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    expect(await amocrm.listContacts(AMO, { maxRecords: 2000 })).toMatchObject({ items: [], complete: true })
+    expect(await amocrm.listContacts(AMO, { maxRecords: 2000 })).toMatchObject({ items: [], complete: true, position: null })
   })
 
-  it('stops at the cap: «есть ещё» without a total (amoCRM does not report one)', async () => {
-    const crm = fakeAmo({ contacts: range(300).map((i) => amoContact(i)), leads: [] })
+  it('stops at the cap on a page boundary and returns the next page; continuing from it reads the rest', async () => {
+    const crm = fakeAmo({ contacts: range(600).map((i) => amoContact(i)), leads: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    const list = await amocrm.listContacts(AMO, { maxRecords: 250 })
-    expect(list).toMatchObject({ complete: false, stoppedBy: 'cap', total: null })
-    expect(list.items).toHaveLength(250)
+    const first = await amocrm.listContacts(AMO, { maxRecords: 250 })
+    expect(first).toMatchObject({ complete: false, stoppedBy: 'cap', total: null, position: '2' })
+    expect(first.items).toHaveLength(250)
+    const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
+    expect(rest).toMatchObject({ complete: true, position: null })
+    expect([...first.items, ...rest.items].map((c) => Number(c.id))).toEqual(range(600))
+    expect(crm.calls.every((c) => new URL(c.url).searchParams.get('limit') === '250')).toBe(true)
   })
 
   it('maps leads: the main contact, price «0» as no amount, status 143 as lost, the account currency', async () => {
@@ -155,9 +161,9 @@ describe('amoCRM paging (H3)', () => {
       currency: 'RUB',
     })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    const currency = await amocrm.fetchAccountCurrency(AMO)
-    expect(currency).toBe('RUB')
-    const list = await amocrm.listDeals(AMO, { maxRecords: 100, currency })
+    const account = await amocrm.fetchAccount(AMO)
+    expect(account).toEqual({ id: '28805383', currency: 'RUB' })
+    const list = await amocrm.listDeals(AMO, { maxRecords: 100, currency: account.currency })
     const byId = Object.fromEntries(list.items.map((d) => [d.id, d]))
     expect(byId['1']).toEqual({ id: '1', contactId: '5', amount: 46333, currency: 'RUB', lost: false })
     expect(byId['2'].contactId).toBeNull()
@@ -171,16 +177,9 @@ describe('amoCRM paging (H3)', () => {
     vi.stubGlobal('fetch', crm.fetchImpl)
     const list = await amocrm.listContacts(AMO, { maxRecords: 10 })
     expect(list.items).toEqual([
-      { id: '2', name: 'Анна', phones: [], emails: [] },
       { id: '1', name: 'Контакт 1', phones: ['+77020000001'], emails: ['a1@example.kz'] },
+      { id: '2', name: 'Анна', phones: [], emails: [] },
     ])
-  })
-
-  it('a refused token fails at the account call, before any listing', async () => {
-    const crm = fakeAmo({ contacts: [], leads: [], fail: () => new Response(JSON.stringify({ title: 'Unauthorized', status: 401 }), { status: 401 }) })
-    vi.stubGlobal('fetch', crm.fetchImpl)
-    await expect(fetchProviderSnapshot('amocrm', 'acme.amocrm.ru', 'bad', { maxRecords: 10, resolve: publicDns })).rejects.toThrow(/отклонила доступ/)
-    expect(crm.calls).toHaveLength(1)
   })
 
   it('does not follow redirects and refuses a host outside amoCRM', async () => {
@@ -192,17 +191,29 @@ describe('amoCRM paging (H3)', () => {
   })
 })
 
-describe('fetchProviderSnapshot', () => {
-  it('Bitrix24: contacts and deals, external source = provider + portal host; failed deals do not stop contacts', async () => {
+describe('identifyProvider + fetchProviderSnapshot', () => {
+  it('amoCRM: the account id is the identity, the host form is its legacy alias; a refused token fails here', async () => {
+    vi.stubGlobal('fetch', fakeAmo({ contacts: [], leads: [], accountId: 777 }).fetchImpl)
+    const acc = await identifyProvider('amocrm', 'acme.kommo.com', 't', { resolve: publicDns })
+    expect(acc).toMatchObject({ externalSource: 'amocrm:777', legacySources: ['amocrm:acme.kommo.com'], currency: 'KZT' })
+
+    const refused = fakeAmo({ contacts: [], leads: [], fail: () => new Response(JSON.stringify({ title: 'Unauthorized', status: 401 }), { status: 401 }) })
+    vi.stubGlobal('fetch', refused.fetchImpl)
+    await expect(identifyProvider('amocrm', 'acme.amocrm.ru', 'bad', { resolve: publicDns })).rejects.toThrow(/отклонила доступ/)
+    expect(refused.calls).toHaveLength(1)
+  })
+
+  it('Bitrix24: identity = provider + portal host; failed deals do not stop the contacts; positions are used', async () => {
     const crm = fakeBitrix({
       contacts: range(3).map((i) => bxContact(i)),
       deals: [],
       fail: (m) => (m === 'crm.deal.list' ? new Response('{"error":"ACCESS_DENIED"}', { status: 403 }) : null),
     })
     vi.stubGlobal('fetch', crm.fetchImpl)
-    const snap = await fetchProviderSnapshot('bitrix24', 'acme.bitrix24.kz', 'https://acme.bitrix24.kz/rest/1/abc123/', { maxRecords: 100, resolve: publicDns })
-    expect(snap.externalSource).toBe('bitrix24:acme.bitrix24.kz')
-    expect(snap.contacts.items).toHaveLength(3)
+    const acc = await identifyProvider('bitrix24', 'acme.bitrix24.kz', 'https://acme.bitrix24.kz/rest/1/abc123/', { resolve: publicDns })
+    expect(acc).toMatchObject({ externalSource: 'bitrix24:acme.bitrix24.kz', legacySources: [] })
+    const snap = await fetchProviderSnapshot(acc, 'https://acme.bitrix24.kz/rest/1/abc123/', { maxRecords: 100, resolve: publicDns, contactsFrom: '1', dealsFrom: null })
+    expect(snap.contacts.items.map((c) => c.id)).toEqual(['2', '3'])
     expect(snap.deals).toBeNull()
     expect(snap.dealsError).toMatch(/отклонила доступ/)
   })

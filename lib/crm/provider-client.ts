@@ -31,13 +31,54 @@ export async function testProvider(
     : amocrm.testConnection({ domain: g.host, accessToken: token, resolve })
 }
 
-/** crm_clients.external_source of a portal: '<provider>:<host>' (ids are unique only inside one portal). */
-export function externalSourceOf(provider: CrmProvider, host: string): string {
-  return `${provider}:${host.toLowerCase()}`
+/**
+ * The CRM account a connection reads — crm_clients.external_source of its clients (ids are unique
+ * only inside one account):
+ *   amoCRM:   'amocrm:<account id>' (GET /api/v4/account) — stable when the account's address
+ *             changes (a renamed subdomain, amocrm.com → kommo.com);
+ *   Bitrix24: 'bitrix24:<portal host>' — no portal id is read: `profile` describes the webhook's
+ *             user, not the portal, and the portal's stable member_id is handed to OAuth
+ *             applications, which the product owner ruled out. Limitation: a RENAMED portal reads as
+ *             a new account — its contacts link again by phone to unlinked clients, and those whose
+ *             phone is held by a client of the old address are counted as phone conflicts.
+ * `legacySources` are earlier identities of the same account whose clients the sync moves over.
+ */
+export interface ProviderAccount {
+  provider: CrmProvider
+  externalSource: string
+  legacySources: string[]
+  host: string
+  webhookUrl: string | null
+  /** amoCRM: the account currency (deal amounts carry none). */
+  currency: string | null
+}
+
+export async function identifyProvider(
+  provider: CrmProvider,
+  baseUrl: string,
+  token: string,
+  opts: Pick<ListOptions, 'abortAt' | 'now'> & { resolve?: Resolver } = {},
+): Promise<ProviderAccount> {
+  const g = await guardCrmEndpoint(provider, baseUrl, token, opts.resolve)
+  if (!g.ok) throw new Error(g.error)
+  const host = g.host.toLowerCase()
+  if (provider === 'bitrix24') {
+    return { provider, externalSource: `bitrix24:${host}`, legacySources: [], host, webhookUrl: g.webhookUrl, currency: null }
+  }
+  // Also proves the token: a refused token fails here, before any listing.
+  const account = await amocrm.fetchAccount({ domain: host, accessToken: token, resolve: opts.resolve }, opts)
+  return {
+    provider,
+    externalSource: account.id ? `amocrm:${account.id}` : `amocrm:${host}`,
+    // Before wave 2 amoCRM clients were keyed by the host.
+    legacySources: account.id ? [`amocrm:${host}`] : [],
+    host,
+    webhookUrl: null,
+    currency: account.currency,
+  }
 }
 
 export interface ProviderSnapshot {
-  externalSource: string
   contacts: ProviderList<ProviderContact>
   /** null when the deals could not be read at all (`dealsError` says why); the contacts still sync. */
   deals: ProviderList<ProviderDeal> | null
@@ -47,32 +88,32 @@ export interface ProviderSnapshot {
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 /**
- * Contacts and deals of the portal, read in parallel. Throws when the portal is refused by the
- * guard, the token does not work, or the first page of contacts fails.
+ * Contacts and deals, in parallel, each from its own stored position. Throws when the first page of
+ * contacts fails.
  */
 export async function fetchProviderSnapshot(
-  provider: CrmProvider,
-  baseUrl: string,
+  account: ProviderAccount,
   token: string,
-  opts: ListOptions & { resolve?: Resolver },
+  opts: Omit<ListOptions, 'from'> & { resolve?: Resolver; contactsFrom: string | null; dealsFrom: string | null },
 ): Promise<ProviderSnapshot> {
-  const g = await guardCrmEndpoint(provider, baseUrl, token, opts.resolve)
-  if (!g.ok) throw new Error(g.error)
-  const externalSource = externalSourceOf(provider, g.host)
+  const { contactsFrom, dealsFrom, resolve, ...list } = opts
   let contacts: PromiseSettledResult<ProviderList<ProviderContact>>
   let deals: PromiseSettledResult<ProviderList<ProviderDeal>>
-  if (provider === 'bitrix24') {
-    const cfg = b24Config(g.host, token, g.webhookUrl, opts.resolve)
-    ;[contacts, deals] = await Promise.allSettled([bitrix24.listContacts(cfg, opts), bitrix24.listDeals(cfg, opts)])
+  if (account.provider === 'bitrix24') {
+    const cfg = b24Config(account.host, token, account.webhookUrl, resolve)
+    ;[contacts, deals] = await Promise.allSettled([
+      bitrix24.listContacts(cfg, { ...list, from: contactsFrom }),
+      bitrix24.listDeals(cfg, { ...list, from: dealsFrom }),
+    ])
   } else {
-    const cfg = { domain: g.host, accessToken: token, resolve: opts.resolve }
-    // Also proves the token: a refused token fails here, before any listing.
-    const currency = await amocrm.fetchAccountCurrency(cfg, opts)
-    ;[contacts, deals] = await Promise.allSettled([amocrm.listContacts(cfg, opts), amocrm.listDeals(cfg, { ...opts, currency })])
+    const cfg = { domain: account.host, accessToken: token, resolve }
+    ;[contacts, deals] = await Promise.allSettled([
+      amocrm.listContacts(cfg, { ...list, from: contactsFrom }),
+      amocrm.listDeals(cfg, { ...list, from: dealsFrom, currency: account.currency }),
+    ])
   }
   if (contacts.status === 'rejected') throw contacts.reason
   return {
-    externalSource,
     contacts: contacts.value,
     deals: deals.status === 'fulfilled' ? deals.value : null,
     dealsError: deals.status === 'rejected' ? messageOf(deals.reason) : null,

@@ -3,8 +3,9 @@
  * services (shapes from the official docs), keeps every call, and never touches the network.
  *
  *   Bitrix24 (apidocs.bitrix24.ru): POST https://<portal>/rest/<user>/<key>/<method>.json, JSON body
- *     { select, order, filter, start }; a list answers { result: [≤ 50], total, next?, time }; `next`
- *     only while more remain; errors as { error, error_description } with an HTTP status.
+ *     { select, order, filter, start }; `filter: { '>ID': n }` keeps the records with a greater ID;
+ *     a list answers { result: [≤ 50], total (of the filtered list), next?, time }; `next` only while
+ *     more remain; errors as { error, error_description } with an HTTP status.
  *   amoCRM API v4: GET https://<account>/api/v4/<entity>?limit=&page=…, `limit` above 250 is HTTP 400;
  *     a list answers { _page, _links: { self, next? }, _embedded: { <entity>: [...] } }; an empty page
  *     is HTTP 204 without a body; leads carry `_embedded.contacts` only with `with=contacts`.
@@ -27,8 +28,10 @@ const byIdAsc = (a: Record<string, unknown>, b: Record<string, unknown>) => Numb
 export interface BitrixState {
   contacts: Record<string, unknown>[]
   deals: Record<string, unknown>[]
-  /** A canned answer for (method, start), e.g. an error of a later page. */
-  fail?: (method: string, start: number) => Response | null
+  /** A canned answer for (method, start, the `>ID` filter), e.g. an error of a later page. */
+  fail?: (method: string, start: number, after: string | null) => Response | null
+  /** Called before every answer (a delay, a record of who is in flight). */
+  hook?: (url: string) => Promise<void> | void
 }
 
 export function bxContact(id: number, over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -65,13 +68,16 @@ export function fakeBitrix(state: BitrixState) {
     const m = /\/rest\/(?:\d+\/[A-Za-z0-9]+\/)?([a-z.]+)\.json$/.exec(new URL(url).pathname)
     const method = m?.[1] ?? ''
     const start = Number(body?.start ?? 0)
-    const canned = state.fail?.(method, start)
+    const filter = (body?.filter ?? {}) as Record<string, unknown>
+    const after = filter['>ID'] !== undefined && filter['>ID'] !== null ? String(filter['>ID']) : null
+    await state.hook?.(url)
+    const canned = state.fail?.(method, start, after)
     if (canned) return canned
     if (method === 'profile') return json({ result: { ID: '1', ADMIN: true, NAME: 'Владелец', LAST_NAME: '' }, time: {} })
     const list = method === 'crm.contact.list' ? state.contacts : method === 'crm.deal.list' ? state.deals : null
     if (!list) return json({ error: 'ERROR_METHOD_NOT_FOUND', error_description: 'Method not found!' }, 404)
     const order = (body?.order ?? {}) as Record<string, string>
-    const sorted = [...list].sort(order.ID === 'ASC' ? byIdAsc : byIdDesc)
+    const sorted = [...list].sort(order.ID === 'ASC' ? byIdAsc : byIdDesc).filter((r) => after === null || Number(r.ID) > Number(after))
     const select = Array.isArray(body?.select) ? (body!.select as string[]) : null
     const page = sorted.slice(start, start + 50).map((r) => (select ? Object.fromEntries(select.map((k) => [k, r[k] ?? null])) : r))
     const out: Record<string, unknown> = {
@@ -91,8 +97,11 @@ export interface AmoState {
   contacts: Record<string, unknown>[]
   leads: Record<string, unknown>[]
   currency?: string | null
+  /** The account id GET /api/v4/account answers (default 28805383). */
+  accountId?: number
   /** A canned answer for (entity, page). */
   fail?: (entity: string, page: number) => Response | null
+  hook?: (url: string) => Promise<void> | void
 }
 
 export function amoContact(id: number, over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -159,16 +168,17 @@ export function fakeAmo(state: AmoState) {
     calls.push({ url: url.toString(), method: init?.method ?? 'GET', body: null })
     const entity = url.pathname.replace(/^\/api\/v4\//, '')
     const page = Number(url.searchParams.get('page') ?? '1')
+    await state.hook?.(url.toString())
     const canned = state.fail?.(entity, page)
     if (canned) return canned
     if (entity === 'account') {
-      return json({ id: 28805383, name: 'Acme', subdomain: 'acme', created_at: 1582117331, country: 'KZ', currency: state.currency === undefined ? 'KZT' : state.currency, currency_symbol: '₸', _links: { self: { href: `${url.origin}/api/v4/account` } } })
+      return json({ id: state.accountId ?? 28805383, name: 'Acme', subdomain: 'acme', created_at: 1582117331, country: 'KZ', currency: state.currency === undefined ? 'KZT' : state.currency, currency_symbol: '₸', _links: { self: { href: `${url.origin}/api/v4/account` } } })
     }
     const list = entity === 'contacts' ? state.contacts : entity === 'leads' ? state.leads : null
     if (!list) return json({ title: 'Not Found', status: 404 }, 404)
     const limit = Number(url.searchParams.get('limit') ?? '50')
     if (limit > 250) return json({ title: 'Bad Request', type: 'https://httpstatus.es/400', status: 400, detail: 'Request validation failed', 'validation-errors': [{ request_id: '0', errors: [{ code: 'NotSupportedChoice', path: 'limit', detail: 'Value must be less than or equal to 250' }] }] }, 400)
-    const desc = url.searchParams.get('order[id]') === 'desc' || url.searchParams.get('order[updated_at]') === 'desc'
+    const desc = url.searchParams.get('order[id]') === 'desc'
     const sorted = [...list].sort(desc ? byIdDesc : byIdAsc)
     const rows = sorted.slice((page - 1) * limit, page * limit)
     if (rows.length === 0) return new Response(null, { status: 204 })
