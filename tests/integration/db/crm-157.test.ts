@@ -56,6 +56,7 @@ describe('rollback file of 157', () => {
 describe.skipIf(!dbTestsEnabled)('migration 157', () => {
   it('M4: owner writes are «manual» (null when cleared); the sync keeps «crm»; a figure always has a source', () =>
     inRollback(async (db) => {
+      await db.query(UP) // the functions and trigger exactly as in the file
       const owner = await seedUser(db, { status: 'approved' })
       const typed = await client(db, owner, { avg_check: 5000 })
       expect(await source(db, typed)).toEqual({ avg: 5000, src: 'manual' })
@@ -84,6 +85,11 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       await db.query(`UPDATE public.crm_clients SET external_source = $2, external_id = '2' WHERE id = $1`, [typed, SRC])
       await asUser(db, owner, () => db.query(`SELECT * FROM public.crm_sync_apply_deal_totals($1, $2, $3, $4)`, [conn, owner, SRC, pass]))
       expect(await source(db, typed)).toEqual({ avg: 5000, src: 'manual' })
+      // A 'crm' figure whose contact has no qualifying deal left is cleared; 'manual' ones stay.
+      const lone = await client(db, owner, { avg_check: 300, avg_check_source: 'crm', external_source: SRC, external_id: '3' })
+      const { rows: cleared } = await asUser(db, owner, () => db.query(`SELECT * FROM public.crm_sync_apply_deal_totals($1, $2, $3, $4)`, [conn, owner, SRC, pass]))
+      expect(cleared[0]).toEqual({ updated: 0, cleared: 1 })
+      expect(await source(db, lone)).toEqual({ avg: null, src: null })
       // The flag does not outlive the function: a later owner write in the same transaction is 'manual'.
       await db.query(`UPDATE public.crm_clients SET avg_check = 1200 WHERE id = $1`, [crm])
       expect((await source(db, crm)).src).toBe('manual')
@@ -109,8 +115,9 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(second).not.toBe(first)
     }))
 
-  it('M1/race: inserts skip any unique conflict; updates never take another client\'s phone or contact', () =>
+  it('M1/race: inserts skip any unique conflict; updates never take another client\'s phone or contact, never overwrite, never re-insert', () =>
     inRollback(async (db) => {
+      await db.query(UP) // the functions exactly as in the file
       const owner = await seedUser(db, { status: 'approved' })
       const holder = await client(db, owner, { phone: '+77010000001' })
       await client(db, owner, { external_source: SRC, external_id: '5' })
@@ -134,6 +141,17 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(row).toEqual({ name: 'Имя', phone: null, phone_raw: null })
       expect((await db.query(`SELECT external_id FROM public.crm_clients WHERE id = $1`, [manual])).rows[0].external_id).toBeNull()
       expect((await db.query(`SELECT phone FROM public.crm_clients WHERE id = $1`, [holder])).rows[0].phone).toBe('+77010000001')
+
+      // A non-empty field is never overwritten; a client deleted meanwhile is never re-inserted.
+      const gone = await client(db, owner, { external_source: SRC, external_id: '8' })
+      await db.query(`DELETE FROM public.crm_clients WHERE id = $1`, [gone])
+      const again = await asUser(db, owner, () => db.query(`SELECT * FROM public.crm_sync_update_clients($1, $2, $3, $4)`, [owner, SRC, seen, JSON.stringify([
+        { id: six, external_id: '6', name: 'Другое имя', phone: null, phone_raw: null, email: 'a@b.kz', link: false },
+        { id: gone, external_id: '8', name: 'Из CRM', phone: null, phone_raw: null, email: null, link: false },
+      ])]))
+      expect(again.rows).toEqual([{ id: six, changed: true }])
+      expect((await db.query(`SELECT name, email FROM public.crm_clients WHERE id = $1`, [six])).rows[0]).toEqual({ name: 'Имя', email: 'a@b.kz' })
+      expect((await db.query(`SELECT count(*)::int AS n FROM public.crm_clients WHERE id = $1 OR external_id = '8'`, [gone])).rows[0].n).toBe(0)
     }))
 
   it('access: the functions for authenticated and service_role only; crm_sync_deals is the owner\'s', () =>

@@ -182,6 +182,14 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       rows = await clients(db, owner)
       expect(rows.map((r) => [r.avg_check, r.avg_check_source])).toEqual([[77000, 'manual'], [88000, 'manual'], [null, null]])
 
+      // Confirming the CRM figure as their own (the same value) makes it the owner's too — only the route can tell.
+      vi.stubGlobal('fetch', fakeBitrix({ contacts: range(3).map((i) => bxContact(i)), deals: [bxDeal(1, 1, '9999'), bxDeal(2, 2, '9999'), bxDeal(4, 3, '4000')] }).fetchImpl)
+      await run(sb, conn)
+      const third = byExt(await clients(db, owner), '3')
+      expect(third).toMatchObject({ avg_check: 4000, avg_check_source: 'crm' })
+      await patchClient(new NextRequest(`http://portal.test/api/v1/crm/clients/${third.id}`, { method: 'PATCH', body: JSON.stringify({ avg_check: 4000 }) }), { params: { id: String(third.id) } })
+      expect(byExt(await clients(db, owner), '3')).toMatchObject({ avg_check: 4000, avg_check_source: 'manual' })
+
       // Clearing it in the drawer hands the field back to the CRM.
       await patchClient(new NextRequest(`http://portal.test/api/v1/crm/clients/${byExt(rows, '1').id}`, { method: 'PATCH', body: JSON.stringify({ avg_check: null }) }), { params: { id: String(byExt(rows, '1').id) } })
       await run(sb, conn)
