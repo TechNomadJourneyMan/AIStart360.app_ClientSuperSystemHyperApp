@@ -5,7 +5,15 @@ import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { crmKeys } from '@/hooks/useCrm'
 
-interface ImportResult { inserted: number; updated: number; skipped: number }
+interface ImportResult {
+  inserted: number
+  updated: number
+  /** Matched existing clients the file did not change. */
+  unchanged?: number
+  /** Rows that repeated a contact of the same file (merged into its first row). */
+  duplicates?: number
+  skipped: number
+}
 
 export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
@@ -38,7 +46,9 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
       }
       const r = body.data
       setResult(r)
-      toast.success(`Импорт завершён: +${r.inserted}, обновлено ${r.updated}, пропущено ${r.skipped}`)
+      toast.success(
+        `Импорт завершён: +${r.inserted}, обновлено ${r.updated}, без изменений ${r.unchanged ?? 0}, пропущено ${r.skipped}`,
+      )
       qc.invalidateQueries({ queryKey: crmKeys.all })
     } catch {
       toast.error('Ошибка сети при импорте')
@@ -70,7 +80,8 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
           <p className="text-xs text-on-surface-variant leading-relaxed">
             Распознаются колонки: <span className="font-mono text-on-surface">Имя</span>, <span className="font-mono text-on-surface">Телефон</span>,{' '}
             <span className="font-mono text-on-surface">Email</span>, <span className="font-mono text-on-surface">Сумма</span>,{' '}
-            <span className="font-mono text-on-surface">Комментарий</span>. Дубли по телефону объединяются.
+            <span className="font-mono text-on-surface">Комментарий</span>. Клиенты, которые уже есть в базе
+            (по телефону, иначе по email), обновляются; пустые ячейки файла ничего не стирают.
           </p>
 
           <input
@@ -89,10 +100,11 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
           </button>
 
           {result && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { label: 'Добавлено', value: result.inserted, color: 'text-primary' },
                 { label: 'Обновлено', value: result.updated, color: 'text-tertiary-container' },
+                { label: 'Без изменений', value: result.unchanged ?? 0, color: 'text-on-surface-variant' },
                 { label: 'Пропущено', value: result.skipped, color: 'text-on-surface-variant' },
               ].map((s) => (
                 <div key={s.label} className="bg-surface-container rounded-xl p-3 text-center">
@@ -101,6 +113,11 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
                 </div>
               ))}
             </div>
+          )}
+          {result && (result.duplicates ?? 0) > 0 && (
+            <p className="text-[11px] text-on-surface-variant">
+              Строк-повторов в файле: {result.duplicates} — объединены с первой строкой того же клиента.
+            </p>
           )}
 
           <div className="flex gap-2">

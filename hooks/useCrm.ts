@@ -42,49 +42,59 @@ export interface CrmReminder {
   done_at: string | null
 }
 
-/** A row in the «Сегодня» queue — pulse-compatible fields PLUS native CRM fields. */
+/**
+ * A row of the «Сегодня» queue / risk list (GET /api/v1/crm/today, lib/crm/today.ts TodayClient).
+ * Only what the owner's base holds: no order history, no order cycle, no volume trend.
+ */
 export interface CrmTodayClient {
-  // pulse-compatible (reused by ClientCard / RiskBadge / RiskBar / MiniSparkline)
   id: string
   name: string
-  sector: string
-  forbes: number | null
-  lastOrder: string | null
-  daysSince: number
-  avgCheck: number
-  volumeChange: number
-  riskScore: number
-  churnProb: number
-  churnLevel: 'high' | 'medium' | 'low'
-  comment: string | null
-  action: 'call' | 'message' | 'monitor'
-  history: number[]
-  orderCycle: number
-  // native CRM fields
   status: CrmClientStatus
+  statusLabel: string
   phone: string | null
-  phoneRaw?: string | null
+  phoneRaw: string | null
   email: string | null
-  note?: string | null
+  note: string | null
   nextContactAt: string | null
   lastContactAt: string | null
-  // API returns a numeric bucket (0..3); we keep it as-is for ordering.
-  queueBucket: number
+  /** Whole days since the last touch; null = never touched («нет касаний»). */
+  daysSince: number | null
+  /** null = no average check entered. */
+  avgCheck: number | null
+  /** % of the check against the base's average check; null when unknown. */
+  checkVsAvgPct: number | null
+  riskScore: number
+  churnLevel: 'high' | 'medium' | 'low'
+  action: 'call' | 'message' | 'monitor'
+  comment: string | null
+  /** 0 overdue · 1 today · 2 no plan · 3 sleeping; null = not in today's queue. */
+  queueBucket: 0 | 1 | 2 | 3 | null
 }
 
 export interface CrmTodayStats {
-  revenueAtRisk: number
+  totalClients: number
   highRisk: number
   mediumRisk: number
-  totalClients: number
+  /** Σ avg_check of the high-risk clients; null = «нет данных» (some check unknown). */
+  revenueAtRisk: number | null
+  highRiskWithoutCheck: number
   processedToday: number
-  dailyTarget: number
+  queue: { overdue: number; today: number; noPlan: number; sleeping: number }
 }
 
 export interface CrmTodayData {
+  day: string
   stats: CrmTodayStats
   todayClients: CrmTodayClient[]
+  riskClients: CrmTodayClient[]
+  riskClientsTotal: number
   aiBriefing: string | null
+}
+
+/** The whole base (GET /api/v1/crm/clients, every page) + how many the server counts. */
+export interface CrmClientsData {
+  clients: CrmClient[]
+  total: number
 }
 
 // ─── Fetch helpers ───────────────────────────────────────────────────────────
@@ -128,22 +138,63 @@ export function useCrmToday() {
     queryKey: crmKeys.today(),
     queryFn: async (): Promise<CrmTodayData> => {
       const res = await fetch('/api/v1/crm/today')
-      if (!res.ok) throw new Error('Failed to fetch CRM today queue')
+      if (!res.ok) throw new Error(`Не удалось загрузить очередь (${res.status})`)
       return res.json() as Promise<CrmTodayData>
     },
   })
 }
 
-/** GET /api/v1/crm/clients?status= — enveloped `{ok,data:{clients}}`. */
+/** Page size of GET /api/v1/crm/clients (the server's maximum). */
+export const CRM_CLIENTS_PAGE = 1000
+/** Safety stop for the page loop (1000 pages = a million clients). */
+const MAX_CLIENT_PAGES = 1000
+
+/** Display order of the base: the nearest planned contact first (none last), then the newest. */
+export function sortBase(clients: CrmClient[]): CrmClient[] {
+  const t = (iso: string | null) => (iso ? new Date(iso).getTime() : NaN)
+  return [...clients].sort((a, b) => {
+    const na = t(a.next_contact_at)
+    const nb = t(b.next_contact_at)
+    if (Number.isNaN(na) !== Number.isNaN(nb)) return Number.isNaN(na) ? 1 : -1
+    if (!Number.isNaN(na) && na !== nb) return na - nb
+    return (t(b.created_at) || 0) - (t(a.created_at) || 0) || a.id.localeCompare(b.id)
+  })
+}
+
+/**
+ * The owner's WHOLE base: GET /api/v1/crm/clients page by page (keyset cursor) until the last page,
+ * so a base over one page is never silently cut. `total` is the server's count, for «N из M».
+ */
 export function useCrmClients(status?: CrmClientStatus) {
   return useQuery({
     queryKey: crmKeys.clients(status),
-    queryFn: async (): Promise<CrmClient[]> => {
-      const qs = status ? `?status=${encodeURIComponent(status)}` : ''
-      const data = await fetchEnvelope<{ clients: CrmClient[] }>(`/api/v1/crm/clients${qs}`)
-      return data.clients
-    },
+    queryFn: () => fetchWholeBase(status),
   })
+}
+
+/** Every page of GET /api/v1/crm/clients (exported for tests). */
+export async function fetchWholeBase(status?: CrmClientStatus): Promise<CrmClientsData> {
+  const seen = new Set<string>()
+  const all: CrmClient[] = []
+  let total = 0
+  let after: string | null = null
+  for (let i = 0; i < MAX_CLIENT_PAGES; i++) {
+    const qs = new URLSearchParams({ limit: String(CRM_CLIENTS_PAGE) })
+    if (status) qs.set('status', status)
+    if (after) qs.set('after', after)
+    const page: { clients: CrmClient[]; total: number; nextCursor: string | null } = await fetchEnvelope(
+      `/api/v1/crm/clients?${qs.toString()}`,
+    )
+    total = page.total
+    for (const c of page.clients) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      all.push(c)
+    }
+    if (!page.nextCursor) break
+    after = page.nextCursor
+  }
+  return { clients: sortBase(all), total }
 }
 
 /** GET /api/v1/crm/clients/[id]/interactions — enveloped. */

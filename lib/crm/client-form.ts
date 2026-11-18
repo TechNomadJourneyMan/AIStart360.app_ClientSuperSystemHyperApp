@@ -1,0 +1,93 @@
+/**
+ * lib/crm/client-form.ts — the client drawer's seed and save patch (pure, shared by the «Сегодня»
+ * queue, the Card tab and the Base tab).
+ *
+ * L6: the drawer opened from the Card tab used to be seeded without phone_raw, so a phone that did
+ * not normalise to E.164 showed as an empty field, and «Сохранить» sent phone: '' — wiping
+ * phone_raw. The seed now carries the raw phone, and the phone is sent only when the owner changed
+ * it.
+ */
+import type { ClientStatus } from './client-validate'
+
+/** The minimal client the drawer needs. */
+export interface DrawerSeed {
+  id: string
+  name: string
+  phone: string | null
+  phone_raw?: string | null
+  email: string | null
+  status: ClientStatus
+  avg_check: number | null
+  note: string | null
+  next_contact_at: string | null
+  last_contact_at: string | null
+}
+
+/** A row of GET /api/v1/crm/today (todayClients / riskClients). */
+export interface QueueRowLike {
+  id: string
+  name: string
+  phone: string | null
+  phoneRaw?: string | null
+  email: string | null
+  status: string
+  avgCheck: number | null
+  note?: string | null
+  nextContactAt: string | null
+  lastContactAt: string | null
+}
+
+export function seedFromQueueRow(r: QueueRowLike): DrawerSeed {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone ?? null,
+    phone_raw: r.phoneRaw ?? null,
+    email: r.email ?? null,
+    status: r.status as ClientStatus,
+    avg_check: typeof r.avgCheck === 'number' ? r.avgCheck : null,
+    note: r.note ?? null,
+    next_contact_at: r.nextContactAt ?? null,
+    last_contact_at: r.lastContactAt ?? null,
+  }
+}
+
+/** What the drawer's phone field shows: the phone as the owner typed it, else the normalised one. */
+export function phoneFieldValue(seed: DrawerSeed): string {
+  return seed.phone_raw ?? seed.phone ?? ''
+}
+
+export interface DrawerForm {
+  name: string
+  phone: string
+  email: string
+  status: ClientStatus
+  avgCheck: number | null
+  nextContactAt: string | null
+  note: string
+}
+
+export interface DrawerPatch {
+  name: string
+  phone?: string
+  email: string | null
+  status: ClientStatus
+  avg_check: number | null
+  next_contact_at: string | null
+  note: string | null
+}
+
+/** The PATCH body of «Сохранить». The phone goes only when changed (re-sending it could wipe phone_raw). */
+export function drawerPatch(seed: DrawerSeed, form: DrawerForm): DrawerPatch {
+  const patch: DrawerPatch = {
+    name: form.name.trim(),
+    email: form.email.trim() || null,
+    status: form.status,
+    avg_check: form.avgCheck,
+    next_contact_at: form.nextContactAt,
+    note: form.note.trim() || null,
+  }
+  const phone = form.phone.trim()
+  if (phone !== phoneFieldValue(seed).trim()) patch.phone = phone
+  return patch
+}
