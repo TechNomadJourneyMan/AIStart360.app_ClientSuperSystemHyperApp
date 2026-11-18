@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus } from '@/lib/crm/sync-status'
 
 // ── Types of /api/integrations ─────────────────────────────────────────────
 interface CatalogField { name: string; label: string; target: 'secret' | 'setting'; input: 'password' | 'text' | 'textarea'; placeholder?: string; help?: string; maxLength: number }
@@ -49,7 +50,7 @@ interface Connection {
 interface IntegrationsData { catalog: CatalogItem[]; connections: Connection[]; canManage: boolean; encryptionReady: boolean; migrationPending?: boolean }
 
 // ── CRM (/api/v1/crm/connections) ──────────────────────────────────────────
-interface CrmConnection { id: string; provider: string; base_url: string; is_active: boolean; last_sync_status: string | null; synced_deals: number | null; synced_contacts: number | null }
+interface CrmConnection { id: string; provider: string; base_url: string; is_active: boolean; last_sync_at?: string | null; last_sync_status: string | null; last_sync_error?: string | null; synced_deals: number | null; synced_contacts: number | null }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   connected:    { label: 'Подключено',          cls: 'text-primary bg-primary/10 border-primary/20' },
@@ -358,6 +359,38 @@ function CrmIntegrations() {
   }, [])
   useEffect(() => { void load() }, [load])
 
+  // How to get the key, step by step (M8: only a webhook / a long-lived token, nothing promised that is not done).
+  const howTo: Record<string, string[]> = {
+    bitrix24: [
+      'В Bitrix24: «Разработчикам» → «Другое» → «Входящий вебхук».',
+      'В «Настройке прав» отметьте «CRM (crm)», сохраните.',
+      'Скопируйте «Вебхук для вызова rest api» (https://ваш-портал.bitrix24.kz/rest/1/код/) и вставьте ниже.',
+    ],
+    amocrm: [
+      'В amoCRM: «amoМаркет» → «⋯» → «Создать интеграцию» → «Внешняя интеграция», доступ к данным аккаунта, сохраните.',
+      'На вкладке «Ключи и доступы» сгенерируйте долгосрочный токен и скопируйте его.',
+      'Ниже — адрес аккаунта (ваш-аккаунт.amocrm.ru) и токен. Истёк срок токена — создайте новый и подключите заново.',
+    ],
+  }
+
+  const syncNow = async (id: string) => {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, { method: 'POST', credentials: 'include' })
+      const body = await json<{ data?: { status?: string; message?: string } }>(res)
+      if (!res.ok) throw new Error(body.error ?? 'Не удалось синхронизировать')
+      const message = body.data?.message || 'Синхронизация выполнена'
+      if (body.data?.status === 'partial') toast.warning(message)
+      else toast.success(message)
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось синхронизировать')
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const act = async (fn: () => Promise<Response>, ok: string) => {
     setBusy(true)
     try {
@@ -376,26 +409,33 @@ function CrmIntegrations() {
   }
 
   return (
-    <Card title="CRM" subtitle="Сделки и контакты из Bitrix24 / amoCRM — для пульса продаж, дайджеста и рекомендаций.">
+    <Card title="CRM" subtitle={`Контакты Bitrix24 / amoCRM становятся клиентами, суммы сделок — средним чеком; портал только читает CRM. ${CRM_AUTO_SYNC_DESCRIPTION}`}>
       {loading ? <div className="h-24 bg-surface-container-high rounded-xl animate-pulse" /> : failed ? (
         <p className="text-sm text-error">Не удалось загрузить подключения CRM.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CRM_PROVIDERS.map((p) => {
             const conn = rows.find((r) => r.provider === p.key && r.is_active)
+            const status = conn ? normaliseSyncStatus(conn.last_sync_status) : null
             return (
               <div key={p.key} className="bg-surface-container-high rounded-xl p-4 border border-white/[0.04]">
                 <div className="flex items-start justify-between mb-2">
                   <p className="text-sm font-semibold text-on-surface">{p.name}</p>
-                  <StatusBadge status={conn ? (conn.last_sync_status === 'error' ? 'error' : 'connected') : 'available'} />
+                  <StatusBadge status={conn ? (status === 'error' ? 'error' : 'connected') : 'available'} />
                 </div>
                 {conn ? (
                   <>
-                    <p className="text-[11px] text-on-surface-variant mb-2">
+                    <p className="text-[11px] text-on-surface-variant mb-1">
                       {conn.base_url} · сделок: {conn.synced_deals ?? 0} · контактов: {conn.synced_contacts ?? 0}
                     </p>
+                    <p className="text-[11px] text-on-surface-variant mb-2">
+                      {status
+                        ? `Последняя синхронизация: ${CRM_SYNC_STATUS_LABEL[status]}, ${fmt(conn.last_sync_at ?? null)}`
+                        : 'Синхронизации ещё не было'}
+                      {status && status !== 'success' && conn.last_sync_error ? ` — ${conn.last_sync_error}` : ''}
+                    </p>
                     <div className="flex gap-2">
-                      <button type="button" disabled={busy} onClick={() => act(() => fetch(`/api/v1/crm/connections/${conn.id}/sync`, { method: 'POST', credentials: 'include' }), 'Синхронизация выполнена')} className={`${btn} bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15`}>Синхронизировать</button>
+                      <button type="button" disabled={busy} onClick={() => void syncNow(conn.id)} className={`${btn} bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15`}>Синхронизировать</button>
                       <button type="button" disabled={busy} onClick={() => { if (confirm(`Отключить ${p.name}?`)) void act(() => fetch(`/api/v1/crm/connections/${conn.id}`, { method: 'DELETE', credentials: 'include' }), 'CRM отключена') }} className={`${btn} border border-error/30 text-error hover:bg-error/10`}>Отключить</button>
                     </div>
                   </>
@@ -405,8 +445,11 @@ function CrmIntegrations() {
                     void act(() => fetch('/api/v1/crm/connections', {
                       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(crmPayload(p.key, form)),
-                    }), `${p.name} подключена`)
+                    }), `${p.name} подключена — первая синхронизация в течение получаса или по кнопке «Синхронизировать»`)
                   }}>
+                    <ol className="text-[11px] text-on-surface-variant pl-4 space-y-0.5 list-decimal">
+                      {howTo[p.key].map((step) => <li key={step}>{step}</li>)}
+                    </ol>
                     {p.domainPlaceholder && (
                       <input value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} placeholder={p.domainPlaceholder} className={inputCls} />
                     )}
