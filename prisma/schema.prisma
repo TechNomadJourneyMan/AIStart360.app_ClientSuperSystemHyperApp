@@ -454,8 +454,6 @@ model Comment {
   @@map("comments")
 }
 
-/// CRM integration credentials for Bitrix24 / AmoCRM sync.
-
 /// Immutable audit log --- every admin action is recorded here.
 model AuditLog {
   id          String   @id @default(cuid())

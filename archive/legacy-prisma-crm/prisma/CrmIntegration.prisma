@@ -2,6 +2,7 @@
 // The table it maps to moved to the `archive` schema (migration 156). Organization had the
 // back-relation `crmIntegrations CrmIntegration[]`.
 
+/// CRM integration credentials for Bitrix24 / AmoCRM sync.
 model CrmIntegration {
   id           String   @id @default(cuid())
   orgId        String

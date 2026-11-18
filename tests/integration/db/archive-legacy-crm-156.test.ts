@@ -35,11 +35,17 @@ async function legacyTable(db: Db) {
     `CREATE TABLE public.crm_integrations (
        id TEXT PRIMARY KEY, "orgId" TEXT NOT NULL, provider TEXT NOT NULL, domain TEXT NOT NULL,
        "accessToken" TEXT NOT NULL, "webhookUrl" TEXT, "isActive" BOOLEAN NOT NULL DEFAULT true,
-       "lastSyncStatus" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT now(), UNIQUE ("orgId", provider))`,
+       "lastSyncStatus" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT now(), UNIQUE ("orgId", provider),
+       -- as prod (Prisma relation to Organization): the key moves with the table
+       CONSTRAINT crm_integrations_orgId_fkey FOREIGN KEY ("orgId") REFERENCES public.organizations(id) ON UPDATE CASCADE ON DELETE RESTRICT)`,
   )
   await db.query(`ALTER TABLE public.crm_integrations ENABLE ROW LEVEL SECURITY`)
   await db.query(`REVOKE ALL ON TABLE public.crm_integrations FROM anon, authenticated`)
   await db.query(`GRANT ALL ON TABLE public.crm_integrations TO service_role`)
+  await db.query(
+    `INSERT INTO public.organizations (id, name, slug, "createdAt", "updatedAt") VALUES ('org-1', 'Org', 'org-1-legacy-crm', now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+  )
   await db.query(
     `INSERT INTO public.crm_integrations (id, "orgId", provider, domain, "accessToken", "webhookUrl", "lastSyncStatus")
      VALUES ('legacy-1', 'org-1', 'bitrix24', 'example.bitrix24.kz', 'token-x', 'https://example.invalid/hook', 'partial')`,
@@ -78,6 +84,13 @@ describe.skipIf(!dbTestsEnabled)('migration 156 — legacy crm_integrations to t
       expect(await pgErrorCode(asUser(db, user, () => db.query(`SELECT 1 FROM archive.crm_integrations`)))).toBe('42501')
       // the server role still reads it (SQL only — PostgREST does not expose the schema)
       expect(await asService(db, () => db.query(`SELECT count(*)::int AS n FROM archive.crm_integrations`).then((r) => r.rows[0].n))).toBe(1)
+
+      // the foreign key to organizations moved with the table (still enforced)
+      const fk = await db.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace ns ON ns.oid = t.relnamespace
+          WHERE ns.nspname = 'archive' AND t.relname = 'crm_integrations' AND c.contype = 'f'`,
+      )
+      expect(fk.rows[0].n).toBe(1)
 
       // idempotent: again → same state, no error
       await db.query(UP)
