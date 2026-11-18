@@ -104,19 +104,21 @@ export async function GET(_req: NextRequest) {
   } catch { /* skip */ }
 
   // Overdue CRM reminders (S1) — reads the GRI/CRM tables directly (no code dep).
+  // Only OPEN reminders: a dismissed one keeps done_at = null (only «done» sets it), so filtering on
+  // done_at counted every dismissed reminder as overdue forever.
   try {
     const nowIso = new Date().toISOString()
     const { data, count } = await sb
       .from('crm_reminders')
       .select('client_id', { count: 'exact' })
       .eq('user_id', user.id)
-      .is('done_at', null)
+      .eq('status', 'open')
       .lt('due_at', nowIso)
     if ((count ?? 0) > 0) {
       let sampleName: string | undefined
       const firstClientId = (data ?? [])[0]?.client_id
       if (firstClientId) {
-        const { data: c } = await sb.from('crm_clients').select('name').eq('id', firstClientId).maybeSingle()
+        const { data: c } = await sb.from('crm_clients').select('name').eq('id', firstClientId).eq('user_id', user.id).maybeSingle()
         sampleName = c?.name ?? undefined
       }
       input.crmOverdue = { count: count ?? 0, sampleName }

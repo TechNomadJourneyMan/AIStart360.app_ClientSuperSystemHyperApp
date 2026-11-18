@@ -14,6 +14,7 @@ import {
   type DigestData,
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
+import { almatyDay, PAGE_SIZE, queueCountsByUser, readAllById, type QueueClientInput } from '@/lib/crm/today'
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { cloudApiConfigured } from '@/lib/whatsapp/config'
 
@@ -25,8 +26,10 @@ export const maxDuration = 60
 /**
  * GET /api/cron/crm-digest — утренний CRM-дайджест (Фаза 2 + мультиканал Фазы 4A).
  *
- * Раз в сутки собирает по каждому владельцу CRM:
- *   • просроченные / сегодняшние открытые напоминания (crm_reminders);
+ * Раз в сутки собирает по каждому владельцу CRM — по тем же правилам очереди «Кому звонить
+ * сегодня» (lib/crm/today.ts), для текущего дня по Алматы:
+ *   • клиентов с просроченным запланированным контактом (напоминание / next_contact_at до сегодня);
+ *   • клиентов с контактом, запланированным на сегодня (это не «просрочено»);
  *   • «спящих» клиентов без контакта > 30 дней (crm_clients);
  *   • слабый блок текущей GRI-диагностики (довесок №9).
  * И доставляет по каналам из preferences.notifications.crm: in-app (колокольчик),
@@ -37,10 +40,10 @@ export const maxDuration = 60
  */
 
 const MAX_USERS = 5000
-const SLEEP_DAYS = 30
 const QUERY_LIMIT = 50000
 
-type CountRow = { user_id: string }
+type QueueClientRow = QueueClientInput & { id: string; user_id: string }
+type ReminderRow = { id: string; client_id: string; due_at: string }
 type ProfileRow = {
   id: string
   email?: string | null
@@ -129,45 +132,30 @@ export async function GET(req: NextRequest) {
     const base = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
     const now = new Date()
-    const endOfToday = new Date(now)
-    endOfToday.setUTCHours(23, 59, 59, 999)
-    const sleepCutoff = new Date(now.getTime() - SLEEP_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
-    // 1) Открытые просроченные / сегодняшние напоминания.
-    const { data: reminders, error: remErr } = await supabase
-      .from('crm_reminders')
-      .select('user_id')
-      .eq('status', 'open')
-      .lte('due_at', endOfToday.toISOString())
-      .limit(QUERY_LIMIT)
-    if (remErr) throw remErr
+    // 1–2) Every client and every open reminder (page by page, no silent cut), then the SAME queue
+    // rule as «Кому звонить сегодня» (lib/crm/today.ts): overdue / due today / sleeping are the
+    // queue's buckets for today's Almaty day — a reminder due later today is «на сегодня», never
+    // «просрочено», and the sleeping count is the queue's.
+    const clients = await readAllById<QueueClientRow>((after) => {
+      let q = supabase.from('crm_clients').select('id, user_id, status, next_contact_at, last_contact_at, created_at')
+      if (after) q = q.gt('id', after)
+      return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: QueueClientRow[] | null; error: unknown }>
+    })
+    if (!clients.ok) throw clients.error
+    const reminders = await readAllById<ReminderRow>((after) => {
+      let q = supabase.from('crm_reminders').select('id, client_id, due_at').eq('status', 'open')
+      if (after) q = q.gt('id', after)
+      return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: ReminderRow[] | null; error: unknown }>
+    })
+    if (!reminders.ok) throw reminders.error
 
-    // 2) «Спящие» клиенты.
-    const { data: sleeping, error: sleepErr } = await supabase
-      .from('crm_clients')
-      .select('user_id')
-      .in('status', ['customer', 'sleeping'])
-      .or(`last_contact_at.lt.${sleepCutoff},and(last_contact_at.is.null,created_at.lt.${sleepCutoff})`)
-      .limit(QUERY_LIMIT)
-    if (sleepErr) throw sleepErr
-
-    if ((reminders?.length ?? 0) >= QUERY_LIMIT || (sleeping?.length ?? 0) >= QUERY_LIMIT) {
-      console.warn('[crm-digest] query limit hit — some rows may be truncated')
-    }
-
-    const overdueByUser = new Map<string, number>()
-    for (const r of (reminders ?? []) as CountRow[]) {
-      if (r.user_id) overdueByUser.set(r.user_id, (overdueByUser.get(r.user_id) ?? 0) + 1)
-    }
-    const sleepingByUser = new Map<string, number>()
-    for (const c of (sleeping ?? []) as CountRow[]) {
-      if (c.user_id) sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
-    }
+    const countsByUser = queueCountsByUser(clients.rows, reminders.rows, now.getTime())
 
     // Пользователи с ненулевым дайджестом.
-    const affected = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()])).filter(
-      (u) => (overdueByUser.get(u) ?? 0) + (sleepingByUser.get(u) ?? 0) > 0,
-    )
+    const affected = Array.from(countsByUser.entries())
+      .filter(([, c]) => c.overdue + c.dueToday + c.sleeping > 0)
+      .map(([u]) => u)
     if (affected.length > MAX_USERS) {
       console.warn(`[crm-digest] ${affected.length} users affected, capping at ${MAX_USERS}`)
     }
@@ -184,6 +172,7 @@ export async function GET(req: NextRequest) {
           telegramSent: 0,
           whatsappSent: 0,
           totalOverdue: 0,
+          totalDueToday: 0,
           totalSleeping: 0,
           rescanReminders,
         },
@@ -229,13 +218,14 @@ export async function GET(req: NextRequest) {
         console.warn('[crm-digest] WhatsApp recipients skipped', e instanceof Error ? e.message.split('\n')[0] : e)
       }
     }
-    const day = now.toISOString().slice(0, 10)
+    const day = almatyDay(now.getTime()).day
 
     let usersNotified = 0
     let emailsSent = 0
     let telegramSent = 0
     let whatsappSent = 0
     let totalOverdue = 0
+    let totalDueToday = 0
     let totalSleeping = 0
 
     const CONCURRENCY = 25
@@ -243,8 +233,10 @@ export async function GET(req: NextRequest) {
       const chunk = targets.slice(i, i + CONCURRENCY)
       await Promise.all(
         chunk.map(async (userId) => {
-          const overdue = overdueByUser.get(userId) ?? 0
-          const sleep = sleepingByUser.get(userId) ?? 0
+          const counts = countsByUser.get(userId) ?? { overdue: 0, dueToday: 0, sleeping: 0 }
+          const overdue = counts.overdue
+          const dueToday = counts.dueToday
+          const sleep = counts.sleeping
           const profile = profileById.get(userId)
           const email = profile?.email ?? null
           const chatId = profile?.telegram_chat_id ?? null
@@ -257,6 +249,7 @@ export async function GET(req: NextRequest) {
 
           const data: DigestData = {
             overdue,
+            dueToday,
             sleeping: sleep,
             weakBlock: weakByUser.get(userId) ?? null,
           }
@@ -271,7 +264,7 @@ export async function GET(req: NextRequest) {
               category: 'crm',
               priority: 'medium',
               link: '/pulse',
-              metadata: { overdue, sleeping: sleep },
+              metadata: { overdue, dueToday, sleeping: sleep },
             })
             delivered = true
           }
@@ -315,6 +308,7 @@ export async function GET(req: NextRequest) {
           if (delivered) {
             usersNotified += 1
             totalOverdue += overdue
+            totalDueToday += dueToday
             totalSleeping += sleep
           }
         }),
@@ -326,7 +320,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      data: { usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalSleeping, rescanReminders },
+      data: { usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalDueToday, totalSleeping, rescanReminders },
     })
   } catch (err) {
     console.error('[crm-digest] sweep failed', err)

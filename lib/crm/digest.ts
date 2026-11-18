@@ -18,8 +18,16 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many
 }
 
+/**
+ * The digest's numbers — clients of the «Кому звонить сегодня» queue (lib/crm/today.ts
+ * queueBucket), counted per bucket for the Almaty day the digest is sent on.
+ */
 export interface DigestData {
+  /** Clients whose planned contact (open reminder / next contact) is before today. */
   overdue: number
+  /** Clients whose planned contact is today — NOT overdue. */
+  dueToday?: number
+  /** Customer / sleeping clients with no touch for more than 30 days. */
   sleeping: number
   /** Самый слабый блок GRI из текущей диагностики (довесок №9), либо null. */
   weakBlock: { label: string; score: number } | null
@@ -70,14 +78,17 @@ export function pickWeakestBlock(sectionAvgs: unknown): { label: string; score: 
 
 /** Заголовок дайджеста по суммарному числу клиентов. */
 export function buildDigestTitle(data: DigestData): string {
-  const total = data.overdue + data.sleeping
+  const total = data.overdue + (data.dueToday ?? 0) + data.sleeping
   return `📞 CRM: ${total} ${plural(total, 'клиент ждёт', 'клиента ждут', 'клиентов ждут')} внимания`
 }
+
+const clients = (n: number) => `${n} ${plural(n, 'клиент', 'клиента', 'клиентов')}`
 
 /** Содержательные строки дайджеста (общие для всех каналов). */
 export function buildDigestLines(data: DigestData): string[] {
   const lines: string[] = []
-  if (data.overdue > 0) lines.push(`Просроченных напоминаний: ${data.overdue}`)
+  if (data.overdue > 0) lines.push(`Просрочен запланированный контакт: ${clients(data.overdue)}`)
+  if ((data.dueToday ?? 0) > 0) lines.push(`Контакт запланирован на сегодня: ${clients(data.dueToday ?? 0)}`)
   if (data.sleeping > 0) lines.push(`Спящих клиентов: ${data.sleeping}`)
   if (data.weakBlock) {
     lines.push(
