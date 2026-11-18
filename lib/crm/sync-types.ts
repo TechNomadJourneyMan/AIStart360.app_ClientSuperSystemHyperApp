@@ -3,7 +3,9 @@
  * lib/crm/amocrm.ts) and how a listing tells that it stopped early.
  *
  * A client of the portal is a CRM CONTACT. A deal is never a client: its amount goes into the
- * average check of its contact (lib/crm/provider-sync.ts).
+ * average check of its contact (lib/crm/provider-sync.ts, crm_sync_apply_deal_totals).
+ * Lists are read in ascending id order from a stored position, so a CRM larger than one run's cap
+ * is caught up over several runs (lib/crm/sync-cursor.ts).
  */
 
 export interface ProviderContact {
@@ -32,19 +34,29 @@ export type ListStop = 'cap' | 'time' | 'error'
 
 export interface ProviderList<T> {
   items: T[]
-  /** How many records the CRM reports (Bitrix24 `total`); null when it does not say (amoCRM). */
+  /**
+   * How many records the CRM reports from the starting position on, those read included (Bitrix24
+   * `total` of the filtered list); null when it does not say (amoCRM).
+   */
   total: number | null
-  /** Every page was read. */
+  /** The end of the list was reached. */
   complete: boolean
   /** Why reading stopped before the end: the record cap, the time budget or a failed later page. */
   stoppedBy: ListStop | null
   /** The error of the page that failed (stoppedBy = 'error'). */
   error?: string
+  /**
+   * Where the next run continues (Bitrix24: the last id read; amoCRM: the next page number);
+   * null when the end was reached.
+   */
+  position: string | null
 }
 
 export interface ListOptions {
   /** At most this many records (the cap of one sync run). */
   maxRecords: number
+  /** Continue after this position (ProviderList.position of the previous run); null = from the start. */
+  from?: string | null
   /** No new page is requested at or after this moment (ms since epoch). */
   fetchUntil?: number
   /** A request still running at this moment is aborted (ms since epoch). */

@@ -11,8 +11,15 @@
  *   - a Bitrix24 incoming-webhook URL must point at the same host and have the
  *     /rest/<user>/<secret>/ shape;
  *   - every host must resolve to public addresses only (private, loopback,
- *     link-local, CGNAT and metadata ranges are refused) — this also covers
- *     DNS that points an allowed-looking name inward.
+ *     link-local, CGNAT, metadata, NAT64 and 6to4 ranges are refused) — this also
+ *     covers DNS that points an allowed-looking name inward.
+ *
+ * Accepted residual risk: DNS rebinding. The guard resolves the name, fetch()
+ * resolves it again; a name that answers a public address to the guard and an
+ * internal one to fetch would get through. Only allowlisted CRM cloud hosts (and
+ * hosts the platform admin lists) reach this point, so the name is controlled by
+ * Bitrix24 / amoCRM, not by the user; pinning the checked address into the
+ * request is not done.
  */
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
@@ -55,7 +62,26 @@ export function isPrivateAddress(ip: string): boolean {
   }
   const v6 = ip.toLowerCase()
   if (v6.startsWith('::ffff:')) return isPrivateAddress(v6.slice(7))
-  return v6 === '::' || v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80') || v6.startsWith('ff')
+  return (
+    v6 === '::' || v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80') || v6.startsWith('ff') ||
+    // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) embed an IPv4 address that may be internal: refused whole.
+    v6.startsWith('64:ff9b:') || v6.startsWith('2002:')
+  )
+}
+
+/**
+ * The system resolver bounded by `ms` (the CRM sync passes what is left of its budget, so a hung DNS
+ * lookup cannot hold a run past its deadline). A timeout is a failed lookup («Домен CRM не найден»).
+ */
+export function resolverWithTimeout(ms: number, base: Resolver = defaultResolver): Resolver {
+  return (host) =>
+    new Promise<string[]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('dns timeout')), Math.max(1, ms))
+      base(host).then(
+        (a) => { clearTimeout(timer); resolve(a) },
+        (e: unknown) => { clearTimeout(timer); reject(e) },
+      )
+    })
 }
 
 function parseHost(raw: string): string | null {

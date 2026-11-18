@@ -58,6 +58,20 @@ describe('CRM endpoint guard (SSRF)', () => {
     expect(isPrivateAddress('172.31.255.255')).toBe(true)
     expect(isPrivateAddress('2a00:1450::1')).toBe(false)
   })
+
+  it('refuses NAT64 (64:ff9b::/96) and 6to4 (2002::/16): both embed an IPv4 address that may be internal', async () => {
+    expect(isPrivateAddress('64:ff9b::a9fe:a9fe')).toBe(true) // 169.254.169.254 through NAT64
+    expect(isPrivateAddress('2002:c0a8:0101::1')).toBe(true) // 192.168.1.1 through 6to4
+    expect((await guardCrmEndpoint('amocrm', 'acme.amocrm.ru', 't', dns(['64:ff9b::a00:1']))).ok).toBe(false)
+  })
+
+  it('a hung DNS lookup is bounded by the sync deadline (resolverWithTimeout)', async () => {
+    const { resolverWithTimeout } = await import('@/lib/crm/endpoint-guard')
+    const hung = resolverWithTimeout(20, () => new Promise<string[]>(() => undefined))
+    await expect(hung('acme.amocrm.ru')).rejects.toThrow(/dns timeout/)
+    const r = await guardCrmEndpoint('amocrm', 'acme.amocrm.ru', 't', resolverWithTimeout(20, () => new Promise<string[]>(() => undefined)))
+    expect(r).toEqual({ ok: false, error: 'Домен CRM не найден' })
+  })
 })
 
 describe('CRM token storage', () => {
