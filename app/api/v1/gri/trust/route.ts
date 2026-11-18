@@ -70,7 +70,7 @@ export async function GET(_req: NextRequest) {
   // CRM integration connected?
   try {
     // Real per-user CRM connections (046, RLS own). The legacy Prisma
-    // `crm_integrations` table has no user_id and is closed to the API (084).
+    // `crm_integrations` table (no user_id) is archived in the closed `archive` schema (156).
     const { count } = await sb
       .from('crm_provider_connections')
       .select('id', { count: 'exact', head: true })

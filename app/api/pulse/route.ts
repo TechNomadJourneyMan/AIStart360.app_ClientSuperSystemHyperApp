@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import * as bitrix24 from '@/lib/crm/bitrix24'
-import * as amocrm from '@/lib/crm/amocrm'
-import type { CrmDeal } from '@/lib/crm/types'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { fenceUntrusted } from '@/lib/ai/gateway'
 import { getDailyBriefing, UNCACHED_BRIEFING_DEPS } from '@/lib/pulse/briefing'
@@ -11,6 +8,11 @@ import { loadSnapshotsByDiagnostic, officialPointA, type OfficialState } from '@
 
 export const dynamic = 'force-dynamic'
 
+// Platform clients only. The CRM-deal branch (Bitrix24/amoCRM through the Prisma `CrmIntegration`,
+// dead since its integration lookup was cut to `null`) is archived in
+// archive/legacy-prisma-crm/app/api/pulse/route.with-crm-branch.ts (2026-11-18). The owner CRM
+// is /api/v1/crm/*.
+
 /** Why a platform client has no score (the official Point A state) — said instead of a number. */
 const NO_SCORE_COMMENT: Record<OfficialState, string> = {
   none: 'Анкета не заполнена',
@@ -18,17 +20,6 @@ const NO_SCORE_COMMENT: Record<OfficialState, string> = {
   no_score: 'Нет оценки: мало данных для оценки',
   // scored, but without a health index
   scored: 'Нет оценки здоровья',
-}
-
-/** Map Bitrix24 stage IDs to risk levels */
-const STAGE_RISK: Record<string, { risk: number; label: string }> = {
-  NEW: { risk: 30, label: 'Новая' },
-  PREPARATION: { risk: 40, label: 'Подготовка' },
-  PREPAYMENT_INVOICE: { risk: 25, label: 'Счёт' },
-  EXECUTING: { risk: 20, label: 'В работе' },
-  WON: { risk: 5, label: 'Выиграна' },
-  LOSE: { risk: 90, label: 'Проиграна' },
-  APOLOGY: { risk: 95, label: 'Отказ' },
 }
 
 // ─── Role / user helpers ─────────────────────────────────────────────────────
@@ -46,7 +37,6 @@ async function resolveCallerContext(
   role: UserRole
   userId: string
   userEmail: string | null
-  orgName: string | null
 } | null> {
   const {
     data: { user },
@@ -66,63 +56,7 @@ async function resolveCallerContext(
     ? rawRole
     : 'client') as UserRole
 
-  // Best-effort org name for the manager/expert deal fallback.
-  let orgName: string | null = null
-  const { data: company } = await sb
-    .from('companies')
-    .select('name')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (company && typeof company.name === 'string') orgName = company.name
-
-  return { role, userId: user.id, userEmail: user.email ?? null, orgName }
-}
-
-/**
- * Filter CRM deals based on the caller's role.
- * - super_admin / admin: see everything
- * - manager / expert: only deals assigned to them (ASSIGNED_BY_ID match)
- * - client: empty list (clients should not see CRM Pulse)
- */
-function filterDealsByRole(
-  deals: CrmDeal[],
-  role: UserRole,
-  userId: string | null,
-  orgName: string | null,
-): CrmDeal[] {
-  // Admins see all
-  if (['super_admin', 'admin'].includes(role)) {
-    return deals
-  }
-
-  // Clients should not see CRM deals at all
-  if (role === 'client') {
-    return []
-  }
-
-  // Manager / expert — show deals assigned to them
-  // We try to match by Bitrix24 ASSIGNED_BY_ID.
-  // Since the cookie userId is the internal app ID (cuid) and Bitrix24 uses its own
-  // numeric user IDs, we need a mapping. For now we attempt a direct match first.
-  // If no deals match by assignedById, fall back to matching by company/org name
-  // so the feature degrades gracefully.
-  if (userId) {
-    const byAssigned = deals.filter(d => d.assignedById === userId)
-    if (byAssigned.length > 0) return byAssigned
-  }
-
-  // Fallback: filter by organization name match against deal company title
-  if (orgName) {
-    const normalizedOrg = orgName.toLowerCase().trim()
-    const byOrg = deals.filter(d => {
-      const dealCompany = (d.companyTitle || d.contactName || '').toLowerCase().trim()
-      return dealCompany.includes(normalizedOrg) || normalizedOrg.includes(dealCompany)
-    })
-    if (byOrg.length > 0) return byOrg
-  }
-
-  // No match found — return empty to avoid showing unrelated data
-  return []
+  return { role, userId: user.id, userEmail: user.email ?? null }
 }
 
 /**
@@ -155,139 +89,9 @@ export async function GET() {
     if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const { role, userId, orgName } = ctx
+    const { role, userId } = ctx
 
-    const crmClients: Array<Record<string, unknown>> = []
-
-    // ── 1. Fetch CRM deals from connected integrations ──
-    try {
-      // Фаза 4B — фикс МЕЖАРЕНДНОЙ УТЕЧКИ: было
-      // prisma.crmIntegration.findFirst({ where: { isActive: true } }) БЕЗ скоупа
-      // на владельца → первая подключённая CRM утекала всем. Legacy Prisma-стек
-      // мёртв (requireCrmOrg=null → /api/crm 403); реальные подключения теперь в
-      // crm_provider_connections (RLS own), а данные CRM — в crm_clients /
-      // /api/v1/crm/*. Путь отключён: integration всегда null.
-      const integration = null as {
-        provider: string
-        domain: string
-        accessToken: string
-        webhookUrl: string | null
-      } | null
-
-      if (integration) {
-        const config = {
-          domain: integration.domain,
-          accessToken: integration.accessToken,
-          webhookUrl: integration.webhookUrl ?? undefined,
-        }
-
-        let deals = integration.provider === 'bitrix24'
-          ? await bitrix24.fetchDeals(config, 100)
-          : await amocrm.fetchDeals(config, 100)
-
-        // ── Role-based filtering ──
-        deals = filterDealsByRole(deals, role, userId, orgName)
-
-        // Calculate portfolio-level stats for relative metrics
-        const totalDeals = deals.length
-        const avgAmount = totalDeals > 0 ? deals.reduce((s, d) => s + d.amount, 0) / totalDeals : 0
-        const wonDeals = deals.filter(d => d.stageSemantic === 'S' || d.stage === 'WON')
-        const lostDeals = deals.filter(d => d.stageSemantic === 'F' || d.stage === 'LOSE')
-        const winRate = totalDeals > 0 ? wonDeals.length / totalDeals : 0
-
-        for (const deal of deals) {
-          const stageInfo = STAGE_RISK[deal.stage] ?? { risk: 50, label: deal.stage }
-          const now = Date.now()
-
-          // ── Real: days since last activity ──
-          const updatedMs = deal.updatedAt ? new Date(deal.updatedAt).getTime() : now
-          const createdMs = deal.createdAt ? new Date(deal.createdAt).getTime() : now
-          const daysSinceUpdate = Math.floor((now - updatedMs) / 86400000)
-          const dealAgeDays = Math.floor((now - createdMs) / 86400000)
-
-          // ── Real: risk score (multi-factor) ──
-          // Factor 1: Stage base risk (0-95)
-          let riskScore = stageInfo.risk
-          // Factor 2: Stale deal penalty (+1 per day without activity, max +20)
-          riskScore += Math.min(20, daysSinceUpdate * 1)
-          // Factor 3: Long deal penalty (+0.5 per day of age, max +15)
-          riskScore += Math.min(15, Math.round(dealAgeDays * 0.5))
-          // Factor 4: Below-average amount = slightly higher risk
-          if (deal.amount < avgAmount * 0.5 && deal.amount > 0) riskScore += 5
-          // Clamp 0-100
-          riskScore = Math.max(0, Math.min(100, riskScore))
-
-          const health = 100 - riskScore
-          const churnLevel = health < 40 ? 'high' as const : health < 60 ? 'medium' as const : 'low' as const
-
-          // ── Real: volume change (deal amount vs portfolio average) ──
-          const volumeChange = avgAmount > 0
-            ? Math.round(((deal.amount - avgAmount) / avgAmount) * 100)
-            : 0
-
-          // ── Real: churn probability (based on risk + stage semantic) ──
-          let churnProb = riskScore
-          if (deal.stageSemantic === 'F') churnProb = 95
-          else if (deal.stageSemantic === 'S') churnProb = 2
-          else if (daysSinceUpdate > 7) churnProb = Math.min(90, churnProb + 10)
-          churnProb = Math.max(0, Math.min(100, churnProb))
-
-          // ── Real: sparkline from deal lifecycle ──
-          // Show deal health trajectory: creation → stages → current
-          const lifespanDays = Math.max(1, dealAgeDays)
-          const progressPct = deal.stageSemantic === 'S' ? 100
-            : deal.stageSemantic === 'F' ? 10
-            : Math.min(90, Math.round((1 - stageInfo.risk / 100) * 90))
-          const history = [
-            20, // start: deal created
-            Math.round(progressPct * 0.3),
-            Math.round(progressPct * 0.6),
-            Math.round(progressPct * 0.85),
-            progressPct, // current state
-          ]
-
-          // ── Real: contextual comment ──
-          let comment: string | null = null
-          if (deal.stageSemantic === 'S') comment = 'Сделка успешно закрыта'
-          else if (deal.stageSemantic === 'F') comment = 'Сделка потеряна'
-          else if (daysSinceUpdate > 14) comment = `Нет активности ${daysSinceUpdate} дней`
-          else if (daysSinceUpdate > 7) comment = 'Требует внимания — давно без движения'
-          else if (deal.amount > avgAmount * 2) comment = 'Крупная сделка — приоритет'
-          else if (dealAgeDays > 30 && deal.stageSemantic === 'P') comment = 'Долгий цикл — ускорить'
-
-          // ── Real: action based on multiple factors ──
-          let action: 'call' | 'message' | 'monitor' = 'monitor'
-          if (deal.stageSemantic === 'F') action = 'call' // try to win back
-          else if (daysSinceUpdate > 7) action = 'call'   // re-engage
-          else if (riskScore > 60) action = 'call'
-          else if (riskScore > 35) action = 'message'
-
-          crmClients.push({
-            id: `crm-${deal.id}`,
-            name: deal.title,
-            sector: stageInfo.label,
-            forbes: null,
-            lastOrder: deal.updatedAt
-              ? new Date(deal.updatedAt).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' })
-              : null,
-            daysSince: daysSinceUpdate,
-            avgCheck: deal.amount || 0,
-            volumeChange,
-            riskScore,
-            churnProb,
-            churnLevel,
-            comment,
-            action,
-            orderCycle: Math.max(1, dealAgeDays),
-            history,
-          })
-        }
-      }
-    } catch (crmErr) {
-      console.error('[pulse] CRM fetch error (non-fatal):', crmErr)
-    }
-
-    // ── 2. Fetch platform clients (companies + profiles + diagnostics) ──
+    // ── 1. Platform clients (companies + profiles + diagnostics) ──
     let platformClients: Array<Record<string, unknown>> = []
 
     // R2-A: a client's own row is built from their Point A (health, block
@@ -390,12 +194,12 @@ export async function GET() {
     // ── Role-based filtering for platform clients ──
     platformClients = filterPlatformClientsByRole(platformClients, role, userId)
 
-    // ── 3. Merge, riskiest first; clients without a score (riskScore null) after every scored one ──
+    // ── 2. Riskiest first; clients without a score (riskScore null) after every scored one ──
     const riskOf = (c: Record<string, unknown>): number | null =>
       typeof c.riskScore === 'number' ? c.riskScore : null
     const checkOf = (c: Record<string, unknown>): number | null =>
       typeof c.avgCheck === 'number' && Number.isFinite(c.avgCheck) ? c.avgCheck : null
-    const todayClients = [...crmClients, ...platformClients]
+    const todayClients = [...platformClients]
       .sort((a, b) => (riskOf(b) ?? -1) - (riskOf(a) ?? -1))
     const scoredClients = todayClients.filter(c => riskOf(c) !== null)
 
@@ -419,7 +223,7 @@ export async function GET() {
       dailyTarget: 6,
     }
 
-    // ── 4. AI briefing (shared OpenRouter client, validated, the user's daily AI budget —
+    // ── 3. AI briefing (shared OpenRouter client, validated, the user's daily AI budget —
     // lib/pulse/briefing.ts), without the daily cache and with its own 10 generations/hour
     // (UNCACHED_BRIEFING_DEPS: the cache and the hourly limit of the «Пульс» page stay its own) ──
     // Only over scored clients: ranking by a risk nobody has would make it up.

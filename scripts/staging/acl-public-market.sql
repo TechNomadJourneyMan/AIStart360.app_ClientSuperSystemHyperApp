@@ -580,7 +580,7 @@ GRANT ALL ON TABLE public.cost_centers TO service_role;
 GRANT ALL ON TABLE public.crm_clients TO anon;
 GRANT ALL ON TABLE public.crm_clients TO authenticated;
 GRANT ALL ON TABLE public.crm_clients TO service_role;
-GRANT ALL ON TABLE public.crm_integrations TO service_role;
+DO $$ BEGIN IF to_regclass('public.crm_integrations') IS NOT NULL THEN GRANT ALL ON TABLE public.crm_integrations TO service_role; END IF; END $$; -- 156: legacy table archived
 GRANT ALL ON TABLE public.crm_interactions TO anon;
 GRANT ALL ON TABLE public.crm_interactions TO authenticated;
 GRANT ALL ON TABLE public.crm_interactions TO service_role;

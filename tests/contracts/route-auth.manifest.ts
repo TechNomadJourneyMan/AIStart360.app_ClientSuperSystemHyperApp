@@ -58,8 +58,6 @@ export const ROUTE_AUTH_MANIFEST: Record<string, Partial<Record<HttpMethod, Rout
   '/api/client/register': { POST: 'session' },
   '/api/client/status': { GET: 'session' },
   '/api/clients/[id]/analysis/point-b': { GET: 'expert' },
-  '/api/crm': { GET: 'session', POST: 'session', DELETE: 'session' },
-  '/api/crm/sync': { POST: 'session' },
   '/api/cron/agents': { GET: 'cron' },
   '/api/cron/agents-digest': { GET: 'cron' },
   '/api/cron/ai-discovery': { GET: 'cron' },

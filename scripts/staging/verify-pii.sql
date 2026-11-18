@@ -40,6 +40,19 @@ BEGIN
 END $$;
 
 -- 3. Точечные проверки.
+-- Старая CRM (Prisma): таблица есть в staging только из дампа до миграции 156 (потом она в схеме archive,
+-- которую load.sh не восстанавливает) — её секреты считаются, только если она есть.
+DROP TABLE IF EXISTS pg_temp._legacy_crm;
+CREATE TEMP TABLE _legacy_crm (n bigint NOT NULL);
+DO $$ BEGIN
+  IF to_regclass('public.crm_integrations') IS NOT NULL THEN
+    EXECUTE 'INSERT INTO pg_temp._legacy_crm SELECT count(*) FROM public.crm_integrations'
+         || ' WHERE "accessToken" <> ''staging-redacted'' OR "refreshToken" IS NOT NULL';
+  ELSE
+    INSERT INTO pg_temp._legacy_crm VALUES (0);
+  END IF;
+END $$;
+
 INSERT INTO _pii
 SELECT 'auth.users email not staging', 'auth.users', 'email', count(*) FROM auth.users
  WHERE email NOT LIKE '%@staging.aistart360.test' AND email NOT LIKE '%@dev.aistart360.test'
@@ -79,7 +92,7 @@ UNION ALL SELECT 'journals ip/ua', 'public.admin_audit_log+activity_log+audit_lo
  + (SELECT count(*) FROM market.audit_log WHERE ip IS NOT NULL OR user_agent IS NOT NULL))
 UNION ALL SELECT 'secrets', 'ai_credentials+crm_*+integration_connections', 'secret/token', (
    (SELECT count(*) FROM public.ai_credentials WHERE secret_ciphertext <> 'v1:staging-redacted')
- + (SELECT count(*) FROM public.crm_integrations WHERE "accessToken" <> 'staging-redacted' OR "refreshToken" IS NOT NULL)
+ + (SELECT n FROM pg_temp._legacy_crm)
  + (SELECT count(*) FROM public.crm_provider_connections WHERE access_token <> 'staging-redacted')
  + (SELECT count(*) FROM public.integration_connections WHERE secret_ciphertext IS NOT NULL OR refresh_ciphertext IS NOT NULL)
  + (SELECT count(*) FROM market.forecasts WHERE share_token IS NOT NULL))

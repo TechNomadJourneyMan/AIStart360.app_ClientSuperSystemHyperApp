@@ -400,7 +400,13 @@ FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) n FROM public.patie
 UPDATE public.ecommerce_orders SET customer_hash = pg_temp.rehash(customer_hash);
 
 -- Секреты интеграций (зашифрованы прод-ключом; в staging заводятся заново).
-UPDATE public.crm_integrations SET "accessToken" = 'staging-redacted', "refreshToken" = NULL, "webhookUrl" = NULL, "isActive" = false;
+-- Старая CRM (Prisma): до миграции 156 таблица в public, после — в схеме archive, которую load.sh не
+-- восстанавливает (только public/market) — тогда её в staging просто нет.
+DO $$ BEGIN
+  IF to_regclass('public.crm_integrations') IS NOT NULL THEN
+    UPDATE public.crm_integrations SET "accessToken" = 'staging-redacted', "refreshToken" = NULL, "webhookUrl" = NULL, "isActive" = false;
+  END IF;
+END $$;
 UPDATE public.crm_provider_connections SET access_token = 'staging-redacted', is_active = false;
 UPDATE public.integration_connections SET secret_ciphertext = NULL, refresh_ciphertext = NULL, account_label = NULL,
   status = CASE WHEN auth_kind = 'file' THEN status ELSE 'disconnected' END;

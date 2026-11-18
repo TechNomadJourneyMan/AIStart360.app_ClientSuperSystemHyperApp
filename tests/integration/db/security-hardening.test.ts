@@ -101,7 +101,8 @@ describe.skipIf(!dbTestsEnabled)('083 security hardening', () => {
   })
 
   describe('S3/S4: server-only tables and views', () => {
-    it.each(['users', 'accounts', 'crm_integrations', 'shared_reports', 'mini_gri_leads', 'financial_snapshots'])(
+    // crm_integrations: archived to the closed `archive` schema (156) — tests/integration/db/archive-legacy-crm-156.test.ts
+    it.each(['users', 'accounts', 'shared_reports', 'mini_gri_leads', 'financial_snapshots'])(
       'anon and authenticated cannot read %s',
       (table) =>
         inRollback(async (db) => {
