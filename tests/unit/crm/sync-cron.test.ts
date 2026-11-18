@@ -1,16 +1,19 @@
 /**
  * lib/crm/sync-cron.ts — the automatic CRM sync run, with a fake clock, a fake service client and a
  * fake per-connection sync:
- *   • which connections: active, never synced first, then those older than 6 h (the queries);
+ *   • which connections: active; never synced first, then those catching up (sync_cursor.catching_up)
+ *     not synced for 20 min, then those older than 6 h; each once (the queries);
  *   • never more than 2 syncs at once (the incident rule for background work);
- *   • the run ends within 44 s: each sync's deadline is ≤ the run's end, and no sync starts with
- *     less than 12 s left — the rest is deferred to the next run;
+ *   • the scheduling side of the 44 s budget: each sync gets a deadline ≤ the run's end and none
+ *     starts with less than 12 s left — the rest is deferred. That a sync honours its deadline is
+ *     proven on the real schema (tests/integration/db/crm-sync.test.ts, «out of time»);
  *   • a failure (or a throw) of one connection does not stop the others; a throw is recorded on that
- *     connection as 'error', and the error hook fires for it.
+ *     connection as 'error', and the error hook fires for it; a busy connection is counted, not failed.
  */
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  CRM_AUTO_SYNC_CATCH_UP_MS,
   CRM_AUTO_SYNC_INTERVAL_MS,
   CRM_AUTO_SYNC_MIN_START_MS,
   CRM_AUTO_SYNC_RUN_MS,
@@ -20,7 +23,7 @@ import type { CrmSyncReport, SyncConnection, SyncOptions } from '@/lib/crm/sync'
 
 type Filter = [string, string, unknown]
 
-function fakeSb(never: SyncConnection[], stale: SyncConnection[]) {
+function fakeSb(never: SyncConnection[], stale: SyncConnection[], catching: SyncConnection[] = []) {
   const queries: Filter[][] = []
   const updates: Array<{ patch: Record<string, unknown>; filters: Filter[] }> = []
   const from = (table: string) => {
@@ -38,7 +41,9 @@ function fakeSb(never: SyncConnection[], stale: SyncConnection[]) {
       then: (ok: (r: unknown) => unknown) => {
         if (patch) { updates.push({ patch, filters }); return Promise.resolve({ data: null, error: null }).then(ok) }
         queries.push(filters)
-        const data = filters.some((f) => f[0] === 'is') ? never : stale
+        const data = filters.some((f) => f[0] === 'is')
+          ? never
+          : filters.some((f) => f[1] === 'sync_cursor->>catching_up') ? catching : stale
         return Promise.resolve({ data, error: null }).then(ok)
       },
     }
@@ -57,15 +62,20 @@ function clock(t0 = Date.UTC(2026, 10, 18, 10, 17)) {
 }
 
 describe('runCrmAutoSync', () => {
-  it('picks active connections never synced, then those last synced more than 6 h ago (oldest first)', async () => {
+  it('picks active connections never synced, then catching up for 20 min, then older than 6 h — each once', async () => {
     const c = clock()
-    const f = fakeSb([conn(1)], [conn(2)])
+    const f = fakeSb([conn(1)], [conn(2), conn(3)], [conn(3), conn(4)])
     const synced: string[] = []
     const res = await runCrmAutoSync({ sb: f.sb, now: c.now, sync: async (_sb, x) => { synced.push(x.id); return report('success') } })
-    expect(synced.sort()).toEqual(['c1', 'c2'])
-    expect(res).toMatchObject({ due: 2, started: 2, success: 2, deferred: 0 })
-    const [neverQ, staleQ] = f.queries
+    expect(synced).toEqual(['c1', 'c3', 'c4', 'c2'])
+    expect(res).toMatchObject({ due: 4, started: 4, success: 4, deferred: 0 })
+    const [neverQ, catchQ, staleQ] = f.queries
     expect(neverQ).toEqual(expect.arrayContaining([['eq', 'is_active', true], ['is', 'last_sync_at', null]]))
+    expect(catchQ).toEqual(expect.arrayContaining([
+      ['eq', 'is_active', true],
+      ['eq', 'sync_cursor->>catching_up', 'true'],
+      ['lt', 'last_sync_at', new Date(c.t0 - CRM_AUTO_SYNC_CATCH_UP_MS).toISOString()],
+    ]))
     expect(staleQ).toEqual(expect.arrayContaining([
       ['eq', 'is_active', true],
       ['lt', 'last_sync_at', new Date(c.t0 - CRM_AUTO_SYNC_INTERVAL_MS).toISOString()],
@@ -94,7 +104,7 @@ describe('runCrmAutoSync', () => {
     expect(res.started).toBe(7)
   })
 
-  it('ends within the run budget: no sync starts with < 12 s left, every deadline ≤ the run end', async () => {
+  it('schedules within the run budget: no sync starts with < 12 s left, every deadline it hands out ≤ the run end', async () => {
     const c = clock()
     const f = fakeSb(Array.from({ length: 10 }, (_, i) => conn(i)), [])
     const starts: number[] = []
@@ -118,7 +128,7 @@ describe('runCrmAutoSync', () => {
     expect(res.elapsedMs).toBeLessThanOrEqual(45_000)
   })
 
-  it('syncs that use their whole deadline still end the run by 44 s', async () => {
+  it('with syncs that use their whole deadline, the run ends at 44 s', async () => {
     const c = clock()
     const f = fakeSb(Array.from({ length: 6 }, (_, i) => conn(i)), [])
     const res = await runCrmAutoSync({
@@ -156,6 +166,19 @@ describe('runCrmAutoSync', () => {
     expect(f.updates[0].patch).toMatchObject({ last_sync_status: 'error' })
     expect(String(f.updates[0].patch.last_sync_error)).toMatch(/boom/)
     expect(f.updates[0].filters).toEqual(expect.arrayContaining([['eq', 'id', 'c1'], ['eq', 'user_id', 'u1']]))
+  })
+
+  it('a connection whose sync is already running (lease) is counted busy, not an error, and raises no alert', async () => {
+    const c = clock()
+    const f = fakeSb([conn(1), conn(2)], [])
+    const alerts: string[] = []
+    const res = await runCrmAutoSync({
+      sb: f.sb, now: c.now, onError: (x) => alerts.push(x.id),
+      sync: async (_sb, x) => report(x.id === 'c1' ? 'busy' : 'success'),
+    })
+    expect(res).toMatchObject({ started: 2, busy: 1, success: 1, error: 0 })
+    expect(alerts).toEqual([])
+    expect(f.updates).toEqual([])
   })
 
   it('nothing due → nothing started', async () => {
