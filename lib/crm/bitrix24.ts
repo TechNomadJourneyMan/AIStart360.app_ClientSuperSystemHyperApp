@@ -1,4 +1,4 @@
-import type { CrmDeal, CrmContact, CrmSyncResult } from './types'
+import type { CrmDeal, CrmContact } from './types'
 import { guardCrmEndpoint, type Resolver } from './endpoint-guard'
 import {
   CrmApiError,
@@ -275,36 +275,4 @@ export async function fetchContacts(config: Bitrix24Config, limit = 50): Promise
     createdAt: String(c.DATE_CREATE),
   }), { maxRecords: limit })
   return list.items
-}
-
-/**
- * @deprecated Only the legacy /api/crm/sync route (being archived) calls this; it counts records
- * and writes nothing. The portal's sync is lib/crm/sync.ts.
- */
-export async function syncAll(config: Bitrix24Config): Promise<CrmSyncResult> {
-  const errors: string[] = []
-  let deals = 0
-  let contacts = 0
-
-  try {
-    const fetchedDeals = await fetchDeals(config, 200)
-    deals = fetchedDeals.length
-  } catch (e) {
-    errors.push(`Сделки: ${(e as Error).message}`)
-  }
-
-  try {
-    const fetchedContacts = await fetchContacts(config, 200)
-    contacts = fetchedContacts.length
-  } catch (e) {
-    errors.push(`Контакты: ${(e as Error).message}`)
-  }
-
-  return {
-    success: errors.length === 0,
-    deals,
-    contacts,
-    errors,
-    syncedAt: new Date().toISOString(),
-  }
 }

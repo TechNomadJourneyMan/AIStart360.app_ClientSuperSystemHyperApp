@@ -34,7 +34,7 @@
 | `app/api/pulse/route.ts` с веткой CRM-сделок | `archive/legacy-prisma-crm/app/api/pulse/route.with-crm-branch.ts` (файл целиком, версия main `1273ec0d`) |
 | таблица `public.crm_integrations` | `archive.crm_integrations` (миграция 156) |
 
-Хелперы `syncAll()` в `lib/crm/bitrix24.ts` и `lib/crm/amocrm.ts` нужны были только этим маршрутам. Их прежний вид — в истории git, например `git show 1273ec0d:lib/crm/bitrix24.ts`.
+Хелперы `syncAll()` из `lib/crm/bitrix24.ts` и `lib/crm/amocrm.ts` нужны были только этим маршрутам; они лежат в `archive/legacy-prisma-crm/lib/crm/syncAll.ts`.
 
 Папка `archive/` не участвует в сборке: она исключена в `tsconfig.json`, `next lint` её не проверяет, vitest её не запускает. Импорты в архивных файлах указывают на старые пути и сейчас не собираются. Это снимок, а не рабочий код.
 
