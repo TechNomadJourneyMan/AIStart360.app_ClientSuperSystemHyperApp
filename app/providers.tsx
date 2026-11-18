@@ -7,8 +7,7 @@ import { useEffect, useState } from 'react'
 import { OfflineIndicator } from '@/components/common/OfflineIndicator'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeProvider } from 'next-themes'
-import { GRI_ASSESSMENT_KEY, ONBOARDING_STATUS_KEY } from '@/hooks/useOnboardingStatus'
-import { ACCESS_ME_KEY } from '@/hooks/useEntitlements'
+import { PERSIST_BUSTER, shouldPersistQuery } from '@/lib/query/persist-policy'
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { init } = useAuthStore()
@@ -20,9 +19,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-// User data shared between components of one screen (hooks/useOnboardingStatus,
-// hooks/useEntitlements) lives in memory only, like goals and Point A.
-const NOT_PERSISTED = new Set<string>(['goals', 'point-a-state', ONBOARDING_STATUS_KEY[0], GRI_ASSESSMENT_KEY[0], ACCESS_ME_KEY[0]])
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -54,10 +50,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={{
-        persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v2', // v2: drops goals cached before they stopped being persisted
-        // Goals and Point A are company data: never kept in localStorage (a
-        // shared device would show them to the next user before a refetch).
-        dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.status === 'success' && !NOT_PERSISTED.has(String(q.queryKey[0])) },
+        persister, maxAge: 24 * 60 * 60 * 1000, buster: PERSIST_BUSTER,
+        // User data (goals, Point A, status/entitlements, the owner CRM base) is never kept in
+        // localStorage — lib/query/persist-policy.ts.
+        dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
       }}
     >
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
