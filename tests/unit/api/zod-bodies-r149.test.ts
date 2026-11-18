@@ -27,7 +27,8 @@ vi.mock('@/lib/supabase-server', () => ({
       const b: Record<string, unknown> = {}
       const result = () => ({ data: row ?? { id: table === 'crm_reminders' ? REMINDER_ID : CLIENT_ID, client_id: CLIENT_ID, status: 'new' }, error: null })
       Object.assign(b, {
-        select: () => b, eq: () => b, order: () => b, limit: () => b,
+        // lte: a logged contact closes the client's reminders due by then (interactions route)
+        select: () => b, eq: () => b, lte: () => b, order: () => b, limit: () => b,
         insert: (r: Row) => { h.writes.push({ table, op: 'insert', row: r }); row = r; return b },
         update: (r: Row) => { h.writes.push({ table, op: 'update', row: r }); row = r; return b },
         upsert: (r: Row) => { h.writes.push({ table, op: 'upsert', row: r }); row = r; return b },

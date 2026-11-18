@@ -103,19 +103,33 @@ describe.skipIf(!dbTestsEnabled)('CRM digest and next-best-action', () => {
       expect(queue.stats.queue).toMatchObject({ overdue: 1, today: 1, sleeping: 2 })
     }))
 
-  it('next-best-action: a dismissed overdue reminder is not «overdue»; an open one is', () =>
+  it('next-best-action counts overdue CLIENTS by the queue rule and the Almaty day (M6, review)', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db)
+      const nbaAction = async () =>
+        ((await (await nba.GET({} as never)).json()) as { action: { key: string; title: string; reason: string } | null }).action
       const c = await addClient(db, owner, 'Клиент', { last_contact_at: '2026-11-18T05:00:00Z' })
       await addReminder(db, owner, c, '2026-11-18T06:00:00Z', 'dismissed')
       await addReminder(db, owner, c, '2026-11-17T06:00:00Z', 'done')
+      // due 08:00 Almaty TODAY (before «now», 09:00): «на сегодня», not overdue
+      const today = await addClient(db, owner, 'Сегодняшний', { last_contact_at: '2026-11-18T05:00:00Z' })
+      await addReminder(db, owner, today, '2026-11-19T03:00:00Z')
+      // overdue, but a contact after it answered it
+      const answered = await addClient(db, owner, 'Отвеченный', { last_contact_at: '2026-11-18T12:00:00Z' })
+      await addReminder(db, owner, answered, '2026-11-18T06:00:00Z')
       asOwner(db, owner)
-      const first = (await (await nba.GET({} as never)).json()) as { action: { key: string } | null }
-      expect(first.action?.key).not.toBe('crm_overdue')
+      expect((await nbaAction())?.key).not.toBe('crm_overdue')
 
+      // two open overdue reminders of ONE client: one client, not two
       await addReminder(db, owner, c, '2026-11-18T07:00:00Z', 'open')
-      const second = (await (await nba.GET({} as never)).json()) as { action: { key: string; count?: number; title: string } | null }
-      expect(second.action?.key).toBe('crm_overdue')
-      expect(second.action?.title).toBe('Связаться с клиентом из CRM') // one reminder, not three
+      await addReminder(db, owner, c, '2026-11-18T08:00:00Z', 'open')
+      const one = await nbaAction()
+      expect(one?.key).toBe('crm_overdue')
+      expect(one?.title).toBe('Связаться с клиентом из CRM')
+      expect(one?.reason).toContain('Клиент')
+
+      // a missed next contact of another client: two clients
+      await db.query(`UPDATE public.crm_clients SET next_contact_at = '2026-11-18T09:00:00Z' WHERE id = $1`, [today])
+      expect((await nbaAction())?.title).toBe('Связаться с 2 клиентами из CRM')
     }))
 })

@@ -14,7 +14,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *
  * Keyset pagination in a stable order (by id): `limit` rows (1..PAGE_SIZE, default PAGE_SIZE) after
  * the row `after`. The answer carries `total` — how many clients match the filter — and
- * `nextCursor` (the `after` of the next page, null on the last one), so a caller can always tell
+ * `nextCursor` (the `after` of the next page; null only on an empty page), so a caller can always tell
  * «показаны N из M» and reach every client. (It used to stop silently at 500 rows while a CSV import
  * accepts 2000.) Sorting for display is the caller's.
  */
@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
 
   const clients = (data ?? []) as Array<{ id: string }>
-  const nextCursor = clients.length === limit ? clients[clients.length - 1].id : null
+  // The end is an EMPTY page: a short page is not the end when the server's max-rows is below
+  // `limit`. A caller that has `total` rows can stop earlier (hooks/useCrm.ts fetchWholeBase).
+  const nextCursor = clients.length > 0 ? clients[clients.length - 1].id : null
   return NextResponse.json({ ok: true, data: { clients, total: count ?? 0, nextCursor } })
 }
 

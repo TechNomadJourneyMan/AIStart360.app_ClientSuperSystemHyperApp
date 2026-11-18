@@ -8,12 +8,22 @@ import { crmKeys } from '@/hooks/useCrm'
 interface ImportResult {
   inserted: number
   updated: number
-  /** Matched existing clients the file did not change. */
+  /** Matched existing clients with nothing empty to fill. */
   unchanged?: number
-  /** Rows that repeated a contact of the same file (merged into its first row). */
+  /** Rows that repeated a client of the same file (only their empty fields were used). */
   duplicates?: number
+  /** Rows not imported: their phone belongs to a client with another name. */
+  conflicts?: number
   skipped: number
 }
+
+/** What an import does — shown in the dialog (the rules: lib/crm/import-merge.ts). */
+export const IMPORT_RULES_TEXT =
+  'Импорт только добавляет. Новые клиенты создаются, а у клиентов, которые уже есть в базе, заполняются только пустые поля — ' +
+  'то, что вы уже внесли, импорт не меняет (это делается в портале). Клиент считается тем же, если совпадают телефон и имя, ' +
+  'или email и имя, а без телефона и email — имя и комментарий. Если телефон уже записан на клиента с другим именем, ' +
+  'строка не импортируется. Одинаковые строки файла объединяются.'
+
 
 export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
@@ -47,7 +57,7 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
       const r = body.data
       setResult(r)
       toast.success(
-        `Импорт завершён: +${r.inserted}, обновлено ${r.updated}, без изменений ${r.unchanged ?? 0}, пропущено ${r.skipped}`,
+        `Импорт завершён: +${r.inserted}, дополнено ${r.updated}, без изменений ${r.unchanged ?? 0}, пропущено ${r.skipped + (r.conflicts ?? 0)}`,
       )
       qc.invalidateQueries({ queryKey: crmKeys.all })
     } catch {
@@ -80,9 +90,9 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
           <p className="text-xs text-on-surface-variant leading-relaxed">
             Распознаются колонки: <span className="font-mono text-on-surface">Имя</span>, <span className="font-mono text-on-surface">Телефон</span>,{' '}
             <span className="font-mono text-on-surface">Email</span>, <span className="font-mono text-on-surface">Сумма</span>,{' '}
-            <span className="font-mono text-on-surface">Комментарий</span>. Клиенты, которые уже есть в базе
-            (по телефону, иначе по email), обновляются; пустые ячейки файла ничего не стирают.
+            <span className="font-mono text-on-surface">Комментарий</span>.
           </p>
+          <p className="text-xs text-on-surface-variant leading-relaxed">{IMPORT_RULES_TEXT}</p>
 
           <input
             ref={inputRef}
@@ -103,9 +113,9 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { label: 'Добавлено', value: result.inserted, color: 'text-primary' },
-                { label: 'Обновлено', value: result.updated, color: 'text-tertiary-container' },
+                { label: 'Дополнено', value: result.updated, color: 'text-tertiary-container' },
                 { label: 'Без изменений', value: result.unchanged ?? 0, color: 'text-on-surface-variant' },
-                { label: 'Пропущено', value: result.skipped, color: 'text-on-surface-variant' },
+                { label: 'Пропущено', value: result.skipped + (result.conflicts ?? 0), color: 'text-on-surface-variant' },
               ].map((s) => (
                 <div key={s.label} className="bg-surface-container rounded-xl p-3 text-center">
                   <p className={`text-xl font-mono font-bold ${s.color}`}>{s.value}</p>
@@ -117,6 +127,12 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
           {result && (result.duplicates ?? 0) > 0 && (
             <p className="text-[11px] text-on-surface-variant">
               Строк-повторов в файле: {result.duplicates} — объединены с первой строкой того же клиента.
+            </p>
+          )}
+          {result && (result.conflicts ?? 0) > 0 && (
+            <p className="text-[11px] text-tertiary-container">
+              Не импортировано строк: {result.conflicts} — их телефон уже записан на клиента с другим именем.
+              Проверьте их и поправьте в базе вручную.
             </p>
           )}
 

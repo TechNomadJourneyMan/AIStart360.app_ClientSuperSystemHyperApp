@@ -60,6 +60,18 @@ describe('parseClientsCsv (Russian headers, skip nameless)', () => {
     expect(rows[0].phone).toBeNull()
   })
 
+  // Review H1: an import matches by e-mail — a placeholder taken as an address merged people.
+  it('keeps only real e-mail addresses: placeholders and junk are no e-mail', () => {
+    const csv = 'Имя,Email\nА,-\nБ,нет\nВ,n/a\nГ,info @ firm.kz\nД,a@b\nЕ, Ivan@Ex.kz '
+    expect(parseClientsCsv(csv).rows.map((r) => r.email)).toEqual([null, null, null, null, null, 'Ivan@Ex.kz'])
+  })
+
+  // Browser check (staging): «avg_check» / «средний_чек» were not taken as the check column.
+  it('recognises avg_check and средний_чек as the check column', () => {
+    expect(parseClientsCsv('name,avg_check\nИван,1500').rows[0].avg_check).toBe(1500)
+    expect(parseClientsCsv('Имя;средний_чек\nИван;2 500').rows[0].avg_check).toBe(2500)
+  })
+
   it('handles quoted fields containing the delimiter', () => {
     const csv = 'Имя,Комментарий\n"Иванов, Иван","звонить, срочно"'
     const { rows } = parseClientsCsv(csv)

@@ -19,6 +19,8 @@ export interface DrawerSeed {
   status: ClientStatus
   avg_check: number | null
   note: string | null
+  /** The note is a preview cut by GET /api/v1/crm/today — the drawer must not save it back. */
+  noteTruncated?: boolean
   next_contact_at: string | null
   last_contact_at: string | null
 }
@@ -33,6 +35,7 @@ export interface QueueRowLike {
   status: string
   avgCheck: number | null
   note?: string | null
+  noteTruncated?: boolean
   nextContactAt: string | null
   lastContactAt: string | null
 }
@@ -47,6 +50,7 @@ export function seedFromQueueRow(r: QueueRowLike): DrawerSeed {
     status: r.status as ClientStatus,
     avg_check: typeof r.avgCheck === 'number' ? r.avgCheck : null,
     note: r.note ?? null,
+    noteTruncated: r.noteTruncated === true,
     next_contact_at: r.nextContactAt ?? null,
     last_contact_at: r.lastContactAt ?? null,
   }
@@ -68,26 +72,42 @@ export interface DrawerForm {
 }
 
 export interface DrawerPatch {
-  name: string
+  name?: string
   phone?: string
-  email: string | null
-  status: ClientStatus
-  avg_check: number | null
-  next_contact_at: string | null
-  note: string | null
+  email?: string | null
+  status?: ClientStatus
+  avg_check?: number | null
+  next_contact_at?: string | null
+  note?: string | null
 }
 
-/** The PATCH body of «Сохранить». The phone goes only when changed (re-sending it could wipe phone_raw). */
+/** Same minute (the drawer's date field has minute precision), or both empty. */
+function sameMinute(a: string | null, b: string | null): boolean {
+  if (!a || !b) return !a && !b
+  const ta = new Date(a).getTime()
+  const tb = new Date(b).getTime()
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b
+  return Math.floor(ta / 60_000) === Math.floor(tb / 60_000)
+}
+
+/**
+ * The PATCH body of «Сохранить»: ONLY the fields the owner changed. Re-sending an untouched value
+ * would put back a stale copy over a newer one (a CRM sync updates the check, another tab edits
+ * the note), re-normalise a phone that never normalised and wipe phone_raw, or — from a queue row,
+ * whose note is a cut preview — save the cut note over the full one. An empty object = no changes.
+ */
 export function drawerPatch(seed: DrawerSeed, form: DrawerForm): DrawerPatch {
-  const patch: DrawerPatch = {
-    name: form.name.trim(),
-    email: form.email.trim() || null,
-    status: form.status,
-    avg_check: form.avgCheck,
-    next_contact_at: form.nextContactAt,
-    note: form.note.trim() || null,
-  }
+  const patch: DrawerPatch = {}
+  const name = form.name.trim()
+  if (name !== seed.name.trim()) patch.name = name
   const phone = form.phone.trim()
   if (phone !== phoneFieldValue(seed).trim()) patch.phone = phone
+  const email = form.email.trim() || null
+  if (email !== ((seed.email ?? '').trim() || null)) patch.email = email
+  if (form.status !== seed.status) patch.status = form.status
+  if (form.avgCheck !== (seed.avg_check == null ? null : Number(seed.avg_check))) patch.avg_check = form.avgCheck
+  if (!sameMinute(form.nextContactAt, seed.next_contact_at)) patch.next_contact_at = form.nextContactAt
+  const note = form.note.trim() || null
+  if (!seed.noteTruncated && note !== ((seed.note ?? '').trim() || null)) patch.note = note
   return patch
 }

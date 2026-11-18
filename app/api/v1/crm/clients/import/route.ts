@@ -14,13 +14,16 @@ const CHUNK = 200 // размер батча массовых вставок
 /**
  * POST /api/v1/crm/clients/import — CSV / XLSX into the owner's base.
  *
- * Rows are matched to the base by phone, else by e-mail, else (no phone, no e-mail) an identical
- * anonymous row; a match is updated with the row's non-empty values only — an empty cell never
- * wipes a field. Re-importing the same file creates nothing and changes nothing. Rules:
+ * An import only ADDS: new clients are created, and a client the base already has gets its EMPTY
+ * fields filled — a value the owner entered is never changed (that is done in the portal).
+ * «Already has» = the same phone and name, or the same valid e-mail and name, or — without a phone
+ * and an e-mail — the same name and note. The same phone under another name is a conflict and is
+ * not imported. Re-importing a file creates nothing and changes nothing. Rules:
  * lib/crm/import-merge.ts.
  *
- * Answer: { inserted, updated, unchanged, duplicates (rows repeating a contact of the same file),
- * skipped (nameless rows and rows the DB refused) }.
+ * Answer: { inserted, updated (empty fields filled), unchanged, duplicates (rows repeating a client
+ * of the same file), conflicts (phone of a client with another name — not imported), skipped
+ * (nameless rows and rows the DB refused) }.
  */
 export async function POST(request: NextRequest) {
   const sb = createServerClient()
@@ -107,11 +110,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Updates only where the file changes something (re-importing the same file writes nothing).
+  // Only the filled (previously empty) fields are written; re-importing the same file writes nothing.
   for (const u of plan.updates) {
     const { data, error } = await sb
       .from('crm_clients')
-      .update({ ...u.fields, updated_at: new Date().toISOString() })
+      .update({ ...u.patch, updated_at: new Date().toISOString() })
       .eq('id', u.id)
       .eq('user_id', userId)
       .select('id')
@@ -121,6 +124,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    data: { inserted, updated, unchanged: plan.unchanged, duplicates: plan.duplicates, skipped },
+    data: { inserted, updated, unchanged: plan.unchanged, duplicates: plan.duplicates, conflicts: plan.conflicts, skipped },
   })
 }

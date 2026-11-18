@@ -10,7 +10,7 @@ import { ClientsTable } from '@/components/crm/ClientsTable'
 import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
 import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
 import { seedFromQueueRow } from '@/lib/crm/client-form'
-import { briefingNetworkError, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
+import { briefingNetworkError, briefingSegments, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 import { CRM_AUTO_SYNC_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
 
@@ -1004,6 +1004,8 @@ function CrmMonitorSection() {
 
   const highRisk = stats?.highRisk ?? 0
   const riskTotal = clientsData?.riskClientsTotal ?? 0
+  // The whole queue's size; the payload carries its first 50 (lib/crm/today.ts TODAY_LIST_MAX).
+  const todayTotal = clientsData?.todayClientsTotal ?? TODAY_CLIENTS.length
 
   return (
     <div className="space-y-6">
@@ -1058,7 +1060,11 @@ function CrmMonitorSection() {
             </div>
             {briefing?.status === 'ok' && briefing.text ? (
               <>
-                <p className="text-sm text-on-surface leading-relaxed">{briefing.text}</p>
+                {/* Plain text nodes only: **bold** from the model becomes <strong>, nothing is HTML. */}
+                <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+                  {briefingSegments(briefing.text).map((seg, i) =>
+                    seg.bold ? <strong key={i} className="font-semibold">{seg.text}</strong> : <span key={i}>{seg.text}</span>)}
+                </p>
                 {briefing.cached && (
                   <p className="text-[10px] font-mono text-on-surface-variant/60 mt-1.5">Рекомендация на сегодня уже готова — обновляется раз в день</p>
                 )}
@@ -1115,7 +1121,7 @@ function CrmMonitorSection() {
               value: String(stats.processedToday),
               icon: 'task_alt',
               color: 'primary',
-              sub: `в очереди осталось ${TODAY_CLIENTS.length}`,
+              sub: `в очереди осталось ${todayTotal}`,
             },
           ].map((stat) => (
             <div key={stat.label}
@@ -1135,7 +1141,7 @@ function CrmMonitorSection() {
       <div data-tour="crm-tabs" className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
         <div className="flex gap-1 min-w-max">
           {([
-            { key: 'today', label: 'Кому звонить', labelFull: 'Кому звонить сегодня', count: todayReady ? TODAY_CLIENTS.length : null, icon: null },
+            { key: 'today', label: 'Кому звонить', labelFull: 'Кому звонить сегодня', count: todayReady ? todayTotal : null, icon: null },
             { key: 'base',  label: 'База',          labelFull: 'База клиентов',           count: todayReady ? stats?.totalClients ?? null : null, icon: 'contacts' },
             { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: todayReady ? riskTotal : null, icon: null },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
@@ -1212,6 +1218,11 @@ function CrmMonitorSection() {
           <p className="text-[11px] font-mono text-on-surface-variant">
             Просрочено: {stats.queue.overdue} · На сегодня: {stats.queue.today} · Без плана: {stats.queue.noPlan} · Спящих: {stats.queue.sleeping}
           </p>
+          {todayTotal > TODAY_CLIENTS.length && (
+            <p className="text-[11px] font-mono text-on-surface-variant">
+              Показаны первые {TODAY_CLIENTS.length} из {todayTotal} по приоритету — остальные в очереди следом и на вкладке «База клиентов».
+            </p>
+          )}
 
           {TODAY_CLIENTS.length === 0 && (
             <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
@@ -1284,10 +1295,10 @@ function CrmMonitorSection() {
                       { label: 'Последнее касание', tip: 'Последний звонок, сообщение, встреча или заметка по клиенту' },
                       { label: 'Ср. чек', tip: 'Средний чек из карточки клиента; «—» — не указан' },
                       { label: 'Чек к среднему', tip: 'Чек клиента против среднего чека вашей базы: (чек − средний) ÷ средний × 100%. Это не динамика заказов' },
-                      { label: 'Риск-скор', tip: 'Оценка 0–100 по правилу: дни без касания × 2,5 (до 70; нет касаний — 50), «Спящий» +15, «Клиент» −10, чек ниже половины среднего +10, «Потерян» — 95' },
+                      { label: 'Риск-скор', tip: 'Оценка 0–100 по правилу: дни без касания × 2,5 (до 70; нет касаний — 50), «Спящий» +15, «Клиент» −10, чек ниже половины среднего +10, чек выше двух средних −5 (средний — если известно хотя бы 2 чека), «Потерян» — 95' },
                       { label: 'Уровень риска', tip: 'Высокий — скор выше 60, средний — 41–60, низкий — до 40. Это уровень эвристики, а не вероятность' },
                       { label: 'Комментарий', tip: 'Подсказка из данных: нет касаний N дней, давно без движения, крупный чек' },
-                      { label: 'Действие', tip: 'Звонок — нет касаний, больше 7 дней без касания или риск выше 60; Написать — риск выше 35; иначе мониторинг' },
+                      { label: 'Действие', tip: 'Звонок — статус «Потерян», нет касаний, больше 7 дней без касания или риск выше 60; Написать — риск выше 35; иначе мониторинг' },
                     ] as const).map((h) => (
                       <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
