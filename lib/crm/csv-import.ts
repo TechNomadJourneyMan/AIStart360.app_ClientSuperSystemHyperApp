@@ -1,5 +1,6 @@
 // lib/crm/csv-import.ts — парсер CSV клиентов с русскими/английскими заголовками.
-// Дедуп внутри файла по нормализованному телефону; строки без имени пропускаются.
+// Строки без имени пропускаются. Дубли (внутри файла и с базой) сводит планировщик
+// импорта lib/crm/import-merge.ts — по телефону, e-mail или имени, без потери данных.
 
 import { normalizePhone } from './phone'
 
@@ -154,7 +155,6 @@ export function parseClientsCsv(text: string): ParseClientsResult {
   }
 
   const rows: ClientDraft[] = []
-  const seenPhones = new Set<string>()
   let skipped = 0
 
   for (const r of dataRows) {
@@ -169,12 +169,6 @@ export function parseClientsCsv(text: string): ParseClientsResult {
 
     const rawPhone = (cell('phone') ?? '').trim()
     const { e164 } = normalizePhone(rawPhone)
-
-    if (e164 && seenPhones.has(e164)) {
-      skipped++ // дубль внутри файла
-      continue
-    }
-    if (e164) seenPhones.add(e164)
 
     rows.push({
       name,

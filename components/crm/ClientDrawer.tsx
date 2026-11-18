@@ -13,21 +13,11 @@ import {
   type InteractionKind,
 } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
+import { drawerPatch, phoneFieldValue, type DrawerSeed } from '@/lib/crm/client-form'
 import { CLIENT_STATUS_META } from './FunnelBar'
 
-/** Minimal client seed the drawer needs — both CrmClient and the pulse queue map to it. */
-export interface DrawerClient {
-  id: string
-  name: string
-  phone: string | null
-  phone_raw?: string | null
-  email: string | null
-  status: ClientStatus
-  avg_check: number | null
-  note: string | null
-  next_contact_at: string | null
-  last_contact_at: string | null
-}
+/** Minimal client seed the drawer needs — both CrmClient and the queue rows map to it. */
+export type DrawerClient = DrawerSeed
 
 const KIND_ICON: Record<InteractionKind, string> = {
   call: 'call',
@@ -84,7 +74,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
   useEffect(() => {
     if (!client) return
     setName(client.name ?? '')
-    setPhone(client.phone_raw ?? client.phone ?? '')
+    setPhone(phoneFieldValue(client))
     setEmail(client.email ?? '')
     setStatus(client.status)
     setAvgCheck(client.avg_check != null ? String(client.avg_check) : '')
@@ -134,15 +124,17 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
     update.mutate(
       {
         id: client.id,
-        patch: {
+        // The phone is sent only when changed: an unchanged number that never normalised would
+        // otherwise be re-sent (or, from an incomplete seed, sent empty) and wipe phone_raw.
+        patch: drawerPatch(client, {
           name: trimmed,
-          phone: phone.trim(),
-          email: email.trim() || null,
+          phone,
+          email,
           status,
-          avg_check: avgNum,
-          next_contact_at: fromLocalInput(nextContact),
-          note: note.trim() || null,
-        },
+          avgCheck: avgNum,
+          nextContactAt: fromLocalInput(nextContact),
+          note,
+        }),
       },
       {
         onSuccess: () => toast.success('Клиент сохранён'),

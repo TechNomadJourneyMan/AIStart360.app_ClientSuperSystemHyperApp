@@ -20,6 +20,8 @@ export interface BriefingResult {
   text: string | null
   cached: boolean
   limited: boolean
+  /** Why `limited`: the hourly generation limit or the user's daily AI budget. */
+  limitReason?: 'rate_limit' | 'budget'
   validation: AiTextValidationMeta | null
 }
 
@@ -116,8 +118,8 @@ export async function getDailyBriefing(
     const cached = await deps.readCache(userId, day).catch(() => null)
     if (cached) return { text: cached, cached: true, limited: false, validation: null }
 
-    if (await deps.isLimited(userId)) return { text: null, cached: false, limited: true, validation: null }
-    if (await deps.overBudget(userId)) return { text: null, cached: false, limited: true, validation: null }
+    if (await deps.isLimited(userId)) return { text: null, cached: false, limited: true, limitReason: 'rate_limit', validation: null }
+    if (await deps.overBudget(userId)) return { text: null, cached: false, limited: true, limitReason: 'budget', validation: null }
 
     const raw = await deps.generate(prompt, userId)
     if (!raw) return { text: null, cached: false, limited: false, validation: null }

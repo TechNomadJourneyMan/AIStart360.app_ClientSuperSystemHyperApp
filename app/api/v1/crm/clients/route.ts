@@ -5,38 +5,56 @@ import { createServerClient } from '@/lib/supabase-server'
 import { validateClient, CLIENT_STATUSES } from '@/lib/crm/client-validate'
 import { parseJsonBody } from '@/lib/validation/http'
 import { CrmClientBody } from '@/lib/validation/schemas'
+import { PAGE_SIZE } from '@/lib/crm/today'
 
-const MAX_CLIENTS = 500
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * GET /api/v1/crm/clients?status=&limit=&after= — the owner's base, page by page.
+ *
+ * Keyset pagination in a stable order (by id): `limit` rows (1..PAGE_SIZE, default PAGE_SIZE) after
+ * the row `after`. The answer carries `total` — how many clients match the filter — and
+ * `nextCursor` (the `after` of the next page, null on the last one), so a caller can always tell
+ * «показаны N из M» and reach every client. (It used to stop silently at 500 rows while a CSV import
+ * accepts 2000.) Sorting for display is the caller's.
+ */
 export async function GET(request: NextRequest) {
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
+  const userId = userData.user.id
+  const params = request.nextUrl.searchParams
 
-  const statusParam = request.nextUrl.searchParams.get('status')
-
-  let query = sb
-    .from('crm_clients')
-    .select('*')
-    .eq('user_id', userData.user.id)
-
-  if (statusParam) {
-    if (!(CLIENT_STATUSES as readonly string[]).includes(statusParam)) {
-      return NextResponse.json({ ok: false, error: 'invalid status' }, { status: 400 })
-    }
-    query = query.eq('status', statusParam)
+  const statusParam = params.get('status')
+  if (statusParam && !(CLIENT_STATUSES as readonly string[]).includes(statusParam)) {
+    return NextResponse.json({ ok: false, error: 'invalid status' }, { status: 400 })
+  }
+  const after = params.get('after')
+  if (after && !UUID_RE.test(after)) {
+    return NextResponse.json({ ok: false, error: 'invalid after' }, { status: 400 })
+  }
+  const limitParam = params.get('limit')
+  const limit = limitParam == null ? PAGE_SIZE : Number(limitParam)
+  if (!Number.isInteger(limit) || limit < 1 || limit > PAGE_SIZE) {
+    return NextResponse.json({ ok: false, error: `limit must be 1..${PAGE_SIZE}` }, { status: 400 })
   }
 
-  // Очередь: сначала по next_contact_at (ближайшие), NULLS LAST, затем свежие.
-  const { data, error } = await query
-    .order('next_contact_at', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .limit(MAX_CLIENTS)
+  let countQuery = sb.from('crm_clients').select('id', { count: 'exact', head: true }).eq('user_id', userId)
+  if (statusParam) countQuery = countQuery.eq('status', statusParam)
+  const { count, error: countErr } = await countQuery
+  if (countErr) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
 
+  let query = sb.from('crm_clients').select('*').eq('user_id', userId)
+  if (statusParam) query = query.eq('status', statusParam)
+  if (after) query = query.gt('id', after)
+  const { data, error } = await query.order('id', { ascending: true }).limit(limit)
   if (error) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
-  return NextResponse.json({ ok: true, data: { clients: data ?? [] } })
+
+  const clients = (data ?? []) as Array<{ id: string }>
+  const nextCursor = clients.length === limit ? clients[clients.length - 1].id : null
+  return NextResponse.json({ ok: true, data: { clients, total: count ?? 0, nextCursor } })
 }
 
 export async function POST(request: NextRequest) {

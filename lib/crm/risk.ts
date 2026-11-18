@@ -1,7 +1,9 @@
 // lib/crm/risk.ts — детерминированный риск-скоринг клиента CRM.
-// Перенос формулы из app/api/pulse/route.ts: staleness от last_contact_at +
-// отклонение avg_check от портфельного среднего → riskScore/churnLevel/action.
-// Чистая функция (никаких Math.random / сети): один вход → один выход.
+// Документированная эвристика из реальных полей клиента: дни с последнего касания
+// (last_contact_at), статус, средний чек против среднего по базе → riskScore /
+// churnLevel / action. Чистая функция (никаких Math.random / сети): один вход → один выход.
+// Платформа не знает заказов клиента — поэтому здесь нет «истории заказов», «цикла
+// заказа» или «изменения объёма»: только то, что владелец сам внёс в базу.
 
 export type ChurnLevel = 'high' | 'medium' | 'low'
 export type RiskAction = 'call' | 'message' | 'monitor'
@@ -18,14 +20,14 @@ export interface RiskInput {
 }
 
 export interface RiskResult {
+  /** Whole days since the last touch; null = never touched. */
   daysSince: number | null
-  riskScore: number // 0..100
-  churnProb: number // 0..100 (детерминированно = riskScore)
+  riskScore: number // 0..100 — heuristic score, not a probability
   churnLevel: ChurnLevel
   action: RiskAction
   comment: string | null
-  volumeChange: number // % отклонения avg_check от портфельного среднего
-  history: number[] // спарклайн (5 точек) к текущему health
+  /** % of the client's avg_check against the base's average; null when either is unknown. */
+  checkVsAvgPct: number | null
 }
 
 const DAY_MS = 86_400_000
@@ -65,7 +67,6 @@ export function scoreClientRisk(input: RiskInput, portfolioAvgCheck = 0): RiskRe
 
   const health = 100 - riskScore
   const churnLevel: ChurnLevel = health < 40 ? 'high' : health < 60 ? 'medium' : 'low'
-  const churnProb = riskScore
 
   // ── action ──
   let action: RiskAction = 'monitor'
@@ -77,11 +78,11 @@ export function scoreClientRisk(input: RiskInput, portfolioAvgCheck = 0): RiskRe
     action = 'message'
   }
 
-  // ── volumeChange ──
-  const volumeChange =
+  // ── check vs the base's average (an unknown check or average is null, never 0) ──
+  const checkVsAvgPct =
     portfolioAvgCheck > 0 && avgCheck != null
       ? Math.round(((avgCheck - portfolioAvgCheck) / portfolioAvgCheck) * 100)
-      : 0
+      : null
 
   // ── comment ──
   let comment: string | null = null
@@ -92,14 +93,5 @@ export function scoreClientRisk(input: RiskInput, portfolioAvgCheck = 0): RiskRe
   else if (avgCheck != null && portfolioAvgCheck > 0 && avgCheck > portfolioAvgCheck * 2)
     comment = 'Крупный клиент — приоритет'
 
-  // ── history (детерминированный спарклайн к текущему health) ──
-  const history = [
-    Math.round(health * 0.6),
-    Math.round(health * 0.7),
-    Math.round(health * 0.8),
-    Math.round(health * 0.9),
-    health,
-  ]
-
-  return { daysSince, riskScore, churnProb, churnLevel, action, comment, volumeChange, history }
+  return { daysSince, riskScore, churnLevel, action, comment, checkVsAvgPct }
 }

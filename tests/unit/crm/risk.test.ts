@@ -47,17 +47,24 @@ describe('scoreClientRisk (deterministic CRM risk)', () => {
     expect(r.comment).toBe('Клиент потерян — вернуть')
   })
 
-  it('computes volumeChange as % deviation from the portfolio average', () => {
+  it('computes checkVsAvgPct as % deviation of the check from the base average', () => {
     const r = scoreClientRisk(
       { lastContactAt: daysAgo(1), avgCheck: 150_000, status: 'customer', now: NOW },
       100_000,
     )
-    expect(r.volumeChange).toBe(50)
+    expect(r.checkVsAvgPct).toBe(50)
   })
 
-  it('always returns a 5-point history and clamps score to 0..100', () => {
+  // M2: an unknown check (or no base average) is unknown — it used to be «0 %» on screen.
+  it('an unknown check or base average gives checkVsAvgPct null, never 0', () => {
+    expect(scoreClientRisk({ lastContactAt: daysAgo(1), avgCheck: null, status: 'customer', now: NOW }, 100_000).checkVsAvgPct).toBeNull()
+    expect(scoreClientRisk({ lastContactAt: daysAgo(1), avgCheck: 50_000, status: 'customer', now: NOW }, 0).checkVsAvgPct).toBeNull()
+  })
+
+  // M2: no invented series — the old result carried a fake 5-point «order history» (health × 0.6…1.0).
+  it('returns no invented order history / volume trend, and clamps the score to 0..100', () => {
     const r = scoreClientRisk({ lastContactAt: daysAgo(365), avgCheck: 10, status: 'sleeping', now: NOW }, 1_000_000)
-    expect(r.history).toHaveLength(5)
+    expect(Object.keys(r).sort()).toEqual(['action', 'checkVsAvgPct', 'churnLevel', 'comment', 'daysSince', 'riskScore'])
     expect(r.riskScore).toBeGreaterThanOrEqual(0)
     expect(r.riskScore).toBeLessThanOrEqual(100)
   })
