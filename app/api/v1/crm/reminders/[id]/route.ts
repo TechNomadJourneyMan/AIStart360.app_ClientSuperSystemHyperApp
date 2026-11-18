@@ -58,7 +58,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
   }
 
-  // Выполнено → фиксируем касание и обновляем контактные даты клиента.
+  // Выполнено → фиксируем касание и обновляем контактные даты клиента. «Выполнено» — это владелец
+  // говорит, что запланированный контакт состоялся, поэтому last_contact_at двигается (а простая
+  // заметка — нет: app/api/v1/crm/clients/[id]/interactions). «Отменено» контакта не означает.
   if (status === 'done') {
     await sb.from('crm_interactions').insert({
       client_id: current.client_id,

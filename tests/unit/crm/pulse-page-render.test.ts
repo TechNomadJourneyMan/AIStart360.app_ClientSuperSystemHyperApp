@@ -42,7 +42,7 @@ function render(el: Parameters<typeof createElement>[0]) {
 }
 
 const row = (over: Record<string, unknown> = {}) => ({
-  id: 'c1', name: 'ТОО Ромашка', status: 'new', statusLabel: 'Новый', phone: null, phoneRaw: null, email: null, note: null,
+  id: 'c1', name: 'ТОО Ромашка', status: 'new', statusLabel: 'Новый', phone: null, phoneRaw: null, email: null, note: null, noteTruncated: false,
   nextContactAt: null, lastContactAt: null, daysSince: null, avgCheck: null, checkVsAvgPct: null, riskScore: 50,
   churnLevel: 'medium', action: 'call', comment: 'Нет ни одного касания', queueBucket: 2, ...over,
 })
@@ -70,6 +70,7 @@ describe('CRM section with data (M2: no invented numbers)', () => {
       day: '2026-11-19',
       stats: { totalClients: 2, highRisk: 1, mediumRisk: 1, revenueAtRisk: null, highRiskWithoutCheck: 1, processedToday: 0, queue: { overdue: 0, today: 0, noPlan: 1, sleeping: 0 } },
       todayClients: [row()],
+      todayClientsTotal: 1,
       riskClients: [row({ id: 'c2', name: 'Потерянный', status: 'lost', statusLabel: 'Потерян', churnLevel: 'high', riskScore: 95, queueBucket: null }), row()],
       riskClientsTotal: 2,
       aiBriefing: null,
@@ -88,9 +89,25 @@ describe('CRM section with data (M2: no invented numbers)', () => {
     s.today.data = {
       day: '2026-11-19',
       stats: { totalClients: 3, highRisk: 0, mediumRisk: 0, revenueAtRisk: 0, highRiskWithoutCheck: 0, processedToday: 3, queue: { overdue: 0, today: 0, noPlan: 0, sleeping: 0 } },
-      todayClients: [], riskClients: [], riskClientsTotal: 0, aiBriefing: null,
+      todayClients: [], todayClientsTotal: 0, riskClients: [], riskClientsTotal: 0, aiBriefing: null,
     }
     expect(render(PulsePage)).toContain('Очередь на сегодня пуста')
+  })
+
+  // Review M3: the queue is capped (50 rows) — the screen says how many there are in all.
+  it('a capped queue says «показаны N из M»; the tab counts the whole queue', () => {
+    const rows = Array.from({ length: 50 }, (_, i) => row({ id: `c${i}`, name: `Лид ${i}` }))
+    s.today.data = {
+      day: '2026-11-19',
+      stats: { totalClients: 2000, highRisk: 0, mediumRisk: 2000, revenueAtRisk: 0, highRiskWithoutCheck: 0, processedToday: 0, queue: { overdue: 0, today: 0, noPlan: 2000, sleeping: 0 } },
+      todayClients: rows, todayClientsTotal: 2000, riskClients: [], riskClientsTotal: 2000, aiBriefing: null,
+    }
+    const html = render(PulsePage)
+    expect(html).toContain('Показаны первые 50 из 2000 по приоритету')
+    expect(html).toContain('в очереди осталось 2000')
+    // the tooltips name every rule of the score and of the action (review, low)
+    expect(html).toContain('чек выше двух средних −5')
+    expect(html).toContain('Звонок — статус «Потерян»')
   })
 })
 
@@ -129,6 +146,26 @@ describe('Base tab (M3)', () => {
       expect(all.total).toBe(1205)
       expect(all.clients).toHaveLength(1205)
       expect(urls).toEqual(['/api/v1/crm/clients?limit=1000', '/api/v1/crm/clients?limit=1000&after=id-999'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // Review (low): a server whose max-rows is below the page size returns short pages that are not the end.
+  it('keeps reading after short pages until every counted client is loaded', async () => {
+    const urls: string[] = []
+    const pages = [0, 400, 800].map((from) => {
+      const clients = Array.from({ length: Math.min(400, 1005 - from) }, (_, i) => client(from + i))
+      return { clients, total: 1005, nextCursor: clients[clients.length - 1].id }
+    })
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url)
+      return new Response(JSON.stringify({ ok: true, data: pages[urls.length - 1] }), { status: 200 })
+    })
+    try {
+      const all = await fetchWholeBase()
+      expect(all.clients).toHaveLength(1005)
+      expect(urls).toHaveLength(3)
     } finally {
       vi.unstubAllGlobals()
     }

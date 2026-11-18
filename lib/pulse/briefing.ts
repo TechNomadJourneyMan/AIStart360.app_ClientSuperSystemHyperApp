@@ -13,6 +13,7 @@
 import { chatWithOpenRouter, OPENROUTER_MODELS } from '@/lib/ai/openrouter'
 import { UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { validateAiText, type AiTextValidationMeta } from '@/lib/ai/validation/apply'
+import { almatyDay } from '@/lib/crm/today'
 
 export const PULSE_BRIEFING_RATE_LIMIT = { max: 10, windowMs: 60 * 60_000 } as const
 
@@ -34,9 +35,12 @@ export interface BriefingDeps {
   generate: (prompt: string, userId: string) => Promise<string | null>
 }
 
-/** Calendar day in Almaty (the platform's working time zone), YYYY-MM-DD. */
+/**
+ * Calendar day in Almaty (the platform's working time zone), YYYY-MM-DD — the same day as the CRM
+ * queue's (lib/crm/today.ts almatyDay: fixed UTC+5, independent of the server's tz database).
+ */
 export function briefingDay(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  return almatyDay(now.getTime()).day
 }
 
 const defaultDeps: BriefingDeps = {

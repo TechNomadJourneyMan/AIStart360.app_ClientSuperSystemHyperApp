@@ -54,7 +54,9 @@ export interface CrmTodayClient {
   phone: string | null
   phoneRaw: string | null
   email: string | null
+  /** A preview: cut to 300 characters when longer (then noteTruncated). */
   note: string | null
+  noteTruncated: boolean
   nextContactAt: string | null
   lastContactAt: string | null
   /** Whole days since the last touch; null = never touched («нет касаний»). */
@@ -85,7 +87,10 @@ export interface CrmTodayStats {
 export interface CrmTodayData {
   day: string
   stats: CrmTodayStats
+  /** The first TODAY_LIST_MAX (50) of the queue, highest priority first. */
   todayClients: CrmTodayClient[]
+  /** The whole queue's size («показаны N из M»). */
+  todayClientsTotal: number
   riskClients: CrmTodayClient[]
   riskClientsTotal: number
   aiBriefing: string | null
@@ -191,7 +196,8 @@ export async function fetchWholeBase(status?: CrmClientStatus): Promise<CrmClien
       seen.add(c.id)
       all.push(c)
     }
-    if (!page.nextCursor) break
+    // Done on an empty page, or once every counted client is here (saves the empty request).
+    if (!page.nextCursor || all.length >= total) break
     after = page.nextCursor
   }
   return { clients: sortBase(all), total }

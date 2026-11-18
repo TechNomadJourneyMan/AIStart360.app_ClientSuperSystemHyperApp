@@ -121,20 +121,23 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
       toast.error('Средний чек — число ≥ 0')
       return
     }
+    // Only the changed fields are sent (lib/crm/client-form.ts): an untouched value is never written
+    // back over a newer one, a phone that never normalised keeps phone_raw, and a cut note from the
+    // queue is never saved over the full one.
+    const patch = drawerPatch(client, {
+      name: trimmed,
+      phone,
+      email,
+      status,
+      avgCheck: avgNum,
+      nextContactAt: fromLocalInput(nextContact),
+      note,
+    })
+    if (Object.keys(patch).length === 0) { toast('Нет изменений'); return }
     update.mutate(
       {
         id: client.id,
-        // The phone is sent only when changed: an unchanged number that never normalised would
-        // otherwise be re-sent (or, from an incomplete seed, sent empty) and wipe phone_raw.
-        patch: drawerPatch(client, {
-          name: trimmed,
-          phone,
-          email,
-          status,
-          avgCheck: avgNum,
-          nextContactAt: fromLocalInput(nextContact),
-          note,
-        }),
+        patch,
       },
       {
         onSuccess: () => toast.success('Клиент сохранён'),
@@ -233,7 +236,13 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
               </Field>
             </div>
             <Field label="Заметка">
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={`${inputCls} resize-none`} />
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} readOnly={client.noteTruncated === true}
+                className={`${inputCls} resize-none ${client.noteTruncated ? 'opacity-60' : ''}`} />
+              {client.noteTruncated && (
+                <span className="text-[10px] text-on-surface-variant/70 block mt-1">
+                  Здесь начало длинной заметки. Целиком она открывается и правится из вкладки «База клиентов».
+                </span>
+              )}
             </Field>
             <div className="flex gap-2">
               <button onClick={save} disabled={update.isPending}

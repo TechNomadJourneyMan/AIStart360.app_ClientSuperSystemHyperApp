@@ -76,18 +76,21 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
 
 /**
  * The queue rule — which bucket of today's queue a client is in, or null when not in it.
+ * `last_contact_at` is the last CONTACT (a call, message or meeting — a note is not a contact,
+ * app/api/v1/crm/clients/[id]/interactions).
  *
- *  1. Touched today (last_contact_at at or after Almaty midnight) → not in today's queue: the owner
- *     has dealt with the client today. (This is what lets the queue empty as the day's work is done.)
- *  2. Pending plan items: every OPEN reminder (an explicit to-do — it stays pending until it is
- *     marked done or dismissed, a touch does not close it) and next_contact_at unless a later touch
- *     already answered it (last_contact_at >= next_contact_at).
+ *  1. Pending plan items: every open reminder and next_contact_at whose time is AFTER the last
+ *     contact (or with no contact at all). A contact at or after the planned time answers it — and
+ *     logging that contact also closes the open reminders due by then (the interactions route), so
+ *     the drawer, the digest and next-best-action see the same thing.
  *       any pending item before today       → 0 «просрочено»
- *       any pending item today              → 1 «на сегодня»
+ *       any pending item today              → 1 «на сегодня» — also a call-back planned for later
+ *                                              today after this morning's call
  *       pending items only after today      → not in the queue: the contact is planned.
- *  3. No pending plan:
+ *  2. No pending plan:
+ *       contacted today (at or after Almaty midnight)        → not in the queue: handled today
  *       an active status (new / in_progress / waiting)        → 2 «без плана»
- *       customer / sleeping with no touch for > 30 days       → 3 «спящий»
+ *       customer / sleeping with no contact for > 30 days     → 3 «спящий»
  *     Anything else (a lost client, a recent customer) is not in the queue.
  */
 export function queueBucket(
@@ -97,16 +100,17 @@ export function queueBucket(
   nowMs: number,
 ): QueueBucket | null {
   const last = ms(c.last_contact_at)
-  if (last != null && last >= day.startMs) return null
+  const answered = (t: number) => last != null && last >= t
 
-  const pending: number[] = openReminderDues.filter((t) => Number.isFinite(t))
+  const pending: number[] = openReminderDues.filter((t) => Number.isFinite(t) && !answered(t))
   const next = ms(c.next_contact_at)
-  if (next != null && !(last != null && last >= next)) pending.push(next)
+  if (next != null && !answered(next)) pending.push(next)
 
   if (pending.some((t) => t < day.startMs)) return QUEUE_BUCKET.overdue
   if (pending.some((t) => t < day.endMs)) return QUEUE_BUCKET.today
   if (pending.length > 0) return null
 
+  if (last != null && last >= day.startMs) return null
   if (ACTIVE_STATUSES.includes(c.status)) return QUEUE_BUCKET.noPlan
   if (isSleepingClient(c, nowMs)) return QUEUE_BUCKET.sleeping
   return null
@@ -145,7 +149,10 @@ export interface TodayClient {
   phone: string | null
   phoneRaw: string | null
   email: string | null
+  /** The owner's note, cut to NOTE_PREVIEW_MAX characters (the full note is in the base). */
   note: string | null
+  /** `note` was cut — the drawer must not save it back (lib/crm/client-form.ts). */
+  noteTruncated: boolean
   nextContactAt: string | null
   lastContactAt: string | null
   /** Whole days since the last touch; null = never touched («нет касаний»). */
@@ -181,8 +188,10 @@ export interface CrmTodayPayload {
   /** The Almaty day the queue is for. */
   day: string
   stats: TodayStats
-  /** Today's queue, highest priority first. */
+  /** Today's queue, highest priority first — at most TODAY_LIST_MAX of them. */
   todayClients: TodayClient[]
+  /** How many clients the whole queue has («показаны N из M»); per bucket: stats.queue. */
+  todayClientsTotal: number
   /** The base's high/medium-risk clients, riskiest first (at most RISK_LIST_MAX). */
   riskClients: TodayClient[]
   riskClientsTotal: number
@@ -190,7 +199,21 @@ export interface CrmTodayPayload {
   aiBriefing: null
 }
 
+/**
+ * Rows returned per list. A 2000-row import puts everyone in «Без плана»; the screen shows the
+ * first ones in priority order and says how many there are, the base tab has every client.
+ */
+export const TODAY_LIST_MAX = 50
 export const RISK_LIST_MAX = 50
+/** A note longer than this is cut in the queue rows (notes may hold up to 10 000 characters). */
+export const NOTE_PREVIEW_MAX = 300
+/** Comparing a check with «the base's average» needs at least this many known checks (not itself). */
+export const MIN_CHECKS_FOR_AVERAGE = 2
+
+function notePreview(note: string | null): { note: string | null; noteTruncated: boolean } {
+  if (note == null || note.length <= NOTE_PREVIEW_MAX) return { note, noteTruncated: false }
+  return { note: `${note.slice(0, NOTE_PREVIEW_MAX).trimEnd()}…`, noteTruncated: true }
+}
 
 function toCheck(v: unknown): number | null {
   if (v == null || v === '') return null
@@ -209,11 +232,13 @@ export function buildCrmToday(
   const day = almatyDay(nowMs)
   const dues = openDuesByClient(openReminders)
 
-  // The base's average check over the clients whose check is known and positive (as before; the
-  // Gri mascot's «в зоне риска» uses the same average — lib/assistant/mascot/problem-signals.ts).
+  // The base's average check over the clients whose check is known and positive. With a single
+  // known check there is no average to compare with (the client would be compared with itself:
+  // «0 %»), so it counts as unknown: no check-vs-average, no check modifier in the risk score.
   const checks = clients.map((c) => toCheck(c.avg_check))
   const positive = checks.filter((v): v is number => v != null && v > 0)
-  const portfolioAvg = positive.length > 0 ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
+  const portfolioAvg =
+    positive.length >= MIN_CHECKS_FOR_AVERAGE ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
 
   const rows: TodayClient[] = clients.map((c, i) => {
     const avgCheck = checks[i]
@@ -229,7 +254,7 @@ export function buildCrmToday(
       phone: c.phone,
       phoneRaw: c.phone_raw,
       email: c.email,
-      note: c.note,
+      ...notePreview(c.note),
       nextContactAt: c.next_contact_at,
       lastContactAt: c.last_contact_at,
       daysSince: risk.daysSince,
@@ -275,7 +300,8 @@ export function buildCrmToday(
         sleeping: count(QUEUE_BUCKET.sleeping),
       },
     },
-    todayClients,
+    todayClients: todayClients.slice(0, TODAY_LIST_MAX),
+    todayClientsTotal: todayClients.length,
     riskClients: atRisk.slice(0, RISK_LIST_MAX),
     riskClientsTotal: atRisk.length,
     aiBriefing: null,
@@ -292,7 +318,8 @@ type PageResult<T> = { data: T[] | null; error: unknown }
 /**
  * Every row of a query, page by page in a stable order (keyset on `id`: rows added or changed
  * while paging are neither skipped nor read twice). `page(afterId)` builds the query of one page,
- * ordered by id ascending, limited to PAGE_SIZE, after `afterId` when given.
+ * ordered by id ascending, limited to PAGE_SIZE, after `afterId` when given. It reads until an
+ * EMPTY page: a short page is not the end when the server's max-rows is below PAGE_SIZE.
  */
 export async function readAllById<T extends { id: string }>(
   page: (afterId: string | null) => PromiseLike<PageResult<T>>,
@@ -303,8 +330,8 @@ export async function readAllById<T extends { id: string }>(
     const { data, error } = await page(after)
     if (error) return { ok: false, error }
     const got = data ?? []
+    if (got.length === 0) return { ok: true, rows }
     rows.push(...got)
-    if (got.length < PAGE_SIZE) return { ok: true, rows }
     after = got[got.length - 1].id
   }
 }
@@ -346,6 +373,55 @@ export async function loadCrmToday(
   const reminders = await readOwnOpenReminders(sb, userId)
   if (!reminders.ok) return { ok: false, error: 'db_error' }
   return { ok: true, data: buildCrmToday(clients.rows, reminders.rows, nowMs) }
+}
+
+/**
+ * The clients of `userId` that are OVERDUE in today's queue (bucket 0) — next-best-action's
+ * «Связаться с N клиентами». Only the candidates are read (open reminders due before today's Almaty
+ * midnight, clients whose next contact is before it); the rule is queueBucket, so the count is the
+ * queue's «Просрочено». Overdue first by the earliest missed time, then by name.
+ */
+export async function readOverdueClients(
+  sb: SupabaseClient,
+  userId: string,
+  nowMs: number = Date.now(),
+): Promise<{ ok: true; clients: Array<{ id: string; name: string }> } | { ok: false; error: unknown }> {
+  const day = almatyDay(nowMs)
+  const startIso = new Date(day.startMs).toISOString()
+  const cols = 'id, name, status, next_contact_at, last_contact_at, created_at'
+  type Row = QueueClientInput & { id: string; name: string }
+
+  const reminders = await readAllById<{ id: string; client_id: string; due_at: string }>((after) => {
+    let q = sb.from('crm_reminders').select('id, client_id, due_at').eq('user_id', userId).eq('status', 'open').lt('due_at', startIso)
+    if (after) q = q.gt('id', after)
+    return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<PageResult<{ id: string; client_id: string; due_at: string }>>
+  })
+  if (!reminders.ok) return reminders
+  const planned = await readAllById<Row>((after) => {
+    let q = sb.from('crm_clients').select(cols).eq('user_id', userId).lt('next_contact_at', startIso)
+    if (after) q = q.gt('id', after)
+    return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<PageResult<Row>>
+  })
+  if (!planned.ok) return planned
+
+  const byId = new Map(planned.rows.map((c) => [c.id, c]))
+  const missing = Array.from(new Set(reminders.rows.map((r) => r.client_id))).filter((id) => !byId.has(id))
+  for (let i = 0; i < missing.length; i += 200) {
+    const { data, error } = await sb.from('crm_clients').select(cols).eq('user_id', userId).in('id', missing.slice(i, i + 200))
+    if (error) return { ok: false, error }
+    for (const c of (data ?? []) as Row[]) byId.set(c.id, c)
+  }
+
+  const dues = openDuesByClient(reminders.rows)
+  const earliest = (c: Row) => {
+    const times = [...(dues.get(c.id) ?? [])]
+    const next = ms(c.next_contact_at)
+    if (next != null) times.push(next)
+    return Math.min(...times)
+  }
+  const overdue = Array.from(byId.values()).filter((c) => queueBucket(c, dues.get(c.id) ?? [], day, nowMs) === QUEUE_BUCKET.overdue)
+  overdue.sort((a, b) => earliest(a) - earliest(b) || a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id))
+  return { ok: true, clients: overdue.map((c) => ({ id: c.id, name: c.name })) }
 }
 
 /**

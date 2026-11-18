@@ -22,6 +22,7 @@ const today = await import('../../app/api/v1/crm/today/route')
 const clients = await import('../../app/api/v1/crm/clients/route')
 const importRoute = await import('../../app/api/v1/crm/clients/import/route')
 const clientRoute = await import('../../app/api/v1/crm/clients/[id]/route')
+const interactions = await import('../../app/api/v1/crm/clients/[id]/interactions/route')
 
 // 2026-11-18 19:30 UTC = 2026-11-19 00:30 in Almaty (UTC+5).
 const NOW = new Date('2026-11-18T19:30:00Z')
@@ -150,7 +151,9 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect(first.nextCursor).toBe(first.clients[999].id)
       const second = await page(`?limit=1000&after=${first.nextCursor}`)
       expect(second.clients).toHaveLength(206)
-      expect(second.nextCursor).toBeNull()
+      // a short page is not the end (max-rows may be below the limit): the end is an empty page
+      expect(second.nextCursor).toBe(second.clients[205].id)
+      expect(await page(`?limit=1000&after=${second.nextCursor}`)).toMatchObject({ clients: [], nextCursor: null, total: 1206 })
       const ids = new Set([...first.clients, ...second.clients].map((c) => c.id))
       expect(ids.size).toBe(1206)
       expect(ids.has(lead)).toBe(true)
@@ -172,21 +175,25 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect(((await res.json()) as { data: { total: number } }).data.total).toBe(0)
     }))
 
-  it('import: a re-import neither duplicates clients nor wipes their data (M4)', () =>
+  it('import only adds: no duplicates, no overwritten values, no merge of different people (M4, review H1/M2)', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db)
-      const ivan = await addClient(db, owner, { name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000 })
+      await addClient(db, owner, { name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000 })
       await addClient(db, owner, { name: 'Анна', email: 'anna@ex.kz', note: 'заметка' })
       await addClient(db, owner, { name: 'Пётр' })
       session(db, owner)
 
       const csv = [
         'Имя,Телефон,Email,Комментарий,Сумма',
-        'Иван,8 701 000 00 01,,,', // phone match; empty cells must not wipe email/note/check
-        'Анна,,ANNA@ex.kz,,', // no phone: matched by e-mail, case-insensitively
-        'Пётр,,,,', // no phone, no e-mail: the identical anonymous client
+        'Иван,8 701 000 00 01,,старая заметка,1000', // same phone + name: the owner's note / check stay
+        'Анна,,ANNA@ex.kz,,', // same e-mail (any case) + name
+        'Пётр,,,,', // no phone, no e-mail: the same name and (empty) note
+        'Анна Смирнова,,anna@ex.kz,,9000', // a shared mailbox under another name: a new client
+        'Самозванец,+7 701 000 00 01,,,500', // Иван's phone under another name: not imported
+        'Борис,,-,,', // «-» is no e-mail…
+        'Вера,,-,,', // …so Борис and Вера stay two people
         'Новый,,new@ex.kz,,',
-        'Новый,,new@ex.kz,звонить после 18,', // repeat inside the file
+        'Новый,,new@ex.kz,звонить после 18,', // repeat inside the file: fills the empty note
       ].join('\n')
       const post = async () => {
         const fd = new FormData()
@@ -196,20 +203,77 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
         return ((await res.json()) as { data: Record<string, number> }).data
       }
 
-      expect(await post()).toEqual({ inserted: 1, updated: 1, unchanged: 2, duplicates: 1, skipped: 0 })
-      expect(await post()).toEqual({ inserted: 0, updated: 0, unchanged: 4, duplicates: 1, skipped: 0 })
+      expect(await post()).toEqual({ inserted: 4, updated: 0, unchanged: 3, duplicates: 1, conflicts: 1, skipped: 0 })
+      expect(await post()).toEqual({ inserted: 0, updated: 0, unchanged: 7, duplicates: 1, conflicts: 1, skipped: 0 })
 
       const { rows } = await db.query(
         `SELECT name, phone, phone_raw, email, note, avg_check::float8 AS avg_check FROM public.crm_clients WHERE user_id = $1 ORDER BY name`,
         [owner],
       )
-      expect(rows.map((r) => r.name)).toEqual(['Анна', 'Иван', 'Новый', 'Пётр'])
+      expect(rows.map((r) => r.name as string).sort((a, b) => a.localeCompare(b, 'ru'))).toEqual(['Анна', 'Анна Смирнова', 'Борис', 'Вера', 'Иван', 'Новый', 'Пётр'])
       expect(rows.find((r) => r.name === 'Иван')).toEqual({
-        name: 'Иван', phone: '+77010000001', phone_raw: '8 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000,
+        name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000,
       })
-      expect(rows.find((r) => r.name === 'Анна')).toMatchObject({ email: 'anna@ex.kz', note: 'заметка' })
+      expect(rows.find((r) => r.name === 'Анна')).toEqual({ name: 'Анна', phone: null, phone_raw: null, email: 'anna@ex.kz', note: 'заметка', avg_check: null })
+      expect(rows.find((r) => r.name === 'Анна Смирнова')).toMatchObject({ email: 'anna@ex.kz', avg_check: 9000 })
+      expect(rows.find((r) => r.name === 'Борис')).toMatchObject({ email: null })
       expect(rows.find((r) => r.name === 'Новый')).toMatchObject({ email: 'new@ex.kz', note: 'звонить после 18' })
-      expect(ivan).toBeTruthy()
+    }))
+
+  it('a contact closes the reminders due by then and moves «today»; a note does neither; a call-back later today is queued (review M1)', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const called = await addClient(db, owner, { name: 'Позвонили', status: 'in_progress' })
+      await addReminder(db, owner, called, '2026-11-18T06:00:00Z') // yesterday — this call answers it
+      await addReminder(db, owner, called, '2026-11-19T10:00:00Z') // call back at 15:00 Almaty today
+      const noted = await addClient(db, owner, { name: 'Заметка', status: 'in_progress' })
+      await addReminder(db, owner, noted, '2026-11-18T06:00:00Z')
+      session(db, owner)
+
+      const log = async (id: string, kind: string) => {
+        const res = await interactions.POST(
+          new NextRequest(`http://localhost/api/v1/crm/clients/${id}/interactions`, {
+            method: 'POST', body: JSON.stringify({ kind, comment: 'тест' }), headers: { 'content-type': 'application/json' },
+          }),
+          { params: { id } },
+        )
+        expect(res.status).toBe(200)
+      }
+      await log(called, 'call')
+      await log(noted, 'note')
+
+      const { rows } = await db.query(
+        `SELECT c.name, c.last_contact_at IS NOT NULL AS contacted, r.due_at, r.status
+           FROM public.crm_clients c JOIN public.crm_reminders r ON r.client_id = c.id
+          WHERE c.user_id = $1 ORDER BY c.name, r.due_at`,
+        [owner],
+      )
+      expect(rows.map((r) => [r.name, r.contacted, r.status])).toEqual([
+        ['Заметка', false, 'open'], // a note is not a contact: nothing moves
+        ['Позвонили', true, 'done'], // due before the call: closed by it
+        ['Позвонили', true, 'open'], // the call-back later today stays
+      ])
+
+      const p = await getToday()
+      const buckets = Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))
+      expect(buckets).toEqual({ [called]: 1, [noted]: 0 })
+      expect(p.stats.processedToday).toBe(1)
+    }))
+
+  it('/today returns at most 50 queue rows with the true total and cut notes (review M3)', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      await db.query(
+        `INSERT INTO public.crm_clients (user_id, name, status, note, created_at)
+         SELECT $1, 'Лид ' || g, 'new', repeat('заметка ', 1200), '2026-11-01T00:00:00Z' FROM generate_series(1, 120) g`,
+        [owner],
+      )
+      session(db, owner)
+      const p = (await getToday()) as TodayPayload & { todayClientsTotal: number }
+      expect(p.todayClients).toHaveLength(50)
+      expect(p.todayClientsTotal).toBe(120)
+      expect(p.stats.queue.noPlan).toBe(120)
+      expect(p.todayClients.every((c) => (c.note as string).length <= 301 && c.noteTruncated === true)).toBe(true)
     }))
 
   it('the drawer opened from a queue / card row saves without wiping a phone that did not normalise (L6)', () =>

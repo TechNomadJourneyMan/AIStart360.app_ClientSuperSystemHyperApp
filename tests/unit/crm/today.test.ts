@@ -7,7 +7,8 @@ process.env.TZ = 'UTC'
 
 import { describe, expect, it } from 'vitest'
 import {
-  almatyDay, buildCrmToday, PAGE_SIZE, queueBucket, queueCountsByUser, readAllById, type CrmClientRow,
+  almatyDay, buildCrmToday, NOTE_PREVIEW_MAX, PAGE_SIZE, queueBucket, queueCountsByUser, readAllById, TODAY_LIST_MAX,
+  type CrmClientRow,
 } from '@/lib/crm/today'
 
 // 2026-11-18 19:30 UTC = 2026-11-19 00:30 in Almaty: a UTC server still thinks it is the 18th.
@@ -40,11 +41,26 @@ describe('queueBucket (M1: a handled client leaves today\'s queue)', () => {
     expect(bucket(client({ last_contact_at: iso(ALMATY_MIDNIGHT - H) }))).toBe(2) // yesterday (Almaty)
   })
 
-  it('touched today (after Almaty midnight) → off the queue, whatever its bucket was', () => {
+  it('contacted today with nothing planned after that contact → off the queue', () => {
     const touched = iso(ALMATY_MIDNIGHT + 10 * 60_000)
     expect(bucket(client({ last_contact_at: touched }))).toBeNull()
+    // a reminder due two days ago is answered by today's contact
     expect(bucket(client({ last_contact_at: touched }), [ALMATY_MIDNIGHT - 48 * H])).toBeNull()
-    expect(bucket(client({ last_contact_at: touched, next_contact_at: iso(ALMATY_MIDNIGHT + 5 * H) }))).toBeNull()
+  })
+
+  // Review M1: «touched today → out» ran before the plan, so a call-back planned for later the same
+  // day never showed — and was overdue the next morning.
+  it("a call-back planned for later today after this morning's call is in today's queue", () => {
+    const touched = iso(ALMATY_MIDNIGHT + 10 * 60_000)
+    expect(bucket(client({ last_contact_at: touched, next_contact_at: iso(ALMATY_MIDNIGHT + 5 * H) }))).toBe(1)
+    expect(bucket(client({ last_contact_at: touched }), [ALMATY_MIDNIGHT + 5 * H])).toBe(1)
+    // …and once the call-back is made (a contact after its time), it is answered
+    const tomorrow = almatyDay(ALMATY_MIDNIGHT + 30 * H)
+    const late = client({ last_contact_at: iso(ALMATY_MIDNIGHT + 6 * H) })
+    expect(queueBucket(late, [ALMATY_MIDNIGHT + 5 * H], tomorrow, ALMATY_MIDNIGHT + 30 * H)).toBe(2)
+    // not made: overdue the next morning
+    const missed = client({ last_contact_at: touched })
+    expect(queueBucket(missed, [ALMATY_MIDNIGHT + 5 * H], tomorrow, ALMATY_MIDNIGHT + 30 * H)).toBe(0)
   })
 
   it('L5: a reminder due later today (Almaty) is «today», one due before Almaty midnight is overdue', () => {
@@ -59,8 +75,9 @@ describe('queueBucket (M1: a handled client leaves today\'s queue)', () => {
     expect(bucket(client({ next_contact_at: next, last_contact_at: iso(ALMATY_MIDNIGHT - 20 * H) }))).toBe(2)
   })
 
-  it('an open reminder is an explicit to-do: an older touch does not close it', () => {
-    expect(bucket(client({ last_contact_at: iso(ALMATY_MIDNIGHT - 2 * H) }), [ALMATY_MIDNIGHT - 30 * H])).toBe(0)
+  it('an open reminder is pending until a contact at or after its time — an earlier contact does not answer it', () => {
+    expect(bucket(client({ last_contact_at: iso(ALMATY_MIDNIGHT - 40 * H) }), [ALMATY_MIDNIGHT - 30 * H])).toBe(0)
+    expect(bucket(client({ last_contact_at: iso(ALMATY_MIDNIGHT - 2 * H) }), [ALMATY_MIDNIGHT - 30 * H])).toBe(2)
   })
 
   it('a contact planned after today keeps the client out of today\'s queue (also a sleeping one)', () => {
@@ -113,6 +130,29 @@ describe('buildCrmToday (M2: nothing invented)', () => {
     expect(p.riskClients.map((c) => c.id)).toContain('lost')
   })
 
+  // Review (browser check): with one known check the client was compared with itself — «0 %».
+  it('check vs average needs at least two known checks', () => {
+    const one = buildCrmToday([client({ id: 'a', avg_check: 5000 }), client({ id: 'b' })], [], NOW)
+    expect(one.todayClients.find((c) => c.id === 'a')?.checkVsAvgPct).toBeNull()
+    const two = buildCrmToday([client({ id: 'a', avg_check: 5000 }), client({ id: 'b', avg_check: 15000 })], [], NOW)
+    expect(two.todayClients.find((c) => c.id === 'a')?.checkVsAvgPct).toBe(-50)
+  })
+
+  // Review M3: a 2000-row import put everyone in «Без плана», all returned with 10k-char notes.
+  it('returns at most TODAY_LIST_MAX queue rows (priority order) with the true total, notes cut', () => {
+    const many = Array.from({ length: 130 }, (_, i) => client({ id: `n${String(i).padStart(3, '0')}`, name: `Лид ${i}`, note: 'x'.repeat(10_000) }))
+    const late = client({ id: 'late', name: 'Просроченный', next_contact_at: iso(ALMATY_MIDNIGHT - 3 * H) })
+    const p = buildCrmToday([...many, late], [], NOW)
+    expect(p.todayClients).toHaveLength(TODAY_LIST_MAX)
+    expect(p.todayClientsTotal).toBe(131)
+    expect(p.stats.queue).toMatchObject({ overdue: 1, noPlan: 130 })
+    expect(p.todayClients[0].id).toBe('late')
+    const row = p.todayClients[1]
+    expect(row.noteTruncated).toBe(true)
+    expect((row.note as string).length).toBeLessThanOrEqual(NOTE_PREVIEW_MAX + 1)
+    expect(p.todayClients[0]).toMatchObject({ note: null, noteTruncated: false })
+  })
+
   it('the queue is ordered overdue → today → no plan → sleeping, and counted per bucket', () => {
     const p = buildCrmToday(
       [
@@ -154,7 +194,7 @@ describe('queueCountsByUser (the digest counts what the queue shows)', () => {
 })
 
 describe('readAllById (M3: no silent 500-row cut)', () => {
-  it('reads page after page in id order until a short page', async () => {
+  it('reads page after page in id order until an empty page', async () => {
     const ids = Array.from({ length: PAGE_SIZE * 2 + 5 }, (_, i) => `id-${String(i).padStart(6, '0')}`)
     const afters: Array<string | null> = []
     const res = await readAllById(async (after) => {
@@ -163,7 +203,17 @@ describe('readAllById (M3: no silent 500-row cut)', () => {
       return { data: ids.slice(from, from + PAGE_SIZE).map((id) => ({ id })), error: null }
     })
     expect(res.ok && res.rows.length).toBe(ids.length)
-    expect(afters).toEqual([null, ids[PAGE_SIZE - 1], ids[2 * PAGE_SIZE - 1]])
+    expect(afters).toEqual([null, ids[PAGE_SIZE - 1], ids[2 * PAGE_SIZE - 1], ids[ids.length - 1]])
+  })
+
+  // Review (low): a server whose max-rows is below PAGE_SIZE returns short pages that are not the end.
+  it('a short page is not the end (server max-rows below the page size)', async () => {
+    const ids = Array.from({ length: 950 }, (_, i) => `id-${String(i).padStart(6, '0')}`)
+    const res = await readAllById(async (after) => {
+      const from = after ? ids.indexOf(after) + 1 : 0
+      return { data: ids.slice(from, from + 400).map((id) => ({ id })), error: null } // max-rows = 400
+    })
+    expect(res.ok && res.rows.length).toBe(950)
   })
 
   it('a failed page is an error, not a shorter list', async () => {

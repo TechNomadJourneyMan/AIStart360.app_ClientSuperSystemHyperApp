@@ -10,6 +10,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Касания, которые пользователь фиксирует вручную (status_change пишет система):
 // CRM_LOGGABLE_KINDS в lib/validation/schemas.ts.
 const COMMENT_MAX = 2000
+/** Interactions that are a contact with the client (a note is not). */
+const CONTACT_KINDS: ReadonlySet<string> = new Set(['call', 'message', 'meeting'])
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
@@ -77,13 +79,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     .single()
   if (error || !data) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
 
-  // Любое касание обновляет last_contact_at у клиента.
-  const now = new Date().toISOString()
-  await sb
-    .from('crm_clients')
-    .update({ last_contact_at: now, updated_at: now })
-    .eq('id', params.id)
-    .eq('user_id', userId)
+  // Only a CONTACT (call / message / meeting) is a contact: it moves last_contact_at — «Обработано
+  // сегодня» and the queue (lib/crm/today.ts) go by it — and closes the client's open reminders
+  // that were due by now: the contact is what they asked for. A note is just a note: it changes
+  // neither, so writing a note never takes a client off «Кому звонить сегодня».
+  if (CONTACT_KINDS.has(kind)) {
+    const now = new Date().toISOString()
+    await sb
+      .from('crm_clients')
+      .update({ last_contact_at: now, updated_at: now })
+      .eq('id', params.id)
+      .eq('user_id', userId)
+    await sb
+      .from('crm_reminders')
+      .update({ status: 'done', done_at: now })
+      .eq('client_id', params.id)
+      .eq('user_id', userId)
+      .eq('status', 'open')
+      .lte('due_at', now)
+  }
 
   return NextResponse.json({ ok: true, data: { interaction: data } })
 }
