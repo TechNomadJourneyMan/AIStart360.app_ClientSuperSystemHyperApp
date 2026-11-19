@@ -3,7 +3,7 @@
  *   a touch whose queue update failed (500 queue_not_updated) is said as such, not as «зафиксирован».
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { crmKeys, logInteractionMutation, touchErrorText } from '@/hooks/useCrm'
+import { crmKeys, logInteractionMutation, reminderErrorText, touchErrorText } from '@/hooks/useCrm'
 
 /** Run the mutation as react-query does: mutationFn, then onSuccess / onError, then onSettled. */
 async function runMutation(opts: ReturnType<typeof logInteractionMutation>, input: Parameters<typeof opts.mutationFn>[0]) {
@@ -48,6 +48,19 @@ describe('logging a touch refreshes what the server changed (review, low)', () =
     const r = await runMutation(logInteractionMutation(qc as never), { clientId: 'c1', kind: 'call' })
     expect(touchErrorText(r.error)).toBe('Касание записано, но очередь «Кому звонить» не обновилась.')
     expect(keys).toEqual(expect.arrayContaining([crmKeys.interactions('c1'), crmKeys.reminders('c1'), crmKeys.today()]))
+  })
+})
+
+describe('reminderErrorText («Выполнено» / «Отменить» in the drawer)', () => {
+  it('queue_not_updated and reminder_closed: the server says what happened', () => {
+    const q = Object.assign(new Error('Напоминание отмечено выполненным, но очередь «Кому звонить» не обновилась.'), { code: 'queue_not_updated' })
+    expect(reminderErrorText(q)).toBe('Напоминание отмечено выполненным, но очередь «Кому звонить» не обновилась.')
+    expect(reminderErrorText(Object.assign(new Error('Напоминание уже закрыто'), { code: 'reminder_closed' }))).toBe('Напоминание уже закрыто')
+  })
+
+  it('anything else: a plain «not updated», no raw codes', () => {
+    expect(reminderErrorText(Object.assign(new Error('db_error'), { code: 'db_error' }))).toBe('Не удалось обновить напоминание')
+    expect(reminderErrorText(null)).toBe('Не удалось обновить напоминание')
   })
 })
 

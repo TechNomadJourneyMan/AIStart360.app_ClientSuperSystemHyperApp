@@ -11,6 +11,7 @@ import {
   useCompleteReminder,
   useLogInteraction,
   touchErrorText,
+  reminderErrorText,
   type InteractionKind,
 } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
@@ -303,12 +304,17 @@ export function ClientDrawer({ client, onClose, onDeleted }: {
                       <p className="text-xs font-mono text-on-surface">{fmtDateTime(r.due_at)}</p>
                       {r.note && <p className="text-[11px] text-on-surface-variant truncate">{r.note}</p>}
                     </div>
-                    <button onClick={() => completeReminder.mutate({ id: r.id, clientId: client.id, status: 'done' }, { onSuccess: () => toast.success('Напоминание выполнено') })}
+                    <button onClick={() => completeReminder.mutate({ id: r.id, clientId: client.id, status: 'done' }, {
+                        onSuccess: () => toast.success('Напоминание выполнено'),
+                        onError: (e: unknown) => toast.error(reminderErrorText(e)),
+                      })}
                       title="Выполнено"
                       className="text-primary/70 hover:text-primary transition-colors flex-shrink-0">
                       <span className="material-symbols-outlined text-base">check_circle</span>
                     </button>
-                    <button onClick={() => completeReminder.mutate({ id: r.id, clientId: client.id, status: 'dismissed' })}
+                    <button onClick={() => completeReminder.mutate({ id: r.id, clientId: client.id, status: 'dismissed' }, {
+                        onError: (e: unknown) => toast.error(reminderErrorText(e)),
+                      })}
                       title="Отменить"
                       className="text-on-surface-variant/60 hover:text-error transition-colors flex-shrink-0">
                       <span className="material-symbols-outlined text-base">cancel</span>

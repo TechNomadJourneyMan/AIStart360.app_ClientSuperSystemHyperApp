@@ -133,6 +133,19 @@ export function touchErrorText(e: unknown): string {
   return 'Не удалось записать касание'
 }
 
+/**
+ * What the drawer says when «Выполнено» / «Отменить» on a reminder failed: the server's message
+ * for «queue_not_updated» (marked done, but the queue was not updated —
+ * app/api/v1/crm/reminders/[id]) and «reminder_closed» (409: already closed); otherwise a plain one.
+ */
+export function reminderErrorText(e: unknown): string {
+  const err = e as { code?: unknown; message?: unknown } | null
+  if (err && (err.code === 'queue_not_updated' || err.code === 'reminder_closed') && typeof err.message === 'string' && err.message) {
+    return err.message
+  }
+  return 'Не удалось обновить напоминание'
+}
+
 export const crmKeys = {
   all: ['crm'] as const,
   today: () => ['crm', 'today'] as const,
