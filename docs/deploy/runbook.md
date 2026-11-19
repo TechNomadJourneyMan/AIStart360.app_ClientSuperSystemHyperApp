@@ -112,7 +112,7 @@ pg_restore -l ~/AI-Portal-backups/$N.dump | grep -c ' TABLE '   # = число �
    - `.env.local` смотрит на staging: `NEXT_PUBLIC_SUPABASE_URL` и ключи Supabase staging, `DATABASE_URL`/`DIRECT_URL` staging-базы, `ENABLE_DEV_AUTH_ROUTES=1` (docs/dev-login.md). Значения — вне репозитория;
    - `npm run dev -- -H 127.0.0.1`;
    - браузер `http://127.0.0.1:3000`, панель DEV → «Войти как роль» (`POST /api/dev/login {role}`), пройти изменённый путь каждой нужной ролью;
-   - smoke в локальном режиме: `node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000`. Редиректы без входа, 401/403 API, CSP без `*.supabase.co`, связь с базой staging и `schema: ok` в `/api/health` (миграции этого кода уже в журнале staging) — строго. Чего у dev-сервера быть не может (`deploymentId`, очередь Workflow, планировщик, Inngest, `CRON_SECRET`, локальный «Рынок» в CSP) — предупреждения.
+   - smoke в локальном режиме: `node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000`. Редиректы без входа, 401/403 API, CSP без `*.supabase.co`, связь с базой staging и `schema` в `/api/health` (`fail` — миграций этого кода нет в журнале staging) — строго. Чего у dev-сервера быть не может (`deploymentId`, очередь Workflow, планировщик, Inngest, `CRON_SECRET`, локальный «Рынок» в CSP) — предупреждения; `schema: unknown` (холодный dev-сервер не успел прочитать журнал удалённого staging) — тоже предупреждение: повторить smoke. На проде `unknown` — провал.
 4. Записать проверенный коммит V (`git rev-parse HEAD`) — он пойдёт в `--verified` на проде. Если после проверки в ветку что-то добавили — проверить заново.
 
 **Прод.** На прод идут только те байты, что прошли staging. Порядок такой.

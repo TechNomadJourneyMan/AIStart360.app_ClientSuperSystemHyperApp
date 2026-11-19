@@ -235,6 +235,26 @@ describe('local mode — the dev server against staging (W3B-2, runbook §4)', (
     const cloud = await local(devServer({ '/login': { status: 200, headers: { 'content-security-policy': "connect-src 'self' https://*.supabase.co" } } }))
     expect(cloud.row('/login').mark).toBe('✗')
   })
+
+  // Review of wave 1A (LOW): a cold `next dev` reading the journal of a remote staging can run out of the
+  // check's 3 s — `schema: unknown` locally is a flaky «not read», not «behind»: a warning there. `fail`
+  // stays a failure locally, and in production `unknown` stays a failure.
+  it('schema unknown locally is a warning (journal not read), schema fail locally and unknown in production fail', async () => {
+    const unread = await local(devServer({ '/api/health': json(200, { ok: true, checks: { db: 'ok', config: 'ok', schema: 'unknown' } }) }))
+    expect(unread.ok).toBe(true)
+    expect(unread.row('/api/health')).toMatchObject({ mark: '!', note: expect.stringContaining('журнал миграций не прочитан') })
+    const unreadWith503 = await local(devServer({ '/api/health': json(503, { ok: false, checks: { db: 'ok', config: 'fail', schema: 'unknown' } }) }))
+    expect(unreadWith503.ok).toBe(true)
+    expect(unreadWith503.row('/api/health').mark).toBe('!')
+
+    const behind = await local(devServer({ '/api/health': json(200, { ok: true, checks: { db: 'ok', config: 'ok', schema: 'fail' } }) }))
+    expect(behind.ok).toBe(false)
+
+    const all = { db: 'ok', config: 'ok', queue: 'ok', inngest: 'ok', jobs: 'ok' }
+    const prodUnread = await smoke({ '/api/health': json(200, { ok: true, checks: { ...all, schema: 'unknown' } }) })
+    expect(prodUnread.ok).toBe(false)
+    expect(prodUnread.row('/api/health').mark).toBe('✗')
+  })
 })
 
 describe('main', () => {
