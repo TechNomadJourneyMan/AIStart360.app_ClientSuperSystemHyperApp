@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs'
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedUser, type Db } from '../../helpers/pg-rls'
+import { fencedLeaseToken } from '@/lib/crm/sync'
 
 const UP = readFileSync('supabase/migrations/157_crm_sync_catchup_lease_provenance.sql', 'utf8')
 const DOWN = readFileSync('supabase/migrations/rollback/157_crm_sync_catchup_lease_provenance.down.sql', 'utf8')
@@ -166,6 +167,7 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
          WHERE n.nspname = 'public' AND p.proname LIKE 'crm\\_%' ESCAPE '\\' ORDER BY 1`)
       expect(rows).toEqual([
         { proname: 'crm_clients_avg_check_provenance', anon: false, auth: false, service: true, definer: false },
+        { proname: 'crm_provider_connections_rekey', anon: false, auth: false, service: true, definer: false },
         ...['crm_sync_acquire_lease', 'crm_sync_apply_deal_totals', 'crm_sync_insert_clients', 'crm_sync_relink', 'crm_sync_update_clients']
           .map((proname) => ({ proname, anon: false, auth: true, service: true, definer: false })),
       ])
@@ -218,6 +220,31 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect((await db.query(`SELECT user_id FROM public.crm_sync_deals WHERE connection_id = $1`, [conn])).rows).toEqual([{ user_id: victim }])
     }))
 
+  it('L6 (wave 3): a new key or address fences a running sync\'s lease (same expiry) and clears the cursor; the same key changes nothing', () =>
+    inRollback(async (db) => {
+      await db.query(UP)
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await connection(db, owner)
+      const token = (await asUser(db, owner, () => db.query(`SELECT public.crm_sync_acquire_lease($1, 60) AS t`, [conn]))).rows[0].t as string
+      await db.query(`UPDATE public.crm_provider_connections SET sync_cursor = '{"v":1}' WHERE id = $1`, [conn])
+      const row = async () => (await db.query(`SELECT sync_lease_token AS t, sync_lease_until AS u, sync_cursor AS c FROM public.crm_provider_connections WHERE id = $1`, [conn])).rows[0]
+      const before = await row()
+
+      // The same values (a re-entry of an unencrypted key) or another column: nothing changes.
+      await asUser(db, owner, () => db.query(`UPDATE public.crm_provider_connections SET access_token = 't', base_url = 'a.bitrix24.kz', last_sync_status = NULL WHERE id = $1`, [conn]))
+      expect(await row()).toEqual(before)
+
+      await asUser(db, owner, () => db.query(`UPDATE public.crm_provider_connections SET access_token = 'new' WHERE id = $1`, [conn]))
+      const after = await row()
+      expect(after).toEqual({ t: fencedLeaseToken(token), u: before.u, c: null })
+      // Still held: no second sync until the old run releases it (or it expires).
+      expect((await asUser(db, owner, () => db.query(`SELECT public.crm_sync_acquire_lease($1, 60) AS t`, [conn]))).rows[0].t).toBeNull()
+      // A connection without a lease: only the cursor goes.
+      await db.query(`UPDATE public.crm_provider_connections SET sync_lease_token = NULL, sync_lease_until = NULL, sync_cursor = '{"v":1}' WHERE id = $1`, [conn])
+      await db.query(`UPDATE public.crm_provider_connections SET base_url = 'b.bitrix24.kz' WHERE id = $1`, [conn])
+      expect(await row()).toEqual({ t: null, u: null, c: null })
+    }))
+
   it('M3 (wave 3): the rollback moves amoCRM clients back from the account id to the host key 155 looks up', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })
@@ -267,13 +294,13 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
         functions: (await db.query(`SELECT p.proname, md5(p.prosrc) AS src, p.proconfig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                                      WHERE n.nspname = 'public' AND p.proname LIKE 'crm\\_%' ESCAPE '\\' ORDER BY 1`)).rows,
         policies: (await db.query(`SELECT policyname, cmd, qual, with_check FROM pg_policies WHERE tablename = 'crm_sync_deals' ORDER BY 1`)).rows,
-        triggers: (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.crm_clients'::regclass AND NOT tgisinternal ORDER BY 1`)).rows,
+        triggers: (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid IN ('public.crm_clients'::regclass, 'public.crm_provider_connections'::regclass) AND NOT tgisinternal ORDER BY 1`)).rows,
         checks: (await db.query(`SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.crm_clients'::regclass AND conname LIKE 'crm_clients_avg%' ORDER BY 1`)).rows,
         table: (await db.query(`SELECT to_regclass('public.crm_sync_deals') IS NOT NULL AS exists`)).rows[0].exists,
       })
       const before = await snapshot()
       expect(before.columns).toHaveLength(5)
-      expect(before.functions).toHaveLength(6)
+      expect(before.functions).toHaveLength(7)
       expect(before.table).toBe(true)
 
       await db.query(DOWN)

@@ -1,7 +1,7 @@
 -- 157_crm_sync_catchup_lease_provenance.down.sql — ROLLBACK of migration 157 (CRM revival, wave 2).
 --
 -- NOT part of the migration sequence (appliers read only supabase/migrations/*.sql).
--- Drops the sync functions, the provenance trigger, crm_sync_deals (the qualifying deals of a running
+-- Drops the sync functions, the provenance and re-key triggers, crm_sync_deals (the qualifying deals of a running
 -- sync pass — operational, no client data), the two CHECKs and the columns 157 added:
 --   crm_clients.avg_check_source, external_seen_at; crm_provider_connections.sync_cursor,
 --   sync_lease_until, sync_lease_token.
@@ -75,6 +75,8 @@ DROP TABLE IF EXISTS public.crm_sync_deals;
 
 DROP TRIGGER IF EXISTS crm_clients_avg_check_provenance ON public.crm_clients;
 DROP FUNCTION IF EXISTS public.crm_clients_avg_check_provenance();
+DROP TRIGGER IF EXISTS crm_provider_connections_rekey ON public.crm_provider_connections;
+DROP FUNCTION IF EXISTS public.crm_provider_connections_rekey();
 
 ALTER TABLE public.crm_clients DROP CONSTRAINT IF EXISTS crm_clients_avg_check_has_source;
 ALTER TABLE public.crm_clients DROP CONSTRAINT IF EXISTS crm_clients_avg_check_source_valid;

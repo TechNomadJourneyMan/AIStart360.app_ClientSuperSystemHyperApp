@@ -41,6 +41,7 @@ vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: (e: Record<st
 
 const { syncCrmConnection } = await import('@/lib/crm/sync')
 const { POST: syncRoute } = await import('@/app/api/v1/crm/connections/[id]/sync/route')
+const { POST: connectRoute } = await import('@/app/api/v1/crm/connections/route')
 const { PATCH: patchClient } = await import('@/app/api/v1/crm/clients/[id]/route')
 const { GET: cronRoute } = await import('@/app/api/cron/crm-sync/route')
 const { startCronRunner } = await import('@/lib/cron/runner')
@@ -538,6 +539,48 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
 
       await db.query(`UPDATE public.crm_provider_connections SET sync_lease_until = now() - interval '1 second', sync_lease_token = gen_random_uuid() WHERE id = $1`, [conn.id])
       expect((await run(sb, conn)).status).toBe('success')
+    }))
+
+  it('L6 (wave 3): a reconnect during a running sync — the old run records nothing for the new key and frees the lease at its end; the new key starts fresh; never two runs at once', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'bitrix24', { lastSyncAt: new Date(Date.now() - 7 * 3_600_000).toISOString(), status: 'success' })
+      const NEW_KEY = 'https://acme.bitrix24.kz/rest/1/newkey9/'
+      const sb = ownerClient(db, owner)
+      s.user = sb
+      let reconnected = false
+      let during: string | null = null
+      const crm = fakeBitrix({
+        contacts: range(3).map((i) => bxContact(i)),
+        deals: [],
+        hook: async (url) => {
+          if (reconnected || !url.endsWith('crm.contact.list.json')) return
+          reconnected = true
+          // While this sync reads the CRM, the owner re-enters the key (a new webhook) …
+          const res = await connectRoute(new NextRequest('http://portal.test/api/v1/crm/connections', {
+            method: 'POST', body: JSON.stringify({ provider: 'bitrix24', base_url: 'acme.bitrix24.kz', access_token: NEW_KEY }),
+          }))
+          expect(res.status).toBe(200)
+          // … and syncing the new key now is «уже идёт»: the old run still holds the connection.
+          during = (await run(sb, { ...conn, access_token: NEW_KEY })).status
+        },
+      })
+      vi.stubGlobal('fetch', crm.fetchImpl)
+      const old = await run(sb, conn)
+      expect(reconnected).toBe(true)
+      expect(during).toBe('busy')
+      expect(old.status).toBe('success')
+      expect(old.message).toMatch(/изменились во время синхронизации — её итог не записан/)
+      // Nothing of the old run on the new key: never synced (the cron takes it first), no cursor, no lease.
+      expect(await connRow(db, conn.id)).toMatchObject({
+        access_token: NEW_KEY, last_sync_at: null, last_sync_status: null, last_sync_error: null,
+        sync_cursor: null, sync_lease_until: null, sync_lease_token: null,
+      })
+      // The new key's first sync (the button) is not refused.
+      const res = await syncRoute(new NextRequest(`http://portal.test/api/v1/crm/connections/${conn.id}/sync`, { method: 'POST' }), { params: { id: conn.id } })
+      expect(res.status).toBe(200)
+      expect(await connRow(db, conn.id)).toMatchObject({ last_sync_status: 'success', sync_lease_token: null })
+      expect(await clients(db, owner)).toHaveLength(3)
     }))
 
   it('the button: the owner syncs over RLS (200); 404 for another user; 409 while a sync runs or when inactive; 429 over the limit; a refused key is 502 + one alert', () =>

@@ -18,7 +18,9 @@
  *      contact that now has their phone (M5), count the linked clients not seen in the pass (kept,
  *      never deleted); a pass that reached the end of the deals: apply avg_check
  *      (crm_sync_apply_deal_totals: never a figure the owner typed);
- *   5. record the outcome and the new cursor, and release the lease, in one conditional write:
+ *   5. record the outcome and the new cursor, and release the lease, in one write conditional on
+ *      still holding the lease (a re-key during the run fences it: then nothing is recorded and the
+ *      fenced lease is released — wave 3, L6):
  *      last_sync_status 'success' | 'partial' | 'error' (lib/crm/sync-status.ts) and, unless it is a
  *      success, why — in last_sync_error. A run that could not read or write everything is
  *      'partial' and says where the next one continues; it never leaves the previous status behind.
@@ -30,6 +32,7 @@
  * `sb` is either the user's client (RLS scopes everything to the owner) or the service client of the
  * cron: every query and function call is scoped by conn.user_id explicitly as well.
  */
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolverWithTimeout, type Resolver } from '@/lib/crm/endpoint-guard'
 import { fetchProviderSnapshot, identifyProvider, type ProviderSnapshot } from '@/lib/crm/provider-client'
@@ -127,6 +130,18 @@ export interface SyncOptions {
 }
 
 type PgErr = { code?: string; message?: string } | null
+
+/**
+ * The token a re-key of the connection leaves in place of a running sync's lease token (migration
+ * 157, trigger crm_provider_connections_rekey: md5('crm-sync-fence:' || token)::uuid). Only the run
+ * that held `token` can compute it, so only that run releases the fenced lease.
+ */
+export function fencedLeaseToken(token: string): string {
+  const h = createHash('md5').update(`crm-sync-fence:${token.toLowerCase()}`).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+const REKEYED_NOTE = 'Ключ или адрес CRM изменились во время синхронизации — её итог не записан в подключение; следующая синхронизация начнётся с нового ключа.'
 
 class SyncDbError extends Error {
   constructor(readonly step: string, readonly pg: PgErr) {
@@ -279,11 +294,25 @@ export async function syncCrmConnection(sb: SupabaseClient, conn: SyncConnection
   // The counts say what the running (or last) pass has read; an error keeps the previous ones.
   if (report.status !== 'error' && report.contacts) patch.synced_contacts = report.contacts.passRead
   if (report.status !== 'error' && report.deals) patch.synced_deals = report.deals.passRead
-  const { error } = await bounded(
-    sb.from('crm_provider_connections').update(patch).eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', leaseToken),
-    untilDeadline(),
+  // Recorded only while this run still holds its lease (L6, wave 3).
+  const finalSignal = untilDeadline()
+  const { data: recorded, error } = await bounded(
+    sb.from('crm_provider_connections').update(patch).eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', leaseToken).select('id'),
+    finalSignal,
   )
-  if (error) console.error(`[crm/sync] status of ${conn.id} not recorded: ${error.code ?? ''} ${error.message ?? ''}`)
+  if (error) {
+    console.error(`[crm/sync] status of ${conn.id} not recorded: ${error.code ?? ''} ${error.message ?? ''}`)
+  } else if (Array.isArray(recorded) && recorded.length === 0) {
+    // The connection was re-keyed (or deleted) during the run: its outcome belongs to the old key
+    // and is not recorded. The fenced lease is released, so the new key's first sync is not refused.
+    const { error: relErr } = await bounded(
+      sb.from('crm_provider_connections').update({ sync_lease_until: null, sync_lease_token: null })
+        .eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', fencedLeaseToken(leaseToken)),
+      finalSignal,
+    )
+    if (relErr) console.error(`[crm/sync] fenced lease of ${conn.id} not released: ${relErr.code ?? ''}`)
+    report = { ...report, message: `${report.message} ${REKEYED_NOTE}`.trim() }
+  }
   return report
 }
 

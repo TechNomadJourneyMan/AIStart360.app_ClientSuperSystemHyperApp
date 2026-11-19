@@ -14,7 +14,15 @@
 --
 -- 2. One sync per connection at a time (M3): sync_lease_until / sync_lease_token, taken by
 --    crm_sync_acquire_lease (a conditional UPDATE with an expiry, the database clock) and released
---    by the sync's final status write.
+--    by the sync's final status write, which records the outcome only while the run still holds
+--    its token.
+--    Re-keying (wave 3, L6): a change of the stored key or address (the connect route's upsert on
+--    re-entry, also a re-encryption of the token) is new credentials — the trigger
+--    crm_provider_connections_rekey clears the cursor (the next sync starts new passes) and FENCES
+--    a running sync's lease: the token becomes md5('crm-sync-fence:' || token)::uuid while the
+--    expiry stays. No second sync can start until the old run ends, the old run's final write no
+--    longer matches (nothing of it is recorded on the new key), and the old run then releases the
+--    fenced lease — it alone can compute that token (lib/crm/sync.ts fencedLeaseToken).
 --
 -- 3. avg_check provenance (M4): crm_clients.avg_check_source 'manual' | 'crm'. A figure the owner
 --    sets is 'manual' and the sync never changes it; the sync owns only 'crm' (or an empty value).
@@ -94,6 +102,26 @@ DROP TRIGGER IF EXISTS crm_clients_avg_check_provenance ON public.crm_clients;
 CREATE TRIGGER crm_clients_avg_check_provenance
   BEFORE INSERT OR UPDATE OF avg_check, avg_check_source ON public.crm_clients
   FOR EACH ROW EXECUTE FUNCTION public.crm_clients_avg_check_provenance();
+
+-- ── 2b. re-keying a connection (wave 3, L6) ─────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.crm_provider_connections_rekey()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  IF NEW.access_token IS DISTINCT FROM OLD.access_token
+     OR NEW.base_url IS DISTINCT FROM OLD.base_url
+     OR NEW.provider IS DISTINCT FROM OLD.provider THEN
+    NEW.sync_cursor := NULL;
+    IF OLD.sync_lease_token IS NOT NULL AND NEW.sync_lease_token IS NOT DISTINCT FROM OLD.sync_lease_token THEN
+      NEW.sync_lease_token := md5('crm-sync-fence:' || OLD.sync_lease_token::text)::uuid;
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS crm_provider_connections_rekey ON public.crm_provider_connections;
+CREATE TRIGGER crm_provider_connections_rekey
+  BEFORE UPDATE OF access_token, base_url, provider ON public.crm_provider_connections
+  FOR EACH ROW EXECUTE FUNCTION public.crm_provider_connections_rekey();
 
 -- ── 3. qualifying deals of the current pass ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.crm_sync_deals (
@@ -299,6 +327,8 @@ BEGIN
   END LOOP;
   REVOKE ALL ON FUNCTION public.crm_clients_avg_check_provenance() FROM PUBLIC;
   REVOKE ALL ON FUNCTION public.crm_clients_avg_check_provenance() FROM anon, authenticated;
+  REVOKE ALL ON FUNCTION public.crm_provider_connections_rekey() FROM PUBLIC;
+  REVOKE ALL ON FUNCTION public.crm_provider_connections_rekey() FROM anon, authenticated;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
