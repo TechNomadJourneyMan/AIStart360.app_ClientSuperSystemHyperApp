@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { BillingError, expireDuePlans } from '@/lib/payments/billing'
 import { sendExpiryWarnings, type ExpiryWarningsReport } from '@/lib/payments/expiry-notices'
+import { maintenanceSkipReason } from '@/lib/automation/maintenance-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,6 +32,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: auth.status === 503 ? 'cron_not_configured' : 'unauthorized' }, { status: auth.status })
   }
   try {
+    // N5-3 (the class of R-026): while the cabinet is closed for maintenance nothing is downgraded and
+    // no «доступ закончился / заканчивается» goes out — the «ended» notice is sent right after the
+    // downgrade, so both wait for the next run (00:15 UTC); the d7 / d1 windows are days long.
+    const skip = await maintenanceSkipReason('billing-expiry')
+    if (skip) return NextResponse.json({ ok: true, skippedReason: skip })
     const report = await expireDuePlans()
     let warnings: ExpiryWarningsReport | null = null
     try {

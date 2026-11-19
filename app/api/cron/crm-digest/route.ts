@@ -19,6 +19,7 @@ import { beforeDeadline, dayRotation, runBounded } from '@/lib/crm/bounded-run'
 import { DIGEST_CONCURRENCY, DIGEST_MIN_START_MS, DIGEST_RUN_MS } from '@/lib/crm/digest'
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { cloudApiConfigured } from '@/lib/whatsapp/config'
+import { maintenanceSkipReason } from '@/lib/automation/maintenance-gate'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -135,6 +136,16 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // N5-3 (the class of R-026): no digest into a cabinet that is closed for maintenance — nothing is
+    // read or sent; the next morning's run sends what is still due (the GRI re-scan has a week-long window).
+    const skip = await maintenanceSkipReason('crm-digest')
+    if (skip) {
+      return NextResponse.json({
+        ok: true,
+        data: { skippedReason: skip, usersNotified: 0, emailsSent: 0, telegramSent: 0, whatsappSent: 0, deferred: 0, rescanReminders: 0 },
+      })
+    }
+
     const supabase = createServiceClient()
     const base = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
