@@ -23,7 +23,8 @@ import type { CrmSyncReport, SyncConnection, SyncOptions } from '@/lib/crm/sync'
 
 type Filter = [string, string, unknown]
 
-function fakeSb(never: SyncConnection[], stale: SyncConnection[], catching: SyncConnection[] = []) {
+/** `idle`: the ordinary connections (no pass in progress) the reservation queries answer, oldest first. */
+function fakeSb(never: SyncConnection[], stale: SyncConnection[], catching: SyncConnection[] = [], idle: { noCursor?: SyncConnection[]; done?: SyncConnection[] } = {}) {
   const queries: Filter[][] = []
   const updates: Array<{ patch: Record<string, unknown>; filters: Filter[] }> = []
   const from = (table: string) => {
@@ -41,9 +42,12 @@ function fakeSb(never: SyncConnection[], stale: SyncConnection[], catching: Sync
       then: (ok: (r: unknown) => unknown) => {
         if (patch) { updates.push({ patch, filters }); return Promise.resolve({ data: null, error: null }).then(ok) }
         queries.push(filters)
-        const data = filters.some((f) => f[0] === 'is')
-          ? never
-          : filters.some((f) => f[1] === 'sync_cursor->>catching_up') ? catching : stale
+        const has = (op: string, col: string, v: unknown) => filters.some((f) => f[0] === op && f[1] === col && f[2] === v)
+        const data = has('is', 'last_sync_at', null) ? never
+          : has('eq', 'sync_cursor->>catching_up', 'true') ? catching
+          : has('is', 'sync_cursor', null) ? idle.noCursor ?? []
+          : has('eq', 'sync_cursor->>catching_up', 'false') ? idle.done ?? []
+          : stale
         return Promise.resolve({ data, error: null }).then(ok)
       },
     }
@@ -81,6 +85,46 @@ describe('runCrmAutoSync', () => {
       ['lt', 'last_sync_at', new Date(c.t0 - CRM_AUTO_SYNC_INTERVAL_MS).toISOString()],
       ['order', 'last_sync_at', { ascending: true }],
     ]))
+  })
+
+  it('L2 (wave 3): the most overdue ordinary connection gets a slot even when never-synced / catching-up ones fill the run', async () => {
+    const c = clock()
+    const H = 3_600_000
+    const old = { ...conn(90), last_sync_at: new Date(c.t0 - 30 * H).toISOString() } as SyncConnection
+    const older = { ...conn(91), last_sync_at: new Date(c.t0 - 40 * H).toISOString() } as SyncConnection
+    const f = fakeSb(Array.from({ length: 6 }, (_, i) => conn(i)), [older, old], [conn(7), conn(8)], { noCursor: [old], done: [older] })
+    const synced: string[] = []
+    const res = await runCrmAutoSync({
+      sb: f.sb,
+      now: c.now,
+      sync: async (_sb, x, opts: SyncOptions) => {
+        synced.push(x.id)
+        await new Promise((r) => setTimeout(r, 1))
+        c.advance(opts.deadlineAt - c.now()) // every sync uses its whole deadline: 4 start in this run
+        return report('partial')
+      },
+    })
+    expect(res.started).toBe(4)
+    expect(synced[0]).toBe('c91') // the older of the two ordinary candidates, first
+    expect(synced.slice(1)).toEqual(['c0', 'c1', 'c2'])
+    const idleQueries = f.queries.filter((q) => q.some((x) => (x[1] === 'sync_cursor' && x[0] === 'is') || (x[1] === 'sync_cursor->>catching_up' && x[2] === 'false')))
+    expect(idleQueries).toHaveLength(2)
+    for (const q of idleQueries) {
+      expect(q).toEqual(expect.arrayContaining([
+        ['eq', 'is_active', true],
+        ['lt', 'last_sync_at', new Date(c.t0 - CRM_AUTO_SYNC_INTERVAL_MS).toISOString()],
+        ['order', 'last_sync_at', { ascending: true }],
+        ['limit', '', 1],
+      ]))
+    }
+  })
+
+  it('L2: no ordinary connection due → the order stays never, catching up, stale', async () => {
+    const c = clock()
+    const f = fakeSb([conn(1)], [conn(2)], [conn(3)])
+    const synced: string[] = []
+    await runCrmAutoSync({ sb: f.sb, now: c.now, sync: async (_sb, x) => { synced.push(x.id); return report('success') } })
+    expect(synced).toEqual(['c1', 'c3', 'c2'])
   })
 
   it('never runs more than two syncs at once', async () => {

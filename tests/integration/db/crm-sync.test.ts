@@ -41,6 +41,7 @@ vi.mock('@/lib/events/platform', () => ({ emitPlatformEventSafely: (e: Record<st
 
 const { syncCrmConnection } = await import('@/lib/crm/sync')
 const { POST: syncRoute } = await import('@/app/api/v1/crm/connections/[id]/sync/route')
+const { POST: connectRoute } = await import('@/app/api/v1/crm/connections/route')
 const { PATCH: patchClient } = await import('@/app/api/v1/crm/clients/[id]/route')
 const { GET: cronRoute } = await import('@/app/api/cron/crm-sync/route')
 const { startCronRunner } = await import('@/lib/cron/runner')
@@ -266,7 +267,7 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       const r1 = await run(sb, conn, { maxRecords: 250 })
       expect(r1.status).toBe('partial')
       expect(r1.problems[0]).toBe('Контакты: прочитано 250, есть ещё (за один раз читается до 250) — следующая синхронизация продолжит с этого места.')
-      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ source: 'amocrm:28805383', contacts: { position: '2' } })
+      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ source: 'amocrm:28805383', contacts: { position: '2:250' } })
       await run(sb, conn, { maxRecords: 250 })
       const r3 = await run(sb, conn, { maxRecords: 250 })
       expect(r3).toMatchObject({ status: 'success', dealsOtherCurrency: 5, missingInCrm: 0 })
@@ -276,6 +277,55 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(rows).toHaveLength(600)
       expect(new Set(rows.map((r) => r.external_source))).toEqual(new Set(['amocrm:28805383']))
       expect(byExt(rows, '1')).toMatchObject({ id: legacy.id, name: 'Старый ключ', avg_check: null })
+    }))
+
+  it('L1 (wave 3): a failed move of the host-keyed amoCRM clients fails the run, the cursor stays, the next run moves them', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'amocrm')
+      // Contact 1 has a host-keyed client AND an account-keyed one: the move meets the unique key.
+      const { rows: [legacy] } = await db.query(
+        `INSERT INTO public.crm_clients (user_id, name, source, external_source, external_id) VALUES ($1, 'Старый ключ', 'amocrm', 'amocrm:acme.amocrm.ru', '1') RETURNING id`,
+        [owner],
+      )
+      const { rows: [dup] } = await db.query(
+        `INSERT INTO public.crm_clients (user_id, name, source, external_source, external_id) VALUES ($1, 'Дубль', 'amocrm', 'amocrm:28805383', '1') RETURNING id`,
+        [owner],
+      )
+      vi.stubGlobal('fetch', fakeAmo({ contacts: range(3).map((i) => amoContact(i, { custom_fields_values: null })), leads: [] }).fetchImpl)
+      const sb = ownerClient(db, owner)
+      const failed = await run(sb, conn)
+      expect(failed.status).toBe('error')
+      expect(failed.message).toMatch(/старым ключом/)
+      expect(await connRow(db, conn.id)).toMatchObject({ last_sync_status: 'error', sync_cursor: null, sync_lease_token: null })
+      expect(await clients(db, owner)).toHaveLength(2) // nothing written under the new key meanwhile
+
+      // Once the duplicate is gone, the next run moves the host-keyed client over and goes on.
+      await db.query(`DELETE FROM public.crm_clients WHERE id = $1`, [dup.id])
+      expect(await run(sb, conn)).toMatchObject({ status: 'success', inserted: 2 })
+      const rows = await clients(db, owner)
+      expect(rows).toHaveLength(3)
+      expect(byExt(rows, '1')).toMatchObject({ id: legacy.id, external_source: 'amocrm:28805383' })
+    }))
+
+  it('M2 (wave 3): amoCRM records deleted below the place between runs — none skipped: every contact becomes a client, every deal counts once', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'amocrm')
+      const state = { contacts: range(600).map((i) => amoContact(i)), leads: range(600).map((i) => amoLead(i, [1], 1000 + i)), currency: 'KZT' }
+      vi.stubGlobal('fetch', fakeAmo(state).fetchImpl)
+      const sb = ownerClient(db, owner)
+      expect((await run(sb, conn, { maxRecords: 250 })).status).toBe('partial')
+      // In amoCRM between the runs: 20 contacts and 20 deals below the place are deleted (amoCRM pages
+      // by offset, so every later record moves back by 20).
+      state.contacts = state.contacts.filter((c) => Number(c.id) < 2 || Number(c.id) > 21)
+      state.leads = state.leads.filter((l) => Number(l.id) > 20)
+      await run(sb, conn, { maxRecords: 250 })
+      expect(await run(sb, conn, { maxRecords: 250 })).toMatchObject({ status: 'success', avgUpdated: 1 })
+      expect(await clients(db, owner)).toHaveLength(600) // 251…270 were not skipped (the 20 deleted ones are kept)
+      // Every deal read in the pass once: 1…250 (read before 1…20 were deleted), 251…600 — mean of 1001…1600.
+      expect((await db.query(`SELECT count(*)::int AS n FROM public.crm_sync_deals WHERE connection_id = $1`, [conn.id])).rows[0].n).toBe(600)
+      expect(byExt(await clients(db, owner), '1')).toMatchObject({ avg_check: 1301, avg_check_source: 'crm' })
     }))
 
   it('amoCRM: amounts in another currency never become avg_check and are counted', () =>
@@ -314,6 +364,40 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(await run(sb, conn)).toMatchObject({ status: 'success', relinked: 0, phoneConflicts: 0, missingInCrm: 1, inserted: 0 })
     }))
 
+  it('L5 (wave 3): a failed relink makes the run partial and keeps its conflicts; the next run re-links', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'bitrix24')
+      const sb = ownerClient(db, owner)
+      vi.stubGlobal('fetch', fakeBitrix({ contacts: range(5).map((i) => bxContact(i)), deals: [] }).fetchImpl)
+      await run(sb, conn)
+      const four = byExt(await clients(db, owner), '4').id
+
+      // In the CRM: contact 4 merged into a new contact 9 (with 4's phone); the relink call fails once.
+      const survivor = bxContact(9, { PHONE: [{ ID: '1', VALUE_TYPE: 'WORK', VALUE: '+7 701 000 0004', TYPE_ID: 'PHONE' }] })
+      vi.stubGlobal('fetch', fakeBitrix({ contacts: [...range(3).map((i) => bxContact(i)), survivor], deals: [] }).fetchImpl)
+      let failRelink = true
+      const rpc = sb.rpc.bind(sb)
+      Object.assign(sb, {
+        rpc: (fn: string, args: Record<string, unknown>) => (fn === 'crm_sync_relink' && failRelink
+          ? Promise.resolve({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' }, status: 500 })
+          : rpc(fn, args)),
+      })
+      const failed = await run(sb, conn)
+      expect(failed.status).toBe('partial')
+      expect(failed.problems.join(' ')).toMatch(/Перепривязка клиентов .* не удалась .* следующая синхронизация повторит/)
+      expect(failed.relinked).toBeNull()
+      const c = await connRow(db, conn.id)
+      expect(c.last_sync_status).toBe('partial')
+      expect(c.sync_cursor).toMatchObject({ catching_up: true, relink_pending: { conflicts: [{ phone: '+77010000004', contact: '9' }] } })
+      expect((await clients(db, owner)).find((r) => r.id === four)).toMatchObject({ external_id: '4' })
+
+      failRelink = false
+      expect(await run(sb, conn)).toMatchObject({ status: 'success', relinked: 1, phoneConflicts: 0, inserted: 0 })
+      expect((await clients(db, owner)).find((r) => r.id === four)).toMatchObject({ external_id: '9' })
+      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ catching_up: false, relink_pending: null })
+    }))
+
   it('M9: out of time — nothing is half done, the cursor does not move, the status says partial and why, the next run writes it', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })
@@ -331,6 +415,88 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(full).toMatchObject({ status: 'success', inserted: 60 })
       expect((await connRow(db, conn.id)).last_sync_status).toBe('success')
     }))
+
+  describe('L3 (wave 3): writes that stop part-way keep what went through', () => {
+    /** A clock the test moves: after `calls` writes of `kind`, it jumps to 1 s before the last chunk may start. */
+    function clockJump(sb: PgPostgrest, kind: 'crm_sync_insert_clients' | 'crm_sync_deals', calls = 1) {
+      let t = Date.now()
+      const deadlineAt = t + 45_000
+      let seen = 0
+      const after = <R>(r: R): R => {
+        if (++seen === calls) t = deadlineAt - 2_000 - 1_000 // < MIN_CHUNK_MS (1.5 s) left before the final reserve
+        return r
+      }
+      if (kind === 'crm_sync_insert_clients') {
+        const rpc = sb.rpc.bind(sb)
+        Object.assign(sb, { rpc: async (fn: string, args: Record<string, unknown>) => (fn === kind ? after(await rpc(fn, args)) : rpc(fn, args)) })
+      } else {
+        const from = sb.from.bind(sb)
+        Object.assign(sb, {
+          from: (table: string) => {
+            const q = from(table) as unknown as { upsert: (...a: unknown[]) => PromiseLike<unknown> }
+            if (table !== kind) return q
+            const upsert = q.upsert.bind(q)
+            q.upsert = (...a: unknown[]) => {
+              const r = upsert(...a) as { then: PromiseLike<unknown>['then'] }
+              const then = r.then.bind(r)
+              r.then = ((ok?: (v: unknown) => unknown, err?: (e: unknown) => unknown) => then((v) => (ok ? ok(after(v)) : after(v)), err)) as PromiseLike<unknown>['then']
+              return r
+            }
+            return q
+          },
+        })
+      }
+      return { deadlineAt, now: () => t }
+    }
+
+    it('contacts: one chunk of 200 written, then out of time — the cursor moves past those 200, the next run writes the rest', () =>
+      inRollback(async (db) => {
+        const owner = await seedUser(db, { status: 'approved' })
+        const conn = await seedConnection(db, owner, 'bitrix24')
+        vi.stubGlobal('fetch', fakeBitrix({ contacts: range(450).map((i) => bxContact(i)), deals: [] }).fetchImpl)
+        const sb = ownerClient(db, owner)
+        const clock = clockJump(sb, 'crm_sync_insert_clients')
+        const first = await syncCrmConnection(sb, conn, { deadlineAt: clock.deadlineAt, now: clock.now, resolve: publicDns })
+        expect(first).toMatchObject({ status: 'partial', inserted: 200, notWritten: 250 })
+        expect(first.contacts).toEqual({ read: 450, passRead: 200, passTotal: 450, passComplete: false })
+        expect(first.problems[0]).toBe('Не успели записать клиентов: 250 — записаны первые 200 из 450 прочитанных контактов, следующая синхронизация продолжит после них.')
+        const c = await connRow(db, conn.id)
+        expect(c).toMatchObject({ last_sync_status: 'partial', synced_contacts: 200 })
+        expect(c.sync_cursor).toMatchObject({ catching_up: true, contacts: { position: '200', read: 200, started_at: expect.any(String) } })
+
+        const second = await run(sb, conn)
+        expect(second).toMatchObject({ status: 'success', inserted: 250, unchanged: 0 })
+        expect(second.contacts).toEqual({ read: 250, passRead: 450, passTotal: 450, passComplete: true })
+        const rows = await clients(db, owner)
+        expect(rows.map((r) => Number(r.external_id))).toEqual(range(450))
+      }))
+
+    it('deals: one chunk of 200 written, then out of time — the deals cursor moves past them; avg_check once all are in', () =>
+      inRollback(async (db) => {
+        const owner = await seedUser(db, { status: 'approved' })
+        const conn = await seedConnection(db, owner, 'bitrix24')
+        // Deal i belongs to contact 1 + (i mod 3) and is worth i ₸; every 7th has no contact (counted, not written).
+        const deals = range(450).map((i) => bxDeal(i, i % 7 === 0 ? null : 1 + (i % 3), String(i)))
+        vi.stubGlobal('fetch', fakeBitrix({ contacts: range(3).map((i) => bxContact(i)), deals }).fetchImpl)
+        const sb = ownerClient(db, owner)
+        const clock = clockJump(sb, 'crm_sync_deals')
+        const first = await syncCrmConnection(sb, conn, { deadlineAt: clock.deadlineAt, now: clock.now, resolve: publicDns })
+        expect(first).toMatchObject({ status: 'partial', inserted: 3 })
+        // The first 200 qualifying deals are deals 1…233 (33 of those have no contact).
+        expect(first.deals).toEqual({ read: 450, passRead: 233, passTotal: 450, passComplete: false })
+        expect(first.problems.join(' ')).toMatch(/Не успели записать сделки: записаны первые 233 из 450 прочитанных/)
+        expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ deals: { position: '233', read: 233, without_contact: 33 } })
+
+        const second = await run(sb, conn)
+        expect(second).toMatchObject({ status: 'success', dealsWithoutContact: 64, avgUpdated: 3 })
+        const mean = (c: number) => {
+          const xs = range(450).filter((i) => i % 7 !== 0 && 1 + (i % 3) === c)
+          return Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)
+        }
+        const rows = await clients(db, owner)
+        expect(rows.map((r) => r.avg_check)).toEqual([mean(1), mean(2), mean(3)])
+      }))
+  })
 
   it('race: the update fills only fields empty at write time and never re-inserts a client deleted meanwhile', () =>
     inRollback(async (db) => {
@@ -373,6 +539,48 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
 
       await db.query(`UPDATE public.crm_provider_connections SET sync_lease_until = now() - interval '1 second', sync_lease_token = gen_random_uuid() WHERE id = $1`, [conn.id])
       expect((await run(sb, conn)).status).toBe('success')
+    }))
+
+  it('L6 (wave 3): a reconnect during a running sync — the old run records nothing for the new key and frees the lease at its end; the new key starts fresh; never two runs at once', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'bitrix24', { lastSyncAt: new Date(Date.now() - 7 * 3_600_000).toISOString(), status: 'success' })
+      const NEW_KEY = 'https://acme.bitrix24.kz/rest/1/newkey9/'
+      const sb = ownerClient(db, owner)
+      s.user = sb
+      let reconnected = false
+      let during: string | null = null
+      const crm = fakeBitrix({
+        contacts: range(3).map((i) => bxContact(i)),
+        deals: [],
+        hook: async (url) => {
+          if (reconnected || !url.endsWith('crm.contact.list.json')) return
+          reconnected = true
+          // While this sync reads the CRM, the owner re-enters the key (a new webhook) …
+          const res = await connectRoute(new NextRequest('http://portal.test/api/v1/crm/connections', {
+            method: 'POST', body: JSON.stringify({ provider: 'bitrix24', base_url: 'acme.bitrix24.kz', access_token: NEW_KEY }),
+          }))
+          expect(res.status).toBe(200)
+          // … and syncing the new key now is «уже идёт»: the old run still holds the connection.
+          during = (await run(sb, { ...conn, access_token: NEW_KEY })).status
+        },
+      })
+      vi.stubGlobal('fetch', crm.fetchImpl)
+      const old = await run(sb, conn)
+      expect(reconnected).toBe(true)
+      expect(during).toBe('busy')
+      expect(old.status).toBe('success')
+      expect(old.message).toMatch(/изменились во время синхронизации — её итог не записан/)
+      // Nothing of the old run on the new key: never synced (the cron takes it first), no cursor, no lease.
+      expect(await connRow(db, conn.id)).toMatchObject({
+        access_token: NEW_KEY, last_sync_at: null, last_sync_status: null, last_sync_error: null,
+        sync_cursor: null, sync_lease_until: null, sync_lease_token: null,
+      })
+      // The new key's first sync (the button) is not refused.
+      const res = await syncRoute(new NextRequest(`http://portal.test/api/v1/crm/connections/${conn.id}/sync`, { method: 'POST' }), { params: { id: conn.id } })
+      expect(res.status).toBe(200)
+      expect(await connRow(db, conn.id)).toMatchObject({ last_sync_status: 'success', sync_lease_token: null })
+      expect(await clients(db, owner)).toHaveLength(3)
     }))
 
   it('the button: the owner syncs over RLS (200); 404 for another user; 409 while a sync runs or when inactive; 429 over the limit; a refused key is 502 + one alert', () =>

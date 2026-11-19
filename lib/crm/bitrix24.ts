@@ -135,11 +135,12 @@ async function listAfter<T extends { id: string }>(
   const now = opts.now ?? Date.now
   const max = Math.max(1, Math.floor(opts.maxRecords))
   const items: T[] = []
+  const positions: string[] = []
   const seen = new Set<string>()
   let total: number | null = null
   let after: string | null = opts.from ?? null
   const stop = (stoppedBy: ProviderList<T>['stoppedBy'], error?: string): ProviderList<T> => ({
-    items, total, complete: false, stoppedBy, position: after, ...(error ? { error } : {}),
+    items, positions, total, complete: false, stoppedBy, position: after, ...(error ? { error } : {}),
   })
   for (let page = 0; ; page++) {
     if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) return stop('time')
@@ -172,11 +173,12 @@ async function listAfter<T extends { id: string }>(
       if (item && !seen.has(item.id)) {
         seen.add(item.id)
         items.push(item)
+        positions.push(id)
       }
     }
     // `next` is present while more records follow this page.
     const more = typeof data.next === 'number' && rows.length > 0 && lastId !== null
-    if (!more) return { items, total, complete: true, stoppedBy: null, position: null }
+    if (!more) return { items, positions, total, complete: true, stoppedBy: null, position: null }
     if (items.length >= max) return stop('cap')
   }
 }

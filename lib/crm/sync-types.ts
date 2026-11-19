@@ -46,10 +46,15 @@ export interface ProviderList<T> {
   /** The error of the page that failed (stoppedBy = 'error'). */
   error?: string
   /**
-   * Where the next run continues (Bitrix24: the last id read; amoCRM: the next page number);
-   * null when the end was reached.
+   * Where the next run continues (Bitrix24: the last id read; amoCRM: `<next page>:<last id read>`,
+   * lib/crm/amocrm.ts); null when the end was reached.
    */
   position: string | null
+  /**
+   * `positions[i]` continues right after `items[i]` (wave 3, L3: a run whose writes stopped part-way
+   * keeps the records it did write and the next run continues after the last of them).
+   */
+  positions: string[]
 }
 
 export interface ListOptions {

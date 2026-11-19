@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs'
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedUser, type Db } from '../../helpers/pg-rls'
+import { fencedLeaseToken } from '@/lib/crm/sync'
 
 const UP = readFileSync('supabase/migrations/157_crm_sync_catchup_lease_provenance.sql', 'utf8')
 const DOWN = readFileSync('supabase/migrations/rollback/157_crm_sync_catchup_lease_provenance.down.sql', 'utf8')
@@ -166,6 +167,7 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
          WHERE n.nspname = 'public' AND p.proname LIKE 'crm\\_%' ESCAPE '\\' ORDER BY 1`)
       expect(rows).toEqual([
         { proname: 'crm_clients_avg_check_provenance', anon: false, auth: false, service: true, definer: false },
+        { proname: 'crm_provider_connections_rekey', anon: false, auth: false, service: true, definer: false },
         ...['crm_sync_acquire_lease', 'crm_sync_apply_deal_totals', 'crm_sync_insert_clients', 'crm_sync_relink', 'crm_sync_update_clients']
           .map((proname) => ({ proname, anon: false, auth: true, service: true, definer: false })),
       ])
@@ -182,6 +184,107 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(await pgErrorCode(asUser(db, null, () => db.query(`SELECT * FROM public.crm_sync_deals`)))).toBe('42501')
     }))
 
+  it('M1 (wave 3): another user can neither plant crm_sync_deals rows on a connection nor sway its totals; rows planted before are removed', () =>
+    inRollback(async (db) => {
+      await db.query(UP)
+      const victim = await seedUser(db, { status: 'approved' })
+      const attacker = await seedUser(db, { status: 'approved' })
+      const conn = await connection(db, victim)
+      const pass = new Date().toISOString()
+      const deal = (as: string, userId: string, dealId: string, contact: string, amount: number) => asUser(db, as, () => db.query(
+        `INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (connection_id, deal_id) DO UPDATE SET user_id = EXCLUDED.user_id, contact_id = EXCLUDED.contact_id, amount = EXCLUDED.amount, pass_started_at = EXCLUDED.pass_started_at`,
+        [conn, userId, dealId, contact, amount, pass],
+      ))
+      // The foreign key ignores RLS: only the policy can refuse a row on someone else's connection.
+      expect(await pgErrorCode(deal(attacker, attacker, 'd1', '1', 1))).toBe('42501')
+      expect(await pgErrorCode(deal(attacker, victim, 'd1', '1', 1))).toBe('42501')
+      expect(await pgErrorCode(asUser(db, attacker, () => db.query( // a plain INSERT is checked by WITH CHECK alone
+        `INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, 'd1', '1', 1, $3)`, [conn, attacker, pass],
+      )))).toBe('42501')
+      expect(await pgErrorCode(deal(victim, victim, 'd1', '1', 500))).toBeNull()
+      expect(await pgErrorCode(deal(victim, victim, 'd1', '1', 600))).toBeNull() // the sync's upsert of a deal read again
+
+      // A row of another user on the victim's connection, as the old policy let in: the cron (service role)
+      // neither counts it nor lets it keep a figure the victim's CRM no longer backs.
+      await db.query(`INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, 'x9', '2', 9999, $3)`, [conn, attacker, pass])
+      const one = await client(db, victim, { external_source: SRC, external_id: '1' })
+      const two = await client(db, victim, { avg_check: 300, avg_check_source: 'crm', external_source: SRC, external_id: '2' })
+      const { rows } = await asService(db, () => db.query(`SELECT * FROM public.crm_sync_apply_deal_totals($1, $2, $3, $4)`, [conn, victim, SRC, pass]))
+      expect(rows[0]).toEqual({ updated: 1, cleared: 1 })
+      expect(await source(db, one)).toEqual({ avg: 600, src: 'crm' })
+      expect(await source(db, two)).toEqual({ avg: null, src: null })
+
+      // Re-applying 157 removes rows whose user is not the connection's owner.
+      await db.query(UP)
+      expect((await db.query(`SELECT user_id FROM public.crm_sync_deals WHERE connection_id = $1`, [conn])).rows).toEqual([{ user_id: victim }])
+    }))
+
+  it('L6 (wave 3): a new key or address fences a running sync\'s lease (same expiry) and clears the cursor; the same key changes nothing', () =>
+    inRollback(async (db) => {
+      await db.query(UP)
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await connection(db, owner)
+      const token = (await asUser(db, owner, () => db.query(`SELECT public.crm_sync_acquire_lease($1, 60) AS t`, [conn]))).rows[0].t as string
+      await db.query(`UPDATE public.crm_provider_connections SET sync_cursor = '{"v":1}' WHERE id = $1`, [conn])
+      const row = async () => (await db.query(`SELECT sync_lease_token AS t, sync_lease_until AS u, sync_cursor AS c FROM public.crm_provider_connections WHERE id = $1`, [conn])).rows[0]
+      const before = await row()
+
+      // The same values (a re-entry of an unencrypted key) or another column: nothing changes.
+      await asUser(db, owner, () => db.query(`UPDATE public.crm_provider_connections SET access_token = 't', base_url = 'a.bitrix24.kz', last_sync_status = NULL WHERE id = $1`, [conn]))
+      expect(await row()).toEqual(before)
+
+      await asUser(db, owner, () => db.query(`UPDATE public.crm_provider_connections SET access_token = 'new' WHERE id = $1`, [conn]))
+      const after = await row()
+      expect(after).toEqual({ t: fencedLeaseToken(token), u: before.u, c: null })
+      // Still held: no second sync until the old run releases it (or it expires).
+      expect((await asUser(db, owner, () => db.query(`SELECT public.crm_sync_acquire_lease($1, 60) AS t`, [conn]))).rows[0].t).toBeNull()
+      // A connection without a lease: only the cursor goes.
+      await db.query(`UPDATE public.crm_provider_connections SET sync_lease_token = NULL, sync_lease_until = NULL, sync_cursor = '{"v":1}' WHERE id = $1`, [conn])
+      await db.query(`UPDATE public.crm_provider_connections SET base_url = 'b.bitrix24.kz' WHERE id = $1`, [conn])
+      expect(await row()).toEqual({ t: null, u: null, c: null })
+    }))
+
+  it('M3 (wave 3): the rollback moves amoCRM clients back from the account id to the host key 155 looks up', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const other = await seedUser(db, { status: 'approved' })
+      await db.query(`INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token) VALUES ($1, 'amocrm', 'https://Acme.amocrm.ru/', 't')`, [owner])
+      await db.query(`INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token) VALUES ($1, 'bitrix24', 'acme.bitrix24.kz', 't')`, [owner])
+      // As the sync of 157 left them: keyed by the account id. '2' also has a host-keyed client (a duplicate the move cannot merge).
+      const moved = await client(db, owner, { external_source: 'amocrm:28805383', external_id: '1' })
+      const dupNew = await client(db, owner, { external_source: 'amocrm:28805383', external_id: '2' })
+      const dupOld = await client(db, owner, { external_source: 'amocrm:acme.amocrm.ru', external_id: '2' })
+      const b24 = await client(db, owner, { external_source: SRC, external_id: '1' })
+      // A user whose amoCRM connection is gone: no host to rebuild, the key stays.
+      const orphan = await client(db, other, { external_source: 'amocrm:777', external_id: '1' })
+      // A user who switched accounts: only the account the connection's cursor reads goes back to its host.
+      const switched = await seedUser(db, { status: 'approved' })
+      await db.query(
+        `INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token, sync_cursor) VALUES ($1, 'amocrm', 'shop.kommo.com', 't', $2)`,
+        [switched, JSON.stringify({ v: 1, source: 'amocrm:555' })],
+      )
+      const current = await client(db, switched, { external_source: 'amocrm:555', external_id: '1' })
+      const earlier = await client(db, switched, { external_source: 'amocrm:444', external_id: '1' })
+
+      await db.query(DOWN)
+      const key = async (id: string) => (await db.query(`SELECT external_source AS s FROM public.crm_clients WHERE id = $1`, [id])).rows[0].s as string
+      expect(await key(moved)).toBe('amocrm:acme.amocrm.ru')
+      expect(await key(dupNew)).toBe('amocrm:28805383')
+      expect(await key(dupOld)).toBe('amocrm:acme.amocrm.ru')
+      expect(await key(b24)).toBe(SRC)
+      expect(await key(orphan)).toBe('amocrm:777')
+      expect(await key(current)).toBe('amocrm:shop.kommo.com')
+      expect(await key(earlier)).toBe('amocrm:444')
+      // What the sync of 155 asks: the clients of the contacts it read, by the host key.
+      const { rows } = await db.query(
+        `SELECT id FROM public.crm_clients WHERE user_id = $1 AND external_source = 'amocrm:acme.amocrm.ru' AND external_id = ANY($2::text[]) ORDER BY external_id`,
+        [owner, ['1', '2']],
+      )
+      expect(rows.map((r) => r.id)).toEqual([moved, dupOld])
+      await db.query(UP)
+    }))
+
   it('157 → rollback → rollback → 157 → 157: all gone, then the same definitions; the backfill marks existing figures', () =>
     inRollback(async (db) => {
       const snapshot = async () => ({
@@ -191,13 +294,13 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
         functions: (await db.query(`SELECT p.proname, md5(p.prosrc) AS src, p.proconfig FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                                      WHERE n.nspname = 'public' AND p.proname LIKE 'crm\\_%' ESCAPE '\\' ORDER BY 1`)).rows,
         policies: (await db.query(`SELECT policyname, cmd, qual, with_check FROM pg_policies WHERE tablename = 'crm_sync_deals' ORDER BY 1`)).rows,
-        triggers: (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.crm_clients'::regclass AND NOT tgisinternal ORDER BY 1`)).rows,
+        triggers: (await db.query(`SELECT tgname FROM pg_trigger WHERE tgrelid IN ('public.crm_clients'::regclass, 'public.crm_provider_connections'::regclass) AND NOT tgisinternal ORDER BY 1`)).rows,
         checks: (await db.query(`SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid = 'public.crm_clients'::regclass AND conname LIKE 'crm_clients_avg%' ORDER BY 1`)).rows,
         table: (await db.query(`SELECT to_regclass('public.crm_sync_deals') IS NOT NULL AS exists`)).rows[0].exists,
       })
       const before = await snapshot()
       expect(before.columns).toHaveLength(5)
-      expect(before.functions).toHaveLength(6)
+      expect(before.functions).toHaveLength(7)
       expect(before.table).toBe(true)
 
       await db.query(DOWN)
@@ -218,6 +321,3 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(await source(db, empty)).toEqual({ avg: null, src: null })
     }))
 })
-
-// The service role reaches every function (the cron) — exercised end to end in crm-sync.test.ts.
-void asService

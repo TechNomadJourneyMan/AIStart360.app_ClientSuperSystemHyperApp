@@ -18,12 +18,21 @@ import {
  * Every call goes through guardCrmEndpoint (allowlisted <account>.amocrm.ru|.amocrm.com|.kommo.com,
  * public addresses only) and does not follow redirects (R-225, as Bitrix24).
  *
- * Reading (H3, M2 of wave 2): a list returns at most 250 records per page (`limit` above 250 is
- * refused); an empty page is HTTP 204 with no body; amoCRM reports no total. The API cannot filter
- * by «id greater than», so listContacts / listDeals read in ascending id order page by page with a
- * FIXED page size of 250 and return the next page number: the next run continues there. A record
- * deleted meanwhile shifts the later ones back by one, so one record at a page boundary can be
- * missed for that pass (it is read on the next pass). The cap is rounded up to whole pages.
+ * Reading (H3, M2 of waves 2 and 3): a list returns at most 250 records per page (`limit` above
+ * 250 is refused); an empty page is HTTP 204 with no body; amoCRM reports no total. The API cannot
+ * filter by «id greater than» (filter[id] matches exact ids only), so listContacts / listDeals read
+ * in ascending id order page by page with a FIXED page size of 250. The position is
+ * `<next page>:<last id read>`. Pages are offsets, so a record deleted below the stored place
+ * shifts every later one back (and a restored one, forward): a run that resumes therefore reads ONE
+ * PAGE EARLIER and continues with the first id after the last one read, but only once a page shows
+ * an id already read — the proof that nothing between was skipped. A page without one (more than a
+ * page was deleted meanwhile) makes it step back another page, down to page 1; the pages fetched on
+ * the way are kept, not asked twice. Records already read are never returned again, so re-reads
+ * cost requests, not records of the cap. A position in another form (the page-only form of wave 2)
+ * starts again from page 1 — the pass re-reads, it never skips.
+ * Remaining limit: a record deleted in the seconds BETWEEN two page requests of one run still
+ * shifts that one boundary (no overlap there — amoCRM has no offset parameter to make one); that
+ * record is read in the next pass. The cap is rounded up to whole pages.
  */
 
 interface AmoCrmConfig {
@@ -89,10 +98,27 @@ async function callApi(base: string, token: string, path: string, timeoutMs = 15
   }
 }
 
+const POSITION = /^(\d+):(\d+)$/
+
+/** `<next page>:<last id read>` → its parts; anything else → from the start. */
+function readPosition(from: string | null | undefined): { page: number; after: number | null } {
+  const m = POSITION.exec(from ?? '')
+  const page = m ? Number(m[1]) : NaN
+  const after = m ? Number(m[2]) : NaN
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(after)) return { page: 1, after: null }
+  return { page, after }
+}
+
+const idOf = (row: unknown): number | null => {
+  const id = row && typeof row === 'object' ? Number(text((row as { id?: unknown }).id)) : NaN
+  return Number.isSafeInteger(id) ? id : null
+}
+
 /**
- * Pages of `path` (ascending id, 250 per page) from page `opts.from` (default 1). Stops at the end,
- * at a page boundary once `maxRecords` were read, or when the time is up; the position is the next
- * page to read. A failure of the FIRST page is thrown; a later one ends the listing with what was read.
+ * Records of `path` (ascending id, 250 per page) after the position `opts.from` (see the module
+ * comment). Stops at the end, at a page boundary once `maxRecords` were read, or when the time is
+ * up (no new request then); the position says where the next run continues. A failure of the FIRST
+ * request is thrown; a later one ends the listing with what was read.
  */
 async function listPages<T extends { id: string }>(
   config: AmoCrmConfig,
@@ -105,33 +131,61 @@ async function listPages<T extends { id: string }>(
   const now = opts.now ?? Date.now
   const max = Math.max(1, Math.floor(opts.maxRecords))
   const items: T[] = []
-  const seen = new Set<string>()
-  const first = Math.max(1, Number.parseInt(opts.from ?? '1', 10) || 1)
-  for (let page = first; ; page++) {
+  const positions: string[] = []
+  const start = readPosition(opts.from)
+  /** The last id read in this pass: every record up to it was read (null: none yet). */
+  let after = start.after
+  let page = after === null ? 1 : Math.max(1, start.page - 1)
+  /** The page being read starts at or before the first record after `after` (page 1 always does). */
+  let proven = page === 1
+  /** While not proven: the lowest page seen to start after `after` — the next run steps back from it. */
+  let resumeAt = start.page
+  const fetched = new Map<number, Record<string, unknown> | null>()
+  let requests = 0
+  const position = (): string | null => (after === null ? null : `${proven ? page : resumeAt}:${after}`)
+  for (;;) {
     const stop = (stoppedBy: ProviderList<T>['stoppedBy'], error?: string): ProviderList<T> => ({
-      items, total: null, complete: false, stoppedBy, position: String(page), ...(error ? { error } : {}),
+      items, positions, total: null, complete: false, stoppedBy, position: position(), ...(error ? { error } : {}),
     })
-    if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) return stop('time')
     if (items.length >= max) return stop('cap')
     let data: Record<string, unknown> | null
-    try {
-      data = await callApi(base, config.accessToken, `${path}&limit=${AMO_PAGE_SIZE}&page=${page}`, requestTimeoutMs(opts))
-    } catch (e) {
-      if (page === first) throw e
-      return stop('error', (e as Error).message)
-    }
-    const rows = ((data?._embedded as Record<string, unknown> | undefined)?.[key] ?? []) as Record<string, unknown>[]
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const item = row && typeof row === 'object' ? map(row) : null
-      if (item && !seen.has(item.id)) {
-        seen.add(item.id)
-        items.push(item)
+    if (fetched.has(page)) {
+      data = fetched.get(page) ?? null
+    } else {
+      if (opts.fetchUntil !== undefined && now() >= opts.fetchUntil) return stop('time')
+      try {
+        data = await callApi(base, config.accessToken, `${path}&limit=${AMO_PAGE_SIZE}&page=${page}`, requestTimeoutMs(opts))
+      } catch (e) {
+        if (requests === 0) throw e
+        return stop('error', (e as Error).message)
       }
+      requests++
+    }
+    const embedded = (data?._embedded as Record<string, unknown> | undefined)?.[key]
+    const rows = (Array.isArray(embedded) ? embedded : []) as Record<string, unknown>[]
+    if (!proven) {
+      if (page > 1 && !rows.some((r) => { const id = idOf(r); return id !== null && id <= (after as number) })) {
+        fetched.set(page, data)
+        resumeAt = page
+        page--
+        continue
+      }
+      proven = true
+    }
+    for (const row of rows) {
+      const item = row && typeof row === 'object' ? map(row) : null
+      const id = item ? idOf(item) : null
+      if (!item || id === null || (after !== null && id <= after)) continue
+      items.push(item)
+      // Right after this record: the next run reads its page first (it holds the id: the proof).
+      positions.push(`${page + 1}:${id}`)
+      after = id
     }
     const hasNext = Boolean((data?._links as { next?: { href?: unknown } } | undefined)?.next?.href)
-    if (!data || !hasNext || !Array.isArray(rows) || rows.length === 0) {
-      return { items, total: null, complete: true, stoppedBy: null, position: null }
+    if (!data || !hasNext || rows.length === 0) {
+      return { items, positions, total: null, complete: true, stoppedBy: null, position: null }
     }
+    page++
   }
 }
 

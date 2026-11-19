@@ -18,16 +18,21 @@
  *      contact that now has their phone (M5), count the linked clients not seen in the pass (kept,
  *      never deleted); a pass that reached the end of the deals: apply avg_check
  *      (crm_sync_apply_deal_totals: never a figure the owner typed);
- *   5. record the outcome and the new cursor, and release the lease, in one conditional write:
+ *   5. record the outcome and the new cursor, and release the lease, in one write conditional on
+ *      still holding the lease (a re-key during the run fences it: then nothing is recorded and the
+ *      fenced lease is released — wave 3, L6):
  *      last_sync_status 'success' | 'partial' | 'error' (lib/crm/sync-status.ts) and, unless it is a
  *      success, why — in last_sync_error. A run that could not read or write everything is
  *      'partial' and says where the next one continues; it never leaves the previous status behind.
  *
  * Time: every CRM request, DNS lookup and database call is bounded by the run's deadline; no write
- * starts with less than MIN_CHUNK_MS + FINAL_RESERVE_MS left; the final write has its own short limit.
+ * starts with less than MIN_CHUNK_MS + FINAL_RESERVE_MS left; the final write gets what is left of
+ * the budget — at least FINAL_RESERVE_MS, kept for it up front — and never runs past the deadline
+ * (wave 3, L4: the ≤ 45 s rule holds to the end).
  * `sb` is either the user's client (RLS scopes everything to the owner) or the service client of the
  * cron: every query and function call is scoped by conn.user_id explicitly as well.
  */
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolverWithTimeout, type Resolver } from '@/lib/crm/endpoint-guard'
 import { fetchProviderSnapshot, identifyProvider, type ProviderSnapshot } from '@/lib/crm/provider-client'
@@ -39,7 +44,7 @@ import {
   type ClientWritePlan,
   type LocalClient,
 } from '@/lib/crm/provider-sync'
-import { addConflicts, readCursor, type SyncCursor } from '@/lib/crm/sync-cursor'
+import { addConflicts, readCursor, type PendingRelink, type PhoneConflict, type SyncCursor } from '@/lib/crm/sync-cursor'
 import type { CrmSyncStatus } from '@/lib/crm/sync-status'
 import type { ProviderList } from '@/lib/crm/sync-types'
 import { openCrmToken } from '@/lib/crm/token-store'
@@ -56,8 +61,6 @@ const MIN_CHUNK_MS = 1_500
 /** Shares of the budget: no new CRM page after FETCH_SHARE, every CRM request aborted at ABORT_SHARE. */
 const FETCH_SHARE = 0.55
 const ABORT_SHARE = 0.7
-/** The final write's own limit (it may run after the budget). */
-const FINAL_WRITE_MS = 5_000
 /** The lease outlives the budget by this much: a crashed run frees its connection after it. */
 const LEASE_MARGIN_S = 30
 const ERROR_MAX = 500
@@ -128,6 +131,18 @@ export interface SyncOptions {
 
 type PgErr = { code?: string; message?: string } | null
 
+/**
+ * The token a re-key of the connection leaves in place of a running sync's lease token (migration
+ * 157, trigger crm_provider_connections_rekey: md5('crm-sync-fence:' || token)::uuid). Only the run
+ * that held `token` can compute it, so only that run releases the fenced lease.
+ */
+export function fencedLeaseToken(token: string): string {
+  const h = createHash('md5').update(`crm-sync-fence:${token.toLowerCase()}`).digest('hex')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
+const REKEYED_NOTE = 'Ключ или адрес CRM изменились во время синхронизации — её итог не записан в подключение; следующая синхронизация начнётся с нового ключа.'
+
 class SyncDbError extends Error {
   constructor(readonly step: string, readonly pg: PgErr) {
     super(`db: ${step}`)
@@ -160,12 +175,17 @@ function emptyReport(status: CrmSyncRunStatus, message: string): CrmSyncReport {
 
 export const BUSY_MESSAGE = 'Синхронизация этого подключения уже идёт — дождитесь её окончания (обычно меньше минуты).'
 
+const LEGACY_STEP = 'legacy source'
+
 const missingObject = (sig: string) => /42703|42883|PGRST202|external_source|external_id|crm_sync_|sync_cursor|sync_lease/.test(sig)
 
 /** A user-facing message for an error before any write. */
 function failureMessage(e: unknown): string {
   if (e instanceof SyncDbError) {
     const sig = `${e.pg?.code ?? ''} ${e.pg?.message ?? ''}`
+    if (e.step === LEGACY_STEP && e.pg?.code === '23505') {
+      return 'Клиенты amoCRM со старым ключом (по адресу аккаунта) не перенесены на номер аккаунта: у части этих контактов уже есть второй клиент. Синхронизация остановлена, чтобы не добавить дубли, — обратитесь в поддержку.'
+    }
     if (missingObject(sig)) return 'Синхронизация недоступна: в базе нет полей и функций синхронизации CRM (миграции 155 / 157 не применены)'
     return 'Ошибка базы данных при синхронизации — попробуйте позже'
   }
@@ -233,7 +253,12 @@ export async function syncCrmConnection(sb: SupabaseClient, conn: SyncConnection
   const budget = Math.max(0, opts.deadlineAt - start)
   const timeLeft = () => opts.deadlineAt - FINAL_RESERVE_MS - now()
 
-  const lease = await sb.rpc('crm_sync_acquire_lease', { p_connection: conn.id, p_seconds: Math.ceil(budget / 1000) + LEASE_MARGIN_S })
+  // Bounded by the deadline like every other call (whatever is left of the budget, at least 1 ms).
+  const untilDeadline = () => AbortSignal.timeout(Math.max(1, opts.deadlineAt - now()))
+  const lease = await bounded(
+    sb.rpc('crm_sync_acquire_lease', { p_connection: conn.id, p_seconds: Math.ceil(budget / 1000) + LEASE_MARGIN_S }),
+    untilDeadline(),
+  )
   if (lease.error) {
     const message = failureMessage(new SyncDbError('lease', lease.error))
     console.error(`[crm/sync] lease of ${conn.id}: ${lease.error.code ?? ''} ${lease.error.message ?? ''}`)
@@ -269,11 +294,25 @@ export async function syncCrmConnection(sb: SupabaseClient, conn: SyncConnection
   // The counts say what the running (or last) pass has read; an error keeps the previous ones.
   if (report.status !== 'error' && report.contacts) patch.synced_contacts = report.contacts.passRead
   if (report.status !== 'error' && report.deals) patch.synced_deals = report.deals.passRead
-  const { error } = await bounded(
-    sb.from('crm_provider_connections').update(patch).eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', leaseToken),
-    AbortSignal.timeout(FINAL_WRITE_MS),
+  // Recorded only while this run still holds its lease (L6, wave 3).
+  const finalSignal = untilDeadline()
+  const { data: recorded, error } = await bounded(
+    sb.from('crm_provider_connections').update(patch).eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', leaseToken).select('id'),
+    finalSignal,
   )
-  if (error) console.error(`[crm/sync] status of ${conn.id} not recorded: ${error.code ?? ''} ${error.message ?? ''}`)
+  if (error) {
+    console.error(`[crm/sync] status of ${conn.id} not recorded: ${error.code ?? ''} ${error.message ?? ''}`)
+  } else if (Array.isArray(recorded) && recorded.length === 0) {
+    // The connection was re-keyed (or deleted) during the run: its outcome belongs to the old key
+    // and is not recorded. The fenced lease is released, so the new key's first sync is not refused.
+    const { error: relErr } = await bounded(
+      sb.from('crm_provider_connections').update({ sync_lease_until: null, sync_lease_token: null })
+        .eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', fencedLeaseToken(leaseToken)),
+      finalSignal,
+    )
+    if (relErr) console.error(`[crm/sync] fenced lease of ${conn.id} not released: ${relErr.code ?? ''}`)
+    report = { ...report, message: `${report.message} ${REKEYED_NOTE}`.trim() }
+  }
   return report
 }
 
@@ -314,10 +353,39 @@ async function runSync(
   const raw = (stored as { sync_cursor?: unknown } | null)?.sync_cursor
   const cursor = readCursor(raw, src)
   // Clients keyed by an earlier identity of the same account (amoCRM before wave 2: the host) move over.
+  // L1 (wave 3): a move that fails stops the run before anything is read or written — writing under
+  // the new key next to unmoved clients would add duplicates — and the cursor keeps its old source,
+  // so the next run tries the move again.
   if ((raw as { source?: unknown } | null)?.source !== src) {
     for (const legacy of account.legacySources) {
       const { error } = await db(sb.from('crm_clients').update({ external_source: src }).eq('user_id', userId).eq('external_source', legacy))
-      if (error) console.warn(`[crm/sync] legacy source of ${conn.id} not moved: ${error.code ?? ''}`)
+      if (error) throw new SyncDbError(LEGACY_STEP, error)
+    }
+  }
+
+  const problems: string[] = []
+  // L5 (wave 3): a re-link that failed at the end of an earlier pass is retried first, with that
+  // pass's start and conflicts; a failure again keeps it for the next run (and the run partial).
+  const relink = async (startedAt: string, conflicts: PhoneConflict[]): Promise<number | null> => {
+    const r = await db(sb.rpc('crm_sync_relink', {
+      p_user: userId, p_source: src, p_pass_started_at: startedAt,
+      p_rows: conflicts.map((x) => ({ phone: x.phone, external_id: x.contact })),
+    }))
+    if (r.error) {
+      console.warn(`[crm/sync] relink of ${conn.id} failed: ${r.error.code ?? ''}`)
+      return null
+    }
+    return Number(r.data ?? 0)
+  }
+  const RELINK_FAILED = 'Перепривязка клиентов к записям CRM, у которых теперь их телефон, не удалась (ошибка базы) — следующая синхронизация повторит.'
+  let relinkPending: PendingRelink | null = cursor.relink_pending
+  let relinked: number | null = null
+  if (relinkPending) {
+    const n = await relink(relinkPending.started_at, relinkPending.conflicts)
+    if (n === null) problems.push(RELINK_FAILED)
+    else {
+      relinked = n
+      relinkPending = null
     }
   }
 
@@ -362,8 +430,13 @@ async function runSync(
     byPhone: new Map(phoneRows.filter((r) => r.phone).map((r) => [r.phone as string, r])),
   })
 
+  // L3 (wave 3): rows go out in the CRM order of their contacts, so the rows written before a stop
+  // cover a leading run of the contacts read (updates first, then inserts, each in that order).
+  const crmOrder = new Map(drafts.map((dr, i) => [dr.externalId, i]))
+  const at = (externalId: string) => crmOrder.get(externalId) ?? 0
+  const updates = [...plan.updates].sort((a, b) => at(a.external_id) - at(b.external_id))
   const upd = await writeChunks<(typeof plan.updates)[number], { id: string; changed: boolean }>(
-    plan.updates,
+    updates,
     (chunk) => db(sb.rpc('crm_sync_update_clients', { p_user: userId, p_source: src, p_seen_at: runIso, p_rows: chunk })),
     ctx.timeLeft,
   )
@@ -378,6 +451,13 @@ async function runSync(
   const changed = upd.rows.filter((r) => r.changed)
   const linkedNow = changed.filter((r) => linkIds.has(r.id)).length
   const clientsWritten = !upd.stopped && !ins.stopped
+  // L3: how many leading contacts of this run are fully written — each contact's client row went
+  // through (or it needed none: joined another contact's client, or a phone conflict). Credited to
+  // the pass, so a slow database still moves the cursor forward. Safe with the identity rules: the
+  // next run reads the rest with these clients already in the database (a contact sharing a phone
+  // with one of them is then a phone conflict instead of a merge — nothing is added twice).
+  const unwritten = [...updates.slice(upd.sent), ...plan.inserts.slice(ins.sent)]
+  const contactsDone = unwritten.length === 0 ? drafts.length : Math.min(...unwritten.map((r) => at(r.external_id)))
 
   // ── deals ──
   const classes = snapshot.deals ? classifyDeals(snapshot.deals.items) : null
@@ -390,12 +470,10 @@ async function runSync(
     : null
 
   // ── passes ──
-  const problems: string[] = []
   const notes: string[] = []
   const c = snapshot.contacts
   let next: SyncCursor = { ...cursor, contacts: { ...cursor.contacts }, deals: { ...cursor.deals } }
   let contacts: PassReport
-  let relinked: number | null = null
   let missingInCrm: number | null = null
   if (clientsWritten) {
     const passRead = cursor.contacts.read + c.items.length
@@ -403,14 +481,17 @@ async function runSync(
     const conflicts = addConflicts(cursor.contacts.conflicts, plan.conflicts)
     contacts = { read: c.items.length, passRead, passTotal, passComplete: c.complete }
     if (c.complete) {
+      // A completed pass supersedes a re-link still pending from an earlier one (and its failure
+      // above): its own conflicts are the current ones.
+      relinkPending = null
+      if (problems.includes(RELINK_FAILED)) problems.splice(problems.indexOf(RELINK_FAILED), 1)
       if (conflicts.length > 0) {
-        const r = await db(sb.rpc('crm_sync_relink', {
-          p_user: userId, p_source: src, p_pass_started_at: contactsPass,
-          p_rows: conflicts.map((x) => ({ phone: x.phone, external_id: x.contact })),
-        }))
-        if (r.error) console.warn(`[crm/sync] relink of ${conn.id} failed: ${r.error.code ?? ''}`)
-        else relinked = Number(r.data ?? 0)
-      } else relinked = 0
+        const n = await relink(contactsPass, conflicts)
+        if (n === null) {
+          relinkPending = { started_at: contactsPass, conflicts }
+          problems.push(RELINK_FAILED)
+        } else relinked = (relinked ?? 0) + n
+      } else relinked = relinked ?? 0
       const never = await db(sb.from('crm_clients').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('external_source', src).is('external_seen_at', null))
       const stale = await db(sb.from('crm_clients').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('external_source', src).lt('external_seen_at', contactsPass))
       if (!never.error && !stale.error) missingInCrm = (never.count ?? 0) + (stale.count ?? 0)
@@ -420,11 +501,22 @@ async function runSync(
       problems.push(`Контакты: прочитано ${ofTotal(passRead, passTotal)} (${why(c, cap)}) — следующая синхронизация продолжит с этого места.`)
     }
   } else {
-    contacts = { read: c.items.length, passRead: cursor.contacts.read, passTotal: null, passComplete: false }
     const stopped = upd.stopped ? upd : ins
+    const k = contactsDone
+    const done = k > 0 ? ` — записаны первые ${k} из ${c.items.length} прочитанных контактов, следующая синхронизация продолжит после них.` : ' — следующая синхронизация повторит эту часть.'
     problems.push(stopped.stopped === 'time'
-      ? `Не успели записать клиентов: ${upd.notWritten + ins.notWritten} — следующая синхронизация повторит эту часть.`
-      : `База не приняла запись клиентов (${stopped.error?.code ?? 'ошибка'}) — следующая синхронизация повторит эту часть.`)
+      ? `Не успели записать клиентов: ${upd.notWritten + ins.notWritten}${done}`
+      : `База не приняла запись клиентов (${stopped.error?.code ?? 'ошибка'})${done}`)
+    if (k > 0) {
+      const credited = new Set(drafts.slice(0, k).map((dr) => dr.externalId))
+      const passRead = cursor.contacts.read + k
+      const passTotal = c.total !== null ? cursor.contacts.read + c.total : null
+      const conflicts = addConflicts(cursor.contacts.conflicts, plan.conflicts.filter((x) => credited.has(x.contact)))
+      contacts = { read: c.items.length, passRead, passTotal, passComplete: false }
+      next.contacts = { started_at: contactsPass, position: c.positions[k - 1], read: passRead, conflicts }
+    } else {
+      contacts = { read: c.items.length, passRead: cursor.contacts.read, passTotal: null, passComplete: false }
+    }
   }
 
   let deals: PassReport | null = null
@@ -438,9 +530,27 @@ async function runSync(
   } else if (!dealsW) {
     problems.push('Сделки не записаны (клиенты не записаны до конца) — следующая синхронизация повторит.')
   } else if (dealsW.stopped) {
+    // L3: the deals before the first qualifying one not written are done (the others of them are
+    // only counted) — credited to the pass like the contacts.
+    const firstUnwritten = classes.qualifying[dealsW.sent]?.deal_id
+    const k = firstUnwritten === undefined ? d.items.length : Math.max(0, d.items.findIndex((x) => x.id === firstUnwritten))
+    const done = k > 0 ? `: записаны первые ${k} из ${d.items.length} прочитанных, следующая синхронизация продолжит после них.` : ' — следующая синхронизация повторит эту часть.'
     problems.push(dealsW.stopped === 'time'
-      ? 'Не успели записать сделки — следующая синхронизация повторит эту часть.'
-      : `База не приняла запись сделок (${dealsW.error?.code ?? 'ошибка'}) — следующая синхронизация повторит эту часть.`)
+      ? `Не успели записать сделки${done}`
+      : `База не приняла запись сделок (${dealsW.error?.code ?? 'ошибка'})${done}`)
+    if (k > 0) {
+      const prefix = classifyDeals(d.items.slice(0, k))
+      const passRead = cursor.deals.read + k
+      const passTotal = d.total !== null ? cursor.deals.read + d.total : null
+      deals = { read: d.items.length, passRead, passTotal, passComplete: false }
+      next.deals = {
+        started_at: dealsPass,
+        position: d.positions[k - 1],
+        read: passRead,
+        without_contact: cursor.deals.without_contact + prefix.withoutContact,
+        other_currency: cursor.deals.other_currency + prefix.otherCurrency,
+      }
+    }
   } else {
     const passRead = cursor.deals.read + d.items.length
     const passTotal = d.total !== null ? cursor.deals.read + d.total : null
@@ -471,7 +581,8 @@ async function runSync(
   // A pass in progress, or writes that stopped, bring the automatic sync back within half an hour.
   next = {
     ...next,
-    catching_up: next.contacts.started_at !== null || next.deals.started_at !== null || !clientsWritten || !!dealsW?.stopped,
+    relink_pending: relinkPending,
+    catching_up: next.contacts.started_at !== null || next.deals.started_at !== null || !clientsWritten || !!dealsW?.stopped || relinkPending !== null,
   }
 
   const inserted = ins.rows.length
