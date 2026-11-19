@@ -45,6 +45,7 @@ import { Step9FinanceForm } from '@/components/onboarding/steps/Step9FinanceForm
 import Step10PersonalForm from '@/components/onboarding/steps/Step10PersonalForm'
 import { Step11InfluenceForm } from '@/components/onboarding/steps/Step11InfluenceForm'
 import Step12ToolsForm from '@/components/onboarding/steps/Step12ToolsForm'
+import { fetchOwnApprovalStatus } from '@/lib/client-shell/approval-status'
 
 // Step-1 fields mirrored into the `companies` row.
 const COMPANY_FIELD_KEYS = new Set([
@@ -465,11 +466,8 @@ function OnboardingPageInner() {
     // Everything is confirmed on the server — the local draft is no longer needed.
     if (userIdRef.current) clearDraft(window.localStorage, userIdRef.current)
     let target = AFTER_SURVEY_PATH
-    try {
-      const statusRes = await fetch(`/api/client/status?userId=${userIdRef.current}`)
-      const statusData = await statusRes.json()
-      if (statusData.status !== 'approved') target = '/client/waiting-room'
-    } catch {}
+    // Identity from the session only — no user id in the URL (R-250). Unreadable → the waiting room (it re-checks and moves on).
+    if ((await fetchOwnApprovalStatus()) !== 'approved') target = '/client/waiting-room'
     await recalcAndLeave(target)
   }
 

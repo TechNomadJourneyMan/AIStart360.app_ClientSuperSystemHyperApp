@@ -9,6 +9,7 @@ import { signOutThisBrowser } from '@/lib/auth/sign-out-client'
 import type { ApprovalStatus } from '@/types/onboarding'
 import { trackLogout } from '@/lib/events/client'
 import { APPROVAL_WAIT_NOTE } from '@/lib/registration/wait-text'
+import { fetchOwnApprovalStatus } from '@/lib/client-shell/approval-status'
 
 type StatusConfig = {
   label: string
@@ -77,15 +78,14 @@ export default function WaitingRoomPage() {
   const checkStatus = useCallback(async () => {
     if (!userId) return
     try {
-      // Use server API to bypass RLS issues
-      const res = await fetch(`/api/client/status?userId=${userId}`)
-      const data = await res.json()
+      // Server API (RLS-safe); identity from the session only — no user id in the URL (R-250).
+      const next = await fetchOwnApprovalStatus()
 
-      if (data?.status) {
-        setStatus(data.status as ApprovalStatus)
+      if (next) {
+        setStatus(next as ApprovalStatus)
         setLastChecked(new Date())
 
-        if (data.status === 'approved') {
+        if (next === 'approved') {
           setIsRedirecting(true)
           // Welcome-screen itself decides whether to show picker, skip to
           // onboarding, or skip straight to dashboard based on profile state.
