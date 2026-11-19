@@ -25,9 +25,14 @@ vi.mock('@/lib/supabase-server', () => ({
     from: (table: string) => {
       let row: Row | null = null
       const b: Record<string, unknown> = {}
-      const result = () => ({ data: row ?? { id: table === 'crm_reminders' ? REMINDER_ID : CLIENT_ID, client_id: CLIENT_ID, status: 'new' }, error: null })
+      // a reminder is still open (PATCH /reminders/[id] acts only on an open one)
+      const result = () => ({
+        data: row ?? { id: table === 'crm_reminders' ? REMINDER_ID : CLIENT_ID, client_id: CLIENT_ID, status: table === 'crm_reminders' ? 'open' : 'new' },
+        error: null,
+      })
       Object.assign(b, {
-        select: () => b, eq: () => b, order: () => b, limit: () => b,
+        // lt: a logged contact fulfils the client's plans due before the end of today (interactions route)
+        select: () => b, eq: () => b, lt: () => b, lte: () => b, order: () => b, limit: () => b,
         insert: (r: Row) => { h.writes.push({ table, op: 'insert', row: r }); row = r; return b },
         update: (r: Row) => { h.writes.push({ table, op: 'update', row: r }); row = r; return b },
         upsert: (r: Row) => { h.writes.push({ table, op: 'upsert', row: r }); row = r; return b },

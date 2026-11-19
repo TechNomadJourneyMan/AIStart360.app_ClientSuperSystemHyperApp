@@ -32,7 +32,7 @@ export interface DigestMessage {
   body: string
   /** Числа дайджеста — переменные шаблона WhatsApp. */
   data?: DigestData
-  /** День дайджеста (YYYY-MM-DD, UTC) — ключ идемпотентности. */
+  /** День дайджеста (YYYY-MM-DD, по Алматы) — ключ идемпотентности. */
   day?: string
 }
 
@@ -61,12 +61,14 @@ export const whatsappChannel: DigestChannel = {
     if (!this.isEnabled(r) || !isE164(r.phone) || !m.data) return false
     try {
       const day = m.day ?? new Date().toISOString().slice(0, 10)
+      // The approved template's first number is «на сегодня и просроченных» together.
+      const counts = { ...m.data, overdue: m.data.overdue + (m.data.dueToday ?? 0) }
       const row = await enqueueWhatsApp({
         idempotencyKey: outboxKey('digest', r.userId, day),
         kind: 'client',
         userId: r.userId,
         phoneE164: r.phone,
-        payload: digestTemplate(m.data),
+        payload: digestTemplate(counts),
         level: 'INFO',
       })
       if (!row.created) return false

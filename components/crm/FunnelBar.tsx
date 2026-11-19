@@ -27,6 +27,15 @@ export function fmtTenge(n: number): string {
   return `${Math.round(n)} ₸`
 }
 
+/**
+ * The Σ of a funnel column: «—» when no client of it has a check, the sum when all have one, and
+ * «≥ sum» when only some do (checks are ≥ 0, so the known sum is a lower bound — never a total).
+ */
+export function funnelSumLabel(sum: number, known: number, count: number): string {
+  if (known === 0) return '—'
+  return known < count ? `≥ ${fmtTenge(sum)}` : fmtTenge(sum)
+}
+
 export function FunnelBar({
   clients,
   active,
@@ -36,14 +45,18 @@ export function FunnelBar({
   active: ClientStatus | null
   onSelect: (status: ClientStatus | null) => void
 }) {
-  // Count + Σ avg_check per status.
-  const agg = new Map<ClientStatus, { count: number; sum: number }>()
-  for (const s of CLIENT_STATUS_ORDER) agg.set(s, { count: 0, sum: 0 })
+  // Count + Σ avg_check per status — over the KNOWN checks only (an empty check is not 0 ₸).
+  const agg = new Map<ClientStatus, { count: number; sum: number; known: number }>()
+  for (const s of CLIENT_STATUS_ORDER) agg.set(s, { count: 0, sum: 0, known: 0 })
   for (const c of clients) {
     const bucket = agg.get(c.status as ClientStatus)
     if (!bucket) continue
     bucket.count += 1
-    bucket.sum += typeof c.avg_check === 'number' ? c.avg_check : 0
+    const check = c.avg_check == null ? NaN : Number(c.avg_check)
+    if (Number.isFinite(check)) {
+      bucket.sum += check
+      bucket.known += 1
+    }
   }
   const maxCount = Math.max(1, ...CLIENT_STATUS_ORDER.map((s) => agg.get(s)!.count))
 
@@ -63,7 +76,7 @@ export function FunnelBar({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {CLIENT_STATUS_ORDER.map((s) => {
           const meta = CLIENT_STATUS_META[s]
-          const { count, sum } = agg.get(s)!
+          const { count, sum, known } = agg.get(s)!
           const isActive = active === s
           const pct = Math.round((count / maxCount) * 100)
           return (
@@ -84,7 +97,12 @@ export function FunnelBar({
               <div className="mt-1.5 h-1 bg-surface-container rounded-full overflow-hidden">
                 <div className={`h-full ${meta.bar} rounded-full`} style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-[10px] font-mono text-on-surface-variant/70 mt-1.5">{fmtTenge(sum)}</p>
+              <p
+                className="text-[10px] font-mono text-on-surface-variant/70 mt-1.5"
+                title={count > 0 ? `Средний чек указан у ${known} из ${count}` : undefined}
+              >
+                {funnelSumLabel(sum, known, count)}
+              </p>
             </button>
           )
         })}

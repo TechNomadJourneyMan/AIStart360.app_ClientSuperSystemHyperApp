@@ -48,6 +48,10 @@ export const CRON_JOBS: readonly CronJob[] = [
   // Срок ответа на заявку на оплату (R4, N4B-1): каждые 15 минут, в :08, :23, :38, :53 — открытая заявка
   // старше request_sla_hours (4 ч) получает одно напоминание Admin / Super Admin (lib/access/request-notices.ts).
   { path: '/api/cron/access-requests', schedule: '8-59/15 * * * *' },
+  // Автосинхронизация CRM (Bitrix24 / amoCRM → клиенты): дважды в час, в :17 и :47 (минуты без других
+  // задач), кроме 21:00–22:59 UTC — окна ночных пересчётов Точек А и Б. Подключение, не обновлявшееся
+  // 6 ч, ≤ 2 одновременно, проход ≤ 44 с (lib/crm/sync-cron.ts).
+  { path: '/api/cron/crm-sync', schedule: '17,47 0-20,23 * * *' },
   // Перекрёстный сторож (R4-A1): сервис агентов раз в 3 минуты проверяет портал и базу, тревога —
   // напрямую в Telegram без базы (lib/ops/crosswatch.ts). Только при отдельном сервисе агентов.
   { path: '/api/cron/ops-crosswatch', schedule: '*/3 * * * *', role: 'agents', dedicatedOnly: true },

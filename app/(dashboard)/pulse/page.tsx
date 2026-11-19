@@ -3,30 +3,23 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { useCrmToday, useLogInteraction, type CrmClient } from '@/hooks/useCrm'
+import {
+  useCrmToday, useCrmClients, useLogInteraction, useCrmInteractions, touchErrorText, type CrmClient, type CrmTodayClient,
+} from '@/hooks/useCrm'
 import { ClientsTable } from '@/components/crm/ClientsTable'
 import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
 import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
-import type { ClientStatus } from '@/lib/crm/client-validate'
+import { seedFromClientRow, seedFromQueueRow } from '@/lib/crm/client-form'
+import { pickCardClient } from '@/lib/crm/card-client'
+import { portfolioAverageCheck, toTodayClient } from '@/lib/crm/today'
+import { briefingNetworkError, briefingSegments, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
+import { CRM_AUTO_SYNC_DESCRIPTION, CRM_AVG_CHECK_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
 
 // ─── Adapters → the drawer's minimal client seed ─────────────────────────────
-function crmToDrawer(c: CrmClient): DrawerClient {
-  return {
-    id: c.id, name: c.name, phone: c.phone, phone_raw: c.phone_raw,
-    email: c.email, status: c.status, avg_check: c.avg_check, note: c.note,
-    next_contact_at: c.next_contact_at, last_contact_at: c.last_contact_at,
-  }
-}
-function pulseToDrawer(c: PulseClient): DrawerClient {
-  return {
-    id: c.id, name: c.name, phone: c.phone ?? null, phone_raw: null,
-    email: c.email ?? null, status: (c.status as ClientStatus) ?? 'new',
-    avg_check: typeof c.avgCheck === 'number' ? c.avgCheck : null,
-    note: c.note ?? null, next_contact_at: c.nextContactAt ?? null,
-    last_contact_at: c.lastContactAt ?? null,
-  }
-}
+const crmToDrawer = (c: CrmClient): DrawerClient => seedFromClientRow(c)
+// Queue / risk rows carry the raw phone too (seedFromQueueRow) — the drawer must not lose it (L6).
+const pulseToDrawer = (c: PulseClient): DrawerClient => seedFromQueueRow(c)
 
 // recharts lives inside GriPulseWidget — load it lazily so it stays out of this
 // (already large) pulse page's first-load JS.
@@ -52,7 +45,7 @@ function CallModal({ client, onClose }: { client: ModalClient | null; onClose: (
       { clientId: client.id, kind: 'call', comment: note.trim() || undefined },
       {
         onSuccess: () => { setStatus('done'); toast.success('Звонок зафиксирован') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -142,7 +135,7 @@ function MessageModal({ client, onClose }: { client: ModalClient | null; onClose
       { clientId: client.id, kind: 'message', comment: text.trim() || undefined },
       {
         onSuccess: () => { setSent(true); toast.success('Сообщение зафиксировано') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -214,7 +207,32 @@ function fmt(n: number) {
   return `${n} ₸`
 }
 
-function RiskBadge({ level, prob }: { level: 'high' | 'medium' | 'low'; prob: number }) {
+/** An average check, or «—» when the owner has not entered one (never 0 ₸). */
+function fmtCheck(n: number | null) {
+  return n == null ? '—' : fmt(n)
+}
+
+/** «нет касаний» for a client never contacted, else «N дн. назад». */
+function fmtDaysSince(d: number | null) {
+  return d == null ? 'нет касаний' : `${d} дн. назад`
+}
+
+function fmtDate(iso: string | null) {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+}
+
+/** Why a client is in today's queue (lib/crm/today.ts queueBucket). */
+const BUCKET_LABEL: Record<number, string> = {
+  0: 'Просрочен контакт',
+  1: 'Контакт на сегодня',
+  2: 'Нет плана контакта',
+  3: 'Спящий > 30 дн.',
+}
+
+// The risk level of the heuristic score — a level, not a probability (no «%»).
+function RiskBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   const cfg = {
     high:   { bg: 'bg-error/10 border-error/30 text-error',         dot: 'bg-error',         label: 'Высокий' },
     medium: { bg: 'bg-tertiary-container/10 border-tertiary-container/30 text-tertiary-container', dot: 'bg-tertiary-container', label: 'Средний' },
@@ -223,7 +241,7 @@ function RiskBadge({ level, prob }: { level: 'high' | 'medium' | 'low'; prob: nu
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-medium ${cfg.bg}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label} · {prob}%
+      {cfg.label} риск
     </span>
   )
 }
@@ -247,22 +265,9 @@ function ActionBtn({ action, size = 'md', onClick }: { action: 'call' | 'message
   )
 }
 
-function MiniSparkline({ values }: { values: number[] }) {
-  const max = Math.max(...values)
-  const min = Math.min(...values)
-  const range = max - min || 1
-  const w = 40, h = 20
-  const pts = values.map((v: number, i: number) => {
-    const x = (i / (values.length - 1)) * w
-    const y = h - ((v - min) / range) * h
-    return `${x},${y}`
-  }).join(' ')
-  const isUp = values[values.length - 1] >= values[0]
-  return (
-    <svg width={w} height={h} className="flex-shrink-0">
-      <polyline points={pts} fill="none" stroke={isUp ? '#4ade80' : '#f87171'} strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  )
+/** The check against the base's average, «—» when either is unknown. Not an order-volume trend. */
+function fmtCheckVsAvg(p: number | null) {
+  return p == null ? '—' : `${p > 0 ? '+' : ''}${p}%`
 }
 
 function RiskBar({ score }: { score: number }) {
@@ -277,31 +282,27 @@ function RiskBar({ score }: { score: number }) {
   )
 }
 
-type PulseClient = {
-  id: string
-  name: string
-  sector: string
-  forbes?: number | null
-  lastOrder: string
-  daysSince: number
-  avgCheck: number
-  volumeChange: number
-  riskScore: number
-  churnProb: number
-  churnLevel: 'high' | 'medium' | 'low'
-  comment: string
-  action: 'call' | 'message' | 'monitor'
-  history: number[]
-  orderCycle: number
-  // Native CRM fields (from /api/v1/crm/today) — enable real tel:/wa.me actions,
-  // status editing and the client drawer. Optional so the pulse-shaped type is happy.
-  status?: string
-  phone?: string | null
-  email?: string | null
-  note?: string | null
-  nextContactAt?: string | null
-  lastContactAt?: string | null
-  queueBucket?: number
+// A row of GET /api/v1/crm/today (queue or risk list) + `sector` (the status label) for the modals.
+// Only the owner's own data: no order history, order cycle or volume trend exists on the platform.
+type PulseClient = CrmTodayClient & { sector: string }
+
+// Real touches from crm_interactions (the card's history — not an invented order series).
+function RecentTouches({ clientId }: { clientId: string }) {
+  const { data = [], isLoading, error } = useCrmInteractions(clientId)
+  const KIND: Record<string, string> = { call: 'Звонок', message: 'Сообщение', meeting: 'Встреча', note: 'Заметка', status_change: 'Смена статуса' }
+  if (isLoading) return <p className="text-xs text-on-surface-variant/60">Загрузка…</p>
+  if (error) return <p className="text-xs text-error">Не удалось загрузить касания</p>
+  if (data.length === 0) return <p className="text-xs text-on-surface-variant/60">Касаний пока не было</p>
+  return (
+    <ul className="space-y-1.5">
+      {data.slice(0, 5).map((it) => (
+        <li key={it.id} className="flex items-baseline gap-2 text-xs">
+          <span className="font-mono text-on-surface-variant/70 w-16 flex-shrink-0">{fmtDate(it.created_at) ?? '—'}</span>
+          <span className="text-on-surface truncate">{it.comment || KIND[it.kind] || it.kind}</span>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 // ─── Client Card Tab ──────────────────────────────────────────────────────────
@@ -323,19 +324,13 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="font-headline text-xl font-bold text-on-surface">{client.name}</h3>
-            {client.forbes != null && (
-              <span className="text-[10px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/30 px-2 py-0.5 rounded-full">
-                🏆 Forbes KZ #{(client as any).forbes}
-              </span>
-            )}
-            <RiskBadge level={client.churnLevel} prob={client.churnProb} />
+            <RiskBadge level={client.churnLevel} />
           </div>
           <p className="text-sm text-on-surface-variant">
             {[
               client.sector,
-              'revenue' in client ? `Выручка: ${(client as { revenue?: string }).revenue}` : null,
-              'employees' in client ? `${(client as { employees?: number }).employees} сотр.` : null,
-              `Цикл ${client.orderCycle} дней`,
+              client.queueBucket != null ? BUCKET_LABEL[client.queueBucket] : null,
+              fmtDate(client.nextContactAt) ? `Следующий контакт: ${fmtDate(client.nextContactAt)}` : 'Следующий контакт не запланирован',
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -348,10 +343,10 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Средний чек', value: fmt(client.avgCheck), icon: 'payments',   color: 'primary' },
-          { label: 'Изм. объёма', value: `${client.volumeChange > 0 ? '+' : ''}${client.volumeChange}%`, icon: 'trending_down', color: client.volumeChange < 0 ? 'error' : 'primary' },
+          { label: 'Средний чек', value: client.avgCheck == null ? 'не указан' : fmt(client.avgCheck), icon: 'payments', color: client.avgCheck == null ? 'on-surface-variant' : 'primary' },
+          { label: 'Чек к среднему', value: fmtCheckVsAvg(client.checkVsAvgPct), icon: 'balance', color: 'on-surface-variant' },
           { label: 'Риск-скор',   value: String(client.riskScore), icon: 'warning', color: client.riskScore >= 80 ? 'error' : 'tertiary-container' },
-          { label: 'Дней без заказа', value: String(client.daysSince), icon: 'schedule', color: client.daysSince > client.orderCycle ? 'error' : 'primary' },
+          { label: 'Без касания', value: client.daysSince == null ? 'нет касаний' : `${client.daysSince} дн.`, icon: 'schedule', color: 'on-surface-variant' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -363,31 +358,16 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
         ))}
       </div>
 
-      {/* Trend chart */}
+      {/* Real touches (crm_interactions) — the platform has no order data */}
       <div className="bg-surface-container rounded-xl p-4">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">История заказов (последние 5)</p>
-        <div className="flex items-end gap-2 h-16">
-          {client.history.map((val: number, i: number) => {
-            const max = Math.max(...client.history)
-            const pct = (val / max) * 100
-            const isLast = i === client.history.length - 1
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className={`w-full rounded-t-sm transition-all ${isLast ? 'bg-primary/60' : 'bg-surface-container-high'}`}
-                  style={{ height: `${pct}%`, minHeight: 4 }}
-                />
-                <p className="text-[8px] font-mono text-on-surface-variant">{(val / 1000).toFixed(0)}к</p>
-              </div>
-            )
-          })}
-        </div>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Последние касания</p>
+        <RecentTouches clientId={client.id} />
       </div>
 
       {/* Comment */}
       <div className="bg-surface-container rounded-xl p-4 flex items-start gap-3">
         <span className="material-symbols-outlined text-sm text-on-surface-variant flex-shrink-0 mt-0.5">comment</span>
-        <p className="text-sm text-on-surface-variant">{client.comment}</p>
+        <p className="text-sm text-on-surface-variant">{client.comment ?? client.note ?? 'Без комментария'}</p>
       </div>
 
       {/* Actions */}
@@ -441,7 +421,8 @@ function CrmIntegrationTab() {
           domain: String(r.base_url ?? ''),
           isActive: Boolean(r.is_active),
           lastSyncAt: (r.last_sync_at as string | null) ?? null,
-          lastSyncStatus: (r.last_sync_status as string | null) ?? null,
+          // One vocabulary (lib/crm/sync-status.ts): the legacy 'ok' reads as success (M7).
+          lastSyncStatus: normaliseSyncStatus(r.last_sync_status),
           lastSyncError: (r.last_sync_error as string | null) ?? null,
           syncedDeals: Number(r.synced_deals ?? 0),
           syncedContacts: Number(r.synced_contacts ?? 0),
@@ -453,6 +434,28 @@ function CrmIntegrationTab() {
   }, [])
 
   useEffect(() => { fetchIntegrations() }, [fetchIntegrations])
+
+  const handleSync = async (id: string) => {
+    setSyncingId(id)
+    try {
+      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await res.json().catch(() => ({}))
+      const message = typeof data?.data?.message === 'string' ? data.data.message : null
+      if (res.ok && data.ok) {
+        if (data.data?.status === 'partial') toast.warning(message || 'Синхронизация выполнена частично')
+        else toast.success(message || 'Синхронизация выполнена')
+      } else {
+        toast.error(data.error || 'Не удалось синхронизировать')
+      }
+      await fetchIntegrations()
+    } catch {
+      toast.error('Ошибка сети при синхронизации')
+    }
+    setSyncingId(null)
+  }
 
   const handleConnect = async () => {
     setConnectLoading(true)
@@ -488,33 +491,14 @@ function CrmIntegrationTab() {
       setConnectDomain('')
       setConnectToken('')
       setConnectWebhook('')
-      toast.success('CRM подключена')
-      fetchIntegrations()
+      toast.success('CRM подключена — загружаем клиентов')
+      await fetchIntegrations()
+      // The first sync right away; afterwards the automatic one keeps it fresh.
+      if (typeof data?.data?.id === 'string') void handleSync(data.data.id)
     } catch {
       setConnectError('Ошибка сети')
     }
     setConnectLoading(false)
-  }
-
-  const handleSync = async (id: string) => {
-    setSyncingId(id)
-    try {
-      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok && data.ok) {
-        const { inserted = 0, updated = 0, skipped = 0 } = data.data ?? {}
-        toast.success(`Синхронизировано: +${inserted}, обновлено ${updated}, пропущено ${skipped}`)
-      } else {
-        toast.error(data.error || 'Не удалось синхронизировать')
-      }
-      await fetchIntegrations()
-    } catch {
-      toast.error('Ошибка сети при синхронизации')
-    }
-    setSyncingId(null)
   }
 
   const handleDisconnect = async (id: string) => {
@@ -537,7 +521,7 @@ function CrmIntegrationTab() {
       bg: 'bg-blue-400/10 border-blue-400/20',
       gradient: 'from-blue-500/20 to-blue-600/5',
       domainHint: 'mycompany.bitrix24.kz',
-      tokenLabel: 'Webhook URL или OAuth Token',
+      tokenLabel: 'Адрес входящего вебхука',
       docs: 'https://dev.1c-bitrix.ru/rest_help/',
     },
     amocrm: {
@@ -547,7 +531,7 @@ function CrmIntegrationTab() {
       bg: 'bg-cyan-400/10 border-cyan-400/20',
       gradient: 'from-cyan-500/20 to-cyan-600/5',
       domainHint: 'mycompany.amocrm.ru',
-      tokenLabel: 'API ключ (Настройки → Интеграции)',
+      tokenLabel: 'Долгосрочный токен',
       docs: 'https://www.amocrm.ru/developers/',
     },
   }
@@ -568,8 +552,11 @@ function CrmIntegrationTab() {
             CRM-интеграции
           </h2>
           <p className="text-xs text-on-surface-variant mt-1">
-            Подключите Bitrix24 или AmoCRM для автоматической синхронизации сделок и контактов
+            Контакты из Bitrix24 или amoCRM становятся клиентами портала, суммы их сделок — средним чеком.
+            Портал только читает CRM и ничего в ней не меняет.
           </p>
+          <p className="text-[11px] text-on-surface-variant/70 mt-1">{CRM_AUTO_SYNC_DESCRIPTION}</p>
+          <p className="text-[11px] text-on-surface-variant/70 mt-1">{CRM_AVG_CHECK_DESCRIPTION}</p>
         </div>
         <button
           onClick={() => setShowConnect(true)}
@@ -599,8 +586,8 @@ function CrmIntegrationTab() {
                 <h3 className="text-lg font-bold text-on-surface mb-1">{info.name}</h3>
                 <p className="text-xs text-on-surface-variant mb-4">
                   {provider === 'bitrix24'
-                    ? 'Синхронизация сделок, контактов и компаний. Поддержка вебхуков и OAuth.'
-                    : 'Импорт лидов, сделок и контактов. API v4 с автообновлением.'}
+                    ? 'Контакты → клиенты, суммы сделок → средний чек. Подключение — входящий вебхук с правом «CRM».'
+                    : 'Контакты → клиенты, суммы сделок → средний чек. Подключение — долгосрочный токен.'}
                 </p>
                 <div className="flex items-center gap-4 text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider">
                   <span className="flex items-center gap-1">
@@ -690,12 +677,10 @@ function CrmIntegrationTab() {
                       crm.lastSyncStatus === 'partial' ? 'text-tertiary-container' :
                       crm.lastSyncStatus === 'error' ? 'text-error' : 'text-on-surface-variant'
                     }`}>
-                      {crm.lastSyncStatus === 'success' ? 'Успешно' :
-                       crm.lastSyncStatus === 'partial' ? 'Частично' :
-                       crm.lastSyncStatus === 'error' ? 'Ошибка' : '—'}
+                      {crm.lastSyncStatus ? CRM_SYNC_STATUS_LABEL[crm.lastSyncStatus as CrmSyncStatus] : crm.lastSyncAt ? '—' : 'Ещё не было'}
                     </p>
                     {crm.lastSyncError && (
-                      <p className="text-[10px] text-error/70 mt-0.5 truncate max-w-[200px]" title={crm.lastSyncError}>{crm.lastSyncError}</p>
+                      <p className={`text-[10px] mt-0.5 truncate max-w-[200px] ${crm.lastSyncStatus === 'error' ? 'text-error/70' : 'text-on-surface-variant'}`} title={crm.lastSyncError}>{crm.lastSyncError}</p>
                     )}
                   </div>
                 </div>
@@ -755,9 +740,11 @@ function CrmIntegrationTab() {
                     placeholder="https://b24-xxx.bitrix24.kz/rest/1/ваш_секрет/"
                     className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono text-xs"
                   />
-                  <p className="text-[10px] text-on-surface-variant/50 mt-1.5 pl-1">
-                    Настройки → Разработчикам → Другое → Входящий вебхук
-                  </p>
+                  <ol className="text-[11px] text-on-surface-variant mt-2 pl-4 space-y-1 list-decimal">
+                    <li>В Bitrix24 откройте «Разработчикам» → «Другое» → «Входящий вебхук».</li>
+                    <li>В «Настройке прав» отметьте «CRM (crm)» и нажмите «Сохранить».</li>
+                    <li>Скопируйте «Вебхук для вызова rest api» — адрес вида https://ваш-портал.bitrix24.kz/rest/1/код/ — и вставьте сюда.</li>
+                  </ol>
                 </div>
               ) : (
                 /* AmoCRM: domain + API key */
@@ -780,9 +767,14 @@ function CrmIntegrationTab() {
                       type="password"
                       value={connectToken}
                       onChange={e => setConnectToken(e.target.value)}
-                      placeholder="Вставьте API ключ..."
+                      placeholder="Вставьте долгосрочный токен…"
                       className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono"
                     />
+                    <ol className="text-[11px] text-on-surface-variant mt-2 pl-4 space-y-1 list-decimal">
+                      <li>В amoCRM откройте «amoМаркет» → «⋯» → «Создать интеграцию» → «Внешняя интеграция», дайте ей доступ к данным аккаунта и сохраните.</li>
+                      <li>В интеграции на вкладке «Ключи и доступы» сгенерируйте долгосрочный токен, выберите срок действия и скопируйте его.</li>
+                      <li>Домен — адрес аккаунта вида ваш-аккаунт.amocrm.ru. Когда срок токена закончится, создайте новый и подключите заново.</li>
+                    </ol>
                   </div>
                 </>
               )}
@@ -863,17 +855,59 @@ export default function PulsePage() {
   )
 }
 
+/** Russian plural (1 / 2-4 / 5+). */
+function plural(n: number, one: string, few: string, many: string) {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
+  return many
+}
+
+/** /api/v1/crm/today failed: say so where its data would be — the other tabs keep working (L7). */
+function TodayFailed({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+  return (
+    <div className="p-6 text-center bg-error/10 rounded-2xl border border-error/20">
+      <p className="text-error font-medium">Не удалось загрузить очередь «Кому звонить сегодня»</p>
+      <p className="text-xs text-on-surface-variant mt-2">
+        Риски и карточки клиентов сейчас недоступны. Вкладки «База клиентов» и «CRM-интеграции» работают.
+      </p>
+      <button onClick={onRetry} disabled={retrying}
+        className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-error/30 text-xs text-error hover:bg-error/10 disabled:opacity-40 transition-colors">
+        <span className={`material-symbols-outlined text-sm ${retrying ? 'animate-spin' : ''}`}>{retrying ? 'progress_activity' : 'refresh'}</span>
+        Повторить
+      </button>
+    </div>
+  )
+}
+
+function TodayLoading() {
+  return (
+    <div className="flex items-center justify-center min-h-[200px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  )
+}
+
+/** The briefing request may not hang the block: abort after the route's own 60 s deadline. */
+const BRIEFING_TIMEOUT_MS = 70_000
+
+const withSector = (m: CrmTodayClient): PulseClient => ({ ...m, sector: m.statusLabel })
+
 function CrmMonitorSection() {
   const [tab, setTab] = useState<'today' | 'base' | 'risk' | 'card' | 'crm'>('today')
-  // Own CRM base (not the demo /api/pulse) — «Кому звонить сегодня» queue + KPI.
-  const { data: clientsData, isLoading, error } = useCrmToday()
+  // Own CRM base — «Кому звонить сегодня» queue, risk list + KPI (lib/crm/today.ts).
+  const { data: clientsData, isLoading, error, refetch, isFetching } = useCrmToday()
+  const todayFailed = !!error && !clientsData
+  const todayReady = !!clientsData
   const logInteraction = useLogInteraction()
 
+  // L9: «Мониторинг» is a per-session marker only (not persisted: there is no column for it).
   const [monitored, setMonitored]         = useState<Set<string>>(new Set())
   const [callClient, setCallClient]       = useState<ModalClient | null>(null)
   const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
   const [filterRisk, setFilterRisk]       = useState<'all' | 'high' | 'medium' | 'low'>('all')
-  const [briefing, setBriefing]           = useState<string | null>(null)
+  const [briefing, setBriefing]           = useState<BriefingView | null>(null)
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [drawerClient, setDrawerClient]   = useState<DrawerClient | null>(null)
   const [importOpen, setImportOpen]       = useState(false)
@@ -893,7 +927,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
       {
         onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])
@@ -909,7 +943,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
       {
         onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])
@@ -921,108 +955,94 @@ function CrmMonitorSection() {
     else toggleMonitor(c.id)
   }, [doCall, doMessage])
 
-  // Map backend data to frontend structure (carry native CRM fields through).
-  const TODAY_CLIENTS = useMemo<PulseClient[]>(() => {
-    if (!clientsData?.todayClients) return []
-    return (clientsData.todayClients as any[]).map(m => ({
-      id: m.id,
-      name: m.name,
-      sector: m.sector,
-      forbes: m.forbes,
-      lastOrder: m.lastOrder,
-      daysSince: m.daysSince,
-      avgCheck: m.avgCheck,
-      volumeChange: m.volumeChange,
-      riskScore: m.riskScore,
-      churnProb: m.churnProb,
-      churnLevel: m.churnLevel as 'high' | 'medium' | 'low',
-      comment: m.comment,
-      action: m.action as 'call' | 'message' | 'monitor',
-      history: m.history,
-      orderCycle: m.orderCycle || 14,
-      // native CRM fields
-      status: m.status,
-      phone: m.phone,
-      email: m.email,
-      note: m.note,
-      nextContactAt: m.nextContactAt,
-      lastContactAt: m.lastContactAt,
-      queueBucket: m.queueBucket,
-    }))
-  }, [clientsData])
+  const TODAY_CLIENTS = useMemo<PulseClient[]>(
+    () => (clientsData?.todayClients ?? []).map(withSector), [clientsData])
+  // The base's high/medium-risk clients (not only today's queue: a handled or lost client is still at risk).
+  const RISK_CLIENTS = useMemo<PulseClient[]>(
+    () => (clientsData?.riskClients ?? []).map(withSector), [clientsData])
 
-  // Держим только ID выбранного клиента, а сам объект деривим из свежего
-  // TODAY_CLIENTS — иначе после рефетча (напр. логирования касания) карточка
-  // показывала бы устаревший снимок. Дефолт — первый в очереди.
+  // The card keeps the client the owner chose, BY ID, and derives the row from fresh data (after a
+  // refetch the card is never a stale snapshot). It never falls back to another person: a logged
+  // touch takes the client off the queue / risk lists, and the card used to jump to the first
+  // client then — «Написать» opened WhatsApp for, and logged a message on, the wrong person.
+  // lib/crm/card-client.ts: the lists' row, else the whole base's row, else an empty state.
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
-  const selectedClient =
-    TODAY_CLIENTS.find((c) => c.id === selectedClientId) ?? TODAY_CLIENTS[0] ?? null
+  const [lastKnownCard, setLastKnownCard] = useState<PulseClient | null>(null)
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(() => new Set())
+  const CARD_CLIENTS = useMemo(() => {
+    const seen = new Set<string>()
+    return [...TODAY_CLIENTS, ...RISK_CLIENTS].filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
+  }, [TODAY_CLIENTS, RISK_CLIENTS])
+  // Nothing chosen yet: the tab shows the first client — and that becomes the choice (pinned), so a
+  // refetch never swaps the person on the card. Only the owner's click changes it after that.
+  const cardId = selectedClientId ?? CARD_CLIENTS[0]?.id ?? null
+  useEffect(() => {
+    if (tab === 'card' && selectedClientId == null && cardId != null) setSelectedClientId(cardId)
+  }, [tab, selectedClientId, cardId])
+  const listedCard = useMemo(() => CARD_CLIENTS.find((c) => c.id === cardId) ?? null, [CARD_CLIENTS, cardId])
+  useEffect(() => { if (listedCard) setLastKnownCard(listedCard) }, [listedCard])
+  // Left the lists: read it from the whole base (shared with the «База клиентов» tab's cache).
+  const cardNeedsBase = tab === 'card' && cardId != null && !listedCard && !deletedIds.has(cardId)
+  const { data: baseData } = useCrmClients(undefined, { enabled: cardNeedsBase })
+  const cardPick = useMemo(() => {
+    const base = cardNeedsBase && baseData ? baseData.clients : null
+    const avg = base ? portfolioAverageCheck(base) : 0
+    return pickCardClient<PulseClient, CrmClient>({
+      selectedId: cardId,
+      lists: CARD_CLIENTS,
+      lastKnown: lastKnownCard,
+      base,
+      deletedIds,
+      // not in the first 50 of the queue: its bucket is not known here — none is shown
+      fromBaseRow: (row) => withSector({ ...toTodayClient(row, avg, null, Date.now()), status: row.status }),
+    })
+  }, [cardNeedsBase, baseData, cardId, CARD_CLIENTS, lastKnownCard, deletedIds])
+  const selectedClient = cardPick.kind === 'client' ? cardPick.client : null
+  const cardChips = selectedClient && !listedCard ? [selectedClient, ...CARD_CLIENTS] : CARD_CLIENTS
 
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
   )
-  const filteredRisk = TODAY_CLIENTS
-    .filter((c) => c.churnLevel === 'high' || c.churnLevel === 'medium')
+  const filteredRisk = RISK_CLIENTS
     .filter((c) => filterRisk === 'all' || c.churnLevel === filterRisk)
-    .sort((a, b) => b.riskScore - a.riskScore)
 
-  // KPI come from the API `stats` (portfolio-wide) — todayClients is only the
-  // queue subset, so recomputing from it would undercount. Fall back to the
-  // queue when a field is missing.
-  const DYNAMIC_STATS = useMemo(() => {
-    const s = clientsData?.stats
-    const high = typeof s?.highRisk === 'number' ? s.highRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
-    const medium = typeof s?.mediumRisk === 'number' ? s.mediumRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
-    const revenueAtRisk = typeof s?.revenueAtRisk === 'number'
-      ? s.revenueAtRisk
-      : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').reduce((sum, c) => sum + c.avgCheck, 0)
-    const totalClients = typeof s?.totalClients === 'number' ? s.totalClients : TODAY_CLIENTS.length
-    const processedToday = typeof s?.processedToday === 'number' ? s.processedToday : 0
-    const dailyTarget = typeof s?.dailyTarget === 'number' ? s.dailyTarget : Math.max(6, processedToday)
-    return { revenueAtRisk, highRisk: high, mediumRisk: medium, totalClients, processedToday, dailyTarget }
-  }, [TODAY_CLIENTS, clientsData])
+  // KPI straight from the API (portfolio-wide, every client). No stand-ins: unknown stays unknown.
+  const stats = clientsData?.stats ?? null
 
-  const highRiskRevenue = DYNAMIC_STATS.revenueAtRisk
-
-  // Initialize briefing from API response (daily cached)
-  useEffect(() => {
-    if (clientsData?.aiBriefing && !briefing) {
-      setBriefing(clientsData.aiBriefing)
-    }
-  }, [clientsData?.aiBriefing, briefing])
-
-  // Manual refresh briefing
+  // Manual briefing (POST /api/pulse/briefing over the own base): text, «нет клиентов»,
+  // «лимит/бюджет исчерпан» or an error — and never a spinner that does not stop.
   const refreshBriefing = useCallback(async () => {
     setBriefingLoading(true)
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), BRIEFING_TIMEOUT_MS)
     try {
-      const res = await fetch('/api/pulse/briefing', { method: 'POST' })
-      const data = await res.json()
-      if (data.briefing) setBriefing(data.briefing)
-    } catch { /* non-fatal */ }
-    finally { setBriefingLoading(false) }
+      const res = await fetch('/api/pulse/briefing', { method: 'POST', signal: ctrl.signal })
+      let body: unknown = null
+      try { body = await res.json() } catch { /* non-JSON (e.g. a proxy 504) */ }
+      setBriefing(briefingView(res.status, body))
+    } catch {
+      setBriefing(briefingNetworkError(ctrl.signal.aborted))
+    } finally {
+      clearTimeout(timer)
+      setBriefingLoading(false)
+    }
   }, [])
 
-  if (isLoading) return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-    </div>
-  )
-
-  if (error) return (
-    <div className="p-8 text-center bg-error/10 rounded-2xl border border-error/20">
-      <p className="text-error font-medium">Ошибка загрузки данных</p>
-      <p className="text-xs text-on-surface-variant mt-2">База данных временно недоступна или не настроена</p>
-    </div>
-  )
-
-  if (!selectedClient && TODAY_CLIENTS.length > 0) return null
+  const highRisk = stats?.highRisk ?? 0
+  const riskTotal = clientsData?.riskClientsTotal ?? 0
+  // The whole queue's size; the payload carries its first 50 (lib/crm/today.ts TODAY_LIST_MAX).
+  const todayTotal = clientsData?.todayClientsTotal ?? TODAY_CLIENTS.length
 
   return (
     <div className="space-y-6">
       {/* ── Modals & overlays ── */}
       <CallModal    client={callClient}    onClose={() => setCallClient(null)} />
       <MessageModal client={messageClient} onClose={() => setMessageClient(null)} />
-      <ClientDrawer client={drawerClient} onClose={() => setDrawerClient(null)} />
+      <ClientDrawer
+        client={drawerClient}
+        onClose={() => setDrawerClient(null)}
+        onDeleted={(id) => setDeletedIds((prev) => new Set(prev).add(id))}
+      />
       <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       {/* ── Header ── */}
@@ -1036,7 +1056,8 @@ function CrmMonitorSection() {
             <span className="text-gradient">сегодня</span>
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
-            Инструмент менеджера по продажам — видит кто уходит, у кого падает объём, и какое действие нужно прямо сейчас.
+            Очередь на сегодня из вашей базы: просроченные и запланированные контакты, клиенты без плана и
+            «спящие». Кого обработали сегодня — уходит из очереди.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
@@ -1067,11 +1088,24 @@ function CrmMonitorSection() {
                 {briefingLoading ? 'Генерация...' : 'Обновить'}
               </button>
             </div>
-            {briefing ? (
-              <p className="text-sm text-on-surface leading-relaxed">{briefing}</p>
+            {briefing?.status === 'ok' && briefing.text ? (
+              <>
+                {/* Plain text nodes only: **bold** from the model becomes <strong>, nothing is HTML. */}
+                <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+                  {briefingSegments(briefing.text).map((seg, i) =>
+                    seg.bold ? <strong key={i} className="font-semibold">{seg.text}</strong> : <span key={i}>{seg.text}</span>)}
+                </p>
+                {briefing.cached && (
+                  <p className="text-[10px] font-mono text-on-surface-variant/60 mt-1.5">Рекомендация на сегодня уже готова — обновляется раз в день</p>
+                )}
+              </>
+            ) : briefing ? (
+              <p className={`text-sm ${briefing.status === 'error' ? 'text-error' : briefing.status === 'limited' ? 'text-tertiary-container' : 'text-on-surface-variant'}`}>
+                {briefing.message}
+              </p>
             ) : (
               <p className="text-sm text-on-surface-variant italic">
-                Нажмите «Обновить» чтобы получить рекомендацию
+                Нажмите «Обновить», чтобы получить рекомендацию по вашей очереди
               </p>
             )}
           </div>
@@ -1079,63 +1113,67 @@ function CrmMonitorSection() {
       </section>
 
       {/* ── Stats bar ── */}
-      <div data-tour="crm-kpi" className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          {
-            label: 'Выручка под угрозой',
-            value: fmt(highRiskRevenue),
-            icon: 'payments',
-            color: 'error',
-            sub: `${DYNAMIC_STATS.highRisk} клиентов высокого риска`,
-          },
-          {
-            label: 'Высокий риск',
-            value: String(DYNAMIC_STATS.highRisk),
-            icon: 'crisis_alert',
-            color: 'error',
-            sub: 'требуют звонка сегодня',
-          },
-          {
-            label: 'Средний риск',
-            value: String(DYNAMIC_STATS.mediumRisk),
-            icon: 'warning',
-            color: 'tertiary-container',
-            sub: 'написать до конца дня',
-          },
-          {
-            label: 'Всего клиентов',
-            value: String(DYNAMIC_STATS.totalClients),
-            icon: 'group',
-            color: 'on-surface-variant',
-            sub: 'в активной базе',
-          },
-          {
-            label: 'Обработано сегодня',
-            value: `${DYNAMIC_STATS.processedToday} / ${DYNAMIC_STATS.dailyTarget}`,
-            icon: 'task_alt',
-            color: 'primary',
-            sub: `${Math.round((DYNAMIC_STATS.processedToday / DYNAMIC_STATS.dailyTarget) * 100)}% выполнено`,
-          },
-        ].map((stat) => (
-          <div key={stat.label}
-            className="bg-surface-container-low rounded-xl border border-white/[0.04] p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest leading-tight">{stat.label}</p>
-              <span className={`material-symbols-outlined text-base text-${stat.color} opacity-60`}>{stat.icon}</span>
+      {todayReady && stats ? (
+        <div data-tour="crm-kpi" className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[
+            {
+              label: 'Под угрозой (ср. чеки)',
+              value: stats.revenueAtRisk == null ? 'нет данных' : fmt(stats.revenueAtRisk),
+              icon: 'payments',
+              color: stats.revenueAtRisk == null ? 'on-surface-variant' : 'error',
+              sub: stats.revenueAtRisk == null
+                ? `чек не указан у ${stats.highRiskWithoutCheck} из ${stats.highRisk} клиентов высокого риска`
+                : `сумма средних чеков ${stats.highRisk} ${plural(stats.highRisk, 'клиента', 'клиентов', 'клиентов')} высокого риска`,
+            },
+            {
+              label: 'Высокий риск',
+              value: String(stats.highRisk),
+              icon: 'crisis_alert',
+              color: 'error',
+              sub: 'звонок в приоритете',
+            },
+            {
+              label: 'Средний риск',
+              value: String(stats.mediumRisk),
+              icon: 'warning',
+              color: 'tertiary-container',
+              sub: 'стоит написать',
+            },
+            {
+              label: 'Всего клиентов',
+              value: String(stats.totalClients),
+              icon: 'group',
+              color: 'on-surface-variant',
+              sub: 'в вашей базе',
+            },
+            {
+              label: 'Обработано сегодня',
+              value: String(stats.processedToday),
+              icon: 'task_alt',
+              color: 'primary',
+              sub: `в очереди осталось ${todayTotal}`,
+            },
+          ].map((stat) => (
+            <div key={stat.label}
+              className="bg-surface-container-low rounded-xl border border-white/[0.04] p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest leading-tight">{stat.label}</p>
+                <span className={`material-symbols-outlined text-base text-${stat.color} opacity-60`}>{stat.icon}</span>
+              </div>
+              <p className={`text-xl font-mono font-bold text-${stat.color} leading-none mb-1`}>{stat.value}</p>
+              <p className="text-[10px] text-on-surface-variant/60">{stat.sub}</p>
             </div>
-            <p className={`text-xl font-mono font-bold text-${stat.color} leading-none mb-1`}>{stat.value}</p>
-            <p className="text-[10px] text-on-surface-variant/60">{stat.sub}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : null}
 
-      {/* ── Tabs ── */}
+      {/* ── Tabs (always: the base and the integrations do not depend on the queue) ── */}
       <div data-tour="crm-tabs" className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
         <div className="flex gap-1 min-w-max">
           {([
-            { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
-            { key: 'base',  label: 'База',          labelFull: 'База клиентов',           count: DYNAMIC_STATS.totalClients, icon: 'contacts' },
-            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length, icon: null },
+            { key: 'today', label: 'Кому звонить', labelFull: 'Кому звонить сегодня', count: todayReady ? todayTotal : null, icon: null },
+            { key: 'base',  label: 'База',          labelFull: 'База клиентов',           count: todayReady ? stats?.totalClients ?? null : null, icon: 'contacts' },
+            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: todayReady ? riskTotal : null, icon: null },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
             { key: 'crm',   label: 'CRM',          labelFull: 'CRM-интеграции',          count: null, icon: 'sync' },
           ] as const).map(({ key, label, labelFull, count, icon }) => (
@@ -1158,8 +1196,14 @@ function CrmMonitorSection() {
         </div>
       </div>
 
+      {/* ── The queue-dependent tabs: loading / failed (honestly) / content ── */}
+      {(tab === 'today' || tab === 'risk' || tab === 'card') && isLoading && <TodayLoading />}
+      {(tab === 'today' || tab === 'risk' || tab === 'card') && todayFailed && (
+        <TodayFailed onRetry={() => { void refetch() }} retrying={isFetching} />
+      )}
+
       {/* ── Risk filter (only for the risk-scored queues) ── */}
-      {(tab === 'today' || tab === 'risk') && (
+      {todayReady && (tab === 'today' || tab === 'risk') && (
         <div className="flex gap-2 items-center overflow-x-auto no-scrollbar pb-0.5">
           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest flex-shrink-0">Риск:</span>
           {(['all', 'high', 'medium', 'low'] as const).map((r) => {
@@ -1181,15 +1225,42 @@ function CrmMonitorSection() {
       )}
 
       {/* ─── TAB 1: Today ─── */}
-      {tab === 'today' && (
+      {tab === 'today' && todayReady && stats && (
         <div data-tour="crm-queue" className="space-y-4">
-          {/* Alert banner */}
-          {DYNAMIC_STATS.highRisk > 0 && (
+          {/* Alert banner — only what the base says */}
+          {highRisk > 0 && (
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">
               <span className="w-2.5 h-2.5 rounded-full bg-error animate-pulse flex-shrink-0" />
               <p className="text-sm text-error font-medium">
-                <strong>{DYNAMIC_STATS.highRisk} клиента</strong> просрочили цикл заказа более чем на 10 дней.
-                Возможна потеря <strong>{fmt(highRiskRevenue)}</strong> в этом месяце.
+                <strong>{highRisk} {plural(highRisk, 'клиент', 'клиента', 'клиентов')}</strong> в зоне высокого риска — давно без касаний
+                или со статусом «Потерян».
+                {stats.revenueAtRisk != null && stats.revenueAtRisk > 0 && (
+                  <> Сумма их средних чеков — <strong>{fmt(stats.revenueAtRisk)}</strong>.</>
+                )}
+                {stats.revenueAtRisk == null && (
+                  <> Сумма под угрозой неизвестна: у {stats.highRiskWithoutCheck} из них не указан средний чек.</>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Queue composition */}
+          <p className="text-[11px] font-mono text-on-surface-variant">
+            Просрочено: {stats.queue.overdue} · На сегодня: {stats.queue.today} · Без плана: {stats.queue.noPlan} · Спящих: {stats.queue.sleeping}
+          </p>
+          {todayTotal > TODAY_CLIENTS.length && (
+            <p className="text-[11px] font-mono text-on-surface-variant">
+              Показаны первые {TODAY_CLIENTS.length} из {todayTotal} по приоритету — остальные в очереди следом и на вкладке «База клиентов».
+            </p>
+          )}
+
+          {TODAY_CLIENTS.length === 0 && (
+            <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+              <span className="material-symbols-outlined text-3xl text-primary/60 block mb-2">task_alt</span>
+              <p className="text-sm text-on-surface-variant">
+                {stats.totalClients === 0
+                  ? 'В базе пока нет клиентов — добавьте их на вкладке «База клиентов».'
+                  : 'Очередь на сегодня пуста: все клиенты обработаны или их контакт запланирован на другой день.'}
               </p>
             </div>
           )}
@@ -1207,15 +1278,10 @@ function CrmMonitorSection() {
                       c.churnLevel === 'high' ? 'bg-error' : c.churnLevel === 'medium' ? 'bg-tertiary-container' : 'bg-primary'
                     }`} />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-semibold text-on-surface">{c.name}</p>
-                        {c.forbes != null && (
-                          <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                            Forbes #{(c as any).forbes}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-on-surface-variant truncate">{c.sector}</p>
+                      <p className="text-sm font-semibold text-on-surface">{c.name}</p>
+                      <p className="text-[10px] text-on-surface-variant truncate">
+                        {c.sector}{c.queueBucket != null ? ` · ${BUCKET_LABEL[c.queueBucket]}` : ''}
+                      </p>
                     </div>
                   </div>
                   <ActionBtn action={c.action} size="sm"
@@ -1225,48 +1291,44 @@ function CrmMonitorSection() {
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   <div className="bg-surface-container rounded-lg p-2">
                     <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Ср. чек</p>
-                    <div className="flex items-center gap-1">
-                      <p className="text-xs font-mono font-bold text-on-surface">{fmt(c.avgCheck)}</p>
-                      <MiniSparkline values={c.history} />
-                    </div>
+                    <p className="text-xs font-mono font-bold text-on-surface">{fmtCheck(c.avgCheck)}</p>
                   </div>
                   <div className="bg-surface-container rounded-lg p-2">
-                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Изм. объёма</p>
-                    <span className={`text-xs font-mono font-bold ${
-                      c.volumeChange < -30 ? 'text-error' : c.volumeChange < 0 ? 'text-tertiary-container' : 'text-primary'
-                    }`}>{c.volumeChange > 0 ? '+' : ''}{c.volumeChange}%</span>
+                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Чек к ср.</p>
+                    <span className="text-xs font-mono font-bold text-on-surface">{fmtCheckVsAvg(c.checkVsAvgPct)}</span>
                   </div>
                   <div className="bg-surface-container rounded-lg p-2">
-                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Заказ</p>
-                    <p className={`text-xs font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface'}`}>{c.daysSince}д. назад</p>
+                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Касание</p>
+                    <p className="text-xs font-mono text-on-surface">{fmtDaysSince(c.daysSince)}</p>
                   </div>
                 </div>
                 {/* Risk row */}
                 <div className="flex items-center justify-between gap-3">
                   <RiskBar score={c.riskScore} />
-                  <RiskBadge level={c.churnLevel} prob={c.churnProb} />
+                  <RiskBadge level={c.churnLevel} />
                 </div>
                 {/* Comment */}
-                <p className="text-[11px] text-on-surface-variant mt-2 line-clamp-2">{c.comment}</p>
+                {c.comment && <p className="text-[11px] text-on-surface-variant mt-2 line-clamp-2">{c.comment}</p>}
               </div>
             ))}
           </div>
 
           {/* Desktop table (≥ md) */}
+          {TODAY_CLIENTS.length > 0 && (
           <div className="hidden md:block bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/[0.04]">
                     {([
-                      { label: 'Клиент', tip: 'Название сделки или компании из CRM' },
-                      { label: 'Последний заказ', tip: 'Дата последнего изменения сделки в CRM' },
-                      { label: 'Ср. чек', tip: 'Сумма сделки из CRM (поле «Сумма» в Bitrix24)' },
-                      { label: 'Изм. объёма', tip: 'Отклонение суммы сделки от среднего по портфелю: (сумма − средняя) ÷ средняя × 100%' },
-                      { label: 'Риск-скор', tip: 'Комплексная оценка 0–100: стадия сделки + дни без активности + возраст сделки + сумма vs средняя' },
-                      { label: 'Вер-сть оттока', tip: 'Вероятность потери клиента: на основе стадии (успех/провал/процесс), простоя и риск-скора' },
-                      { label: 'Комментарий', tip: 'Контекстная подсказка: крупная сделка, долгий цикл, нет активности N дней' },
-                      { label: 'Действие', tip: 'Рекомендация: Звонок (риск>60 или простой>7дн), Написать (риск>35), Мониторинг (низкий риск)' },
+                      { label: 'Клиент', tip: 'Имя клиента, его статус и почему он в очереди сегодня' },
+                      { label: 'Последнее касание', tip: 'Последний звонок, сообщение или встреча либо напоминание, отмеченное «Выполнено». Заметка касанием не считается' },
+                      { label: 'Ср. чек', tip: 'Средний чек из карточки клиента; «—» — не указан' },
+                      { label: 'Чек к среднему', tip: 'Чек клиента против среднего чека вашей базы: (чек − средний) ÷ средний × 100%. Это не динамика заказов' },
+                      { label: 'Риск-скор', tip: 'Оценка 0–100 по правилу: дни без касания × 2,5 (до 70; нет касаний — 50), «Спящий» +15, «Клиент» −10, чек ниже половины среднего +10, чек выше двух средних −5 (средний — если известно хотя бы 2 чека), «Потерян» — 95' },
+                      { label: 'Уровень риска', tip: 'Высокий — скор выше 60, средний — 41–60, низкий — до 40. Это уровень эвристики, а не вероятность' },
+                      { label: 'Комментарий', tip: 'Подсказка из данных: нет касаний N дней, давно без движения, крупный чек' },
+                      { label: 'Действие', tip: 'Звонок — статус «Потерян», нет касаний, больше 7 дней без касания или риск выше 60; Написать — риск выше 35; иначе мониторинг' },
                     ] as const).map((h) => (
                       <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
@@ -1293,47 +1355,31 @@ function CrmMonitorSection() {
                             c.churnLevel === 'high' ? 'bg-error' : c.churnLevel === 'medium' ? 'bg-tertiary-container' : 'bg-primary'
                           }`} />
                           <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                              {c.forbes != null && (
-                                <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                                  Forbes #{(c as any).forbes}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-on-surface-variant">{c.sector}</p>
+                            <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
+                            <p className="text-[10px] text-on-surface-variant">
+                              {c.sector}{c.queueBucket != null ? ` · ${BUCKET_LABEL[c.queueBucket]}` : ''}
+                            </p>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <p className="text-sm text-on-surface">{c.lastOrder}</p>
-                        <p className={`text-[10px] font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
-                          {c.daysSince} дн. назад
-                        </p>
+                        <p className="text-sm text-on-surface">{fmtDate(c.lastContactAt) ?? '—'}</p>
+                        <p className="text-[10px] font-mono text-on-surface-variant">{fmtDaysSince(c.daysSince)}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-mono text-on-surface">{fmt(c.avgCheck)}</p>
-                          <MiniSparkline values={c.history} />
-                        </div>
+                        <p className="text-sm font-mono text-on-surface">{fmtCheck(c.avgCheck)}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className={`text-sm font-mono font-bold px-2.5 py-1 rounded-lg ${
-                          c.volumeChange < -30 ? 'bg-error/10 text-error' :
-                          c.volumeChange < 0   ? 'bg-tertiary-container/10 text-tertiary-container' :
-                                                  'bg-primary/10 text-primary'
-                        }`}>
-                          {c.volumeChange > 0 ? '+' : ''}{c.volumeChange}%
-                        </span>
+                        <span className="text-sm font-mono text-on-surface-variant">{fmtCheckVsAvg(c.checkVsAvgPct)}</span>
                       </td>
                       <td className="px-4 py-3.5">
                         <RiskBar score={c.riskScore} />
                       </td>
                       <td className="px-4 py-3.5">
-                        <RiskBadge level={c.churnLevel} prob={c.churnProb} />
+                        <RiskBadge level={c.churnLevel} />
                       </td>
                       <td className="px-4 py-3.5 max-w-[200px]">
-                        <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>
+                        <p className="text-xs text-on-surface-variant truncate">{c.comment ?? '—'}</p>
                       </td>
                       <td className="px-4 py-3.5">
                         <ActionBtn action={c.action} size="sm"
@@ -1345,6 +1391,7 @@ function CrmMonitorSection() {
               </table>
             </div>
           </div>
+          )}
 
           {/* Progress summary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1367,7 +1414,7 @@ function CrmMonitorSection() {
         </div>
       )}
 
-      {/* ─── TAB: Client base ─── */}
+      {/* ─── TAB: Client base (works without the queue) ─── */}
       {tab === 'base' && (
         <ClientsTable
           onOpenClient={(c) => setDrawerClient(crmToDrawer(c))}
@@ -1375,9 +1422,19 @@ function CrmMonitorSection() {
         />
       )}
 
-      {/* ─── TAB 2: At Risk ─── */}
-      {tab === 'risk' && (
+      {/* ─── TAB 2: At Risk (the whole base, not only today's queue) ─── */}
+      {tab === 'risk' && todayReady && (
         <div className="space-y-3">
+          {riskTotal > RISK_CLIENTS.length && (
+            <p className="text-[11px] font-mono text-on-surface-variant">
+              Показаны {RISK_CLIENTS.length} самых рискованных из {riskTotal}
+            </p>
+          )}
+          {RISK_CLIENTS.length === 0 && (
+            <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+              <p className="text-sm text-on-surface-variant">Клиентов со средним или высоким риском нет</p>
+            </div>
+          )}
           {filteredRisk.map((c, i) => (
             <div key={c.id}
               onClick={() => { setSelectedClientId(c.id); setTab('card') }}
@@ -1387,24 +1444,19 @@ function CrmMonitorSection() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                    {c.forbes != null && (
-                      <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                        Forbes #{(c as any).forbes}
-                      </span>
-                    )}
                     <span className="text-[10px] text-on-surface-variant">{c.sector}</span>
                   </div>
-                  <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>
+                  <p className="text-xs text-on-surface-variant truncate">{c.comment ?? fmtDaysSince(c.daysSince)}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
                   <div className="text-right hidden sm:block">
                     <p className="text-xs text-on-surface-variant">Ср. чек</p>
-                    <p className="text-sm font-mono font-bold text-on-surface">{fmt(c.avgCheck)}</p>
+                    <p className="text-sm font-mono font-bold text-on-surface">{fmtCheck(c.avgCheck)}</p>
                   </div>
                   <div className="w-20 sm:w-24">
                     <RiskBar score={c.riskScore} />
                   </div>
-                  <RiskBadge level={c.churnLevel} prob={c.churnProb} />
+                  <RiskBadge level={c.churnLevel} />
                   <ActionBtn action={c.action} size="sm"
                     onClick={() => runAction(c)} />
                 </div>
@@ -1415,11 +1467,18 @@ function CrmMonitorSection() {
       )}
 
       {/* ─── TAB 3: Client Card ─── */}
-      {tab === 'card' && (
+      {tab === 'card' && todayReady && (
         <div className="space-y-4">
+          {cardPick.kind === 'none' && (
+            <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+              <p className="text-sm text-on-surface-variant">
+                В очереди и в зоне риска сейчас никого — карточку любого клиента можно открыть на вкладке «База клиентов».
+              </p>
+            </div>
+          )}
           {/* Client selector */}
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {TODAY_CLIENTS.map((c) => (
+            {cardChips.map((c) => (
               <button key={c.id}
                 onClick={() => setSelectedClientId(c.id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-colors whitespace-nowrap flex-shrink-0 ${
@@ -1435,8 +1494,25 @@ function CrmMonitorSection() {
             ))}
           </div>
 
-          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
-            {selectedClient && (
+          {cardPick.kind === 'deleted' && (
+            <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+              <p className="text-sm text-on-surface-variant">
+                Этот клиент удалён из базы. Выберите другого клиента выше или на вкладке «База клиентов».
+              </p>
+            </div>
+          )}
+          {cardPick.kind === 'loading' && (
+            <p className="text-xs text-on-surface-variant/60">Загрузка карточки…</p>
+          )}
+          {selectedClient && !listedCard && (
+            <p className="text-[11px] font-mono text-on-surface-variant">
+              {cardPick.kind === 'client' && cardPick.fromBase
+                ? 'Клиента нет в показанных списках «Кому звонить» и «В зоне риска» — карточка по данным базы клиентов.'
+                : 'Клиента нет в показанных списках «Кому звонить» и «В зоне риска» — обновляем карточку по базе клиентов…'}
+            </p>
+          )}
+          {selectedClient && (
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
               <ClientCard
                 client={selectedClient}
                 onCall={() => setCallClient(selectedClient)}
@@ -1445,8 +1521,8 @@ function CrmMonitorSection() {
                 onHistory={() => setDrawerClient(pulseToDrawer(selectedClient))}
                 isMonitored={monitored.has(selectedClient.id)}
               />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

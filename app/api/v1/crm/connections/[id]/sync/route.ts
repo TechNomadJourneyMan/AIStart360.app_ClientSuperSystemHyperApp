@@ -1,25 +1,30 @@
 export const dynamic = 'force-dynamic'
-// Синк тянет до 500 записей из внешней CRM — даём больше времени.
+// Синк читает до 2000 контактов и 2000 сделок из внешней CRM — даём больше времени.
 export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { fetchProviderRecords } from '@/lib/crm/provider-client'
-import { mapProviderRecords } from '@/lib/crm/provider-sync'
-import { openCrmToken } from '@/lib/crm/token-store'
-import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { BUSY_MESSAGE, syncCrmConnection, type SyncConnection } from '@/lib/crm/sync'
+import { isRateLimitedKey } from '@/lib/rate-limit'
+import { emitCrmSyncFailed } from '@/lib/crm/sync-events'
 import { resolveTenant } from '@/lib/tenancy'
-import type { CrmProvider } from '@/lib/crm/types'
-import { withDeadline } from '@/lib/runtime/deadline'
+import { deadlineRemainingMs, withDeadline } from '@/lib/runtime/deadline'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const CHUNK = 200
-const MAX_RECORDS = 500
+/** The sync's own budget: it writes its status well before the route's 60 s deadline. */
+const SYNC_BUDGET_MS = 45_000
+/** Kept between the sync's end and the route deadline (the answer, the event). */
+const ROUTE_MARGIN_MS = 5_000
+/** Manual syncs per user: each one reads up to 4000 CRM records. */
+const RATE = { max: 6, windowMs: 10 * 60_000 }
 
 /**
- * POST — синхронизировать СВОЁ подключение: тянем контакты+сделки, маппим в
- * clients-черновики и upsert-им в crm_clients по телефону (паттерн импорта).
- * RLS скоупит и подключение, и клиентов на пользователя.
+ * POST — синхронизировать СВОЁ подключение сейчас (lib/crm/sync.ts — тот же код, что у
+ * автосинхронизации): контакты → клиенты без дублей, суммы сделок → средний чек, статус
+ * success / partial / error с понятным сообщением. RLS скоупит и подключение, и клиентов.
+ * 200 — success или partial (data.status, data.message); 502 — error (CRM не ответила, ключ не
+ * подошёл…), сообщение в error; 409 — подключение отключено или его синхронизация уже идёт (lease,
+ * общий с автосинхронизацией); 429 — больше 6 ручных синхронизаций за 10 минут.
  */
 async function handlePost(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
@@ -31,121 +36,34 @@ async function handlePost(_req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   }
 
+  if (await isRateLimitedKey(user.id, 'crm-connection-sync', RATE)) {
+    return NextResponse.json({ ok: false, error: 'Слишком часто: синхронизацию можно запускать до 6 раз за 10 минут — попробуйте позже.' }, { status: 429 })
+  }
+
   const { data: conn } = await sb
     .from('crm_provider_connections')
-    .select('id, provider, base_url, access_token')
+    .select('id, user_id, provider, base_url, access_token, is_active')
     .eq('id', params.id)
     .eq('user_id', user.id)
     .maybeSingle()
   if (!conn) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
+  if (!conn.is_active) {
+    return NextResponse.json({ ok: false, error: 'Подключение отключено — подключите CRM заново.' }, { status: 409 })
+  }
 
-  const provider = conn.provider as CrmProvider
+  const left = deadlineRemainingMs()
+  const budget = Math.max(5_000, Math.min(SYNC_BUDGET_MS, left === null ? SYNC_BUDGET_MS : left - ROUTE_MARGIN_MS))
+  const report = await syncCrmConnection(sb, conn as SyncConnection, { deadlineAt: Date.now() + budget })
+  if (report.status === 'busy') {
+    return NextResponse.json({ ok: false, error: BUSY_MESSAGE, code: 'sync_in_progress' }, { status: 409 })
+  }
 
-  let contacts, deals
-  try {
-    ;({ contacts, deals } = await fetchProviderRecords(
-      provider,
-      conn.base_url as string,
-      openCrmToken(conn.access_token as string),
-      MAX_RECORDS,
-    ))
-  } catch (e) {
-    const msg = e instanceof Error ? e.message.slice(0, 300) : 'sync failed'
-    await sb
-      .from('crm_provider_connections')
-      .update({ last_sync_at: new Date().toISOString(), last_sync_status: 'error', last_sync_error: msg })
-      .eq('id', conn.id)
-      .eq('user_id', user.id)
+  if (report.status === 'error') {
     const tenant = await resolveTenant().catch(() => null)
-    emitPlatformEventSafely({
-      name: 'INTEGRATION_FAILED',
-      companyId: tenant && tenant.ok ? tenant.tenant.companyId : null,
-      subjectType: 'crm_connection',
-      subjectId: conn.id as string,
-      actor: user.id,
-      payload: { provider, error: msg },
-      // One alert per connection per hour.
-      dedupeKey: `integration_failed:${conn.id}:${new Date().toISOString().slice(0, 13)}`,
-    })
-    return NextResponse.json({ ok: false, error: msg }, { status: 502 })
+    emitCrmSyncFailed(conn as SyncConnection, report.message, { companyId: tenant && tenant.ok ? tenant.tenant.companyId : null })
+    return NextResponse.json({ ok: false, error: report.message, data: report }, { status: 502 })
   }
-
-  const drafts = mapProviderRecords(provider, contacts, deals).slice(0, MAX_RECORDS)
-
-  let inserted = 0
-  let updated = 0
-  let skipped = 0
-
-  // Уже существующие телефоны → карта phone -> id (чанками, как в import-роуте).
-  const phones = drafts.map((d) => d.phone).filter((p): p is string => !!p)
-  const existing = new Map<string, string>()
-  for (let i = 0; i < phones.length; i += CHUNK) {
-    const slice = phones.slice(i, i + CHUNK)
-    const { data: rows, error } = await sb
-      .from('crm_clients')
-      .select('id, phone')
-      .eq('user_id', user.id)
-      .in('phone', slice)
-    if (error) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
-    for (const r of rows ?? []) if (r.phone) existing.set(r.phone as string, r.id as string)
-  }
-
-  const toInsert = drafts.filter((d) => !(d.phone && existing.has(d.phone)))
-  const toUpdate = drafts.filter((d) => d.phone && existing.has(d.phone))
-
-  for (let i = 0; i < toInsert.length; i += CHUNK) {
-    const slice = toInsert.slice(i, i + CHUNK)
-    const { data, error } = await sb
-      .from('crm_clients')
-      .insert(
-        slice.map((d) => ({
-          user_id: user.id,
-          name: d.name,
-          phone: d.phone,
-          phone_raw: d.phone_raw,
-          email: d.email,
-          avg_check: d.avg_check,
-          source: d.source,
-        })),
-      )
-      .select('id')
-    if (error) skipped += slice.length
-    else inserted += data?.length ?? slice.length
-  }
-
-  // Обновляем только заполненные поля — не затираем ручные email/avg_check null-ом.
-  for (const d of toUpdate) {
-    const id = existing.get(d.phone as string)!
-    const patch: Record<string, unknown> = { name: d.name, updated_at: new Date().toISOString() }
-    if (d.phone_raw) patch.phone_raw = d.phone_raw
-    if (d.email) patch.email = d.email
-    if (d.avg_check != null) patch.avg_check = d.avg_check
-    const { data, error } = await sb
-      .from('crm_clients')
-      .update(patch)
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .select('id')
-    if (error || !data || data.length === 0) skipped++
-    else updated++
-  }
-
-  await sb
-    .from('crm_provider_connections')
-    .update({
-      last_sync_at: new Date().toISOString(),
-      last_sync_status: 'ok',
-      last_sync_error: null,
-      synced_contacts: contacts.length,
-      synced_deals: deals.length,
-    })
-    .eq('id', conn.id)
-    .eq('user_id', user.id)
-
-  return NextResponse.json({
-    ok: true,
-    data: { inserted, updated, skipped, fetchedContacts: contacts.length, fetchedDeals: deals.length },
-  })
+  return NextResponse.json({ ok: true, data: report })
 }
 
 /**

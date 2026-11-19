@@ -14,6 +14,9 @@ import {
   type DigestData,
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
+import { almatyDay, PAGE_SIZE, queueCountsByUser, readAllById, type QueueClientInput } from '@/lib/crm/today'
+import { beforeDeadline, dayRotation, runBounded } from '@/lib/crm/bounded-run'
+import { DIGEST_CONCURRENCY, DIGEST_MIN_START_MS, DIGEST_RUN_MS } from '@/lib/crm/digest'
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { cloudApiConfigured } from '@/lib/whatsapp/config'
 
@@ -25,8 +28,10 @@ export const maxDuration = 60
 /**
  * GET /api/cron/crm-digest — утренний CRM-дайджест (Фаза 2 + мультиканал Фазы 4A).
  *
- * Раз в сутки собирает по каждому владельцу CRM:
- *   • просроченные / сегодняшние открытые напоминания (crm_reminders);
+ * Раз в сутки собирает по каждому владельцу CRM — по тем же правилам очереди «Кому звонить
+ * сегодня» (lib/crm/today.ts), для текущего дня по Алматы:
+ *   • клиентов с просроченным запланированным контактом (напоминание / next_contact_at до сегодня);
+ *   • клиентов с контактом, запланированным на сегодня (это не «просрочено»);
  *   • «спящих» клиентов без контакта > 30 дней (crm_clients);
  *   • слабый блок текущей GRI-диагностики (довесок №9).
  * И доставляет по каналам из preferences.notifications.crm: in-app (колокольчик),
@@ -37,10 +42,12 @@ export const maxDuration = 60
  */
 
 const MAX_USERS = 5000
-const SLEEP_DAYS = 30
 const QUERY_LIMIT = 50000
+/** `.in()` lists are sent in the URL: keep them short. */
+const IN_CHUNK = 200
 
-type CountRow = { user_id: string }
+type QueueClientRow = QueueClientInput & { id: string; user_id: string }
+type ReminderRow = { id: string; client_id: string; due_at: string }
 type ProfileRow = {
   id: string
   email?: string | null
@@ -60,8 +67,10 @@ type ProfileRow = {
 async function sendGriRescanReminders(
   supabase: ReturnType<typeof createServiceClient>,
   now: Date,
-): Promise<number> {
+  deadlineAt: number,
+): Promise<{ sent: number; deferred: number }> {
   let sent = 0
+  let deferred = 0
   try {
     const DAY_MS = 24 * 60 * 60 * 1000
     const from = new Date(now.getTime() - 97 * DAY_MS).toISOString()
@@ -82,35 +91,36 @@ async function sendGriRescanReminders(
     }
     const users = Array.from(byUser.entries())
 
-    const CONCURRENCY = 10
-    for (let i = 0; i < users.length; i += CONCURRENCY) {
-      const chunk = users.slice(i, i + CONCURRENCY)
-      const results = await Promise.all(
-        chunk.map(([userId, assessedOn]) =>
-          notifyClient(
-            {
-              userId,
-              category: 'gri',
-              event: 'gri_rescan',
-              title: '⏳ Пора пересчитать GRI',
-              body: 'Вашей диагностике 90 дней — бизнес изменился. Пересчитайте индекс и сравните динамику.',
-              ctaUrl: '/gri?tab=assess',
-              ctaLabel: 'Пересчитать GRI',
-              priority: 'low',
-              eyebrow: 'GRI',
-              dedupeKey: `gri_rescan:${userId}:${assessedOn}`,
-              automated: { kind: 'gri_rescan' },
-            },
-            now,
-          ),
-        ),
-      )
-      sent += results.filter((r) => r.ok && !r.skipped).length
-    }
+    // ≤ 2 at a time and within the run's budget; what is left goes out on a later day of the
+    // week-long window (the dedupe key makes a repeat a no-op).
+    const run = await runBounded(
+      users,
+      { concurrency: DIGEST_CONCURRENCY, deadlineAt, minStartMs: DIGEST_MIN_START_MS },
+      async ([userId, assessedOn]) => {
+        const r = await beforeDeadline(() => notifyClient(
+          {
+            userId,
+            category: 'gri',
+            event: 'gri_rescan',
+            title: '⏳ Пора пересчитать GRI',
+            body: 'Вашей диагностике 90 дней — бизнес изменился. Пересчитайте индекс и сравните динамику.',
+            ctaUrl: '/gri?tab=assess',
+            ctaLabel: 'Пересчитать GRI',
+            priority: 'low',
+            eyebrow: 'GRI',
+            dedupeKey: `gri_rescan:${userId}:${assessedOn}`,
+            automated: { kind: 'gri_rescan' },
+          },
+          now,
+        ), deadlineAt)
+        if (r.ok && r.value.ok && !r.value.skipped) sent += 1
+      },
+    )
+    deferred = run.deferred
   } catch (e) {
     console.warn('[crm-digest] GRI re-scan reminders skipped', e)
   }
-  return sent
+  return { sent, deferred }
 }
 
 export async function GET(req: NextRequest) {
@@ -129,53 +139,51 @@ export async function GET(req: NextRequest) {
     const base = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
     const now = new Date()
-    const endOfToday = new Date(now)
-    endOfToday.setUTCHours(23, 59, 59, 999)
-    const sleepCutoff = new Date(now.getTime() - SLEEP_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    const deadlineAt = now.getTime() + DIGEST_RUN_MS
 
-    // 1) Открытые просроченные / сегодняшние напоминания.
-    const { data: reminders, error: remErr } = await supabase
-      .from('crm_reminders')
-      .select('user_id')
-      .eq('status', 'open')
-      .lte('due_at', endOfToday.toISOString())
-      .limit(QUERY_LIMIT)
-    if (remErr) throw remErr
+    // 1–2) Every client and every open reminder (page by page, no silent cut), then the SAME queue
+    // rule as «Кому звонить сегодня» (lib/crm/today.ts): overdue / due today / sleeping are the
+    // queue's buckets for today's Almaty day — a reminder due later today is «на сегодня», never
+    // «просрочено», and the sleeping count is the queue's.
+    const clients = await readAllById<QueueClientRow>((after) => {
+      let q = supabase.from('crm_clients').select('id, user_id, status, next_contact_at, last_contact_at, created_at')
+      if (after) q = q.gt('id', after)
+      return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: QueueClientRow[] | null; error: unknown }>
+    })
+    if (!clients.ok) throw clients.error
+    const reminders = await readAllById<ReminderRow>((after) => {
+      let q = supabase.from('crm_reminders').select('id, client_id, due_at').eq('status', 'open')
+      if (after) q = q.gt('id', after)
+      return q.order('id', { ascending: true }).limit(PAGE_SIZE) as unknown as PromiseLike<{ data: ReminderRow[] | null; error: unknown }>
+    })
+    if (!reminders.ok) throw reminders.error
 
-    // 2) «Спящие» клиенты.
-    const { data: sleeping, error: sleepErr } = await supabase
-      .from('crm_clients')
-      .select('user_id')
-      .in('status', ['customer', 'sleeping'])
-      .or(`last_contact_at.lt.${sleepCutoff},and(last_contact_at.is.null,created_at.lt.${sleepCutoff})`)
-      .limit(QUERY_LIMIT)
-    if (sleepErr) throw sleepErr
-
-    if ((reminders?.length ?? 0) >= QUERY_LIMIT || (sleeping?.length ?? 0) >= QUERY_LIMIT) {
-      console.warn('[crm-digest] query limit hit — some rows may be truncated')
-    }
-
-    const overdueByUser = new Map<string, number>()
-    for (const r of (reminders ?? []) as CountRow[]) {
-      if (r.user_id) overdueByUser.set(r.user_id, (overdueByUser.get(r.user_id) ?? 0) + 1)
-    }
-    const sleepingByUser = new Map<string, number>()
-    for (const c of (sleeping ?? []) as CountRow[]) {
-      if (c.user_id) sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
-    }
+    const countsByUser = queueCountsByUser(clients.rows, reminders.rows, now.getTime())
 
     // Пользователи с ненулевым дайджестом.
-    const affected = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()])).filter(
-      (u) => (overdueByUser.get(u) ?? 0) + (sleepingByUser.get(u) ?? 0) > 0,
-    )
+    const affected = Array.from(countsByUser.entries())
+      .filter(([, c]) => c.overdue + c.dueToday + c.sleeping > 0)
+      .map(([u]) => u)
     if (affected.length > MAX_USERS) {
       console.warn(`[crm-digest] ${affected.length} users affected, capping at ${MAX_USERS}`)
     }
-    const targets = affected.slice(0, MAX_USERS)
+    const day = almatyDay(now.getTime()).day
+    // The most urgent owners first; ties in a per-day order, so when a run cannot reach everyone
+    // the same owners are not the ones left out every day.
+    const urgency = (u: string) => {
+      const c = countsByUser.get(u)
+      return c ? [c.overdue, c.dueToday, c.sleeping] : [0, 0, 0]
+    }
+    const targets = affected
+      .sort((a, b) => {
+        const [ua, ub] = [urgency(a), urgency(b)]
+        return ub[0] - ua[0] || ub[1] - ua[1] || ub[2] - ua[2] || dayRotation(day, a) - dayRotation(day, b)
+      })
+      .slice(0, MAX_USERS)
 
     if (targets.length === 0) {
       // Re-scan-напоминания должны уйти и в «тихий» день без CRM-дайджестов.
-      const rescanReminders = await sendGriRescanReminders(supabase, now)
+      const rescan = await sendGriRescanReminders(supabase, now, deadlineAt)
       return NextResponse.json({
         ok: true,
         data: {
@@ -184,8 +192,14 @@ export async function GET(req: NextRequest) {
           telegramSent: 0,
           whatsappSent: 0,
           totalOverdue: 0,
+          totalDueToday: 0,
           totalSleeping: 0,
-          rescanReminders,
+          undelivered: 0,
+          timedOut: 0,
+          deferred: 0,
+          rescanReminders: rescan.sent,
+          rescanDeferred: rescan.deferred,
+          elapsedMs: Date.now() - now.getTime(),
         },
       })
     }
@@ -193,13 +207,14 @@ export async function GET(req: NextRequest) {
     // Профили (email/telegram/prefs) — устойчиво к неприменённой миграции 045:
     // если колонки telegram_chat_id ещё нет, читаем без неё (Telegram выключен).
     const profileById = new Map<string, ProfileRow>()
-    {
+    for (let i = 0; i < targets.length; i += IN_CHUNK) {
+      const ids = targets.slice(i, i + IN_CHUNK)
       const primary = await supabase
         .from('profiles')
         .select('id, email, telegram_chat_id, preferences')
-        .in('id', targets)
+        .in('id', ids)
       const rows = primary.error
-        ? (await supabase.from('profiles').select('id, email, preferences').in('id', targets)).data
+        ? (await supabase.from('profiles').select('id, email, preferences').in('id', ids)).data
         : primary.data
       for (const p of (rows ?? []) as unknown as ProfileRow[]) profileById.set(p.id, p)
     }
@@ -207,14 +222,16 @@ export async function GET(req: NextRequest) {
     // Слабый блок текущей GRI-диагностики (довесок №9) — best-effort, батчем.
     const weakByUser = new Map<string, { label: string; score: number }>()
     try {
-      const { data: griRows } = await supabase
-        .from('gri_assessments')
-        .select('user_id, section_avgs')
-        .eq('is_current', true)
-        .in('user_id', targets)
-      for (const g of (griRows ?? []) as { user_id: string; section_avgs: unknown }[]) {
-        const weak = pickWeakestBlock(g.section_avgs)
-        if (weak) weakByUser.set(g.user_id, weak)
+      for (let i = 0; i < targets.length; i += IN_CHUNK) {
+        const { data: griRows } = await supabase
+          .from('gri_assessments')
+          .select('user_id, section_avgs')
+          .eq('is_current', true)
+          .in('user_id', targets.slice(i, i + IN_CHUNK))
+        for (const g of (griRows ?? []) as { user_id: string; section_avgs: unknown }[]) {
+          const weak = pickWeakestBlock(g.section_avgs)
+          if (weak) weakByUser.set(g.user_id, weak)
+        }
       }
     } catch (e) {
       console.warn('[crm-digest] GRI insight skipped', e)
@@ -229,41 +246,58 @@ export async function GET(req: NextRequest) {
         console.warn('[crm-digest] WhatsApp recipients skipped', e instanceof Error ? e.message.split('\n')[0] : e)
       }
     }
-    const day = now.toISOString().slice(0, 10)
-
     let usersNotified = 0
     let emailsSent = 0
     let telegramSent = 0
     let whatsappSent = 0
     let totalOverdue = 0
+    let totalDueToday = 0
     let totalSleeping = 0
+    /** Owners started but reached by no channel (a send failed or ran out of the run's budget). */
+    let undelivered = 0
+    /** Channel sends cut by the run's deadline (a provider that did not answer in time). */
+    let timedOut = 0
+    /** One channel send of one owner, bounded by the run's deadline (lib/crm/bounded-run.ts). */
+    const send = async <T,>(start: () => Promise<T>): Promise<T | undefined> => {
+      const r = await beforeDeadline(start, deadlineAt)
+      if (r.ok) return r.value
+      timedOut += 1
+      return undefined
+    }
 
-    const CONCURRENCY = 25
-    for (let i = 0; i < targets.length; i += CONCURRENCY) {
-      const chunk = targets.slice(i, i + CONCURRENCY)
-      await Promise.all(
-        chunk.map(async (userId) => {
-          const overdue = overdueByUser.get(userId) ?? 0
-          const sleep = sleepingByUser.get(userId) ?? 0
-          const profile = profileById.get(userId)
-          const email = profile?.email ?? null
-          const chatId = profile?.telegram_chat_id ?? null
+    // ≤ 2 owners at a time (in-app, e-mail, Telegram, WhatsApp of one owner go one after another),
+    // no owner started with < DIGEST_MIN_START_MS of the 44 s left; the rest is reported as deferred.
+    // Every send is bounded by the run's deadline: a provider that never answers (the Resend SDK
+    // has no timeout) cannot hold the run past it — that owner is reported as not delivered.
+    const run = await runBounded(
+      targets,
+      { concurrency: DIGEST_CONCURRENCY, deadlineAt, minStartMs: DIGEST_MIN_START_MS },
+      async (userId) => {
+        const counts = countsByUser.get(userId) ?? { overdue: 0, dueToday: 0, sleeping: 0 }
+        const overdue = counts.overdue
+        const dueToday = counts.dueToday
+        const sleep = counts.sleeping
+        const profile = profileById.get(userId)
+        const email = profile?.email ?? null
+        const chatId = profile?.telegram_chat_id ?? null
 
-          const channels = selectChannels(profile?.preferences, {
-            hasEmail: Boolean(email),
-            hasTelegram: Boolean(chatId),
-          })
-          if (!channels.inApp && !channels.email && !channels.telegram && !whatsappByUser.has(userId)) return
+        const channels = selectChannels(profile?.preferences, {
+          hasEmail: Boolean(email),
+          hasTelegram: Boolean(chatId),
+        })
+        if (!channels.inApp && !channels.email && !channels.telegram && !whatsappByUser.has(userId)) return
 
-          const data: DigestData = {
-            overdue,
-            sleeping: sleep,
-            weakBlock: weakByUser.get(userId) ?? null,
-          }
-          const title = buildDigestTitle(data)
-          let delivered = false
+        const data: DigestData = {
+          overdue,
+          dueToday,
+          sleeping: sleep,
+          weakBlock: weakByUser.get(userId) ?? null,
+        }
+        const title = buildDigestTitle(data)
+        let delivered = false
 
-          if (channels.inApp) {
+        if (channels.inApp) {
+          const done = await send(async () => {
             await createNotification({
               userId,
               title,
@@ -271,62 +305,79 @@ export async function GET(req: NextRequest) {
               category: 'crm',
               priority: 'medium',
               link: '/pulse',
-              metadata: { overdue, sleeping: sleep },
+              metadata: { overdue, dueToday, sleeping: sleep },
             })
+            return true
+          })
+          if (done) delivered = true
+        }
+
+        if (channels.email && email) {
+          const res = await send(() => sendUserEmail({
+            to: email,
+            subject: 'Кому позвонить сегодня — CRM AIStart360',
+            title,
+            body: buildDigestBody(data),
+            ctaLabel: 'Открыть «Клиенты»',
+            ctaPath: '/pulse',
+          }))
+          if (res?.ok) {
+            emailsSent += 1
             delivered = true
           }
+        }
 
-          if (channels.email && email) {
-            const res = await sendUserEmail({
-              to: email,
-              subject: 'Кому позвонить сегодня — CRM AIStart360',
-              title,
-              body: buildDigestBody(data),
-              ctaLabel: 'Открыть «Клиенты»',
-              ctaPath: '/pulse',
-            })
-            if (res.ok) {
-              emailsSent += 1
-              delivered = true
-            }
+        if (channels.telegram && chatId) {
+          const ok = await send(() => sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`)))
+          if (ok) {
+            telegramSent += 1
+            delivered = true
           }
+        }
 
-          if (channels.telegram && chatId) {
-            const ok = await sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`))
-            if (ok) {
-              telegramSent += 1
-              delivered = true
-            }
+        // Доп-каналы (Фаза 4C): WhatsApp (шаблон digest через очередь) и SMS-заглушка.
+        const waPhone = whatsappByUser.get(userId) ?? null
+        const recipient = { userId, phone: waPhone, whatsappOptIn: waPhone !== null }
+        const message = { title, body: buildDigestBody(data), data, day }
+        for (const ch of EXTRA_DIGEST_CHANNELS) {
+          if (!ch.isEnabled(recipient)) continue
+          const ok = await send(() => ch.send(recipient, message))
+          if (ok) {
+            if (ch.key === 'whatsapp') whatsappSent += 1
+            delivered = true
           }
+        }
 
-          // Доп-каналы (Фаза 4C): WhatsApp (шаблон digest через очередь) и SMS-заглушка.
-          const waPhone = whatsappByUser.get(userId) ?? null
-          const recipient = { userId, phone: waPhone, whatsappOptIn: waPhone !== null }
-          const message = { title, body: buildDigestBody(data), data, day }
-          for (const ch of EXTRA_DIGEST_CHANNELS) {
-            if (!ch.isEnabled(recipient)) continue
-            const ok = await ch.send(recipient, message)
-            if (ok) {
-              if (ch.key === 'whatsapp') whatsappSent += 1
-              delivered = true
-            }
-          }
-
-          if (delivered) {
-            usersNotified += 1
-            totalOverdue += overdue
-            totalSleeping += sleep
-          }
-        }),
-      )
+        if (delivered) {
+          usersNotified += 1
+          totalOverdue += overdue
+          totalDueToday += dueToday
+          totalSleeping += sleep
+        } else {
+          undelivered += 1
+        }
+      },
+    )
+    if (run.deferred > 0) {
+      console.warn(`[crm-digest] run budget spent: ${run.deferred} of ${targets.length} owners deferred`)
+    }
+    if (timedOut > 0) {
+      console.warn(`[crm-digest] ${timedOut} channel sends cut by the run's deadline; ${undelivered} owners not delivered`)
     }
 
-    // Re-scan через 90 дней (№10) — best-effort, после основного цикла.
-    const rescanReminders = await sendGriRescanReminders(supabase, now)
+    // Re-scan через 90 дней (№10) — best-effort, после основного цикла, в остатке бюджета.
+    const rescan = await sendGriRescanReminders(supabase, now, deadlineAt)
 
     return NextResponse.json({
       ok: true,
-      data: { usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalSleeping, rescanReminders },
+      data: {
+        usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalDueToday, totalSleeping,
+        undelivered, timedOut,
+        deferred: run.deferred,
+        rescanReminders: rescan.sent,
+        rescanDeferred: rescan.deferred,
+        elapsedMs: Date.now() - now.getTime(),
+      },
     })
   } catch (err) {
     console.error('[crm-digest] sweep failed', err)

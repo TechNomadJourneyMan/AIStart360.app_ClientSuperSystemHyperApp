@@ -70,9 +70,18 @@ describe('digest text', () => {
 
   it('lines carry counts and the weak GRI block', () => {
     const lines = buildDigestLines(data)
-    expect(lines[0]).toContain('Просроченных напоминаний: 3')
+    expect(lines[0]).toBe('Просрочен запланированный контакт: 3 клиента')
     expect(lines[1]).toContain('Спящих клиентов: 2')
     expect(lines[2]).toContain('Команда (3.1 / 10)') // R-036: formatGri
+  })
+
+  // L4: a contact due later today is «на сегодня», never «просрочено» (it used to be counted as
+  // «Просроченных напоминаний»).
+  it('a contact due today is its own line, not overdue, and counts in the title', () => {
+    const today: DigestData = { overdue: 0, dueToday: 2, sleeping: 0, weakBlock: null }
+    expect(buildDigestLines(today)).toEqual(['Контакт запланирован на сегодня: 2 клиента'])
+    expect(buildDigestBody(today)).not.toMatch(/росроч/)
+    expect(buildDigestTitle({ overdue: 1, dueToday: 2, sleeping: 1, weakBlock: null })).toContain('4 клиента ждут')
   })
 
   it('body is one flat string ending with the CTA hint', () => {

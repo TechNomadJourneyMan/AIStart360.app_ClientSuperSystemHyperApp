@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseClientsCsv } from '@/lib/crm/csv-import'
 
-describe('parseClientsCsv (Russian headers, dedup, skip nameless)', () => {
+describe('parseClientsCsv (Russian headers, skip nameless)', () => {
   it('parses Russian headers with a semicolon delimiter', () => {
     const csv = [
       'Имя;Телефон;Email;Комментарий;Сумма',
@@ -38,16 +38,18 @@ describe('parseClientsCsv (Russian headers, dedup, skip nameless)', () => {
     expect(skipped).toBe(2)
   })
 
-  it('dedups within the file by normalized phone (first wins) and counts dupes as skipped', () => {
+  // M4: in-file duplicates are the import planner's (lib/crm/import-merge.ts — first row wins, a
+  // repeat fills its empty fields, see import-merge.test.ts); the parser keeps every named row so a
+  // repeat's extra data (e.g. its e-mail) is not dropped before the merge.
+  it('keeps both rows of a repeated phone (normalised alike) for the import planner', () => {
     const csv = [
       'Имя,Телефон',
       'Первый,+7 701 000 00 05',
       'Дубль,8 701 000 00 05',
     ].join('\n')
     const { rows, skipped } = parseClientsCsv(csv)
-    expect(rows).toHaveLength(1)
-    expect(rows[0].name).toBe('Первый')
-    expect(skipped).toBe(1)
+    expect(rows.map((r) => [r.name, r.phone])).toEqual([['Первый', '+77010000005'], ['Дубль', '+77010000005']])
+    expect(skipped).toBe(0)
   })
 
   it('keeps rows without a phone (no dedup key)', () => {
@@ -56,6 +58,18 @@ describe('parseClientsCsv (Russian headers, dedup, skip nameless)', () => {
     expect(rows).toHaveLength(2)
     expect(skipped).toBe(0)
     expect(rows[0].phone).toBeNull()
+  })
+
+  // Review H1: an import matches by e-mail — a placeholder taken as an address merged people.
+  it('keeps only real e-mail addresses: placeholders and junk are no e-mail', () => {
+    const csv = 'Имя,Email\nА,-\nБ,нет\nВ,n/a\nГ,info @ firm.kz\nД,a@b\nЕ, Ivan@Ex.kz '
+    expect(parseClientsCsv(csv).rows.map((r) => r.email)).toEqual([null, null, null, null, null, 'Ivan@Ex.kz'])
+  })
+
+  // Browser check (staging): «avg_check» / «средний_чек» were not taken as the check column.
+  it('recognises avg_check and средний_чек as the check column', () => {
+    expect(parseClientsCsv('name,avg_check\nИван,1500').rows[0].avg_check).toBe(1500)
+    expect(parseClientsCsv('Имя;средний_чек\nИван;2 500').rows[0].avg_check).toBe(2500)
   })
 
   it('handles quoted fields containing the delimiter', () => {

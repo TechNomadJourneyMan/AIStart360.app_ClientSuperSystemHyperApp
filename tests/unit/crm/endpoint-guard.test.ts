@@ -58,6 +58,64 @@ describe('CRM endpoint guard (SSRF)', () => {
     expect(isPrivateAddress('172.31.255.255')).toBe(true)
     expect(isPrivateAddress('2a00:1450::1')).toBe(false)
   })
+
+  it('refuses NAT64 (64:ff9b::/96) and 6to4 (2002::/16): both embed an IPv4 address that may be internal', async () => {
+    expect(isPrivateAddress('64:ff9b::a9fe:a9fe')).toBe(true) // 169.254.169.254 through NAT64
+    expect(isPrivateAddress('2002:c0a8:0101::1')).toBe(true) // 192.168.1.1 through 6to4
+    expect((await guardCrmEndpoint('amocrm', 'acme.amocrm.ru', 't', dns(['64:ff9b::a00:1']))).ok).toBe(false)
+  })
+
+  // Wave 3, L7: every IPv6 spelling of an internal address — the whole link-local / site-local
+  // fe80::/9, IPv4-compatible ::a.b.c.d and IPv4-translated ::ffff:0:a.b.c.d, the hex forms of the
+  // IPv4-mapped ones, zone ids — and the public forms that must stay allowed.
+  it.each([
+    ['fe80::1', true],
+    ['fe81::1', true],
+    ['fe9a:1234::1', true],
+    ['febf:ffff::1', true], // the top of fe80::/10
+    ['fec0::1', true], // site-local (deprecated), never public
+    ['FE80::1', true],
+    ['fe80::1%eth0', true],
+    ['::127.0.0.1', true], // IPv4-compatible loopback
+    ['::10.0.0.1', true],
+    ['::169.254.169.254', true],
+    ['::7f00:1', true], // ::127.0.0.1 in hex
+    ['::ffff:0:127.0.0.1', true], // IPv4-translated
+    ['::ffff:0:10.1.2.3', true],
+    ['::ffff:0:7f00:1', true],
+    ['::ffff:7f00:1', true], // IPv4-mapped 127.0.0.1 in hex
+    ['::ffff:a9fe:a9fe', true], // IPv4-mapped 169.254.169.254 in hex
+    ['0:0:0:0:0:ffff:192.168.0.1', true],
+    ['0000:0000:0000:0000:0000:0000:0000:0001', true],
+    ['::', true],
+    ['64:ff9b:1::a00:1', true], // local-use NAT64 64:ff9b:1::/48
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', true], // Teredo 2001::/32 embeds an obfuscated IPv4
+    ['fc00::1', true],
+    ['ff02::1', true],
+    ['::ffff:8.8.8.8', false],
+    ['::ffff:808:808', false],
+    ['2a00:1450:4001:82b::200e', false],
+    ['2606:4700::6810:84e5', false],
+    ['fe7f::1', false], // just below fe80::/10
+    ['not-an-address', true], // fail closed: what cannot be read is refused
+    ['1::2::3', true],
+  ] as const)('classifies %s as private: %s', (ip, internal) => {
+    expect(isPrivateAddress(ip)).toBe(internal)
+  })
+
+  it('a host answering an IPv4-compatible or translated loopback is refused', async () => {
+    for (const a of ['::127.0.0.1', '::ffff:0:127.0.0.1', 'fe90::1', '::ffff:7f00:1']) {
+      expect((await guardCrmEndpoint('amocrm', 'acme.amocrm.ru', 't', dns([a]))).ok, a).toBe(false)
+    }
+  })
+
+  it('a hung DNS lookup is bounded by the sync deadline (resolverWithTimeout)', async () => {
+    const { resolverWithTimeout } = await import('@/lib/crm/endpoint-guard')
+    const hung = resolverWithTimeout(20, () => new Promise<string[]>(() => undefined))
+    await expect(hung('acme.amocrm.ru')).rejects.toThrow(/dns timeout/)
+    const r = await guardCrmEndpoint('amocrm', 'acme.amocrm.ru', 't', resolverWithTimeout(20, () => new Promise<string[]>(() => undefined)))
+    expect(r).toEqual({ ok: false, error: 'Домен CRM не найден' })
+  })
 })
 
 describe('CRM token storage', () => {

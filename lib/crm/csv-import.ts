@@ -1,5 +1,6 @@
 // lib/crm/csv-import.ts — парсер CSV клиентов с русскими/английскими заголовками.
-// Дедуп внутри файла по нормализованному телефону; строки без имени пропускаются.
+// Строки без имени пропускаются. Дубли (внутри файла и с базой) сводит планировщик
+// импорта lib/crm/import-merge.ts — по телефону, e-mail или имени, без потери данных.
 
 import { normalizePhone } from './phone'
 
@@ -25,7 +26,11 @@ const HEADER_MAP: Array<{ key: Column; aliases: string[] }> = [
   { key: 'phone', aliases: ['телефон', 'phone', 'номер', 'тел', 'mobile', 'моб', 'tel'] },
   { key: 'email', aliases: ['email', 'e-mail', 'почта', 'мейл', 'мэйл'] },
   { key: 'note', aliases: ['комментарий', 'заметка', 'заметки', 'примечание', 'note', 'comment'] },
-  { key: 'avg_check', aliases: ['сумма', 'средний чек', 'чек', 'сделка', 'amount', 'сумма сделки'] },
+  {
+    key: 'avg_check',
+    // «avg_check» / «средний_чек» arrive as «avg check» / «средний чек» (normalizeHeader).
+    aliases: ['сумма', 'средний чек', 'чек', 'сделка', 'amount', 'сумма сделки', 'avg check', 'average check'],
+  },
 ]
 
 const NAME_MAX = 120
@@ -96,7 +101,22 @@ function parseCsvRows(text: string, delimiter: string): string[][] {
 }
 
 function normalizeHeader(cell: string): string {
-  return cell.trim().toLowerCase().replace(/^"|"$/g, '').trim()
+  // «avg_check» / «средний_чек» → «avg check» / «средний чек»
+  return cell.trim().toLowerCase().replace(/^"|"$/g, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// One address, no spaces, a dot in the domain — «-», «нет», «n/a», «info @ firm» are not e-mails.
+const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]{2,}$/
+
+/**
+ * The cell as an e-mail address, or null when it is not one. Placeholders («-», «нет», «n/a», «—»)
+ * are not addresses: an import matches clients by e-mail, so a placeholder taken as an address
+ * would merge different people.
+ */
+export function validEmailOrNull(raw: string | null | undefined): string | null {
+  const s = (raw ?? '').trim()
+  if (!s || s.length > EMAIL_MAX || !EMAIL_RE.test(s)) return null
+  return s
 }
 
 function matchColumn(header: string): Column | null {
@@ -154,7 +174,6 @@ export function parseClientsCsv(text: string): ParseClientsResult {
   }
 
   const rows: ClientDraft[] = []
-  const seenPhones = new Set<string>()
   let skipped = 0
 
   for (const r of dataRows) {
@@ -170,17 +189,11 @@ export function parseClientsCsv(text: string): ParseClientsResult {
     const rawPhone = (cell('phone') ?? '').trim()
     const { e164 } = normalizePhone(rawPhone)
 
-    if (e164 && seenPhones.has(e164)) {
-      skipped++ // дубль внутри файла
-      continue
-    }
-    if (e164) seenPhones.add(e164)
-
     rows.push({
       name,
       phone: e164,
       phone_raw: rawPhone ? rawPhone : null,
-      email: capOrNull(cell('email'), EMAIL_MAX),
+      email: validEmailOrNull(cell('email')),
       note: capOrNull(cell('note'), NOTE_MAX),
       avg_check: parseAvgCheckLoose((cell('avg_check') ?? '').trim()),
     })

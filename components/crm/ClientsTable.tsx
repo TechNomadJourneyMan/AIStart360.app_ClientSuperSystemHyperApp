@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useCrmClients, useUpdateClient, type CrmClient } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
@@ -9,6 +9,7 @@ import { AddClientInline } from './AddClientInline'
 import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 const DAY_MS = 86_400_000
+const ROWS_STEP = 100
 
 /** Recency dot by last_contact_at: green <7d, amber 7-30d, red >30d / never. */
 function recency(lastContactAt: string | null): { dot: string; title: string } {
@@ -35,13 +36,18 @@ export function ClientsTable({
   onOpenClient?: (c: CrmClient) => void
   onOpenImport?: () => void
 }) {
-  // Fetch the whole base once; filter by status/search client-side so the funnel
-  // counts stay accurate and status clicks don't refetch (base is ≤500 rows).
-  const { data: clients = [], isLoading, error } = useCrmClients()
+  // The whole base (every page of GET /api/v1/crm/clients); status/search filter client-side so
+  // the funnel counts cover every client and status clicks don't refetch.
+  const { data, isLoading, error, refetch } = useCrmClients()
+  const clients = useMemo(() => data?.clients ?? [], [data])
+  const serverTotal = data?.total ?? 0
   const update = useUpdateClient()
 
   const [status, setStatus] = useState<ClientStatus | null>(null)
   const [search, setSearch] = useState('')
+  // Rows rendered at once; «Показать ещё» reveals the next batch (the data is all loaded).
+  const [shown, setShown] = useState(ROWS_STEP)
+  useEffect(() => { setShown(ROWS_STEP) }, [status, search])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -103,6 +109,9 @@ export function ClientsTable({
       ) : error ? (
         <div className="p-6 text-center bg-error/10 rounded-2xl border border-error/20">
           <p className="text-error text-sm font-medium">Не удалось загрузить базу клиентов</p>
+          <button onClick={() => refetch()} className="mt-3 text-xs font-mono text-error/80 hover:text-error underline">
+            Повторить
+          </button>
         </div>
       ) : filtered.length === 0 ? (
         clients.length === 0 ? (
@@ -125,6 +134,12 @@ export function ClientsTable({
           </div>
         )
       ) : (
+        <div className="space-y-2">
+        <p className="text-[10px] font-mono text-on-surface-variant/70">
+          Показаны {Math.min(shown, filtered.length)} из {filtered.length}
+          {(status || search.trim()) && ` (отбор из ${clients.length})`}
+          {serverTotal > clients.length && ` · в базе ${serverTotal}, загружено ${clients.length} — обновите страницу`}
+        </p>
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px]">
@@ -138,7 +153,7 @@ export function ClientsTable({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => {
+                {filtered.slice(0, shown).map((c) => {
                   const rec = recency(c.last_contact_at)
                   return (
                     <tr
@@ -169,7 +184,7 @@ export function ClientsTable({
                         </select>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-mono text-on-surface">{c.avg_check ? fmtTenge(c.avg_check) : '—'}</span>
+                        <span className="text-sm font-mono text-on-surface">{c.avg_check != null ? fmtTenge(Number(c.avg_check)) : '—'}</span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm text-on-surface-variant">{fmtDate(c.last_contact_at)}</span>
@@ -183,6 +198,15 @@ export function ClientsTable({
               </tbody>
             </table>
           </div>
+        </div>
+        {filtered.length > shown && (
+          <button
+            onClick={() => setShown((n) => n + ROWS_STEP)}
+            className="w-full px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] hover:text-on-surface transition-colors"
+          >
+            Показать ещё {Math.min(ROWS_STEP, filtered.length - shown)} (осталось {filtered.length - shown})
+          </button>
+        )}
         </div>
       )}
     </div>

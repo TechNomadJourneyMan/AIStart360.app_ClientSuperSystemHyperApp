@@ -9,6 +9,16 @@
 import { resolveChannels } from '@/lib/notifications/preferences'
 import { formatGri } from '@/lib/format/gri'
 
+/**
+ * The platform's rule for background work (GET /api/cron/crm-digest): ≤ 2 owners at a time, the
+ * run within 45 s. No owner's delivery is STARTED with less than DIGEST_MIN_START_MS left; every
+ * send of one already running is bounded by the run's deadline (lib/crm/bounded-run.ts
+ * beforeDeadline) — a send cut there leaves the owner «not delivered»; the rest is «deferred».
+ */
+export const DIGEST_CONCURRENCY = 2
+export const DIGEST_RUN_MS = 44_000
+export const DIGEST_MIN_START_MS = 10_000
+
 /** Русская форма множественного числа (1 / 2-4 / 5+). */
 export function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10
@@ -18,8 +28,16 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many
 }
 
+/**
+ * The digest's numbers — clients of the «Кому звонить сегодня» queue (lib/crm/today.ts
+ * queueBucket), counted per bucket for the Almaty day the digest is sent on.
+ */
 export interface DigestData {
+  /** Clients whose planned contact (open reminder / next contact) is before today. */
   overdue: number
+  /** Clients whose planned contact is today — NOT overdue. */
+  dueToday?: number
+  /** Customer / sleeping clients with no touch for more than 30 days. */
   sleeping: number
   /** Самый слабый блок GRI из текущей диагностики (довесок №9), либо null. */
   weakBlock: { label: string; score: number } | null
@@ -70,14 +88,17 @@ export function pickWeakestBlock(sectionAvgs: unknown): { label: string; score: 
 
 /** Заголовок дайджеста по суммарному числу клиентов. */
 export function buildDigestTitle(data: DigestData): string {
-  const total = data.overdue + data.sleeping
+  const total = data.overdue + (data.dueToday ?? 0) + data.sleeping
   return `📞 CRM: ${total} ${plural(total, 'клиент ждёт', 'клиента ждут', 'клиентов ждут')} внимания`
 }
+
+const clients = (n: number) => `${n} ${plural(n, 'клиент', 'клиента', 'клиентов')}`
 
 /** Содержательные строки дайджеста (общие для всех каналов). */
 export function buildDigestLines(data: DigestData): string[] {
   const lines: string[] = []
-  if (data.overdue > 0) lines.push(`Просроченных напоминаний: ${data.overdue}`)
+  if (data.overdue > 0) lines.push(`Просрочен запланированный контакт: ${clients(data.overdue)}`)
+  if ((data.dueToday ?? 0) > 0) lines.push(`Контакт запланирован на сегодня: ${clients(data.dueToday ?? 0)}`)
   if (data.sleeping > 0) lines.push(`Спящих клиентов: ${data.sleeping}`)
   if (data.weakBlock) {
     lines.push(
