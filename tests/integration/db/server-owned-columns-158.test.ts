@@ -163,11 +163,18 @@ describe.skipIf(!dbTestsEnabled)('migration 158', () => {
         [owner, ...Object.values(STEP1)])
       const company = inserted[0].id as string
       expect(inserted[0]).toMatchObject({ name: 'ТОО Ромашка', user_id: owner, status: 'lead', partner_id: null })
-      // …then UPDATE {...fields, updated_at} RETURNING *
-      await db.query(`UPDATE public.companies SET updated_at = now() - interval '1 day' WHERE id = $1`, [company])
+      // …then UPDATE {...fields, updated_at} RETURNING *; both timestamps are stamped by triggers
+      // (backdated first with the triggers off).
+      await db.query(`SET LOCAL session_replication_role = replica`)
+      await db.query(`UPDATE public.companies SET updated_at = now() - interval '1 day', "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '1 day' WHERE id = $1`, [company])
+      await db.query(`SET LOCAL session_replication_role = origin`)
       const { rows: updated } = await onboardingUpdate(db, owner, company)
       expect(updated[0]).toMatchObject({ contact_email: 'a@romashka.kz', employee_count: 12, regions: ['Алматы', 'Астана'] })
-      expect(Date.now() - new Date(updated[0].updated_at).getTime()).toBeLessThan(60_000)
+      const fresh = (await db.query(
+        `SELECT updated_at > now() - interval '1 minute' AS snake, "updatedAt" > (now() AT TIME ZONE 'UTC') - interval '1 minute' AS camel FROM public.companies WHERE id = $1`,
+        [company],
+      )).rows[0]
+      expect(fresh).toEqual({ snake: true, camel: true })
       // /api/v1/companies/targets PATCH: UPDATE … WHERE user_id = me RETURNING id, targets
       const { rows: targets } = await asOwner(db, owner,
         `UPDATE public.companies SET target_revenue_12m_kzt = $2, target_revenue_3y_kzt = $3 WHERE user_id = $1 RETURNING id, target_revenue_12m_kzt, target_revenue_3y_kzt`,
@@ -272,6 +279,7 @@ describe.skipIf(!dbTestsEnabled)('migration 158', () => {
         expect((await approvedByRule(db))?.convalidated).toBe(true)
         expect(await hasColumn(db, 'profiles', 'telegram_link_code_expires_at')).toBe(applied)
         expect(await hasColumn(db, 'email_deliveries', 'claimed_at')).toBe(applied)
+        expect((await db.query(`SELECT 1 FROM pg_trigger WHERE tgname = 'companies_touch_updated_at' AND tgrelid = 'public.companies'::regclass`)).rows.length).toBe(applied ? 1 : 0)
         const src = (await db.query(`SELECT prosrc FROM pg_proc WHERE oid = 'public.admin_purge_user(uuid, boolean)'::regprocedure`)).rows[0].prosrc as string
         // 158 deletes the answer history after the profile and the account (the cascade writes history rows).
         expect(src.indexOf('survey_answer_history') > src.indexOf('DELETE FROM auth.users')).toBe(applied)

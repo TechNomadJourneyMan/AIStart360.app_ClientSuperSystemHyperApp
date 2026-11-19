@@ -38,6 +38,7 @@
 --    medical onboarding, registration, goals sync) or Prisma (postgres) — unaffected. Only columns
 --    that exist are granted (NOTICE for a missing one). updated_at is kept by the
 --    companies_updated_at trigger (001, set_updated_at); it is created here where it is missing.
+--    "updatedAt" (Prisma's column) is now stamped by every UPDATE too (companies_touch_updated_at).
 --
 -- 3. admin_purge_user (R-054). It deleted the answer history BEFORE the profile and the account;
 --    the cascade of that delete removes survey_answers, whose history trigger
@@ -158,6 +159,21 @@ BEGIN
     RAISE NOTICE '158: companies_updated_at trigger created';
   END IF;
 END $$;
+
+-- "updatedAt" (the Prisma column, timestamp without time zone, UTC) was kept only by Prisma's own
+-- writes: a save through PostgREST left it as it was. Every UPDATE now stamps it, like updated_at.
+CREATE OR REPLACE FUNCTION public.companies_touch_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  NEW."updatedAt" := now() AT TIME ZONE 'UTC';
+  RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.companies_touch_updated_at() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS companies_touch_updated_at ON public.companies;
+CREATE TRIGGER companies_touch_updated_at
+  BEFORE UPDATE ON public.companies
+  FOR EACH ROW EXECUTE FUNCTION public.companies_touch_updated_at();
 
 -- ── 3. admin_purge_user: the answer history last ───────────────────────────────
 CREATE OR REPLACE FUNCTION public.admin_purge_user(p_user_id UUID, p_dry_run BOOLEAN DEFAULT true)

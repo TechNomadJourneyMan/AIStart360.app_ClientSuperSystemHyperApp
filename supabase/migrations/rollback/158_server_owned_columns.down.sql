@@ -8,8 +8,9 @@
 --     never expire — the webhook code of 158 accepts no code without an expiry: roll the code
 --     back first);
 --   • companies: table-level INSERT / UPDATE for anon and authenticated again (Supabase's default
---     grants, the state before 158; the REVOKE first drops the column grants). The
---     companies_updated_at trigger stays (it is 001's; 158 only created it where it was missing);
+--     grants, the state before 158; the REVOKE first drops the column grants); the "updatedAt"
+--     trigger companies_touch_updated_at and its function are dropped. The companies_updated_at
+--     trigger stays (it is 001's; 158 only created it where it was missing);
 --   • admin_purge_user: the 083 definition (history deleted before the profile);
 --   • profiles.approved_by: the FK without ON DELETE (NOT VALID, then VALIDATE);
 --   • email_deliveries: a 'pending' claim becomes 'sent' — the meaning a claim had before 158, so a
@@ -29,6 +30,8 @@ ALTER TABLE public.profiles DROP COLUMN IF EXISTS telegram_link_code_expires_at;
 -- ── 2. companies ───────────────────────────────────────────────────────────────
 REVOKE INSERT, UPDATE ON public.companies FROM anon, authenticated;
 GRANT INSERT, UPDATE ON public.companies TO anon, authenticated;
+DROP TRIGGER IF EXISTS companies_touch_updated_at ON public.companies;
+DROP FUNCTION IF EXISTS public.companies_touch_updated_at();
 
 -- ── 3. admin_purge_user as in 083 ──────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.admin_purge_user(p_user_id UUID, p_dry_run BOOLEAN DEFAULT true)
