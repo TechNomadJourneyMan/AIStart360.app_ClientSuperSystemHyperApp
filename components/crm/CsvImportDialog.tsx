@@ -14,15 +14,18 @@ interface ImportResult {
   duplicates?: number
   /** Rows not imported: their phone belongs to a client with another name. */
   conflicts?: number
+  /** Rows not imported: only a name, and several clients have it (part of `skipped`). */
+  ambiguous?: number
   skipped: number
 }
 
 /** What an import does — shown in the dialog (the rules: lib/crm/import-merge.ts). */
 export const IMPORT_RULES_TEXT =
   'Импорт только добавляет. Новые клиенты создаются, а у клиентов, которые уже есть в базе, заполняются только пустые поля — ' +
-  'то, что вы уже внесли, импорт не меняет (это делается в портале). Клиент считается тем же, если совпадают телефон и имя, ' +
-  'или email и имя, а без телефона и email — имя и комментарий. Если телефон уже записан на клиента с другим именем, ' +
-  'строка не импортируется. Одинаковые строки файла объединяются.'
+  'то, что вы уже внесли, импорт не меняет (это делается в портале). Клиент считается тем же, если совпадают телефон и имя ' +
+  'или email и имя. Строка только с именем (без телефона и email) дополняет клиента с таким же именем; если таких клиентов ' +
+  'несколько, строка пропускается. Если телефон уже записан на клиента с другим именем, строка не импортируется. ' +
+  'Одинаковые строки файла объединяются.'
 
 
 export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -127,6 +130,12 @@ export function CsvImportDialog({ open, onClose }: { open: boolean; onClose: () 
           {result && (result.duplicates ?? 0) > 0 && (
             <p className="text-[11px] text-on-surface-variant">
               Строк-повторов в файле: {result.duplicates} — объединены с первой строкой того же клиента.
+            </p>
+          )}
+          {result && (result.ambiguous ?? 0) > 0 && (
+            <p className="text-[11px] text-tertiary-container">
+              Пропущено строк: {result.ambiguous} — в них только имя, а в базе несколько клиентов с таким именем.
+              Добавьте в строки телефон или email либо дополните клиентов в базе вручную.
             </p>
           )}
           {result && (result.conflicts ?? 0) > 0 && (

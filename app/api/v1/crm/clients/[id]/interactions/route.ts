@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { parseJsonBody } from '@/lib/validation/http'
 import { CrmInteractionBody } from '@/lib/validation/schemas'
+import { applyContact, queueNotUpdated } from '@/lib/crm/contact'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -79,24 +80,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     .single()
   if (error || !data) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
 
-  // Only a CONTACT (call / message / meeting) is a contact: it moves last_contact_at — «Обработано
-  // сегодня» and the queue (lib/crm/today.ts) go by it — and closes the client's open reminders
-  // that were due by now: the contact is what they asked for. A note is just a note: it changes
-  // neither, so writing a note never takes a client off «Кому звонить сегодня».
+  // Only a CONTACT (call / message / meeting) is a contact: it moves last_contact_at and fulfils
+  // the client's plans due by the end of today (lib/crm/contact.ts — the same rule as a reminder
+  // marked «Выполнено»). A note is just a note: it changes nothing, so writing a note never takes
+  // a client off «Кому звонить сегодня».
   if (CONTACT_KINDS.has(kind)) {
-    const now = new Date().toISOString()
-    await sb
-      .from('crm_clients')
-      .update({ last_contact_at: now, updated_at: now })
-      .eq('id', params.id)
-      .eq('user_id', userId)
-    await sb
-      .from('crm_reminders')
-      .update({ status: 'done', done_at: now })
-      .eq('client_id', params.id)
-      .eq('user_id', userId)
-      .eq('status', 'open')
-      .lte('due_at', now)
+    const applied = await applyContact(sb, { clientId: params.id, userId, nowMs: Date.now() })
+    // The touch is in the timeline, but the queue was not updated: say so — never a silent 200
+    // that the screen reports as «зафиксировано» while the client stays in «Кому звонить».
+    if (!applied.ok) {
+      console.error('[crm/interactions] queue update failed', applied.error.message)
+      return NextResponse.json(
+        queueNotUpdated('Касание записано, но очередь «Кому звонить» не обновилась. Обновите страницу и повторите.'),
+        { status: 500 },
+      )
+    }
   }
 
   return NextResponse.json({ ok: true, data: { interaction: data } })

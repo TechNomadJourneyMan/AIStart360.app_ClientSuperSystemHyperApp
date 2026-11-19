@@ -36,6 +36,8 @@ export function almatyDay(nowMs: number): CrmDay {
 }
 
 export const ACTIVE_STATUSES: readonly string[] = ['new', 'in_progress', 'waiting']
+/** A lost client is never in the queue and never overdue, whatever is still planned for it. */
+export const LOST_STATUS = 'lost'
 export const SLEEPING_STATUSES: readonly string[] = ['customer', 'sleeping']
 /** A customer / sleeping client with no touch for MORE than this many days is «спящий». */
 export const SLEEPING_DAYS = 30
@@ -79,10 +81,15 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
  * `last_contact_at` is the last CONTACT (a call, message or meeting — a note is not a contact,
  * app/api/v1/crm/clients/[id]/interactions).
  *
+ *  0. A LOST client is never in the queue — not «просрочено», not «на сегодня» — whatever is still
+ *     planned for it (the plans stay stored; the risk list still shows it). Every reader of
+ *     «overdue» goes through this rule: the screen, next-best-action and the digest.
+ *
  *  1. Pending plan items: every open reminder and next_contact_at whose time is AFTER the last
- *     contact (or with no contact at all). A contact at or after the planned time answers it — and
- *     logging that contact also closes the open reminders due by then (the interactions route), so
- *     the drawer, the digest and next-best-action see the same thing.
+ *     contact (or with no contact at all). A contact at or after the planned time answers it.
+ *     Logging a contact also FULFILS every plan due before the end of today that exists at that
+ *     moment (the interactions route closes those reminders and clears that next_contact_at), so a
+ *     plan for later today that is still here was made AFTER the contact — a call-back.
  *       any pending item before today       → 0 «просрочено»
  *       any pending item today              → 1 «на сегодня» — also a call-back planned for later
  *                                              today after this morning's call
@@ -91,7 +98,7 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
  *       contacted today (at or after Almaty midnight)        → not in the queue: handled today
  *       an active status (new / in_progress / waiting)        → 2 «без плана»
  *       customer / sleeping with no contact for > 30 days     → 3 «спящий»
- *     Anything else (a lost client, a recent customer) is not in the queue.
+ *     Anything else (a recent customer) is not in the queue.
  */
 export function queueBucket(
   c: QueueClientInput,
@@ -99,6 +106,7 @@ export function queueBucket(
   day: CrmDay,
   nowMs: number,
 ): QueueBucket | null {
+  if (c.status === LOST_STATUS) return null
   const last = ms(c.last_contact_at)
   const answered = (t: number) => last != null && last >= t
 
@@ -223,6 +231,42 @@ function toCheck(v: unknown): number | null {
 
 const byName = (a: TodayClient, b: TodayClient) => a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id)
 
+/**
+ * The base's average check over the clients whose check is known and positive. With a single
+ * known check there is no average to compare with (the client would be compared with itself:
+ * «0 %»), so it counts as unknown (0): no check-vs-average, no check modifier in the risk score.
+ */
+export function portfolioAverageCheck(clients: ReadonlyArray<{ avg_check: number | string | null }>): number {
+  const positive = clients.map((c) => toCheck(c.avg_check)).filter((v): v is number => v != null && v > 0)
+  return positive.length >= MIN_CHECKS_FOR_AVERAGE ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
+}
+
+/** One client as a row of the screen (risk by lib/crm/risk.ts against the base's average check). */
+export function toTodayClient(c: CrmClientRow, portfolioAvg: number, bucket: QueueBucket | null, nowMs: number): TodayClient {
+  const avgCheck = toCheck(c.avg_check)
+  const risk = scoreClientRisk({ lastContactAt: c.last_contact_at, avgCheck, status: c.status, now: nowMs }, portfolioAvg)
+  return {
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    statusLabel: STATUS_LABELS[c.status] ?? c.status,
+    phone: c.phone,
+    phoneRaw: c.phone_raw,
+    email: c.email,
+    ...notePreview(c.note),
+    nextContactAt: c.next_contact_at,
+    lastContactAt: c.last_contact_at,
+    daysSince: risk.daysSince,
+    avgCheck,
+    checkVsAvgPct: risk.checkVsAvgPct,
+    riskScore: risk.riskScore,
+    churnLevel: risk.churnLevel,
+    action: risk.action,
+    comment: risk.comment,
+    queueBucket: bucket,
+  }
+}
+
 /** The queue, the risk list and the KPI of one owner's base. Pure: same rows + time → same payload. */
 export function buildCrmToday(
   clients: readonly CrmClientRow[],
@@ -231,42 +275,9 @@ export function buildCrmToday(
 ): CrmTodayPayload {
   const day = almatyDay(nowMs)
   const dues = openDuesByClient(openReminders)
-
-  // The base's average check over the clients whose check is known and positive. With a single
-  // known check there is no average to compare with (the client would be compared with itself:
-  // «0 %»), so it counts as unknown: no check-vs-average, no check modifier in the risk score.
-  const checks = clients.map((c) => toCheck(c.avg_check))
-  const positive = checks.filter((v): v is number => v != null && v > 0)
-  const portfolioAvg =
-    positive.length >= MIN_CHECKS_FOR_AVERAGE ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
-
-  const rows: TodayClient[] = clients.map((c, i) => {
-    const avgCheck = checks[i]
-    const risk = scoreClientRisk(
-      { lastContactAt: c.last_contact_at, avgCheck, status: c.status, now: nowMs },
-      portfolioAvg,
-    )
-    return {
-      id: c.id,
-      name: c.name,
-      status: c.status,
-      statusLabel: STATUS_LABELS[c.status] ?? c.status,
-      phone: c.phone,
-      phoneRaw: c.phone_raw,
-      email: c.email,
-      ...notePreview(c.note),
-      nextContactAt: c.next_contact_at,
-      lastContactAt: c.last_contact_at,
-      daysSince: risk.daysSince,
-      avgCheck,
-      checkVsAvgPct: risk.checkVsAvgPct,
-      riskScore: risk.riskScore,
-      churnLevel: risk.churnLevel,
-      action: risk.action,
-      comment: risk.comment,
-      queueBucket: queueBucket(c, dues.get(c.id) ?? [], day, nowMs),
-    }
-  })
+  const portfolioAvg = portfolioAverageCheck(clients)
+  const rows: TodayClient[] = clients.map((c) =>
+    toTodayClient(c, portfolioAvg, queueBucket(c, dues.get(c.id) ?? [], day, nowMs), nowMs))
 
   const high = rows.filter((r) => r.churnLevel === 'high')
   const medium = rows.filter((r) => r.churnLevel === 'medium')

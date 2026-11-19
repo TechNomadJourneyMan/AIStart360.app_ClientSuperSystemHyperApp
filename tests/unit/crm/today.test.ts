@@ -49,7 +49,9 @@ describe('queueBucket (M1: a handled client leaves today\'s queue)', () => {
   })
 
   // Review M1: «touched today → out» ran before the plan, so a call-back planned for later the same
-  // day never showed — and was overdue the next morning.
+  // day never showed — and was overdue the next morning. A plan for later today that is still open
+  // after a contact was made AFTER it: logging the contact fulfils the plans due by the end of the
+  // day that existed then (app/api/v1/crm/clients/[id]/interactions; tests/integration/crm-owner-api).
   it("a call-back planned for later today after this morning's call is in today's queue", () => {
     const touched = iso(ALMATY_MIDNIGHT + 10 * 60_000)
     expect(bucket(client({ last_contact_at: touched, next_contact_at: iso(ALMATY_MIDNIGHT + 5 * H) }))).toBe(1)
@@ -93,9 +95,26 @@ describe('queueBucket (M1: a handled client leaves today\'s queue)', () => {
     expect(bucket(client({ status: 'sleeping', created_at: iso(NOW - 5 * 24 * H) }))).toBeNull()
   })
 
-  it('a lost client is not queued unless something is planned for it', () => {
+  // Review (low): a lost client with an old plan stayed «Просрочено» forever. Lost = never in the
+  // queue, never overdue — whatever is still planned (the plans stay stored).
+  it('a lost client is never queued and never overdue, even with a plan', () => {
     expect(bucket(client({ status: 'lost' }))).toBeNull()
-    expect(bucket(client({ status: 'lost' }), [ALMATY_MIDNIGHT + H])).toBe(1)
+    expect(bucket(client({ status: 'lost' }), [ALMATY_MIDNIGHT + H])).toBeNull()
+    expect(bucket(client({ status: 'lost' }), [ALMATY_MIDNIGHT - 48 * H])).toBeNull()
+    expect(bucket(client({ status: 'lost', next_contact_at: iso(ALMATY_MIDNIGHT - 30 * H) }))).toBeNull()
+    // the same plan on any other status is still overdue
+    for (const status of ['new', 'in_progress', 'waiting', 'customer', 'sleeping']) {
+      expect(bucket(client({ status }), [ALMATY_MIDNIGHT - 48 * H])).toBe(0)
+    }
+  })
+
+  it('the digest does not count a lost client (queueCountsByUser)', () => {
+    const counts = queueCountsByUser(
+      [{ ...client({ id: 'l', status: 'lost' }), user_id: 'u1' }],
+      [{ client_id: 'l', due_at: iso(ALMATY_MIDNIGHT - 48 * H) }],
+      NOW,
+    )
+    expect(counts.has('u1')).toBe(false)
   })
 })
 

@@ -15,7 +15,7 @@ import {
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
 import { almatyDay, PAGE_SIZE, queueCountsByUser, readAllById, type QueueClientInput } from '@/lib/crm/today'
-import { dayRotation, runBounded } from '@/lib/crm/bounded-run'
+import { beforeDeadline, dayRotation, runBounded } from '@/lib/crm/bounded-run'
 import { DIGEST_CONCURRENCY, DIGEST_MIN_START_MS, DIGEST_RUN_MS } from '@/lib/crm/digest'
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { cloudApiConfigured } from '@/lib/whatsapp/config'
@@ -97,7 +97,7 @@ async function sendGriRescanReminders(
       users,
       { concurrency: DIGEST_CONCURRENCY, deadlineAt, minStartMs: DIGEST_MIN_START_MS },
       async ([userId, assessedOn]) => {
-        const r = await notifyClient(
+        const r = await beforeDeadline(() => notifyClient(
           {
             userId,
             category: 'gri',
@@ -112,8 +112,8 @@ async function sendGriRescanReminders(
             automated: { kind: 'gri_rescan' },
           },
           now,
-        )
-        if (r.ok && !r.skipped) sent += 1
+        ), deadlineAt)
+        if (r.ok && r.value.ok && !r.value.skipped) sent += 1
       },
     )
     deferred = run.deferred
@@ -194,6 +194,8 @@ export async function GET(req: NextRequest) {
           totalOverdue: 0,
           totalDueToday: 0,
           totalSleeping: 0,
+          undelivered: 0,
+          timedOut: 0,
           deferred: 0,
           rescanReminders: rescan.sent,
           rescanDeferred: rescan.deferred,
@@ -251,9 +253,22 @@ export async function GET(req: NextRequest) {
     let totalOverdue = 0
     let totalDueToday = 0
     let totalSleeping = 0
+    /** Owners started but reached by no channel (a send failed or ran out of the run's budget). */
+    let undelivered = 0
+    /** Channel sends cut by the run's deadline (a provider that did not answer in time). */
+    let timedOut = 0
+    /** One channel send of one owner, bounded by the run's deadline (lib/crm/bounded-run.ts). */
+    const send = async <T,>(start: () => Promise<T>): Promise<T | undefined> => {
+      const r = await beforeDeadline(start, deadlineAt)
+      if (r.ok) return r.value
+      timedOut += 1
+      return undefined
+    }
 
     // ≤ 2 owners at a time (in-app, e-mail, Telegram, WhatsApp of one owner go one after another),
     // no owner started with < DIGEST_MIN_START_MS of the 44 s left; the rest is reported as deferred.
+    // Every send is bounded by the run's deadline: a provider that never answers (the Resend SDK
+    // has no timeout) cannot hold the run past it — that owner is reported as not delivered.
     const run = await runBounded(
       targets,
       { concurrency: DIGEST_CONCURRENCY, deadlineAt, minStartMs: DIGEST_MIN_START_MS },
@@ -282,35 +297,38 @@ export async function GET(req: NextRequest) {
         let delivered = false
 
         if (channels.inApp) {
-          await createNotification({
-            userId,
-            title,
-            body: buildDigestBody(data),
-            category: 'crm',
-            priority: 'medium',
-            link: '/pulse',
-            metadata: { overdue, dueToday, sleeping: sleep },
+          const done = await send(async () => {
+            await createNotification({
+              userId,
+              title,
+              body: buildDigestBody(data),
+              category: 'crm',
+              priority: 'medium',
+              link: '/pulse',
+              metadata: { overdue, dueToday, sleeping: sleep },
+            })
+            return true
           })
-          delivered = true
+          if (done) delivered = true
         }
 
         if (channels.email && email) {
-          const res = await sendUserEmail({
+          const res = await send(() => sendUserEmail({
             to: email,
             subject: 'Кому позвонить сегодня — CRM AIStart360',
             title,
             body: buildDigestBody(data),
             ctaLabel: 'Открыть «Клиенты»',
             ctaPath: '/pulse',
-          })
-          if (res.ok) {
+          }))
+          if (res?.ok) {
             emailsSent += 1
             delivered = true
           }
         }
 
         if (channels.telegram && chatId) {
-          const ok = await sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`))
+          const ok = await send(() => sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`)))
           if (ok) {
             telegramSent += 1
             delivered = true
@@ -323,7 +341,7 @@ export async function GET(req: NextRequest) {
         const message = { title, body: buildDigestBody(data), data, day }
         for (const ch of EXTRA_DIGEST_CHANNELS) {
           if (!ch.isEnabled(recipient)) continue
-          const ok = await ch.send(recipient, message)
+          const ok = await send(() => ch.send(recipient, message))
           if (ok) {
             if (ch.key === 'whatsapp') whatsappSent += 1
             delivered = true
@@ -335,11 +353,16 @@ export async function GET(req: NextRequest) {
           totalOverdue += overdue
           totalDueToday += dueToday
           totalSleeping += sleep
+        } else {
+          undelivered += 1
         }
       },
     )
     if (run.deferred > 0) {
       console.warn(`[crm-digest] run budget spent: ${run.deferred} of ${targets.length} owners deferred`)
+    }
+    if (timedOut > 0) {
+      console.warn(`[crm-digest] ${timedOut} channel sends cut by the run's deadline; ${undelivered} owners not delivered`)
     }
 
     // Re-scan через 90 дней (№10) — best-effort, после основного цикла, в остатке бюджета.
@@ -349,6 +372,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       data: {
         usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalDueToday, totalSleeping,
+        undelivered, timedOut,
         deferred: run.deferred,
         rescanReminders: rescan.sent,
         rescanDeferred: rescan.deferred,

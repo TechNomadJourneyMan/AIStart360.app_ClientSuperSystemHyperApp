@@ -56,6 +56,50 @@ export function seedFromQueueRow(r: QueueRowLike): DrawerSeed {
   }
 }
 
+/** A crm_clients row as GET /api/v1/crm/clients and the PATCH response return it (snake_case). */
+export interface ClientRowLike {
+  id: string
+  name: string
+  phone: string | null
+  phone_raw?: string | null
+  email: string | null
+  status: string
+  avg_check: number | string | null
+  note: string | null
+  next_contact_at: string | null
+  last_contact_at: string | null
+}
+
+/** The drawer seed of a full row (the base tab, the PATCH response): its note is the whole note. */
+export function seedFromClientRow(c: ClientRowLike): DrawerSeed {
+  const check = c.avg_check == null || c.avg_check === '' ? null : Number(c.avg_check)
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone ?? null,
+    phone_raw: c.phone_raw ?? null,
+    email: c.email ?? null,
+    status: c.status as ClientStatus,
+    avg_check: check != null && Number.isFinite(check) ? check : null,
+    note: c.note ?? null,
+    noteTruncated: false,
+    next_contact_at: c.next_contact_at ?? null,
+    last_contact_at: c.last_contact_at ?? null,
+  }
+}
+
+/**
+ * The drawer's baseline after a successful save: what the server now holds — the row the PATCH
+ * answered with. The drawer stays open after «Сохранить»; with the snapshot it was opened with as
+ * the baseline, changing a field back (Новый → Клиент, save; Клиент → Новый, save) looked like «no
+ * change» and was never sent. The drawer re-seeds its form from this baseline, so an untouched
+ * field still equals it and is still not re-sent. No row (or another client's) keeps `prev`.
+ */
+export function baselineAfterSave(prev: DrawerSeed, saved: ClientRowLike | null | undefined): DrawerSeed {
+  if (!saved || saved.id !== prev.id) return prev
+  return seedFromClientRow(saved)
+}
+
 /** What the drawer's phone field shows: the phone as the owner typed it, else the normalised one. */
 export function phoneFieldValue(seed: DrawerSeed): string {
   return seed.phone_raw ?? seed.phone ?? ''

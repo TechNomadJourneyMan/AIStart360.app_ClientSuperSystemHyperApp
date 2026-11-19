@@ -4,24 +4,20 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import {
-  useCrmToday, useLogInteraction, useCrmInteractions, type CrmClient, type CrmTodayClient,
+  useCrmToday, useCrmClients, useLogInteraction, useCrmInteractions, touchErrorText, type CrmClient, type CrmTodayClient,
 } from '@/hooks/useCrm'
 import { ClientsTable } from '@/components/crm/ClientsTable'
 import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
 import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
-import { seedFromQueueRow } from '@/lib/crm/client-form'
+import { seedFromClientRow, seedFromQueueRow } from '@/lib/crm/client-form'
+import { pickCardClient } from '@/lib/crm/card-client'
+import { portfolioAverageCheck, toTodayClient } from '@/lib/crm/today'
 import { briefingNetworkError, briefingSegments, briefingView, type BriefingView } from '@/lib/crm/briefing-answer'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 import { CRM_AUTO_SYNC_DESCRIPTION, CRM_AVG_CHECK_DESCRIPTION, CRM_SYNC_STATUS_LABEL, normaliseSyncStatus, type CrmSyncStatus } from '@/lib/crm/sync-status'
 
 // ─── Adapters → the drawer's minimal client seed ─────────────────────────────
-function crmToDrawer(c: CrmClient): DrawerClient {
-  return {
-    id: c.id, name: c.name, phone: c.phone, phone_raw: c.phone_raw,
-    email: c.email, status: c.status, avg_check: c.avg_check, note: c.note,
-    next_contact_at: c.next_contact_at, last_contact_at: c.last_contact_at,
-  }
-}
+const crmToDrawer = (c: CrmClient): DrawerClient => seedFromClientRow(c)
 // Queue / risk rows carry the raw phone too (seedFromQueueRow) — the drawer must not lose it (L6).
 const pulseToDrawer = (c: PulseClient): DrawerClient => seedFromQueueRow(c)
 
@@ -49,7 +45,7 @@ function CallModal({ client, onClose }: { client: ModalClient | null; onClose: (
       { clientId: client.id, kind: 'call', comment: note.trim() || undefined },
       {
         onSuccess: () => { setStatus('done'); toast.success('Звонок зафиксирован') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -139,7 +135,7 @@ function MessageModal({ client, onClose }: { client: ModalClient | null; onClose
       { clientId: client.id, kind: 'message', comment: text.trim() || undefined },
       {
         onSuccess: () => { setSent(true); toast.success('Сообщение зафиксировано') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -931,7 +927,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
       {
         onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])
@@ -947,7 +943,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
       {
         onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])
@@ -965,15 +961,44 @@ function CrmMonitorSection() {
   const RISK_CLIENTS = useMemo<PulseClient[]>(
     () => (clientsData?.riskClients ?? []).map(withSector), [clientsData])
 
-  // Keep only the selected client's ID and derive the object from fresh data — otherwise after a
-  // refetch (e.g. a logged touch) the card would show a stale snapshot. Default: first in the queue.
+  // The card keeps the client the owner chose, BY ID, and derives the row from fresh data (after a
+  // refetch the card is never a stale snapshot). It never falls back to another person: a logged
+  // touch takes the client off the queue / risk lists, and the card used to jump to the first
+  // client then — «Написать» opened WhatsApp for, and logged a message on, the wrong person.
+  // lib/crm/card-client.ts: the lists' row, else the whole base's row, else an empty state.
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const [lastKnownCard, setLastKnownCard] = useState<PulseClient | null>(null)
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(() => new Set())
   const CARD_CLIENTS = useMemo(() => {
     const seen = new Set<string>()
     return [...TODAY_CLIENTS, ...RISK_CLIENTS].filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
   }, [TODAY_CLIENTS, RISK_CLIENTS])
-  const selectedClient =
-    CARD_CLIENTS.find((c) => c.id === selectedClientId) ?? CARD_CLIENTS[0] ?? null
+  // Nothing chosen yet: the tab shows the first client — and that becomes the choice (pinned), so a
+  // refetch never swaps the person on the card. Only the owner's click changes it after that.
+  const cardId = selectedClientId ?? CARD_CLIENTS[0]?.id ?? null
+  useEffect(() => {
+    if (tab === 'card' && selectedClientId == null && cardId != null) setSelectedClientId(cardId)
+  }, [tab, selectedClientId, cardId])
+  const listedCard = useMemo(() => CARD_CLIENTS.find((c) => c.id === cardId) ?? null, [CARD_CLIENTS, cardId])
+  useEffect(() => { if (listedCard) setLastKnownCard(listedCard) }, [listedCard])
+  // Left the lists: read it from the whole base (shared with the «База клиентов» tab's cache).
+  const cardNeedsBase = tab === 'card' && cardId != null && !listedCard && !deletedIds.has(cardId)
+  const { data: baseData } = useCrmClients(undefined, { enabled: cardNeedsBase })
+  const cardPick = useMemo(() => {
+    const base = cardNeedsBase && baseData ? baseData.clients : null
+    const avg = base ? portfolioAverageCheck(base) : 0
+    return pickCardClient<PulseClient, CrmClient>({
+      selectedId: cardId,
+      lists: CARD_CLIENTS,
+      lastKnown: lastKnownCard,
+      base,
+      deletedIds,
+      // not in the first 50 of the queue: its bucket is not known here — none is shown
+      fromBaseRow: (row) => withSector({ ...toTodayClient(row, avg, null, Date.now()), status: row.status }),
+    })
+  }, [cardNeedsBase, baseData, cardId, CARD_CLIENTS, lastKnownCard, deletedIds])
+  const selectedClient = cardPick.kind === 'client' ? cardPick.client : null
+  const cardChips = selectedClient && !listedCard ? [selectedClient, ...CARD_CLIENTS] : CARD_CLIENTS
 
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
@@ -1013,7 +1038,11 @@ function CrmMonitorSection() {
       {/* ── Modals & overlays ── */}
       <CallModal    client={callClient}    onClose={() => setCallClient(null)} />
       <MessageModal client={messageClient} onClose={() => setMessageClient(null)} />
-      <ClientDrawer client={drawerClient} onClose={() => setDrawerClient(null)} />
+      <ClientDrawer
+        client={drawerClient}
+        onClose={() => setDrawerClient(null)}
+        onDeleted={(id) => setDeletedIds((prev) => new Set(prev).add(id))}
+      />
       <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       {/* ── Header ── */}
@@ -1293,7 +1322,7 @@ function CrmMonitorSection() {
                   <tr className="border-b border-white/[0.04]">
                     {([
                       { label: 'Клиент', tip: 'Имя клиента, его статус и почему он в очереди сегодня' },
-                      { label: 'Последнее касание', tip: 'Последний звонок, сообщение, встреча или заметка по клиенту' },
+                      { label: 'Последнее касание', tip: 'Последний звонок, сообщение или встреча либо напоминание, отмеченное «Выполнено». Заметка касанием не считается' },
                       { label: 'Ср. чек', tip: 'Средний чек из карточки клиента; «—» — не указан' },
                       { label: 'Чек к среднему', tip: 'Чек клиента против среднего чека вашей базы: (чек − средний) ÷ средний × 100%. Это не динамика заказов' },
                       { label: 'Риск-скор', tip: 'Оценка 0–100 по правилу: дни без касания × 2,5 (до 70; нет касаний — 50), «Спящий» +15, «Клиент» −10, чек ниже половины среднего +10, чек выше двух средних −5 (средний — если известно хотя бы 2 чека), «Потерян» — 95' },
@@ -1440,7 +1469,7 @@ function CrmMonitorSection() {
       {/* ─── TAB 3: Client Card ─── */}
       {tab === 'card' && todayReady && (
         <div className="space-y-4">
-          {CARD_CLIENTS.length === 0 && (
+          {cardPick.kind === 'none' && (
             <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
               <p className="text-sm text-on-surface-variant">
                 В очереди и в зоне риска сейчас никого — карточку любого клиента можно открыть на вкладке «База клиентов».
@@ -1449,7 +1478,7 @@ function CrmMonitorSection() {
           )}
           {/* Client selector */}
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            {CARD_CLIENTS.map((c) => (
+            {cardChips.map((c) => (
               <button key={c.id}
                 onClick={() => setSelectedClientId(c.id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-colors whitespace-nowrap flex-shrink-0 ${
@@ -1465,6 +1494,23 @@ function CrmMonitorSection() {
             ))}
           </div>
 
+          {cardPick.kind === 'deleted' && (
+            <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+              <p className="text-sm text-on-surface-variant">
+                Этот клиент удалён из базы. Выберите другого клиента выше или на вкладке «База клиентов».
+              </p>
+            </div>
+          )}
+          {cardPick.kind === 'loading' && (
+            <p className="text-xs text-on-surface-variant/60">Загрузка карточки…</p>
+          )}
+          {selectedClient && !listedCard && (
+            <p className="text-[11px] font-mono text-on-surface-variant">
+              {cardPick.kind === 'client' && cardPick.fromBase
+                ? 'Клиента нет в показанных списках «Кому звонить» и «В зоне риска» — карточка по данным базы клиентов.'
+                : 'Клиента нет в показанных списках «Кому звонить» и «В зоне риска» — обновляем карточку по базе клиентов…'}
+            </p>
+          )}
           {selectedClient && (
             <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
               <ClientCard

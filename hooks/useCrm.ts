@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { ClientStatus } from '@/lib/crm/client-validate'
 
 // ─── Types (mirror app/api/v1/crm/* contracts) ──────────────────────────────
@@ -113,11 +113,37 @@ async function fetchEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     /* non-JSON error body */
   }
-  const body = (json ?? {}) as { ok?: boolean; data?: T; error?: string; message?: string }
+  const body = (json ?? {}) as { ok?: boolean; data?: T; error?: string; code?: string; message?: string }
   if (!res.ok || body.ok === false) {
-    throw new Error(body.message || body.error || `request failed (${res.status})`)
+    const err = new Error(body.message || body.error || `request failed (${res.status})`) as Error & { code?: string }
+    err.code = body.code ?? body.error
+    throw err
   }
   return body.data as T
+}
+
+/**
+ * What the screen says when logging a touch failed. «queue_not_updated»: the touch IS in the
+ * timeline but the queue was not updated (app/api/v1/crm/clients/[id]/interactions) — the
+ * server's message says so; anything else: the touch was not recorded.
+ */
+export function touchErrorText(e: unknown): string {
+  const err = e as { code?: unknown; message?: unknown } | null
+  if (err && err.code === 'queue_not_updated' && typeof err.message === 'string' && err.message) return err.message
+  return 'Не удалось записать касание'
+}
+
+/**
+ * What the drawer says when «Выполнено» / «Отменить» on a reminder failed: the server's message
+ * for «queue_not_updated» (marked done, but the queue was not updated —
+ * app/api/v1/crm/reminders/[id]) and «reminder_closed» (409: already closed); otherwise a plain one.
+ */
+export function reminderErrorText(e: unknown): string {
+  const err = e as { code?: unknown; message?: unknown } | null
+  if (err && (err.code === 'queue_not_updated' || err.code === 'reminder_closed') && typeof err.message === 'string' && err.message) {
+    return err.message
+  }
+  return 'Не удалось обновить напоминание'
 }
 
 export const crmKeys = {
@@ -170,10 +196,11 @@ export function sortBase(clients: CrmClient[]): CrmClient[] {
  * The owner's WHOLE base: GET /api/v1/crm/clients page by page (keyset cursor) until the last page,
  * so a base over one page is never silently cut. `total` is the server's count, for «N из M».
  */
-export function useCrmClients(status?: CrmClientStatus) {
+export function useCrmClients(status?: CrmClientStatus, opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: crmKeys.clients(status),
     queryFn: () => fetchWholeBase(status),
+    enabled: opts.enabled ?? true,
   })
 }
 
@@ -196,8 +223,10 @@ export async function fetchWholeBase(status?: CrmClientStatus): Promise<CrmClien
       seen.add(c.id)
       all.push(c)
     }
-    // Done on an empty page, or once every counted client is here (saves the empty request).
-    if (!page.nextCursor || all.length >= total) break
+    // Done only when the server says there is no next page (it answers an empty page with
+    // nextCursor null). Not «once `total` clients are here»: the count is a separate query and is
+    // stale during a concurrent insert — a client added meanwhile would never be shown.
+    if (!page.nextCursor) break
     after = page.nextCursor
   }
   return { clients: sortBase(all), total }
@@ -309,10 +338,9 @@ export interface LogInteractionInput {
   comment?: string
 }
 
-/** POST /api/v1/crm/clients/[id]/interactions. Bumps client.last_contact_at. */
-export function useLogInteraction() {
-  const qc = useQueryClient()
-  return useMutation({
+/** The options of useLogInteraction (exported for tests). */
+export function logInteractionMutation(qc: Pick<QueryClient, 'invalidateQueries'>) {
+  return {
     mutationFn: ({ clientId, kind, comment }: LogInteractionInput) =>
       fetchEnvelope<{ interaction: CrmInteraction }>(
         `/api/v1/crm/clients/${clientId}/interactions`,
@@ -322,12 +350,22 @@ export function useLogInteraction() {
           body: JSON.stringify({ kind, comment }),
         },
       ),
-    onSuccess: (_data, { clientId }) => {
+    // A contact closes the client's reminders due today on the server — the drawer's reminder list
+    // is refreshed with the queue. On settle, not only success: a 500 «queue_not_updated» still
+    // recorded the touch (and may have closed some), so the screen re-reads what is stored.
+    onSettled: (_data: unknown, _error: unknown, { clientId }: LogInteractionInput) => {
       qc.invalidateQueries({ queryKey: crmKeys.today() })
       qc.invalidateQueries({ queryKey: crmKeys.clientsRoot() })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
+      qc.invalidateQueries({ queryKey: crmKeys.reminders(clientId) })
     },
-  })
+  }
+}
+
+/** POST /api/v1/crm/clients/[id]/interactions. Bumps client.last_contact_at. */
+export function useLogInteraction() {
+  const qc = useQueryClient()
+  return useMutation(logInteractionMutation(qc))
 }
 
 export interface AddReminderInput {
@@ -370,7 +408,8 @@ export function useCompleteReminder() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, next_contact_at }),
       }),
-    onSuccess: (_data, { clientId }) => {
+    // On settle: a 409 «уже закрыто» means the list on screen is stale — re-read it.
+    onSettled: (_data, _error, { clientId }) => {
       qc.invalidateQueries({ queryKey: crmKeys.reminders(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.today() })

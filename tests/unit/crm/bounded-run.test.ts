@@ -3,7 +3,7 @@
  * platform's rule for background work is ≤ 2 at a time and ≤ 45 s per run).
  */
 import { describe, expect, it } from 'vitest'
-import { dayRotation, runBounded } from '@/lib/crm/bounded-run'
+import { beforeDeadline, dayRotation, runBounded } from '@/lib/crm/bounded-run'
 import { DIGEST_CONCURRENCY, DIGEST_MIN_START_MS, DIGEST_RUN_MS } from '@/lib/crm/digest'
 
 describe('runBounded', () => {
@@ -44,6 +44,20 @@ describe('runBounded', () => {
     expect(DIGEST_CONCURRENCY).toBeLessThanOrEqual(2)
     expect(DIGEST_RUN_MS).toBeLessThanOrEqual(45_000)
     expect(DIGEST_MIN_START_MS).toBeGreaterThan(0)
+  })
+
+  it('beforeDeadline: an answer in time is kept; a call that never answers is cut at the deadline', async () => {
+    expect(await beforeDeadline(async () => 7, Date.now() + 1_000)).toEqual({ ok: true, value: 7 })
+    const t0 = Date.now()
+    expect(await beforeDeadline(() => new Promise<never>(() => {}), t0 + 50)).toEqual({ ok: false })
+    expect(Date.now() - t0).toBeLessThan(1_000)
+  })
+
+  it('beforeDeadline: with nothing left the call is not even started; a rejection propagates', async () => {
+    let started = false
+    expect(await beforeDeadline(async () => { started = true }, Date.now() - 1)).toEqual({ ok: false })
+    expect(started).toBe(false)
+    await expect(beforeDeadline(async () => { throw new Error('boom') }, Date.now() + 1_000)).rejects.toThrow('boom')
   })
 
   it('dayRotation is stable within a day and differs between days', () => {

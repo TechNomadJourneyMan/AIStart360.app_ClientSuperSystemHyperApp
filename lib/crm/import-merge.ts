@@ -13,13 +13,17 @@
  *   2. a valid e-mail (lib/crm/csv-import.ts validEmailOrNull — «-», «нет», «n/a» are not e-mails)
  *      AND the same name, and no two different phones. A shared mailbox (info@firm.kz) under
  *      another name is another person: a new client.
- *   3. neither a phone nor a valid e-mail: the same name AND the same note (both empty is the same)
- *      AND the same raw phone digits, matched only to a client that has no phone and no valid
- *      e-mail either. Two «Иван» with different notes stay two clients; identical rows collapse.
+ *   3. a row with only a name (neither a normalised phone nor a valid e-mail): the ONE client with
+ *      the same name, whatever that client's phone, e-mail or note — and, as always, only its
+ *      EMPTY fields are filled. When two or more clients have that name (in the base or made by
+ *      this file) the row is neither merged nor created: it is skipped and counted as `ambiguous`
+ *      («несколько клиентов с таким именем»).
  * Names compare without case, «ё», punctuation, extra spaces and word order.
  *
  * Inside one file the first row of a client wins; a repeat only fills fields still empty.
- * A raw phone that did not normalise is kept only where the client has no phone at all.
+ * A raw phone that did not normalise is kept only where the client has no phone at all; when the
+ * import fills an empty phone, its raw form comes with it, so the screen shows the number that
+ * «Позвонить» dials (an old raw phone that never normalised is replaced by it).
  */
 import { validEmailOrNull, type ClientDraft } from './csv-import'
 
@@ -54,6 +58,8 @@ export interface ImportPlan {
   duplicates: number
   /** Rows not imported: their phone belongs to a client with another name. */
   conflicts: number
+  /** Rows not imported: only a name, and several clients have that name. */
+  ambiguous: number
 }
 
 /** A valid e-mail, lower-cased for comparison; null for anything else. */
@@ -71,15 +77,6 @@ export function nameKey(name: string): string {
     .filter(Boolean)
     .sort()
     .join(' ')
-}
-
-function textKey(s: string | null | undefined): string {
-  return (s ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
-}
-
-/** Identity of a client without a phone and a valid e-mail: name + note + raw phone digits. */
-export function anonymousKey(name: string, note: string | null, phoneRaw: string | null): string {
-  return `${nameKey(name)}|${textKey(note)}|${(phoneRaw ?? '').replace(/\D/g, '')}`
 }
 
 function toCheck(v: unknown): number | null {
@@ -101,8 +98,12 @@ interface Target {
 /** Fill the target's EMPTY fields from a row of the same client. Never changes a non-empty value. */
 function fillEmpty(t: ClientFields, row: ClientDraft): void {
   if (row.phone && t.phone == null) {
+    // The phone and the form it is shown in go together: an old raw phone that never normalised
+    // would otherwise be on screen while «Позвонить» dials the imported number. This is the ONE
+    // accepted exception to «an import never overwrites what the owner entered» (agreed in review):
+    // that unnormalised phone_raw is replaced by the imported number's form.
     t.phone = row.phone
-    if (empty(t.phone_raw)) t.phone_raw = row.phone_raw
+    t.phone_raw = empty(row.phone_raw) ? row.phone : row.phone_raw
   } else if (row.phone && t.phone === row.phone) {
     if (empty(t.phone_raw)) t.phone_raw = row.phone_raw
   } else if (!row.phone && t.phone == null && empty(t.phone_raw) && !empty(row.phone_raw)) {
@@ -124,7 +125,9 @@ function filledFields(before: ClientFields, after: ClientFields): Partial<Client
 export function planImport(rows: readonly ClientDraft[], existing: readonly ExistingClient[]): ImportPlan {
   const byPhone = new Map<string, Target>()
   const byEmail = new Map<string, Target[]>()
-  const byAnon = new Map<string, Target>()
+  /** Every client (of the base and made by this file) by its name. */
+  const byName = new Map<string, Target[]>()
+  const nameIndexed = new Set<Target>()
   const existingTargets: Target[] = []
   const newTargets: Target[] = []
   const emailIndexed = new Map<Target, Set<string>>()
@@ -140,9 +143,10 @@ export function planImport(rows: readonly ClientDraft[], existing: readonly Exis
         byEmail.set(email, [...(byEmail.get(email) ?? []), t])
       }
     }
-    if (!t.fields.phone && !email) {
-      const key = anonymousKey(t.fields.name, t.fields.note, t.fields.phone_raw)
-      if (!byAnon.has(key)) byAnon.set(key, t)
+    if (!nameIndexed.has(t)) {
+      nameIndexed.add(t)
+      const key = nameKey(t.fields.name)
+      byName.set(key, [...(byName.get(key) ?? []), t])
     }
   }
 
@@ -166,6 +170,7 @@ export function planImport(rows: readonly ClientDraft[], existing: readonly Exis
 
   let duplicates = 0
   let conflicts = 0
+  let ambiguous = 0
   for (const row of rows) {
     const name = nameKey(row.name)
     const email = normalizeEmail(row.email)
@@ -185,7 +190,13 @@ export function planImport(rows: readonly ClientDraft[], existing: readonly Exis
       )
     }
     if (!target && !row.phone && !email) {
-      target = byAnon.get(anonymousKey(row.name, row.note, row.phone_raw))
+      // Only a name: the one client with it; with several, nobody can tell which — skip the row.
+      const named = byName.get(name) ?? []
+      if (named.length > 1) {
+        ambiguous += 1
+        continue
+      }
+      target = named[0]
     }
 
     if (!target) {
@@ -215,5 +226,5 @@ export function planImport(rows: readonly ClientDraft[], existing: readonly Exis
     else updates.push({ id: t.existingId as string, patch })
   }
 
-  return { inserts: newTargets.map((t) => t.fields), updates, unchanged, duplicates, conflicts }
+  return { inserts: newTargets.map((t) => t.fields), updates, unchanged, duplicates, conflicts, ambiguous }
 }

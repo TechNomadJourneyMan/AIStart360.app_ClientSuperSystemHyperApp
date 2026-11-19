@@ -11,8 +11,9 @@ import { formatGri } from '@/lib/format/gri'
 
 /**
  * The platform's rule for background work (GET /api/cron/crm-digest): ≤ 2 owners at a time, the
- * run within 45 s. No owner's delivery is STARTED with less than DIGEST_MIN_START_MS left; one
- * already running is not cut off (its providers time out on their own); the rest is «deferred».
+ * run within 45 s. No owner's delivery is STARTED with less than DIGEST_MIN_START_MS left; every
+ * send of one already running is bounded by the run's deadline (lib/crm/bounded-run.ts
+ * beforeDeadline) — a send cut there leaves the owner «not delivered»; the rest is «deferred».
  */
 export const DIGEST_CONCURRENCY = 2
 export const DIGEST_RUN_MS = 44_000

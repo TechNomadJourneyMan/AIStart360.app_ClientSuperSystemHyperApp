@@ -16,14 +16,15 @@ const CHUNK = 200 // размер батча массовых вставок
  *
  * An import only ADDS: new clients are created, and a client the base already has gets its EMPTY
  * fields filled — a value the owner entered is never changed (that is done in the portal).
- * «Already has» = the same phone and name, or the same valid e-mail and name, or — without a phone
- * and an e-mail — the same name and note. The same phone under another name is a conflict and is
- * not imported. Re-importing a file creates nothing and changes nothing. Rules:
- * lib/crm/import-merge.ts.
+ * «Already has» = the same phone and name, or the same valid e-mail and name, or — a row with only
+ * a name — the ONE client with that name (several such clients: the row is skipped). The same
+ * phone under another name is a conflict and is not imported. Re-importing a file creates nothing
+ * and changes nothing. Rules: lib/crm/import-merge.ts.
  *
  * Answer: { inserted, updated (empty fields filled), unchanged, duplicates (rows repeating a client
- * of the same file), conflicts (phone of a client with another name — not imported), skipped
- * (nameless rows and rows the DB refused) }.
+ * of the same file), conflicts (phone of a client with another name — not imported), ambiguous
+ * (only a name, and several clients have it — not imported), skipped (nameless rows, ambiguous
+ * rows and rows the DB refused) }.
  */
 export async function POST(request: NextRequest) {
   const sb = createServerClient()
@@ -90,7 +91,8 @@ export async function POST(request: NextRequest) {
   const plan = planImport(rows, base.rows)
   let inserted = 0
   let updated = 0
-  let skipped = parseSkipped
+  // Rows with only a name that several clients share are skipped («несколько клиентов с таким именем»).
+  let skipped = parseSkipped + plan.ambiguous
 
   // Inserts in chunks: ceil(N/CHUNK) requests instead of N.
   const insertRow = (f: ClientFields) => ({ ...f, user_id: userId, source: 'csv' })
@@ -124,6 +126,9 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    data: { inserted, updated, unchanged: plan.unchanged, duplicates: plan.duplicates, conflicts: plan.conflicts, skipped },
+    data: {
+      inserted, updated, unchanged: plan.unchanged, duplicates: plan.duplicates, conflicts: plan.conflicts,
+      ambiguous: plan.ambiguous, skipped,
+    },
   })
 }
