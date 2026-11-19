@@ -15,7 +15,11 @@
 --   • profiles.approved_by: the FK without ON DELETE (NOT VALID, then VALIDATE);
 --   • email_deliveries: a 'pending' claim becomes 'sent' — the meaning a claim had before 158, so a
 --     letter is never sent twice (one still being sent, or never sent because its process died,
---     stays as it was in 157); claimed_at dropped; CHECK (sent, failed, skipped).
+--     stays as it was in 157); claimed_at dropped; CHECK (sent, failed, skipped);
+--   • automation_sends: status, claimed_at and their CHECK dropped. A 'pending' claim becomes a
+--     plain row — the meaning every row had before 158 («this key went out»), so a touch is never
+--     sent twice (one still being delivered, or never delivered because its process died, stays as
+--     it was in 157).
 -- Data lost: the link-code expiries and the claim times. Roll the portal code back first.
 --   psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -1 -f supabase/migrations/rollback/158_server_owned_columns.down.sql
 
@@ -141,5 +145,10 @@ BEGIN
     ADD CONSTRAINT email_deliveries_status_check CHECK (status IN ('sent', 'failed', 'skipped'));
 END $$;
 ALTER TABLE public.email_deliveries DROP COLUMN IF EXISTS claimed_at;
+
+-- ── 6. automation_sends ────────────────────────────────────────────────────────
+ALTER TABLE public.automation_sends DROP CONSTRAINT IF EXISTS automation_sends_status_check;
+ALTER TABLE public.automation_sends DROP COLUMN IF EXISTS status;
+ALTER TABLE public.automation_sends DROP COLUMN IF EXISTS claimed_at;
 
 NOTIFY pgrst, 'reload schema';

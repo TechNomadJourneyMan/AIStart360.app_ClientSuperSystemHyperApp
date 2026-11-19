@@ -55,7 +55,18 @@
 -- 5. email_deliveries (R-152): an idempotency claim is 'pending' until the letter is sent
 --    (lib/email/send.ts), claimed_at = when it was claimed (a stale 'pending' is taken over).
 --
--- Safe on prod: profiles (~60 rows) and companies keep their data; no row is rewritten.
+-- 6. automation_sends (R5 review of wave 1B, M-2): the same lifecycle for the claims of
+--    notifyClient (lib/notifications/store.ts claimSend with pending: true): 'pending' until a
+--    channel delivered, then 'sent'; claimed_at = when it was claimed or taken over. A claim of a
+--    process that died in between is taken over after 10 minutes instead of blocking its key for
+--    good. Until 158 the table had no status and no CHECK on it (089: CHECKs on kind and
+--    dedupe_key only); every existing row is a delivered or reserved touch, so status gets the
+--    DEFAULT 'sent' — existing rows and every writer that does not opt in (staff digest, Point B
+--    invites, plan notices) keep the meaning «final at insert». claimed_at of existing rows is the
+--    time of this migration (they are 'sent', it is never read for them).
+--
+-- Safe on prod: profiles (~60 rows) and companies keep their data; no row is rewritten (the two
+-- columns of automation_sends have constant / stable defaults — a catalog-only change).
 -- Idempotent. Policies are unchanged.
 -- Rollback: supabase/migrations/rollback/158_server_owned_columns.down.sql
 --   node scripts/apply-migration.js supabase/migrations/158_server_owned_columns.sql
@@ -288,6 +299,23 @@ BEGIN
   END LOOP;
   ALTER TABLE public.email_deliveries
     ADD CONSTRAINT email_deliveries_status_check CHECK (status IN ('pending', 'sent', 'failed', 'skipped'));
+END $$;
+
+-- ── 6. automation_sends: 'pending' claims of notifyClient ─────────────────────
+ALTER TABLE public.automation_sends ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'sent';
+ALTER TABLE public.automation_sends ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ NOT NULL DEFAULT now();
+COMMENT ON COLUMN public.automation_sends.status IS
+  '[158] pending — claimed by notifyClient, not delivered yet (taken over after 10 minutes); sent — delivered, or final at insert (the default: writers that do not opt in)';
+COMMENT ON COLUMN public.automation_sends.claimed_at IS
+  '[158] when the claim was taken (or taken over); a stale pending claim is taken over (lib/notifications/store.ts)';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conname = 'automation_sends_status_check' AND conrelid = 'public.automation_sends'::regclass) THEN
+    ALTER TABLE public.automation_sends
+      ADD CONSTRAINT automation_sends_status_check CHECK (status IN ('pending', 'sent'));
+  END IF;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
