@@ -24,7 +24,9 @@
  *      'partial' and says where the next one continues; it never leaves the previous status behind.
  *
  * Time: every CRM request, DNS lookup and database call is bounded by the run's deadline; no write
- * starts with less than MIN_CHUNK_MS + FINAL_RESERVE_MS left; the final write has its own short limit.
+ * starts with less than MIN_CHUNK_MS + FINAL_RESERVE_MS left; the final write gets what is left of
+ * the budget — at least FINAL_RESERVE_MS, kept for it up front — and never runs past the deadline
+ * (wave 3, L4: the ≤ 45 s rule holds to the end).
  * `sb` is either the user's client (RLS scopes everything to the owner) or the service client of the
  * cron: every query and function call is scoped by conn.user_id explicitly as well.
  */
@@ -56,8 +58,6 @@ const MIN_CHUNK_MS = 1_500
 /** Shares of the budget: no new CRM page after FETCH_SHARE, every CRM request aborted at ABORT_SHARE. */
 const FETCH_SHARE = 0.55
 const ABORT_SHARE = 0.7
-/** The final write's own limit (it may run after the budget). */
-const FINAL_WRITE_MS = 5_000
 /** The lease outlives the budget by this much: a crashed run frees its connection after it. */
 const LEASE_MARGIN_S = 30
 const ERROR_MAX = 500
@@ -238,7 +238,12 @@ export async function syncCrmConnection(sb: SupabaseClient, conn: SyncConnection
   const budget = Math.max(0, opts.deadlineAt - start)
   const timeLeft = () => opts.deadlineAt - FINAL_RESERVE_MS - now()
 
-  const lease = await sb.rpc('crm_sync_acquire_lease', { p_connection: conn.id, p_seconds: Math.ceil(budget / 1000) + LEASE_MARGIN_S })
+  // Bounded by the deadline like every other call (whatever is left of the budget, at least 1 ms).
+  const untilDeadline = () => AbortSignal.timeout(Math.max(1, opts.deadlineAt - now()))
+  const lease = await bounded(
+    sb.rpc('crm_sync_acquire_lease', { p_connection: conn.id, p_seconds: Math.ceil(budget / 1000) + LEASE_MARGIN_S }),
+    untilDeadline(),
+  )
   if (lease.error) {
     const message = failureMessage(new SyncDbError('lease', lease.error))
     console.error(`[crm/sync] lease of ${conn.id}: ${lease.error.code ?? ''} ${lease.error.message ?? ''}`)
@@ -276,7 +281,7 @@ export async function syncCrmConnection(sb: SupabaseClient, conn: SyncConnection
   if (report.status !== 'error' && report.deals) patch.synced_deals = report.deals.passRead
   const { error } = await bounded(
     sb.from('crm_provider_connections').update(patch).eq('id', conn.id).eq('user_id', conn.user_id).eq('sync_lease_token', leaseToken),
-    AbortSignal.timeout(FINAL_WRITE_MS),
+    untilDeadline(),
   )
   if (error) console.error(`[crm/sync] status of ${conn.id} not recorded: ${error.code ?? ''} ${error.message ?? ''}`)
   return report
