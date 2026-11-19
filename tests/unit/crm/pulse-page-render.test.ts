@@ -109,6 +109,9 @@ describe('CRM section with data (M2: no invented numbers)', () => {
     // the tooltips name every rule of the score and of the action (review, low)
     expect(html).toContain('чек выше двух средних −5')
     expect(html).toContain('Звонок — статус «Потерян»')
+    // Review (low): a note is not a contact — the «Последнее касание» tooltip said «…или заметка»
+    expect(html).toContain('Последний звонок, сообщение или встреча либо напоминание, отмеченное «Выполнено». Заметка касанием не считается')
+    expect(html).not.toContain('или заметка')
   })
 })
 
