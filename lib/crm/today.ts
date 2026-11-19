@@ -231,6 +231,42 @@ function toCheck(v: unknown): number | null {
 
 const byName = (a: TodayClient, b: TodayClient) => a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id)
 
+/**
+ * The base's average check over the clients whose check is known and positive. With a single
+ * known check there is no average to compare with (the client would be compared with itself:
+ * «0 %»), so it counts as unknown (0): no check-vs-average, no check modifier in the risk score.
+ */
+export function portfolioAverageCheck(clients: ReadonlyArray<{ avg_check: number | string | null }>): number {
+  const positive = clients.map((c) => toCheck(c.avg_check)).filter((v): v is number => v != null && v > 0)
+  return positive.length >= MIN_CHECKS_FOR_AVERAGE ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
+}
+
+/** One client as a row of the screen (risk by lib/crm/risk.ts against the base's average check). */
+export function toTodayClient(c: CrmClientRow, portfolioAvg: number, bucket: QueueBucket | null, nowMs: number): TodayClient {
+  const avgCheck = toCheck(c.avg_check)
+  const risk = scoreClientRisk({ lastContactAt: c.last_contact_at, avgCheck, status: c.status, now: nowMs }, portfolioAvg)
+  return {
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    statusLabel: STATUS_LABELS[c.status] ?? c.status,
+    phone: c.phone,
+    phoneRaw: c.phone_raw,
+    email: c.email,
+    ...notePreview(c.note),
+    nextContactAt: c.next_contact_at,
+    lastContactAt: c.last_contact_at,
+    daysSince: risk.daysSince,
+    avgCheck,
+    checkVsAvgPct: risk.checkVsAvgPct,
+    riskScore: risk.riskScore,
+    churnLevel: risk.churnLevel,
+    action: risk.action,
+    comment: risk.comment,
+    queueBucket: bucket,
+  }
+}
+
 /** The queue, the risk list and the KPI of one owner's base. Pure: same rows + time → same payload. */
 export function buildCrmToday(
   clients: readonly CrmClientRow[],
@@ -239,42 +275,9 @@ export function buildCrmToday(
 ): CrmTodayPayload {
   const day = almatyDay(nowMs)
   const dues = openDuesByClient(openReminders)
-
-  // The base's average check over the clients whose check is known and positive. With a single
-  // known check there is no average to compare with (the client would be compared with itself:
-  // «0 %»), so it counts as unknown: no check-vs-average, no check modifier in the risk score.
-  const checks = clients.map((c) => toCheck(c.avg_check))
-  const positive = checks.filter((v): v is number => v != null && v > 0)
-  const portfolioAvg =
-    positive.length >= MIN_CHECKS_FOR_AVERAGE ? positive.reduce((s, v) => s + v, 0) / positive.length : 0
-
-  const rows: TodayClient[] = clients.map((c, i) => {
-    const avgCheck = checks[i]
-    const risk = scoreClientRisk(
-      { lastContactAt: c.last_contact_at, avgCheck, status: c.status, now: nowMs },
-      portfolioAvg,
-    )
-    return {
-      id: c.id,
-      name: c.name,
-      status: c.status,
-      statusLabel: STATUS_LABELS[c.status] ?? c.status,
-      phone: c.phone,
-      phoneRaw: c.phone_raw,
-      email: c.email,
-      ...notePreview(c.note),
-      nextContactAt: c.next_contact_at,
-      lastContactAt: c.last_contact_at,
-      daysSince: risk.daysSince,
-      avgCheck,
-      checkVsAvgPct: risk.checkVsAvgPct,
-      riskScore: risk.riskScore,
-      churnLevel: risk.churnLevel,
-      action: risk.action,
-      comment: risk.comment,
-      queueBucket: queueBucket(c, dues.get(c.id) ?? [], day, nowMs),
-    }
-  })
+  const portfolioAvg = portfolioAverageCheck(clients)
+  const rows: TodayClient[] = clients.map((c) =>
+    toTodayClient(c, portfolioAvg, queueBucket(c, dues.get(c.id) ?? [], day, nowMs), nowMs))
 
   const high = rows.filter((r) => r.churnLevel === 'high')
   const medium = rows.filter((r) => r.churnLevel === 'medium')

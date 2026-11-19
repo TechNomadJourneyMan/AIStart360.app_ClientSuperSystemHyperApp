@@ -47,7 +47,12 @@ function fmtDateTime(iso: string | null): string {
   return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-export function ClientDrawer({ client, onClose }: { client: DrawerClient | null; onClose: () => void }) {
+export function ClientDrawer({ client, onClose, onDeleted }: {
+  client: DrawerClient | null
+  onClose: () => void
+  /** The client was deleted (the page must not keep showing it anywhere). */
+  onDeleted?: (id: string) => void
+}) {
   const clientId = client?.id ?? null
 
   const update = useUpdateClient()
@@ -176,7 +181,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
   const removeClient = () => {
     if (!confirm(`Удалить клиента «${seed.name}»? Это действие необратимо.`)) return
     del.mutate(client.id, {
-      onSuccess: () => { toast.success('Клиент удалён'); onClose() },
+      onSuccess: () => { toast.success('Клиент удалён'); onDeleted?.(client.id); onClose() },
       onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Не удалось удалить'),
     })
   }

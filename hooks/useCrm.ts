@@ -183,10 +183,11 @@ export function sortBase(clients: CrmClient[]): CrmClient[] {
  * The owner's WHOLE base: GET /api/v1/crm/clients page by page (keyset cursor) until the last page,
  * so a base over one page is never silently cut. `total` is the server's count, for «N из M».
  */
-export function useCrmClients(status?: CrmClientStatus) {
+export function useCrmClients(status?: CrmClientStatus, opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: crmKeys.clients(status),
     queryFn: () => fetchWholeBase(status),
+    enabled: opts.enabled ?? true,
   })
 }
 
