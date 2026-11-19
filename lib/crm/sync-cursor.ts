@@ -11,7 +11,9 @@
  *              phone may be re-linked: `conflicts`, at most MAX_CONFLICTS);
  *   deals    — `started_at` tags the qualifying deals of the pass in crm_sync_deals; avg_check is
  *              applied from them when the pass completes; the counters say what did not qualify.
- * `catching_up` (a pass is in progress) makes the automatic sync come back within half an hour
+ * `relink_pending` (wave 3, L5): the re-link at the end of a contacts pass failed — its pass start and
+ * conflicts are kept and the next run retries it first; a later completed pass replaces it.
+ * `catching_up` (a pass is in progress, or a re-link waits) makes the automatic sync come back within half an hour
  * instead of six hours (lib/crm/sync-cron.ts). A cursor of another CRM account, of another shape or
  * unreadable is replaced by an empty one (the next run starts new passes).
  */
@@ -41,6 +43,12 @@ export interface DealsCursor extends PassCursor {
   other_currency: number
 }
 
+export interface PendingRelink {
+  /** Start of the contacts pass whose re-link failed: clients not seen since then are the gone ones. */
+  started_at: string
+  conflicts: PhoneConflict[]
+}
+
 export interface SyncCursor {
   v: 1
   /** crm_clients.external_source the cursor belongs to. */
@@ -48,6 +56,7 @@ export interface SyncCursor {
   catching_up: boolean
   contacts: ContactsCursor
   deals: DealsCursor
+  relink_pending: PendingRelink | null
 }
 
 export const MAX_CONFLICTS = 500
@@ -59,6 +68,7 @@ export function emptyCursor(source: string | null): SyncCursor {
     catching_up: false,
     contacts: { started_at: null, position: null, read: 0, conflicts: [] },
     deals: { started_at: null, position: null, read: 0, without_contact: 0, other_currency: 0 },
+    relink_pending: null,
   }
 }
 
@@ -76,12 +86,16 @@ export function readCursor(raw: unknown, source: string): SyncCursor {
   if (r.v !== 1 || r.source !== source) return emptyCursor(source)
   const c = (r.contacts ?? {}) as Record<string, unknown>
   const d = (r.deals ?? {}) as Record<string, unknown>
-  const conflicts = Array.isArray(c.conflicts)
-    ? (c.conflicts as Array<Record<string, unknown>>)
+  const conflictsOf = (v: unknown): PhoneConflict[] => (Array.isArray(v)
+    ? (v as Array<Record<string, unknown>>)
         .filter((x) => x && str(x.phone) && str(x.contact))
         .map((x) => ({ phone: x.phone as string, contact: x.contact as string }))
         .slice(0, MAX_CONFLICTS)
-    : []
+    : [])
+  const conflicts = conflictsOf(c.conflicts)
+  const p = (r.relink_pending ?? null) as Record<string, unknown> | null
+  const pendingStarted = p && typeof p === 'object' ? iso(p.started_at) : null
+  const pendingConflicts = pendingStarted ? conflictsOf(p?.conflicts) : []
   const contactsStarted = iso(c.started_at)
   const dealsStarted = iso(d.started_at)
   return {
@@ -101,6 +115,7 @@ export function readCursor(raw: unknown, source: string): SyncCursor {
       without_contact: dealsStarted ? num(d.without_contact) : 0,
       other_currency: dealsStarted ? num(d.other_currency) : 0,
     },
+    relink_pending: pendingStarted && pendingConflicts.length > 0 ? { started_at: pendingStarted, conflicts: pendingConflicts } : null,
   }
 }
 

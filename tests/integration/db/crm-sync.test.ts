@@ -363,6 +363,40 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(await run(sb, conn)).toMatchObject({ status: 'success', relinked: 0, phoneConflicts: 0, missingInCrm: 1, inserted: 0 })
     }))
 
+  it('L5 (wave 3): a failed relink makes the run partial and keeps its conflicts; the next run re-links', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'bitrix24')
+      const sb = ownerClient(db, owner)
+      vi.stubGlobal('fetch', fakeBitrix({ contacts: range(5).map((i) => bxContact(i)), deals: [] }).fetchImpl)
+      await run(sb, conn)
+      const four = byExt(await clients(db, owner), '4').id
+
+      // In the CRM: contact 4 merged into a new contact 9 (with 4's phone); the relink call fails once.
+      const survivor = bxContact(9, { PHONE: [{ ID: '1', VALUE_TYPE: 'WORK', VALUE: '+7 701 000 0004', TYPE_ID: 'PHONE' }] })
+      vi.stubGlobal('fetch', fakeBitrix({ contacts: [...range(3).map((i) => bxContact(i)), survivor], deals: [] }).fetchImpl)
+      let failRelink = true
+      const rpc = sb.rpc.bind(sb)
+      Object.assign(sb, {
+        rpc: (fn: string, args: Record<string, unknown>) => (fn === 'crm_sync_relink' && failRelink
+          ? Promise.resolve({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' }, status: 500 })
+          : rpc(fn, args)),
+      })
+      const failed = await run(sb, conn)
+      expect(failed.status).toBe('partial')
+      expect(failed.problems.join(' ')).toMatch(/Перепривязка клиентов .* не удалась .* следующая синхронизация повторит/)
+      expect(failed.relinked).toBeNull()
+      const c = await connRow(db, conn.id)
+      expect(c.last_sync_status).toBe('partial')
+      expect(c.sync_cursor).toMatchObject({ catching_up: true, relink_pending: { conflicts: [{ phone: '+77010000004', contact: '9' }] } })
+      expect((await clients(db, owner)).find((r) => r.id === four)).toMatchObject({ external_id: '4' })
+
+      failRelink = false
+      expect(await run(sb, conn)).toMatchObject({ status: 'success', relinked: 1, phoneConflicts: 0, inserted: 0 })
+      expect((await clients(db, owner)).find((r) => r.id === four)).toMatchObject({ external_id: '9' })
+      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ catching_up: false, relink_pending: null })
+    }))
+
   it('M9: out of time — nothing is half done, the cursor does not move, the status says partial and why, the next run writes it', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })

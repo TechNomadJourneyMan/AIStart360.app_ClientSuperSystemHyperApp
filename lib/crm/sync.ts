@@ -41,7 +41,7 @@ import {
   type ClientWritePlan,
   type LocalClient,
 } from '@/lib/crm/provider-sync'
-import { addConflicts, readCursor, type SyncCursor } from '@/lib/crm/sync-cursor'
+import { addConflicts, readCursor, type PendingRelink, type PhoneConflict, type SyncCursor } from '@/lib/crm/sync-cursor'
 import type { CrmSyncStatus } from '@/lib/crm/sync-status'
 import type { ProviderList } from '@/lib/crm/sync-types'
 import { openCrmToken } from '@/lib/crm/token-store'
@@ -334,6 +334,32 @@ async function runSync(
     }
   }
 
+  const problems: string[] = []
+  // L5 (wave 3): a re-link that failed at the end of an earlier pass is retried first, with that
+  // pass's start and conflicts; a failure again keeps it for the next run (and the run partial).
+  const relink = async (startedAt: string, conflicts: PhoneConflict[]): Promise<number | null> => {
+    const r = await db(sb.rpc('crm_sync_relink', {
+      p_user: userId, p_source: src, p_pass_started_at: startedAt,
+      p_rows: conflicts.map((x) => ({ phone: x.phone, external_id: x.contact })),
+    }))
+    if (r.error) {
+      console.warn(`[crm/sync] relink of ${conn.id} failed: ${r.error.code ?? ''}`)
+      return null
+    }
+    return Number(r.data ?? 0)
+  }
+  const RELINK_FAILED = 'Перепривязка клиентов к записям CRM, у которых теперь их телефон, не удалась (ошибка базы) — следующая синхронизация повторит.'
+  let relinkPending: PendingRelink | null = cursor.relink_pending
+  let relinked: number | null = null
+  if (relinkPending) {
+    const n = await relink(relinkPending.started_at, relinkPending.conflicts)
+    if (n === null) problems.push(RELINK_FAILED)
+    else {
+      relinked = n
+      relinkPending = null
+    }
+  }
+
   const runIso = new Date(ctx.start).toISOString()
   const contactsPass = cursor.contacts.started_at ?? runIso
   const dealsPass = cursor.deals.started_at ?? runIso
@@ -403,12 +429,10 @@ async function runSync(
     : null
 
   // ── passes ──
-  const problems: string[] = []
   const notes: string[] = []
   const c = snapshot.contacts
   let next: SyncCursor = { ...cursor, contacts: { ...cursor.contacts }, deals: { ...cursor.deals } }
   let contacts: PassReport
-  let relinked: number | null = null
   let missingInCrm: number | null = null
   if (clientsWritten) {
     const passRead = cursor.contacts.read + c.items.length
@@ -416,14 +440,17 @@ async function runSync(
     const conflicts = addConflicts(cursor.contacts.conflicts, plan.conflicts)
     contacts = { read: c.items.length, passRead, passTotal, passComplete: c.complete }
     if (c.complete) {
+      // A completed pass supersedes a re-link still pending from an earlier one (and its failure
+      // above): its own conflicts are the current ones.
+      relinkPending = null
+      if (problems.includes(RELINK_FAILED)) problems.splice(problems.indexOf(RELINK_FAILED), 1)
       if (conflicts.length > 0) {
-        const r = await db(sb.rpc('crm_sync_relink', {
-          p_user: userId, p_source: src, p_pass_started_at: contactsPass,
-          p_rows: conflicts.map((x) => ({ phone: x.phone, external_id: x.contact })),
-        }))
-        if (r.error) console.warn(`[crm/sync] relink of ${conn.id} failed: ${r.error.code ?? ''}`)
-        else relinked = Number(r.data ?? 0)
-      } else relinked = 0
+        const n = await relink(contactsPass, conflicts)
+        if (n === null) {
+          relinkPending = { started_at: contactsPass, conflicts }
+          problems.push(RELINK_FAILED)
+        } else relinked = (relinked ?? 0) + n
+      } else relinked = relinked ?? 0
       const never = await db(sb.from('crm_clients').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('external_source', src).is('external_seen_at', null))
       const stale = await db(sb.from('crm_clients').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('external_source', src).lt('external_seen_at', contactsPass))
       if (!never.error && !stale.error) missingInCrm = (never.count ?? 0) + (stale.count ?? 0)
@@ -484,7 +511,8 @@ async function runSync(
   // A pass in progress, or writes that stopped, bring the automatic sync back within half an hour.
   next = {
     ...next,
-    catching_up: next.contacts.started_at !== null || next.deals.started_at !== null || !clientsWritten || !!dealsW?.stopped,
+    relink_pending: relinkPending,
+    catching_up: next.contacts.started_at !== null || next.deals.started_at !== null || !clientsWritten || !!dealsW?.stopped || relinkPending !== null,
   }
 
   const inserted = ins.rows.length
