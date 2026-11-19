@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   journalPresent: true,
   evidence: { last_cron: null as Date | null, role_since: null as Date | null, last_ping: null as Date | null },
   pingSince: null as Date | null,
+  /** N5-1a: public.schema_migrations exists / holds the newest migration of the build. */
+  schema: { journal: true, applied: true as boolean, latest: '157_crm_sync_catchup_lease_provenance.sql' as string | null, fails: false },
   queries: [] as string[],
 }))
 vi.mock('@/lib/db', () => ({
@@ -28,6 +30,11 @@ vi.mock('@/lib/db', () => ({
       if (state.dbFails) throw new Error('connection refused')
       if (state.dbHangs) return new Promise(() => {})
       if (state.dbDelayMs && sql.includes('SELECT 1')) await new Promise((r) => setTimeout(r, state.dbDelayMs))
+      if (sql.includes('schema_migrations')) {
+        if (state.schema.fails) throw new Error('permission denied for table schema_migrations')
+        if (sql.includes('to_regclass')) return [{ journal: state.schema.journal }]
+        return [{ applied: state.schema.applied, latest: state.schema.latest }]
+      }
       if (sql.includes('to_regclass')) return [{ present: state.journalPresent, expectations: state.journalPresent }]
       if (sql.includes('ops_job_expectations')) return state.pingSince ? [{ since: state.pingSince }] : []
       if (sql.includes('last_cron')) return [state.evidence]
@@ -52,6 +59,7 @@ beforeEach(() => {
   state.journalPresent = true
   state.evidence = { last_cron: null, role_since: null, last_ping: null }
   state.pingSince = null
+  state.schema = { journal: true, applied: true, latest: '157_crm_sync_catchup_lease_provenance.sql', fails: false }
   state.queries = []
   resetReadinessCache()
 })
@@ -65,7 +73,7 @@ describe('GET /api/health', () => {
   it('all checks pass', async () => {
     const body = await (await GET()).json()
     expect(body.allOnline).toBe(true)
-    expect(body.services.map((s: { name: string }) => s.name)).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(body.services.map((s: { name: string }) => s.name)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
     expect(body.services.every((s: { uptime: string }) => s.uptime === 'не измеряется')).toBe(true)
   })
 
@@ -92,7 +100,7 @@ describe('GET /api/health: the Workflow queue of a persistent server', () => {
   const names = (body: { services: { name: string }[] }) => body.services.map((s) => s.name)
   const queueOf = (body: { services: { name: string; status: string }[] }) => body.services.find((s) => s.name === 'Очередь Workflow')
 
-  it('on Vercel (no PERSISTENT_SERVER) the output is exactly as before, whatever the queue status says', async () => {
+  it('on Vercel (no PERSISTENT_SERVER) no queue entry, whatever the queue status says (the schema entry is on every server)', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '')
     setWorkflowQueueStatus({ state: 'retrying', attempts: 3, lastError: 'ECONNREFUSED' })
 
@@ -100,8 +108,8 @@ describe('GET /api/health: the Workflow queue of a persistent server', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
-    expect(Object.keys(body.checks)).toEqual(['db', 'config'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
+    expect(Object.keys(body.checks)).toEqual(['db', 'config', 'schema'])
     expect(body.allOnline).toBe(true)
     expect(body.summary).toBe('Все проверки пройдены')
   })
@@ -109,7 +117,7 @@ describe('GET /api/health: the Workflow queue of a persistent server', () => {
   it('PERSISTENT_SERVER=0 is not a persistent server either', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '0')
     const body = await (await GET()).json()
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
   })
 
   it('a running queue is an online entry and everything passes', async () => {
@@ -120,7 +128,7 @@ describe('GET /api/health: the Workflow queue of a persistent server', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Очередь Workflow'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных', 'Очередь Workflow'])
     expect(queueOf(body)).toMatchObject({ status: 'online', latencyMs: 0, uptime: 'не измеряется' })
     expect(body.checks).toMatchObject({ db: 'ok', config: 'ok', queue: 'ok' })
     expect(body.allOnline).toBe(true)
@@ -194,8 +202,8 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
 
     expect(res.status).toBe(200)
     expect(body.ok).toBe(true)
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
-    expect(Object.keys(body.checks)).toEqual(['db', 'config'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
+    expect(Object.keys(body.checks)).toEqual(['db', 'config', 'schema'])
     expect(body.allOnline).toBe(true)
     expect(body.degradedCount).toBe(0)
     expect(body.summary).toBe('Все проверки пройдены')
@@ -211,7 +219,7 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
     expect(body.ok).toBe(true)
   })
 
@@ -224,7 +232,7 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
     const body = await res.json()
 
     expect(res.status).toBe(503)
-    expect(body.checks).toEqual({ db: 'fail', config: 'ok' })
+    expect(body.checks).toEqual({ db: 'fail', config: 'ok', schema: 'unknown' })
     expect(body.summary).toMatch(/База данных/)
   })
 
@@ -237,7 +245,7 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
     const body = await res.json()
 
     expect(res.status).toBe(503)
-    expect(body.checks).toEqual({ db: 'ok', config: 'fail' })
+    expect(body.checks).toEqual({ db: 'ok', config: 'fail', schema: 'ok' })
     expect(body.summary).toMatch(/Конфигурация/)
   })
 
@@ -249,7 +257,7 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
     const body = await res.json()
 
     expect(res.status).toBe(503)
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Очередь Workflow'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных', 'Очередь Workflow'])
     expect(body.checks.queue).toBe('fail')
 
     setWorkflowQueueStatus({ state: 'running', attempts: 1 })
@@ -263,13 +271,13 @@ describe('GET /api/health: the agents service has no Workflow queue', () => {
 
     const body = await (await GET()).json()
 
-    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Очередь Workflow'])
+    expect(names(body)).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных', 'Очередь Workflow'])
   })
 
   it('off Railway the role changes nothing: no queue entry either way', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '')
     vi.stubEnv('PORTAL_ROLE', 'agents')
-    expect(names(await (await GET()).json())).toEqual(['База данных', 'Конфигурация сервера'])
+    expect(names(await (await GET()).json())).toEqual(['База данных', 'Конфигурация сервера', 'Схема базы данных'])
   })
 })
 
@@ -456,5 +464,70 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
     const body = await res.json()
     expect(res.status).toBe(503)
     expect(body.checks.db).toBe('fail')
+  })
+})
+
+// N5-1a: the code went out without its migrations (main ahead of the database) — readiness says so.
+describe('GET /api/health: the database schema matches the build (N5-1a)', () => {
+  const entry = (body: { services: { name: string; status: string }[] }) => body.services.find((s) => s.name === 'Схема базы данных')
+
+  it('the newest migration of the build is in schema_migrations: schema ok, 200', async () => {
+    const res = await GET()
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.checks.schema).toBe('ok')
+    expect(entry(body)).toMatchObject({ status: 'online', latencyMs: 0, uptime: 'не измеряется' })
+    // it asks for exactly the file the build ships
+    expect(state.queries.some((q) => q.includes('FROM public.schema_migrations') && q.includes('file = ?'))).toBe(true)
+  })
+
+  it('not recorded: schema fail, 503, «schema behind» and not one file name in the public answer', async () => {
+    state.schema.applied = false
+    state.schema.latest = '154_ops_job_runs.sql'
+    const res = await GET()
+    const text = await res.text()
+    const body = JSON.parse(text)
+    expect(res.status).toBe(503)
+    expect(body.ok).toBe(false)
+    expect(body.checks.schema).toBe('fail')
+    expect(entry(body)).toMatchObject({ status: 'offline' })
+    expect(body.summary).toMatch(/Схема базы отстаёт от кода/)
+    expect(text).not.toMatch(/\d{3}_[a-z0-9_]+\.sql/)
+    expect(text).not.toContain('schema_migrations')
+  })
+
+  it('no journal table at all is a database that predates the journal: fail too', async () => {
+    state.schema.journal = false
+    const res = await GET()
+    expect(res.status).toBe(503)
+    expect((await res.json()).checks.schema).toBe('fail')
+  })
+
+  it('a journal that cannot be read while the database answers is unknown (degraded), not a failure', async () => {
+    state.schema.fails = true
+    const res = await GET()
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.checks.schema).toBe('unknown')
+    expect(entry(body)).toMatchObject({ status: 'degraded' })
+  })
+
+  it('the database and configuration summaries still win; schema wins over the queue', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    setWorkflowQueueStatus({ state: 'retrying', attempts: 2 })
+    state.schema.applied = false
+    expect((await (await GET()).json()).summary).toMatch(/Схема базы/)
+    resetReadinessCache()
+    state.dbFails = true
+    expect((await (await GET()).json()).summary).toMatch(/База данных/)
+  })
+
+  it('also on the agents service (same build, same database)', async () => {
+    vi.stubEnv('PERSISTENT_SERVER', '1')
+    vi.stubEnv('PORTAL_ROLE', 'agents')
+    state.schema.applied = false
+    const res = await GET()
+    expect(res.status).toBe(503)
+    expect((await res.json()).checks).toEqual({ db: 'ok', config: 'ok', schema: 'fail' })
   })
 })

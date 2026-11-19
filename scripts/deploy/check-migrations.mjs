@@ -13,10 +13,14 @@
  *   3. a migration numbered ROLLBACK_REQUIRED_FROM (140) or later without its rollback
  *      rollback/<same name>.down.sql (docs/deploy/runbook.md §10);
  *   4. a file in rollback/ that is not <name of an existing migration>.down.sql (a typo there means a
- *      rollback nobody finds when it is needed).
- * Reads only the folder; no database, no git, no network.
+ *      rollback nobody finds when it is needed);
+ *   5. (N5-1a) lib/health/schema-version.ts whose NEWEST_MIGRATION is not the newest file of the folder:
+ *      /api/health compares that constant with public.schema_migrations, so a stale one would pass a
+ *      database that misses the new migration. Checked when the folder is the default one (as CI runs
+ *      it) or when it is a repository's supabase/migrations with that file next to it.
+ * Reads only the folder (and that one source file); no database, no git, no network.
  */
-import { readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -94,6 +98,30 @@ export function checkMigrations(listing, opts = {}) {
   return { ok: problems.length === 0, problems, checked: valid.size }
 }
 
+/** The newest migration of a listing (highest number; rollbacks and odd names ignored), or null. */
+export function newestMigration(files) {
+  const valid = files.filter((f) => MIGRATION_NAME.test(f)).sort()
+  return valid.length ? valid[valid.length - 1] : null
+}
+
+/** Where the build's newest-migration constant lives, relative to the repository root. */
+export const SCHEMA_VERSION_FILE = 'lib/health/schema-version.ts'
+
+/**
+ * Problems of the constant in lib/health/schema-version.ts against the folder's newest migration.
+ * @param {string | null} newest
+ * @param {string} source  the text of lib/health/schema-version.ts
+ * @returns {string[]}
+ */
+export function checkNewestConstant(newest, source) {
+  const m = /NEWEST_MIGRATION\s*=\s*'([^']*)'/.exec(source)
+  if (!m) return [`${SCHEMA_VERSION_FILE}: NEWEST_MIGRATION не найден — /api/health не с чем сверять журнал миграций`]
+  if (newest && m[1] !== newest) {
+    return [`${SCHEMA_VERSION_FILE}: NEWEST_MIGRATION = '${m[1]}', а новейшая миграция — ${newest}: поставьте '${newest}' (иначе /api/health не заметит базу без неё)`]
+  }
+  return []
+}
+
 /** Reads the folder: files directly in it, files in rollback/, other sub-folders. */
 export function listMigrationsDir(dir) {
   const entries = readdirSync(dir, { withFileTypes: true })
@@ -110,7 +138,17 @@ export function listMigrationsDir(dir) {
 
 export function main(argv = process.argv.slice(2), { log = console.log, error = console.error } = {}) {
   const dir = argv[0] ?? 'supabase/migrations'
-  const result = checkMigrations(listMigrationsDir(dir))
+  const listing = listMigrationsDir(dir)
+  const result = checkMigrations(listing)
+  // N5-1a: the constant /api/health compares with the journal. Required for the default folder (CI);
+  // for another folder only when it is a repository's supabase/migrations with that file next to it.
+  const constant = path.resolve(dir, '..', '..', SCHEMA_VERSION_FILE)
+  const inRepo = path.basename(path.resolve(dir)) === 'migrations' && path.basename(path.resolve(dir, '..')) === 'supabase'
+  if (argv[0] === undefined || (inRepo && existsSync(constant))) {
+    const source = existsSync(constant) ? readFileSync(constant, 'utf8') : ''
+    result.problems.push(...checkNewestConstant(newestMigration(listing.migrations), source))
+    result.ok = result.problems.length === 0
+  }
   if (result.ok) {
     log(`migrations: ${result.checked} файлов, номера уникальны (старые повторы — по списку), откаты с ${ROLLBACK_REQUIRED_FROM} на месте`)
     return 0

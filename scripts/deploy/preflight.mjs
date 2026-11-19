@@ -5,7 +5,7 @@
  *
  *   production (runbook §2), from a clean copy detached on origin/main:
  *     node scripts/deploy/preflight.mjs --label round4w3 --verified <sha checked locally against staging>
- *         [--since <commit deployed now>] [--staging-journal <file|->] [--commit <sha>] [--allow-drift]
+ *         --since <commit deployed now> [--staging-journal <file|->] [--prod-journal <file|->] [--commit <sha>] [--allow-drift]
  *         [--base-url <url>] [--no-fetch] [--dir <path>]
  *   rollback, path B (runbook §9) — run from a copy on main, --dir points at the copy on the old commit:
  *     node <copy on main>/scripts/deploy/preflight.mjs --revert --commit <old sha> --dir <deploy copy> --label …
@@ -40,9 +40,17 @@
  *             --allow-drift (a loud warning). Not asked with --revert;
  *   window    not 03:00–06:00 UTC (refused; with --revert only a warning); warnings just before it and
  *             around the nightly recompute (21:45–23:00 UTC);
- *   migrations with --since: the migrations added between the deployed commit and this one go into
- *             the plan; a CHANGED old migration is refused (its checksum no longer matches the journal).
- *             With --staging-journal each must be in the staging journal with the checksum of its bytes.
+ *   migrations with --since (MANDATORY in production since N5-1b; a rollback needs none): the migrations
+ *             added between the deployed commit and this one go into the plan; a CHANGED old migration
+ *             is refused (its checksum no longer matches the journal). With --staging-journal each must
+ *             be in the staging journal with the checksum of its bytes;
+ *   coverage  (N5-1b, production) every migration of the deployed commit and of --verified must be in
+ *             the bundle or already applied on prod — refused otherwise (a wrong --since would ship code
+ *             ahead of its schema). «Applied» is the prod journal given with --prod-journal (the output
+ *             of a read-only `SELECT file, checksum FROM public.schema_migrations` through db-tools,
+ *             runbook §2): a file from 083 on that is missing there and not in the bundle, or recorded
+ *             with another checksum, is refused; one already recorded leaves the bundle. Without
+ *             --prod-journal «applied» is what --since contains, with a warning.
  *
  * Plain ESM, no dependencies, Node 20+. The logic is in pure functions; `run`, `now` and file reads are
  * injected (tests/unit/deploy/preflight.test.ts runs it without git, gh or network).
@@ -75,7 +83,7 @@ export class UsageError extends Error {}
 export function parseArgs(argv) {
   const opts = {
     env: 'production', label: 'deploy', commit: null, since: null, verified: null, allowDrift: false, revert: false,
-    stagingJournal: null, baseUrl: null, fetch: true, dir: '.',
+    stagingJournal: null, prodJournal: null, baseUrl: null, fetch: true, dir: '.',
   }
   const value = (i, flag) => {
     const v = argv[i + 1]
@@ -91,6 +99,7 @@ export function parseArgs(argv) {
       case '--since': opts.since = value(i, a); i++; break
       case '--verified': opts.verified = value(i, a); i++; break
       case '--staging-journal': opts.stagingJournal = value(i, a); i++; break
+      case '--prod-journal': opts.prodJournal = value(i, a); i++; break
       case '--base-url': opts.baseUrl = value(i, a); i++; break
       case '--dir': opts.dir = value(i, a); i++; break
       case '--allow-drift': opts.allowDrift = true; break
@@ -108,9 +117,16 @@ export function parseArgs(argv) {
   if (opts.env === 'staging') {
     if (opts.revert || opts.verified || opts.allowDrift) throw new UsageError('--revert / --verified / --allow-drift — только для production: кода на staging не выкатывают (runbook §4)')
     if (opts.baseUrl !== null) throw new UsageError('--base-url не для staging: код проверяется локально (runbook §4)')
+    if (opts.prodJournal !== null) throw new UsageError('--prod-journal — только для production: на staging сверяется журнал staging (--staging-journal)')
   }
+  if (opts.revert && opts.prodJournal !== null) throw new UsageError('--prod-journal не для отката: откат кода схему не трогает (runbook §9–10)')
   if (opts.revert && !opts.commit) throw new UsageError('--revert: укажите --commit <коммит, на который откатываемся>')
   if (opts.allowDrift && !opts.verified) throw new UsageError('--allow-drift: только вместе с --verified')
+  // N5-1b: without the commit on prod the migrations of the deploy are a guess — a missing one ships
+  // code ahead of its schema. A rollback (--revert) does not touch the schema and needs none.
+  if (opts.env === 'production' && !opts.revert && !opts.since) {
+    throw new UsageError('--since: обязателен для production — коммит, который сейчас на проде (отчёт прошлой выкатки или runbook §8): по нему preflight находит миграции этой выкатки')
+  }
   if (opts.baseUrl !== null) {
     let u
     try { u = new URL(opts.baseUrl) } catch { throw new UsageError('--base-url: не URL') }
@@ -245,6 +261,70 @@ export function stagingState(files, journal) {
   return { applied, missing, different }
 }
 
+/** The migrations journal starts with 083 (public.schema_migrations): older files are not in it. */
+export const JOURNAL_FROM = 83
+
+/**
+ * N5-1b: every migration of the code going out must be either in the planned bundle or already
+ * applied on prod — otherwise the code ships ahead of its schema (a wrong --since drops it from the
+ * plan without a word).
+ *   atCommit   — migrations in the deployed commit;  atVerified — in the commit checked against
+ *                staging (= atCommit unless --allow-drift);  planned — the bundle (added since --since);
+ *   journal    — the prod journal (file → checksum) from --prod-journal, or null: then «applied» is
+ *                taken to be what --since contains (atSince) — the runbook puts migrations before code;
+ *   sums       — sha256 of the deployed files (journal mode), to refuse an applied file that changed.
+ * Files numbered below JOURNAL_FROM are not looked up in the journal (it did not exist then).
+ * @param {{ atCommit: string[], atVerified: string[], atSince: string[], planned: string[],
+ *           journal: Map<string, string> | null, sums?: Map<string, string> }} input
+ * @returns {{ ok: boolean, lines: string[], toApply: string[] }}
+ */
+export function migrationCoverage({ atCommit, atVerified, atSince, planned, journal, sums = new Map() }) {
+  const lines = []
+  let ok = true
+  const plannedSet = new Set(planned)
+  const commitSet = new Set(atCommit)
+  const all = [...new Set([...atCommit, ...atVerified])].sort()
+  if (!journal) {
+    const applied = new Set(atSince)
+    const missing = all.filter((f) => !plannedSet.has(f) && !applied.has(f))
+    for (const f of missing) {
+      ok = false
+      lines.push(commitSet.has(f)
+        ? `✗ ${f}: нет ни в пакете, ни в коммите --since — откуда она? (сверьте --since с прод-коммитом)`
+        : `✗ ${f}: есть в проверенном коде, но нет ни в выкатываемом коммите, ни на проде (--since)`)
+    }
+    if (ok) lines.push(`✓ все ${all.length} миграций кода — в пакете (${planned.length}) или в коммите --since`)
+    return { ok, lines, toApply: [...planned] }
+  }
+  let applied = 0
+  let older = 0
+  const toApply = []
+  for (const f of all) {
+    if (Number(f.slice(0, 3)) < JOURNAL_FROM) { older++; continue }
+    const recorded = journal.get(f)
+    const sum = sums.get(f)
+    if (recorded) {
+      if (sum && recorded !== sum) {
+        ok = false
+        lines.push(`✗ ${f}: в журнале прода другая сумма (${recorded.slice(0, 12)} ≠ ${sum.slice(0, 12)}) — файл менялся после применения или журнал записан вручную; разобраться до выкатки`)
+      } else if (plannedSet.has(f)) {
+        lines.push(`– ${f}: уже применена на проде с той же суммой — из пакета убрана`)
+      } else {
+        applied++
+      }
+    } else if (plannedSet.has(f)) {
+      toApply.push(f)
+    } else {
+      ok = false
+      lines.push(commitSet.has(f)
+        ? `✗ ${f}: на проде не применена и в пакет не попала — --since не тот коммит, что на проде? Код ушёл бы без своей схемы`
+        : `✗ ${f}: есть в проверенном коде, но нет ни в выкатываемом коммите, ни в журнале прода`)
+    }
+  }
+  lines.unshift(`${ok ? '✓' : '✗'} журнал прода: применено ${applied}, в пакет ${toApply.length}${older ? `, до ${String(JOURNAL_FROM).padStart(3, '0')} без журнала — ${older}` : ''}`)
+  return { ok, lines, toApply }
+}
+
 /** The JSON of `gh api …` or null. */
 function json(text) {
   try { return JSON.parse(text) } catch { return null }
@@ -258,9 +338,10 @@ export function utcStamp(now) {
 /**
  * The plan: commands for a human to run one by one. Nothing here is executed.
  * @param {{ env: string, label: string, sha: string, baseUrl: string | null, stamp: string,
- *           migrations: string[] | null, toApply?: string[] | null, verified?: string | null, revert?: boolean,
- *           dir?: string, tools?: string }} ctx
- *   migrations null — unknown (no --since); toApply (staging) — those not yet in the staging journal
+ *           migrations: string[] | null, toApply?: string[] | null, bundle?: string[] | null,
+ *           verified?: string | null, revert?: boolean, dir?: string, tools?: string }} ctx
+ *   migrations null — unknown (no --since); toApply (staging) — those not yet in the staging journal;
+ *   bundle (production) — the new ones not yet in the prod journal (migrationCoverage)
  * @returns {string[]}
  */
 export function buildPlan(ctx) {
@@ -293,7 +374,7 @@ function stagingPlan(ctx) {
   L.push(`   node ${tools}/scripts/smoke/post-deploy.mjs --base-url ${LOCAL_BASE_URL}     # локальный режим: что к dev не применимо — предупреждения`)
   L.push('')
   L.push('3. Дальше: PR → зелёный CI → merge → CI по merge-коммиту → на проде:')
-  L.push(`   node scripts/deploy/preflight.mjs --label <label> --verified ${sha} --since <коммит на проде> --staging-journal <журнал staging>`)
+  L.push(`   node scripts/deploy/preflight.mjs --label <label> --verified ${sha} --since <коммит на проде> --staging-journal <журнал staging> --prod-journal <журнал прода>`)
   return L
 }
 
@@ -324,14 +405,16 @@ function productionPlan(ctx) {
     L.push(`   chmod 600 ~/AI-Portal-backups/${dump}.dump && shasum -a 256 ~/AI-Portal-backups/${dump}.dump && pg_restore -l ~/AI-Portal-backups/${dump}.dump | grep -c " TABLE "`)
     L.push('   # сумма и число TABLE совпадают с выводом db-tools — иначе стоп')
     L.push('')
-    if (ctx.migrations === null) {
+    // N5-1b: with the prod journal the bundle is what is new AND not applied there yet
+    const bundle = ctx.bundle ?? ctx.migrations
+    if (bundle === null) {
       L.push('2. Миграции (runbook §4): список не известен — запустите preflight с --since <коммит, который сейчас на проде> или найдите новые файлы supabase/migrations/NNN_*.sql сами.')
-    } else if (ctx.migrations.length === 0) {
-      L.push('2. Миграции: новых нет.')
+    } else if (bundle.length === 0) {
+      L.push(ctx.migrations && ctx.migrations.length ? '2. Миграции: все новые уже применены на проде (журнал прода).' : '2. Миграции: новых нет.')
     } else {
-      const files = ctx.migrations.map((f) => `supabase/migrations/${f}`).join(' ')
-      L.push(`2. Миграции (runbook §4): ${ctx.migrations.join(', ')}. Журнал staging, потом пакет:`)
-      L.push(`   PGPASSWORD="$(cat <файл пароля staging>)" psql "<staging-dsn>" -X -At -c "SELECT file, checksum FROM public.schema_migrations WHERE file IN (${ctx.migrations.map((f) => `'${f}'`).join(', ')})" > /tmp/staging-journal.txt`)
+      const files = bundle.map((f) => `supabase/migrations/${f}`).join(' ')
+      L.push(`2. Миграции (runbook §4): ${bundle.join(', ')}. Журнал staging, потом пакет:`)
+      L.push(`   PGPASSWORD="$(cat <файл пароля staging>)" psql "<staging-dsn>" -X -At -c "SELECT file, checksum FROM public.schema_migrations WHERE file IN (${bundle.map((f) => `'${f}'`).join(', ')})" > /tmp/staging-journal.txt`)
       L.push(`   node ${tools}/scripts/deploy/migrations-bundle.mjs --label ${label} --staging-journal /tmp/staging-journal.txt ${files}`)
       L.push('   # затем две команды railway ssh … db-tools, которые напечатает migrations-bundle (передача + применение)')
     }
@@ -483,11 +566,13 @@ export function runPreflight(opts, deps = {}) {
   }
 
   // verified: the code going out is the code that was checked locally against staging
+  let verifiedSha = null
   if (prod && !opts.revert) {
     if (!opts.verified) {
       add('проверенный код', false, 'укажите --verified <коммит, который проверяли локально против staging> (runbook §2)')
     } else {
       const v = resolve(opts.verified)
+      verifiedSha = v
       if (!v) add('проверенный код', false, `--verified ${opts.verified}: коммит не найден (git fetch origin <ветка>?)`)
       else if (!sha) add('проверенный код', false, 'не сверен: коммит не определён')
       else {
@@ -514,10 +599,12 @@ export function runPreflight(opts, deps = {}) {
   // migrations
   let migrations = null
   let toApply = null
+  let sinceSha = null
   if (opts.revert) {
     add('миграции', true, 'откат кода: схему не трогает (runbook §9–10)')
   } else if (opts.since && sha) {
     const since = resolve(opts.since)
+    sinceSha = since
     if (!since) {
       add('миграции', false, `--since ${opts.since}: коммит не найден`)
     } else {
@@ -562,10 +649,48 @@ export function runPreflight(opts, deps = {}) {
     add('миграции', true, 'не определены (нет --since): список в плане — вручную', true)
   }
 
+  // coverage (N5-1b): no migration of the code going out is neither in the bundle nor on prod
+  let bundle = null
+  if (prod && !opts.revert && migrations !== null && sinceSha && sha) {
+    const listAt = (ref) => {
+      const r = git('ls-tree', '--name-only', ref, '--', 'supabase/migrations/')
+      if (r.status !== 0) return null
+      return r.stdout.split('\n').map((l) => MIGRATION.exec(l.trim())?.[1]).filter(Boolean)
+    }
+    const atCommit = listAt(sha)
+    const atSince = listAt(sinceSha)
+    const atVerified = verifiedSha && verifiedSha !== sha ? listAt(verifiedSha) : atCommit
+    if (!atCommit || !atSince || !atVerified) {
+      add('полнота миграций', false, 'git ls-tree не сработал: список миграций коммитов не получен')
+    } else {
+      let journal = null
+      const sums = new Map()
+      let failed = null
+      if (opts.prodJournal) {
+        try {
+          journal = parseJournal(readJournal(opts.prodJournal))
+          if (journal.size === 0) failed = 'журнал прода пуст или не в формате «файл|сумма» (вывод psql -At, runbook §2)'
+          // HEAD = sha and the tree is clean (checked above): the bytes on disk are the commit's.
+          else for (const f of atCommit) if (Number(f.slice(0, 3)) >= JOURNAL_FROM) sums.set(f, sha256(readFile(path.join(opts.dir, 'supabase', 'migrations', f))))
+        } catch (e) {
+          failed = `журнал прода или файл миграции не прочитан: ${e instanceof Error ? e.message : e}`
+        }
+      }
+      if (failed) add('полнота миграций', false, failed)
+      else {
+        const c = migrationCoverage({ atCommit, atVerified, atSince, planned: migrations, journal, sums })
+        bundle = c.toApply
+        add('полнота миграций', c.ok, journal
+          ? c.lines
+          : [...c.lines, 'журнал прода не сверен (нет --prod-journal): применёнными считаются миграции коммита --since (runbook §2)'], c.ok && !journal)
+      }
+    }
+  }
+
   const ok = checks.every((c) => c.ok)
   const plan = ok && sha
     ? buildPlan({
-        env: opts.env, label: opts.label, sha, baseUrl: opts.baseUrl, stamp: utcStamp(now), migrations, toApply,
+        env: opts.env, label: opts.label, sha, baseUrl: opts.baseUrl, stamp: utcStamp(now), migrations, toApply, bundle,
         verified: opts.verified, revert: opts.revert, dir: opts.dir === '.' ? '.' : path.resolve(opts.dir), tools: deps.tools ?? TOOLS_ROOT,
       })
     : null
@@ -582,8 +707,8 @@ export function formatChecks(result) {
   return lines
 }
 
-const HELP = `прод:    node scripts/deploy/preflight.mjs --label <имя> --verified <проверенный коммит> [--since <коммит на проде>]
-             [--staging-journal <файл|->] [--commit <sha>] [--allow-drift] [--base-url https://…] [--no-fetch] [--dir <папка>]
+const HELP = `прод:    node scripts/deploy/preflight.mjs --label <имя> --verified <проверенный коммит> --since <коммит на проде>
+             [--staging-journal <файл|->] [--prod-journal <файл|->] [--commit <sha>] [--allow-drift] [--base-url https://…] [--no-fetch] [--dir <папка>]
 откат:   node <копия на main>/scripts/deploy/preflight.mjs --revert --commit <старый sha> --dir <копия для выкатки> --label <имя>
 staging: node scripts/deploy/preflight.mjs --env staging --label <имя> [--since <коммит на проде>] [--staging-journal <файл|->]
 Только проверяет и печатает план; ничего не выполняет. Подробно — docs/deploy/runbook.md.`

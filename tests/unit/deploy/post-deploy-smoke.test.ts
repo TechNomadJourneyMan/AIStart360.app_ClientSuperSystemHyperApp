@@ -17,7 +17,7 @@ const go = (location: string): Answer => ({ status: 307, headers: { location } }
 function healthy(): Record<string, Answer> {
   return {
     '/api/healthz': json(200, { ok: true, uptimeS: 30, deploymentId: DEP, commit: null }),
-    '/api/health': json(200, { ok: true, checks: { db: 'ok', config: 'ok', queue: 'ok', inngest: 'ok', jobs: 'ok' } }),
+    '/api/health': json(200, { ok: true, checks: { db: 'ok', config: 'ok', schema: 'ok', queue: 'ok', inngest: 'ok', jobs: 'ok' } }),
     '/': { status: 200, body: '<html>' },
     '/login': { status: 200, body: '<html>', headers: { 'content-security-policy': CSP } },
     '/client/home': go(`${BASE}/login?from=%2Fclient%2Fhome`),
@@ -125,6 +125,21 @@ describe('runSmoke', () => {
     expect(unknown.row('/api/health')).toMatchObject({ mark: '!', note: expect.stringContaining('jobs') })
   })
 
+  // N5-1a: the code is out without its migrations — that is a failed deploy, not a warning.
+  it('/api/health: schema fail or unknown → ✗ with the hint; no schema check at all (code before N5-1a) only warns', async () => {
+    const all = { db: 'ok', config: 'ok', queue: 'ok', inngest: 'ok', jobs: 'ok' }
+    const behind = await smoke({ '/api/health': json(503, { ok: false, checks: { ...all, schema: 'fail' } }) })
+    expect(behind.ok).toBe(false)
+    expect(behind.row('/api/health')).toMatchObject({ mark: '✗', note: expect.stringContaining('миграции') })
+    // 'unknown' schema is a 200, but a deploy is not «done» while the journal could not be read
+    const unread = await smoke({ '/api/health': json(200, { ok: true, checks: { ...all, schema: 'unknown' } }) })
+    expect(unread.row('/api/health').mark).toBe('✗')
+    expect((await smoke({ '/api/health': json(200, { ok: true, checks: { ...all, schema: 'ok' } }) })).row('/api/health').mark).toBe('✓')
+    const old = await smoke({ '/api/health': json(200, { ok: true, checks: all }) })
+    expect(old.ok).toBe(true)
+    expect(old.row('/api/health')).toMatchObject({ mark: '!', note: expect.stringContaining('schema') })
+  })
+
   it('/login: no CSP, or a CSP with localhost / *.supabase.co / without connect-src → ✗', async () => {
     expect((await smoke({ '/login': { status: 200, body: 'x' } })).row('/login').note).toContain('нет заголовка')
     const local = await smoke({ '/login': { status: 200, headers: { 'content-security-policy': `${CSP} http://localhost:5173` } } })
@@ -212,6 +227,9 @@ describe('local mode — the dev server against staging (W3B-2, runbook §4)', (
 
   it('stays strict where the code is under test: the staging database, redirects, 401/403, *.supabase.co', async () => {
     expect((await local(devServer({ '/api/health': json(503, { ok: false, checks: { db: 'fail', config: 'ok' } }) }))).row('/api/health').mark).toBe('✗')
+    // N5-1a: staging must already carry the migrations of the code under test (runbook §4)
+    const behind = await local(devServer({ '/api/health': json(503, { ok: false, checks: { db: 'ok', config: 'fail', schema: 'fail' } }) }))
+    expect(behind.row('/api/health')).toMatchObject({ mark: '✗', note: expect.stringContaining('миграции') })
     expect((await local(devServer({ '/client/home': { status: 200, body: '<html>' } }))).ok).toBe(false)
     expect((await local(devServer({ '/api/v1/notifications?count=1': json(200, {}) }))).ok).toBe(false)
     const cloud = await local(devServer({ '/login': { status: 200, headers: { 'content-security-policy': "connect-src 'self' https://*.supabase.co" } } }))

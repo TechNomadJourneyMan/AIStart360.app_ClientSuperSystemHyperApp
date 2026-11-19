@@ -15,7 +15,17 @@ vi.mock('@/lib/cron/schedule', async (importOriginal) => {
   // The answer deadline of paid-access requests ('8-59/15', R4 N4B-1) likewise.
   // And the automatic CRM sync ('17,47 0-20,23', CRM revival 2026-11-18).
   const frequent = ['/api/cron/backup-freshness', '/api/cron/expert-sla', '/api/cron/ops-watchdog', '/api/cron/ops-crosswatch', '/api/cron/access-requests', '/api/cron/crm-sync']
-  const jobs = real.CRON_JOBS.filter((job) => !frequent.includes(job.path))
+  // The scenarios need three jobs in one minute (two slots, one queued): the three morning digests at
+  // 04:00, as Vercel ran them. R-230 spread them by minutes in the real schedule (pinned in
+  // schedule.test.ts); here they stay together as a fixture of the runner's mechanics.
+  const together: Record<string, string> = {
+    '/api/cron/crm-digest': '0 4 * * *',
+    '/api/cron/agents-digest': '0 4 * * *',
+    '/api/cron/client-digest': '0 4 * * 1',
+  }
+  const jobs = real.CRON_JOBS
+    .filter((job) => !frequent.includes(job.path))
+    .map((job) => (together[job.path] ? { ...job, schedule: together[job.path] } : job))
   return {
     ...real,
     CRON_JOBS: jobs,

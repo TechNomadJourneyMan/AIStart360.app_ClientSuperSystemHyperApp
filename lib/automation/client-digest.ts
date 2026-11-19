@@ -1,7 +1,7 @@
 /**
  * lib/automation/client-digest.ts — еженедельный дайджест клиенту + лучший
  * Next Best Action (F-059). Вызывается из /api/cron/client-digest
- * по понедельникам в 09:00 Алматы.
+ * по понедельникам около 09:30 Алматы (04:26 UTC, R-230).
  *
  * Получают одобренные клиенты с включённой категорией «digest» (хотя бы один
  * канал). Письмо + запись в ленте. Если сказать нечего (нет GRI, задач,
@@ -33,6 +33,8 @@ import { getRecipient } from '@/lib/notifications/store'
 import { getSetting } from '@/lib/settings/store'
 import { addDays, DAY_MS, daysBetween, localDate, mondayOf } from '@/lib/automation/time'
 import { maintenanceSkipReason, type MaintenanceSkipReason } from '@/lib/automation/maintenance-gate'
+import { dayRotation, runBudget, type RunBudget } from '@/lib/automation/run-budget'
+import { beforeDeadline, runBounded } from '@/lib/crm/bounded-run'
 
 export interface DigestInput {
   userId: string
@@ -136,10 +138,16 @@ export interface DigestRunStats {
   switchedOff: boolean
   /** R-026: the run was skipped as a whole (the cabinet is in maintenance, or that is unknown). */
   skippedReason?: MaintenanceSkipReason
+  /** R-015: clients not started — the run's budget was spent. */
+  deferred?: number
+  /** R-015: sends cut by the run's deadline (a provider that did not answer in time). */
+  timedOut?: number
 }
 
-export async function runClientDigest(now: Date = new Date()): Promise<DigestRunStats> {
-  const stats: DigestRunStats = { eligible: 0, sent: 0, empty: 0, duplicate: 0, disabled: 0, failed: 0, switchedOff: false }
+export async function runClientDigest(now: Date = new Date(), opts: { budget?: RunBudget } = {}): Promise<DigestRunStats> {
+  // R-015: the budget starts with the run — the reads below count against it too.
+  const budget = opts.budget ?? runBudget()
+  const stats: DigestRunStats = { eligible: 0, sent: 0, empty: 0, duplicate: 0, disabled: 0, failed: 0, switchedOff: false, deferred: 0, timedOut: 0 }
   let enabled = true
   try {
     enabled = await getSetting('client_digest_enabled')
@@ -195,7 +203,7 @@ export async function runClientDigest(now: Date = new Date()): Promise<DigestRun
       return
     }
 
-    const res = await notifyClient(
+    const cut = await beforeDeadline(() => notifyClient(
       {
         userId,
         category: 'digest',
@@ -212,16 +220,25 @@ export async function runClientDigest(now: Date = new Date()): Promise<DigestRun
         metadata: { gri_index: plan.griIndex, nba: plan.nba?.actionKey ?? null, tasks_due: plan.tasksDue.length },
       },
       now,
-    )
+    ), budget.deadlineAt, budget.now)
+    if (!cut.ok) {
+      stats.timedOut = (stats.timedOut ?? 0) + 1
+      return
+    }
+    const res = cut.value
     if (res.skipped === 'duplicate') stats.duplicate += 1
     else if (res.skipped) stats.disabled += 1
     else if (res.ok) stats.sent += 1
     else stats.failed += 1
   }
 
-  const CONCURRENCY = 10
-  for (let i = 0; i < approved.length; i += CONCURRENCY) {
-    await Promise.all(approved.slice(i, i + CONCURRENCY).map(one))
+  // R-015: ≤ 2 clients at a time within the run's budget, in a per-week order (not the same clients
+  // left out every Monday); a client not reached is «deferred» — a repeat run the same week sends
+  // only to them (the key client_digest:<user>:<monday> makes the others a no-op).
+  const run = await runBounded([...approved].sort((a, b) => dayRotation(week, a) - dayRotation(week, b)), budget, one)
+  stats.deferred = run.deferred
+  if (run.deferred > 0 || (stats.timedOut ?? 0) > 0) {
+    console.warn(JSON.stringify({ event: 'automation_budget_spent', job: 'client-digest', deferred: run.deferred, timed_out: stats.timedOut, clients: approved.length }))
   }
   return stats
 }

@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 /**
  * GET /api/cron/client-digest — еженедельный дайджест клиенту + лучший NBA
- * (F-059). Расписание — vercel.json: понедельник 04:00 UTC = 09:00 Алматы.
+ * (F-059). Расписание — lib/cron/schedule.ts: понедельник 04:26 UTC = 09:26 Алматы (R-230).
  *
  * Логика — lib/automation/client-digest.ts. Выключается целиком настройкой
  * client_digest_enabled; клиент выключает у себя категорию «Еженедельный

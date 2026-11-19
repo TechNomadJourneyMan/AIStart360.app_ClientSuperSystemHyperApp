@@ -10,6 +10,7 @@ const s = vi.hoisted(() => ({
   crm: { data: [] as unknown[] | null, error: null as { message: string } | null },
   snapshot: (async () => []) as () => Promise<unknown>,
   ops: (async () => ({ journal: 'ok', jobs: [], alertRoutes: { linkedStaff: 1, envChats: 0, direct: false, nowhere: false } })) as () => Promise<unknown>,
+  schema: (async () => ({ expected: '157_x.sql', journal: true, applied: true, latestRecorded: '157_x.sql' })) as () => Promise<unknown>,
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -26,6 +27,7 @@ vi.mock('@/lib/supabase-service', () => ({
 }))
 vi.mock('@/lib/agents/definitions/monitoring', () => ({ platformHealthSnapshot: () => s.snapshot() }))
 vi.mock('@/lib/ops/job-watchdog', () => ({ opsOverview: () => s.ops() }))
+vi.mock('@/lib/health/platform', () => ({ schemaStatus: () => s.schema() }))
 
 import { GET } from '@/app/api/giga-admin/system/health/route'
 
@@ -92,6 +94,23 @@ describe('system health — scheduled jobs and alarm routes', () => {
     const body = await call()
     expect(body.ops).toBeNull()
     expect(body.opsError).toEqual({ kind: 'failed', message: "Can't reach database server at db:5432" })
+  })
+})
+
+// N5-1a: the detail behind the public «schema behind» — for staff only.
+describe('system health — database schema against the build', () => {
+  it('the expected and the last recorded migration are shown', async () => {
+    s.schema = async () => ({ expected: '157_crm_sync_catchup_lease_provenance.sql', journal: true, applied: false, latestRecorded: '154_ops_job_runs.sql' })
+    const body = await call()
+    expect(body.schema).toEqual({ expected: '157_crm_sync_catchup_lease_provenance.sql', journal: true, applied: false, latestRecorded: '154_ops_job_runs.sql' })
+    expect(body.schemaError).toBeNull()
+  })
+
+  it('a failed read is a failure with its message', async () => {
+    s.schema = async () => { throw new Error('permission denied for table schema_migrations') }
+    const body = await call()
+    expect(body.schema).toBeNull()
+    expect(body.schemaError).toEqual({ kind: 'failed', message: 'permission denied for table schema_migrations' })
   })
 })
 

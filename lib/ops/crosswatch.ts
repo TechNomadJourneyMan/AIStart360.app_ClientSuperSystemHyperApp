@@ -42,6 +42,7 @@ export interface CrossProblem {
 const CHECK_NAMES: Record<string, string> = {
   db: 'база данных',
   config: 'конфигурация сервера',
+  schema: 'схема базы (миграции кода не применены)',
   queue: 'очередь Workflow',
   inngest: 'Inngest (фоновые задачи)',
   jobs: 'задачи по расписанию',

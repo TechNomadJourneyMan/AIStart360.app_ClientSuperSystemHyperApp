@@ -17,7 +17,7 @@ import {
 } from '../kit'
 import { PLATFORM_EVENT_LABELS, type PlatformEventName } from '@/lib/events/platform-names'
 import {
-  fmtDuration, fmtPercent, fmtTokens, fmtUsd, runStatusMeta, scopeLabel, summarizeAgents, tierLabel,
+  agentStaleness, fmtDuration, fmtPercent, fmtTokens, fmtUsd, runStatusMeta, scopeLabel, summarizeAgents, tierLabel,
 } from './model'
 import { RunAgentDialog, type RunnableAgent } from './RunAgentDialog'
 import type { AgentOverview, AgentsListResponse } from './types'
@@ -178,6 +178,7 @@ function AgentCard({ agent, base, canRun, canManage, saving, onToggle, onRun }: 
   onRun: () => void
 }) {
   const s = agent.stats
+  const stale = agentStaleness(agent)
   const href = `${base}/agents/${encodeURIComponent(agent.key)}`
   const tasksHref = (status: string) => `${base}/agents/tasks?agent=${encodeURIComponent(agent.key)}&status=${status}`
   const errTone = s.errorRate == null ? undefined : s.errorRate >= 0.5 ? 'red' : s.errorRate >= 0.2 ? 'amber' : undefined
@@ -242,6 +243,12 @@ function AgentCard({ agent, base, canRun, canManage, saving, onToggle, onRun }: 
               <time dateTime={s.lastRunAt} title={fmtDateTime(s.lastRunAt)}>{fmtAgo(s.lastRunAt)}</time>
             </>
           ) : <span className="text-slate-400">ещё не было</span>}
+          {/* R-063: an enabled agent silent past its expected interval */}
+          {stale && (
+            <Badge tone="amber" title={stale.title}>
+              <AlertTriangle size={10} aria-hidden /> {stale.label}
+            </Badge>
+          )}
         </p>
         <div className="flex items-center gap-2">
           {canRun ? (
