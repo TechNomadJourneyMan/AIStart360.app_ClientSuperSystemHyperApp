@@ -3,12 +3,14 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { newLinkCode, botDeepLink, telegramConfigured, botUsername } from '@/lib/telegram'
+import { newLinkCode, linkCodeExpiresAt, botDeepLink, telegramConfigured, botUsername } from '@/lib/telegram'
 import { refuseDuringImpersonation } from '@/lib/impersonation/guard'
 
 /**
  * GET — статус привязки Telegram текущего пользователя.
- * POST /api/v1/settings/telegram — сгенерировать deep-link привязки.
+ * POST /api/v1/settings/telegram — сгенерировать deep-link привязки: одноразовый
+ *   код на 15 минут (profiles.telegram_link_code_expires_at, R-139; новый код
+ *   заменяет прежний).
  * DELETE — отвязать Telegram у текущего пользователя.
  *
  * Личность берётся из cookie-сессии (IDOR-safe). Запись в profiles идёт через
@@ -57,10 +59,11 @@ export async function POST() {
   }
 
   const code = newLinkCode()
+  const expiresAt = linkCodeExpiresAt()
   const svc = createServiceClient()
   const { data, error } = await svc
     .from('profiles')
-    .update({ telegram_link_code: code })
+    .update({ telegram_link_code: code, telegram_link_code_expires_at: expiresAt })
     .eq('id', user.id)
     .select('id')
   if (error || !data || data.length === 0) {
@@ -68,7 +71,7 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, url: botDeepLink(code) })
+  return NextResponse.json({ ok: true, url: botDeepLink(code), expiresAt })
 }
 
 export async function DELETE() {
@@ -84,7 +87,7 @@ export async function DELETE() {
   const svc = createServiceClient()
   const { error } = await svc
     .from('profiles')
-    .update({ telegram_chat_id: null, telegram_link_code: null })
+    .update({ telegram_chat_id: null, telegram_link_code: null, telegram_link_code_expires_at: null })
     .eq('id', user.id)
   if (error) {
     console.error('[settings/telegram] unlink failed', error)
