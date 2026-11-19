@@ -4,7 +4,10 @@
  * Здесь и только здесь письмо уходит в Resend. Что даёт этот слой:
  *   • идемпотентность — `dedupeKey` бронируется строкой в `email_deliveries`
  *     (уникальный индекс), поэтому «анкета пройдена» не уйдёт дважды даже при
- *     гонке двух фоновых задач;
+ *     гонке двух фоновых задач. Бронь — 'pending' до отправки, 'sent' после
+ *     (R-152): если процесс умер между бронью и отправкой, бронь старше
+ *     STALE_CLAIM_MS забирает следующий вызов (условный UPDATE — забирает один)
+ *     и шлёт с тем же ключом идемпотентности Resend, что и первая попытка;
  *   • журнал доставки — что, кому и чем закончилось (без токенов и ссылок);
  *   • повтор при временной ошибке сети/провайдера;
  *   • честный результат — функция никогда не бросает, но и не врёт: при
@@ -132,26 +135,38 @@ function isTransient(message: string): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** Бронь ключа идемпотентности. `false` — письмо уже отправлено. */
+/**
+ * A 'pending' claim older than this belongs to a process that died before the send. Far above
+ * the longest send: MAX_ATTEMPTS × the attachments timeout (30 s) + the retry pauses ≈ 95 s.
+ */
+export const STALE_CLAIM_MS = 10 * 60_000
+
+type ServiceClient = ReturnType<typeof createServiceClient>
+
+/**
+ * Бронь ключа идемпотентности: строка 'pending'. `claimed: false` — письмо уже
+ * отправлено или его прямо сейчас отправляет другой процесс.
+ */
 async function claimDedupe(input: TransactionalEmailInput): Promise<{ claimed: boolean; rowId: string | null }> {
   if (!input.dedupeKey) return { claimed: true, rowId: null }
   try {
-    const { data, error } = await createServiceClient()
-      .from('email_deliveries')
-      .insert({
-        kind: input.kind,
-        recipient: input.to,
-        subject: input.subject,
-        user_id: input.userId ?? null,
-        dedupe_key: input.dedupeKey,
-        status: 'sent',
-        metadata: input.metadata ?? {},
-      })
-      .select('id')
-      .single()
+    const sb = createServiceClient()
+    const row = {
+      kind: input.kind,
+      recipient: input.to,
+      subject: input.subject,
+      user_id: input.userId ?? null,
+      dedupe_key: input.dedupeKey,
+      metadata: input.metadata ?? {},
+    }
+    const insert = (status: 'pending' | 'sent') =>
+      sb.from('email_deliveries').insert({ ...row, status }).select('id').single()
+    let { data, error } = await insert('pending')
+    // 23514 — CHECK без 'pending' (миграция 158 ещё не применена): бронь значит «отправлено», как раньше.
+    if (error && (error as { code?: string }).code === '23514') ({ data, error } = await insert('sent'))
     if (error) {
-      // 23505 — уникальный индекс: такое письмо уже уходило.
-      if ((error as { code?: string }).code === '23505') return { claimed: false, rowId: null }
+      // 23505 — уникальный индекс: такое письмо уже уходило или уходит сейчас.
+      if ((error as { code?: string }).code === '23505') return await takeOverStaleClaim(sb, input.dedupeKey)
       // Таблицы ещё нет (миграция не применена) — не блокируем отправку.
       console.warn(`[email] журнал недоступен (${error.message}) — шлём без идемпотентности`)
       return { claimed: true, rowId: null }
@@ -160,6 +175,36 @@ async function claimDedupe(input: TransactionalEmailInput): Promise<{ claimed: b
   } catch (e) {
     console.warn('[email] журнал недоступен:', e instanceof Error ? e.message : e)
     return { claimed: true, rowId: null }
+  }
+}
+
+/**
+ * The key is taken. Only a 'pending' claim older than STALE_CLAIM_MS is taken over — by a
+ * conditional UPDATE, so of two callers racing for it exactly one wins. The winner sends under
+ * the SAME row (the same Resend idempotency key): if the dead process did reach Resend, Resend
+ * drops the repeat. Anything else ('sent', a fresh 'pending', a read error) — skip, as before.
+ */
+async function takeOverStaleClaim(sb: ServiceClient, dedupeKey: string): Promise<{ claimed: boolean; rowId: string | null }> {
+  try {
+    const { data: existing } = await sb
+      .from('email_deliveries')
+      .select('id, status, claimed_at')
+      .eq('dedupe_key', dedupeKey)
+      .maybeSingle()
+    const row = existing as { id: string; status: string; claimed_at: string | null } | null
+    if (!row || row.status !== 'pending') return { claimed: false, rowId: null }
+    const { data: taken } = await sb
+      .from('email_deliveries')
+      .update({ claimed_at: new Date().toISOString() })
+      .eq('id', row.id)
+      .eq('status', 'pending')
+      .lt('claimed_at', new Date(Date.now() - STALE_CLAIM_MS).toISOString())
+      .select('id')
+    if (!taken || (taken as unknown[]).length === 0) return { claimed: false, rowId: null }
+    console.warn('[email] бронь письма зависла (процесс не дошёл до отправки) — отправляем повторно')
+    return { claimed: true, rowId: row.id }
+  } catch {
+    return { claimed: false, rowId: null }
   }
 }
 

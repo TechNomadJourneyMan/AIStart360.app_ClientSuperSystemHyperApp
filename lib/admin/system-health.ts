@@ -14,7 +14,7 @@ export const ENV_CHECKS: EnvCheck[] = [
   { key: 'RESEND_API_KEY', label: 'Resend (почта)', required: false },
   { key: 'TELEGRAM_BOT_TOKEN', label: 'Telegram-бот', required: false },
   { key: 'TELEGRAM_ADMIN_CHAT_IDS', label: 'Telegram-чаты админов', required: false },
-  { key: 'TELEGRAM_WEBHOOK_SECRET', label: 'Секрет вебхука Telegram (нужен для одобрений)', required: false },
+  { key: 'TELEGRAM_WEBHOOK_SECRET', label: 'Секрет вебхука клиентского Telegram-бота (без него бот не принимает апдейты)', required: false },
   { key: 'TELEGRAM_ADMIN_BOT_TOKEN', label: 'Telegram: бот-панель администратора', required: false },
   { key: 'TELEGRAM_ADMIN_WEBHOOK_SECRET', label: 'Telegram: секрет вебхука бота-панели', required: false },
   { key: 'TELEGRAM_EXPERT_BOT_TOKEN', label: 'Telegram: бот экспертов', required: false },

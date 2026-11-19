@@ -29,9 +29,20 @@ export function botDeepLink(code: string): string | null {
   return u ? `https://t.me/${u}?start=${code}` : null
 }
 
-/** Криптослучайный одноразовый код привязки (12 hex-символов). */
+/** Срок жизни кода привязки чата клиента (R-139), минут. */
+export const LINK_CODE_TTL_MINUTES = 15
+
+/**
+ * Криптослучайный одноразовый код привязки: 128 бит, 32 hex-символа (Telegram
+ * принимает в ?start= до 64 символов A-Z a-z 0-9 _ -). Живёт LINK_CODE_TTL_MINUTES.
+ */
 export function newLinkCode(): string {
-  return randomBytes(6).toString('hex')
+  return randomBytes(16).toString('hex')
+}
+
+/** Когда истекает код, выданный в `now`. */
+export function linkCodeExpiresAt(now: Date = new Date()): string {
+  return new Date(now.getTime() + LINK_CODE_TTL_MINUTES * 60_000).toISOString()
 }
 
 /**

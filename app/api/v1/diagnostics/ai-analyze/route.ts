@@ -274,7 +274,7 @@ async function handlePost(req: NextRequest) {
     } catch (err) {
       if (!isAiBudgetError(err)) throw err
       await markFailed(target, 'budget')
-      return aiBudgetExceededResponse({ ai_status: 'failed', ai_error: 'budget' })
+      return aiBudgetExceededResponse({ ai_status: 'failed', ai_error: 'budget' }, err)
     }
     const aiResult = outcome.result
     const done = report as PointAAnalysisReport | null

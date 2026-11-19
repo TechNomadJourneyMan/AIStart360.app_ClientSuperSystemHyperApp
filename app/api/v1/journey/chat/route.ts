@@ -14,7 +14,7 @@ import {
   saveJourneyState,
 } from '@/lib/journey/persistence'
 import { journeyChatRequestSchema } from '@/lib/journey/schema'
-import { AI_BUDGET_MESSAGE, assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
+import { AI_BUDGET_MESSAGE, AI_BUDGET_UNAVAILABLE_MESSAGE, assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
 import { withDeadline } from '@/lib/runtime/deadline'
 
 export const runtime = 'nodejs'
@@ -37,15 +37,24 @@ async function handlePost(request: Request) {
         { status: 429 },
       )
     }
+    // The turn reaches the model only when the budget says yes: spent → 429, the meter
+    // unavailable (free tier, R-146) or any other error of the check → 503 — never «allowed».
     try {
       await assertAiBudget({ userId: actorUserId ?? null, actorId: `journey:${identity.workspaceId}` }, 'journey')
     } catch (budgetErr) {
-      if (isAiBudgetError(budgetErr)) {
+      if (isAiBudgetError(budgetErr) && budgetErr.status === 429) {
         return NextResponse.json(
           { error: { code: 'AI_BUDGET_EXCEEDED', message: AI_BUDGET_MESSAGE } },
           { status: 429 },
         )
       }
+      if (!isAiBudgetError(budgetErr)) {
+        console.error('[journey/chat] budget check failed — refused:', budgetErr instanceof Error ? budgetErr.message : budgetErr)
+      }
+      return NextResponse.json(
+        { error: { code: 'AI_BUDGET_UNAVAILABLE', message: AI_BUDGET_UNAVAILABLE_MESSAGE } },
+        { status: 503 },
+      )
     }
     await loadJourneyState(identity, actorUserId)
     const state = payload.state

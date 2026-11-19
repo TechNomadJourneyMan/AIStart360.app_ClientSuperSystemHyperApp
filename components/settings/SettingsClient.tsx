@@ -789,7 +789,7 @@ function TelegramBinding({
       const json = await res.json().catch(() => ({}))
       if (res.ok && json?.ok && json.url) {
         window.open(json.url, '_blank', 'noopener')
-        toast.success('Откройте бота и нажмите «Start» — затем вернитесь и обновите статус')
+        toast.success('Откройте бота и нажмите «Start» в течение 15 минут — затем вернитесь и обновите статус')
       } else if (json?.error === 'telegram_not_configured') {
         toast.error('Telegram-бот не настроен на сервере')
       } else {

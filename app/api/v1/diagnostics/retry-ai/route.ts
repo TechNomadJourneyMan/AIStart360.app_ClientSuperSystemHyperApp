@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     try {
       await assertAiBudget(ownerId, 'point_a_analysis')
     } catch (err) {
-      if (isAiBudgetError(err)) return aiBudgetExceededResponse()
+      if (isAiBudgetError(err)) return aiBudgetExceededResponse({}, err)
       throw err
     }
 

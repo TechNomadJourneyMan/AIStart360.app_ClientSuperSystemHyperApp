@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   __setAiBudgetDeps,
   AI_BUDGET_MESSAGE,
+  AI_BUDGET_UNAVAILABLE_MESSAGE,
   AiBudgetExceededError,
+  AiBudgetUnavailableError,
   assertAiBudget,
   guardAiBudget,
+  isAiBudgetError,
   type AiBudgetDeps,
 } from '@/lib/ai/budget'
 import { currentAiActor, runWithAiActor } from '@/lib/ai/usage'
@@ -41,9 +44,33 @@ describe('assertAiBudget', () => {
     await expect(assertAiBudget(USER, 'assistant_ask')).resolves.toBeUndefined()
   })
 
-  it('fails open when the meter itself is broken', async () => {
+  // R-146: a broken meter no longer lets a free user spend without limit.
+  it('fails CLOSED for a free user when the meter is broken (typed 503 «unavailable», still an AI-budget error)', async () => {
     __setAiBudgetDeps(deps({ readSpentTodayUsd: async () => { throw new Error('rpc missing') } }))
-    await expect(assertAiBudget(USER, 'ai_chat')).resolves.toBeUndefined()
+    const err = await assertAiBudget(USER, 'ai_chat').catch((e) => e)
+    expect(err).toBeInstanceOf(AiBudgetUnavailableError)
+    expect(isAiBudgetError(err)).toBe(true)
+    expect(err).toMatchObject({ status: 503, code: 'ai_budget_unavailable', tier: 'free', message: AI_BUDGET_UNAVAILABLE_MESSAGE })
+  })
+
+  it('fails closed when the limit setting or the tier cannot be read, or reads as not-a-number', async () => {
+    __setAiBudgetDeps(deps({ readLimitUsd: async () => { throw new Error('settings down') } }))
+    await expect(assertAiBudget(USER, 'ai_chat')).rejects.toBeInstanceOf(AiBudgetUnavailableError)
+    __setAiBudgetDeps(deps({ readTier: async () => { throw new Error('profiles down') } }))
+    await expect(assertAiBudget(USER, 'ai_chat')).rejects.toBeInstanceOf(AiBudgetUnavailableError)
+    __setAiBudgetDeps(deps({ readSpentTodayUsd: async () => Number.NaN }))
+    await expect(assertAiBudget(USER, 'ai_chat')).rejects.toBeInstanceOf(AiBudgetUnavailableError)
+  })
+
+  it('stays open for paid (pro) and staff users when the meter is broken, and says so loudly', async () => {
+    const loud = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const tier of ['pro', 'staff'] as const) {
+      __setAiBudgetDeps(deps({ readTier: async () => tier, readSpentTodayUsd: async () => { throw new Error('rpc missing') } }))
+      await expect(assertAiBudget(USER, 'ai_chat')).resolves.toBeUndefined()
+    }
+    expect(loud).toHaveBeenCalledTimes(2)
+    expect(String(loud.mock.calls[0][0])).toMatch(/fail-open/i)
+    loud.mockRestore()
   })
 
   it('does not meter actors without a user id, but still sets the request actor', async () => {
@@ -77,6 +104,13 @@ describe('guardAiBudget', () => {
   it('returns null under budget', async () => {
     __setAiBudgetDeps(deps())
     await expect(guardAiBudget(USER, 'assistant_converse')).resolves.toBeNull()
+  })
+
+  it('returns 503 «не удалось проверить лимит» for a free user when the meter is broken', async () => {
+    __setAiBudgetDeps(deps({ readSpentTodayUsd: async () => { throw new Error('rpc missing') } }))
+    const res = await guardAiBudget(USER, 'assistant_converse')
+    expect(res?.status).toBe(503)
+    await expect(res!.json()).resolves.toMatchObject({ ok: false, error: AI_BUDGET_UNAVAILABLE_MESSAGE, code: 'ai_budget_unavailable' })
   })
 })
 

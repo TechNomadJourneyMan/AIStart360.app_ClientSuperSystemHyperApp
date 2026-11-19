@@ -16,6 +16,7 @@
 | Staging (база и Supabase; кода там нет) | [docs/staging/README.md](../staging/README.md) |
 | Вход для разработки на localhost | [docs/dev-login.md](../dev-login.md) |
 | Закрыть регистрацию в GoTrue | §15 ниже |
+| Клиентский Telegram-бот: секрет вебхука | §16 ниже |
 
 Скрипты ничего не выкатывают сами. `preflight` проверяет и печатает команды. `migrations-bundle` собирает пакет и печатает команды. `smoke` только читает. Каждую команду из плана человек запускает сам, по одной, и смотрит на вывод.
 
@@ -440,3 +441,25 @@ PGPASSWORD="$(cat <файл пароля>)" psql "<staging-dsn>" -X -v ON_ERROR_
 4. **Откат.** Вернуть `GOTRUE_DISABLE_SIGNUP` как было до включения (`false` или удалить переменную, если её не было). GoTrue перезапустится, публичный signup снова открыт. Данные не меняются.
 
 Сироты, созданные до включения (Google в режиме `invite`), остаются: профиль «на одобрении» и метка `signup_blocked`. Их разбор — отдельное решение PO.
+
+## 16. Клиентский Telegram-бот: секрет вебхука (R-139, Раунд 5)
+
+**Что поменялось.** `/api/telegram/webhook` (бот `TELEGRAM_BOT_TOKEN`) работает как боты персонала: без `TELEGRAM_WEBHOOK_SECRET` отвечает **503** и ничего не обрабатывает; заголовок `X-Telegram-Bot-Api-Secret-Token` сверяется за постоянное время (401). Код привязки `/start <код>` живёт 15 минут (`profiles.telegram_link_code_expires_at`, миграция 158) и срабатывает один раз. Миграция 158 — **до** кода (§1): новый код пишет эту колонку.
+
+**Состояние на 2026-11-19:** на проде секрет не задан, клиентов с привязанным Telegram — 0. После выкатки бот отвечает Telegram 503, пока не сделаны шаги ниже; Telegram копит апдейты и повторяет их до суток.
+
+**Шаги (значения не печатать и не копировать в отчёт):**
+
+1. Сгенерировать секрет — 32+ символа `A-Z a-z 0-9 _ -`: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` — и сразу вставить в переменную `TELEGRAM_WEBHOOK_SECRET` сервиса `portal` (production). Сервис перезапустится.
+2. Перерегистрировать вебхук с этим секретом из окружения, где есть `TELEGRAM_BOT_TOKEN` и `TELEGRAM_WEBHOOK_SECRET` (например, `railway run -s portal -- …` в `<deploy-dir>`):
+   ```bash
+   npx tsx scripts/telegram/set-webhooks.ts https://<прод-домен> --bots client --dry-run   # план
+   npx tsx scripts/telegram/set-webhooks.ts https://<прод-домен> --bots client             # setWebhook с secret_token + setMyCommands
+   npx tsx scripts/telegram/set-webhooks.ts https://<прод-домен> --bots client --info      # url, pending, last_error
+   ```
+   Скрипт токены и секреты не печатает; без секрета вебхук не регистрирует.
+3. Проверить: `--info` — `url` = `https://<прод-домен>/api/telegram/webhook`, без `last_error`; POST без заголовка на `/api/telegram/webhook` → 401 (не 503); кабинет → «Настройки → Уведомления» → «Привязать Telegram» → «Start» в боте в течение 15 минут → «Готово».
+
+Порядок важен: сначала секрет в сервисе (шаг 1), потом `setWebhook` (шаг 2). Между шагами Telegram получает 401 и повторит апдейты сам.
+
+**Откат.** Откат кода (§9) возвращает прежнее поведение: без секрета бот снова принимает апдейты без проверки. Секрет в сервисе можно оставить — прежний код его тоже проверяет.

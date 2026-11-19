@@ -19,7 +19,7 @@
  */
 
 import { chatWithTools, transcribeAudio, type ChatWithToolsResult, type ToolChatMessage } from '@/lib/ai/tools-chat'
-import { assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
+import { assertAiBudget } from '@/lib/ai/budget'
 import { runWithAiActor } from '@/lib/ai/usage'
 
 // ─── Port (what the brain needs) ─────────────────────────────────────────────
@@ -147,8 +147,9 @@ export const defaultBrainLlm: BrainLlm = {
     try {
       await assertAiBudget(userId, 'bot_assistant')
       return true
-    } catch (err) {
-      return !isAiBudgetError(err)
+    } catch {
+      // Spent, the meter unavailable (R-146) or an unexpected error: never «allowed».
+      return false
     }
   },
 
