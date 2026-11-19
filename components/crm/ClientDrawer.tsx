@@ -13,7 +13,7 @@ import {
   type InteractionKind,
 } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
-import { drawerPatch, phoneFieldValue, type DrawerSeed } from '@/lib/crm/client-form'
+import { baselineAfterSave, drawerPatch, phoneFieldValue, type DrawerSeed } from '@/lib/crm/client-form'
 import { CLIENT_STATUS_META } from './FunnelBar'
 
 /** Minimal client seed the drawer needs — both CrmClient and the queue rows map to it. */
@@ -58,7 +58,13 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
   const { data: interactions = [], isLoading: intLoading } = useCrmInteractions(clientId)
   const { data: reminders = [], isLoading: remLoading } = useCrmReminders(clientId)
 
-  // Editable fields (seeded from the client, reset when the client changes).
+  // What the server holds after the last save of THIS client (the PATCH answer). The drawer stays
+  // open after «Сохранить», so the next save is compared with that — not with the snapshot the
+  // drawer was opened with (a field changed back would look unchanged and never be sent).
+  const [saved, setSaved] = useState<DrawerSeed | null>(null)
+  const seed: DrawerSeed | null = client && saved && saved.id === client.id ? saved : client
+
+  // Editable fields (seeded from the baseline: the client as opened, then as last saved).
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -71,18 +77,23 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
   const [remDue, setRemDue] = useState('')
   const [remNote, setRemNote] = useState('')
 
+  // Another client (or the drawer closed): forget the last save and the reminder draft.
   useEffect(() => {
-    if (!client) return
-    setName(client.name ?? '')
-    setPhone(phoneFieldValue(client))
-    setEmail(client.email ?? '')
-    setStatus(client.status)
-    setAvgCheck(client.avg_check != null ? String(client.avg_check) : '')
-    setNextContact(toLocalInput(client.next_contact_at))
-    setNote(client.note ?? '')
+    setSaved(null)
     setRemDue('')
     setRemNote('')
   }, [client])
+
+  useEffect(() => {
+    if (!seed) return
+    setName(seed.name ?? '')
+    setPhone(phoneFieldValue(seed))
+    setEmail(seed.email ?? '')
+    setStatus(seed.status)
+    setAvgCheck(seed.avg_check != null ? String(seed.avg_check) : '')
+    setNextContact(toLocalInput(seed.next_contact_at))
+    setNote(seed.note ?? '')
+  }, [seed])
 
   // Close on Escape.
   useEffect(() => {
@@ -92,13 +103,13 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
     return () => window.removeEventListener('keydown', onKey)
   }, [client, onClose])
 
-  if (!client) return null
+  if (!client || !seed) return null
 
-  const phoneDigits = (phone || client.phone || '').replace(/\D/g, '')
+  const phoneDigits = (phone || seed.phone || '').replace(/\D/g, '')
 
   const doCall = () => {
     if (!phoneDigits) { toast.error('Телефон не указан'); return }
-    window.open(`tel:${client.phone ?? phoneDigits}`, '_self')
+    window.open(`tel:${seed.phone ?? phoneDigits}`, '_self')
     logInteraction.mutate(
       { clientId: client.id, kind: 'call', comment: 'Звонок из карточки' },
       { onSuccess: () => toast.success('Звонок зафиксирован') },
@@ -124,7 +135,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
     // Only the changed fields are sent (lib/crm/client-form.ts): an untouched value is never written
     // back over a newer one, a phone that never normalised keeps phone_raw, and a cut note from the
     // queue is never saved over the full one.
-    const patch = drawerPatch(client, {
+    const patch = drawerPatch(seed, {
       name: trimmed,
       phone,
       email,
@@ -140,7 +151,10 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
         patch,
       },
       {
-        onSuccess: () => toast.success('Клиент сохранён'),
+        onSuccess: (data) => {
+          setSaved(baselineAfterSave(seed, data?.client))
+          toast.success('Клиент сохранён')
+        },
         onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Не удалось сохранить'),
       },
     )
@@ -159,7 +173,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
   }
 
   const removeClient = () => {
-    if (!confirm(`Удалить клиента «${client.name}»? Это действие необратимо.`)) return
+    if (!confirm(`Удалить клиента «${seed.name}»? Это действие необратимо.`)) return
     del.mutate(client.id, {
       onSuccess: () => { toast.success('Клиент удалён'); onClose() },
       onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Не удалось удалить'),
@@ -176,10 +190,10 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
         <div className="sticky top-0 z-10 bg-[#13151c]/95 backdrop-blur border-b border-white/[0.06] px-5 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-surface-container-high flex items-center justify-center text-lg font-bold text-primary flex-shrink-0">
-              {client.name[0]?.toUpperCase()}
+              {seed.name[0]?.toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-on-surface truncate">{client.name}</p>
+              <p className="text-sm font-semibold text-on-surface truncate">{seed.name}</p>
               <span className={`inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full border text-[10px] font-mono ${meta.chip}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
                 {meta.label}
@@ -236,9 +250,9 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
               </Field>
             </div>
             <Field label="Заметка">
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} readOnly={client.noteTruncated === true}
-                className={`${inputCls} resize-none ${client.noteTruncated ? 'opacity-60' : ''}`} />
-              {client.noteTruncated && (
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} readOnly={seed.noteTruncated === true}
+                className={`${inputCls} resize-none ${seed.noteTruncated ? 'opacity-60' : ''}`} />
+              {seed.noteTruncated && (
                 <span className="text-[10px] text-on-surface-variant/70 block mt-1">
                   Здесь начало длинной заметки. Целиком она открывается и правится из вкладки «База клиентов».
                 </span>

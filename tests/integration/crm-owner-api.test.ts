@@ -6,7 +6,9 @@ import { NextRequest } from 'next/server'
 import { dbTestsEnabled } from '../helpers/db-env'
 import { pgPostgrest } from '../helpers/pg-postgrest'
 import { closeTestPool, inRollback, seedStaff, seedUser, type Db } from '../helpers/pg-rls'
-import { drawerPatch, phoneFieldValue, seedFromQueueRow } from '@/lib/crm/client-form'
+import {
+  baselineAfterSave, drawerPatch, phoneFieldValue, seedFromClientRow, seedFromQueueRow, type ClientRowLike,
+} from '@/lib/crm/client-form'
 
 /**
  * The owner CRM routes against the disposable test DB with the caller's real RLS session (the
@@ -293,5 +295,46 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect(res.status).toBe(200)
       const { rows } = await db.query(`SELECT name, phone, phone_raw FROM public.crm_clients WHERE id = $1`, [id])
       expect(rows[0]).toEqual({ name: 'Иван Петров', phone: null, phone_raw: '12-34 доб. 5' })
+    }))
+
+  // Review (high): the drawer stays open after a save; reverting a field and saving again was
+  // «Нет изменений» and the DB kept the first save. The baseline is now the PATCH answer.
+  it('two saves from one open drawer: a field changed and changed back is saved both times', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const id = await addClient(db, owner, {
+        name: 'Иван', status: 'new', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', next_contact_at: '2026-11-20T10:00:00Z',
+      })
+      session(db, owner)
+      const row = (await getToday()).todayClients.length
+      expect(row).toBe(0) // planned for tomorrow: not queued — the drawer is opened from the base tab
+      const listed = await clients.GET(new NextRequest('http://localhost/api/v1/crm/clients'))
+      const base = ((await listed.json()) as { data: { clients: ClientRowLike[] } }).data.clients
+      let baseline = seedFromClientRow(base.find((c) => c.id === id) as ClientRowLike)
+
+      const save = async (form: Parameters<typeof drawerPatch>[1]) => {
+        const patch = drawerPatch(baseline, form)
+        expect(Object.keys(patch).length).toBeGreaterThan(0) // never «Нет изменений»
+        const res = await clientRoute.PATCH(
+          new NextRequest(`http://localhost/api/v1/crm/clients/${id}`, { method: 'PATCH', body: JSON.stringify(patch), headers: { 'content-type': 'application/json' } }),
+          { params: { id } },
+        )
+        expect(res.status).toBe(200)
+        baseline = baselineAfterSave(baseline, ((await res.json()) as { data: { client: ClientRowLike } }).data.client)
+      }
+      const opened = {
+        name: 'Иван', phone: phoneFieldValue(baseline), email: 'ivan@ex.kz', status: 'new' as const, avgCheck: null,
+        nextContactAt: '2026-11-20T10:00:00.000Z', note: '',
+      }
+      const edited = { ...opened, status: 'customer' as const, phone: '8 701 000 00 02', email: 'other@ex.kz', nextContactAt: null }
+      await save(edited)
+      await save(opened) // every field back as it was
+
+      const { rows } = await db.query(
+        `SELECT status, phone, phone_raw, email, next_contact_at FROM public.crm_clients WHERE id = $1`, [id],
+      )
+      expect(rows[0]).toEqual({
+        status: 'new', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', next_contact_at: new Date('2026-11-20T10:00:00Z'),
+      })
     }))
 })
