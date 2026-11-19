@@ -4,7 +4,9 @@
  * Every run picks the active connections never synced, those catching up (a pass of a large CRM in
  * progress, or writes that stopped — sync_cursor.catching_up) last synced more than
  * CRM_AUTO_SYNC_CATCH_UP_MS (20 min) ago, and those last synced more than CRM_AUTO_SYNC_INTERVAL_MS
- * (6 h) ago — in that order, the oldest first — and runs the same core as the button
+ * (6 h) ago — in that order, the oldest first, except that the most overdue ordinary connection
+ * (no pass in progress) due goes first (wave 3, L2: catching-up and new connections never starve the
+ * 6-hourly ones) — and runs the same core as the button
  * (lib/crm/sync.ts, syncCrmConnection) on each with the service client:
  *   • at most CRM_AUTO_SYNC_CONCURRENCY (2) at a time;
  *   • the whole run ends within CRM_AUTO_SYNC_RUN_MS (44 s, the ≤45 s rule for background work):
@@ -65,6 +67,7 @@ export async function runCrmAutoSync(deps: AutoSyncDeps): Promise<AutoSyncResult
   const runEnd = t0 + CRM_AUTO_SYNC_RUN_MS
   const cutoff = new Date(t0 - CRM_AUTO_SYNC_INTERVAL_MS).toISOString()
   const catchUpCutoff = new Date(t0 - CRM_AUTO_SYNC_CATCH_UP_MS).toISOString()
+  const dueQuery = (columns: string) => deps.sb.from('crm_provider_connections').select(columns).eq('is_active', true)
 
   const never = await deps.sb
     .from('crm_provider_connections')
@@ -91,9 +94,26 @@ export async function runCrmAutoSync(deps: AutoSyncDeps): Promise<AutoSyncResult
     .order('last_sync_at', { ascending: true })
     .limit(CRM_AUTO_SYNC_PICK)
   if (stale.error) throw new Error(`crm-sync: due connections not read: ${stale.error.code ?? ''} ${stale.error.message ?? ''}`)
+  // L2 (wave 3): the most overdue ORDINARY connection due (no pass in progress: no cursor yet, or
+  // catching_up false) takes the first slot, so never-synced and catching-up connections can never
+  // starve the 6-hourly ones. Two queries: `->>` of a missing cursor is NULL, which no filter on
+  // the value matches.
+  const idle: Array<SyncConnection & { last_sync_at: string }> = []
+  for (const ordinary of [
+    (q: ReturnType<typeof dueQuery>) => q.is('sync_cursor', null),
+    (q: ReturnType<typeof dueQuery>) => q.eq('sync_cursor->>catching_up', 'false'),
+  ]) {
+    const r = await ordinary(dueQuery(`${CONNECTION_COLUMNS}, last_sync_at`).lt('last_sync_at', cutoff)).order('last_sync_at', { ascending: true }).limit(1)
+    if (r.error) throw new Error(`crm-sync: due connections not read: ${r.error.code ?? ''} ${r.error.message ?? ''}`)
+    idle.push(...((r.data ?? []) as unknown as Array<SyncConnection & { last_sync_at: string }>))
+  }
+  const reserved = idle.sort((a, b) => Date.parse(a.last_sync_at) - Date.parse(b.last_sync_at)).slice(0, 1)
   const seen = new Set<string>()
-  const due = [...(never.data ?? []), ...(catchingUp.data ?? []), ...(stale.data ?? [])]
-    .map((c) => c as SyncConnection)
+  const due = [...reserved, ...(never.data ?? []), ...(catchingUp.data ?? []), ...(stale.data ?? [])]
+    .map((c) => {
+      const { id, user_id, provider, base_url, access_token } = c as SyncConnection
+      return { id, user_id, provider, base_url, access_token }
+    })
     .filter((c) => !seen.has(c.id) && seen.add(c.id))
     .slice(0, CRM_AUTO_SYNC_PICK)
 
