@@ -7,11 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { fakeClient, fakeDb, sqlModel, type FakeDb } from './_fake-supabase'
 
-const state = vi.hoisted(() => ({ client: null as unknown, notices: [] as Array<{ userId: string; stage: string }> }))
+const state = vi.hoisted(() => ({ client: null as unknown, notices: [] as Array<{ userId: string; stage: string }>, keys: new Set<string>() }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => state.client }))
 // R4 (N4B-10): the client notices of the job (their texts and channels: tests/unit/notifications/paid-access-notices.test.ts).
+// Deduped by key like the journal of notifyClient: the catch-up of «ended» (review of wave 1A) asks again.
 vi.mock('@/lib/notifications/product', () => ({
-  notifyProExpiry: async (userId: string, input: { stage: string }) => {
+  notifyProExpiry: async (userId: string, input: { stage: string; dedupeKey: string }) => {
+    if (state.keys.has(input.dedupeKey)) return { ok: true, skipped: 'duplicate', delivered: { inApp: false, email: false, telegram: false } }
+    state.keys.add(input.dedupeKey)
     state.notices.push({ userId, stage: input.stage })
     return { ok: true, delivered: { inApp: true, email: true, telegram: false } }
   },
@@ -30,6 +33,7 @@ describe('billing expiry cron', () => {
   beforeEach(() => {
     process.env.CRON_SECRET = SECRET
     state.notices = []
+    state.keys = new Set()
     db = fakeDb({
       profiles: [{ id: USER, tier: 'pro' }],
       companies: [],
@@ -52,7 +56,12 @@ describe('billing expiry cron', () => {
 
   it('downgrades an ended period once; the next run is a no-op', async () => {
     const first = await (await call(`Bearer ${SECRET}`)).json()
-    expect(first).toEqual({ ok: true, due: 1, downgraded: 1, skipped: 0, failed: 0, warnings: { due: 0, sent: 0, duplicate: 0, failed: 0 } })
+    // The catch-up of held «ended» notices (review of wave 1A) finds this downgrade too: same key, a duplicate.
+    expect(first).toEqual({
+      ok: true, due: 1, downgraded: 1, skipped: 0, failed: 0,
+      warnings: { due: 0, sent: 0, duplicate: 0, failed: 0 },
+      ended: { due: 1, sent: 0, duplicate: 1, failed: 0 },
+    })
     // R4 (N4B-10): the client of the downgraded plan is told once.
     expect(state.notices).toEqual([{ userId: USER, stage: 'ended' }])
     expect(db.tables.subscriptions[0]).toMatchObject({ status: 'canceled', source: 'system' })
