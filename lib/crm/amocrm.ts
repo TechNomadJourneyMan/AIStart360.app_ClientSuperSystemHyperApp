@@ -131,6 +131,7 @@ async function listPages<T extends { id: string }>(
   const now = opts.now ?? Date.now
   const max = Math.max(1, Math.floor(opts.maxRecords))
   const items: T[] = []
+  const positions: string[] = []
   const start = readPosition(opts.from)
   /** The last id read in this pass: every record up to it was read (null: none yet). */
   let after = start.after
@@ -144,7 +145,7 @@ async function listPages<T extends { id: string }>(
   const position = (): string | null => (after === null ? null : `${proven ? page : resumeAt}:${after}`)
   for (;;) {
     const stop = (stoppedBy: ProviderList<T>['stoppedBy'], error?: string): ProviderList<T> => ({
-      items, total: null, complete: false, stoppedBy, position: position(), ...(error ? { error } : {}),
+      items, positions, total: null, complete: false, stoppedBy, position: position(), ...(error ? { error } : {}),
     })
     if (items.length >= max) return stop('cap')
     let data: Record<string, unknown> | null
@@ -176,11 +177,13 @@ async function listPages<T extends { id: string }>(
       const id = item ? idOf(item) : null
       if (!item || id === null || (after !== null && id <= after)) continue
       items.push(item)
+      // Right after this record: the next run reads its page first (it holds the id: the proof).
+      positions.push(`${page + 1}:${id}`)
       after = id
     }
     const hasNext = Boolean((data?._links as { next?: { href?: unknown } } | undefined)?.next?.href)
     if (!data || !hasNext || rows.length === 0) {
-      return { items, total: null, complete: true, stoppedBy: null, position: null }
+      return { items, positions, total: null, complete: true, stoppedBy: null, position: null }
     }
     page++
   }

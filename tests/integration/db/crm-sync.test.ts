@@ -415,6 +415,88 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect((await connRow(db, conn.id)).last_sync_status).toBe('success')
     }))
 
+  describe('L3 (wave 3): writes that stop part-way keep what went through', () => {
+    /** A clock the test moves: after `calls` writes of `kind`, it jumps to 1 s before the last chunk may start. */
+    function clockJump(sb: PgPostgrest, kind: 'crm_sync_insert_clients' | 'crm_sync_deals', calls = 1) {
+      let t = Date.now()
+      const deadlineAt = t + 45_000
+      let seen = 0
+      const after = <R>(r: R): R => {
+        if (++seen === calls) t = deadlineAt - 2_000 - 1_000 // < MIN_CHUNK_MS (1.5 s) left before the final reserve
+        return r
+      }
+      if (kind === 'crm_sync_insert_clients') {
+        const rpc = sb.rpc.bind(sb)
+        Object.assign(sb, { rpc: async (fn: string, args: Record<string, unknown>) => (fn === kind ? after(await rpc(fn, args)) : rpc(fn, args)) })
+      } else {
+        const from = sb.from.bind(sb)
+        Object.assign(sb, {
+          from: (table: string) => {
+            const q = from(table) as unknown as { upsert: (...a: unknown[]) => PromiseLike<unknown> }
+            if (table !== kind) return q
+            const upsert = q.upsert.bind(q)
+            q.upsert = (...a: unknown[]) => {
+              const r = upsert(...a) as { then: PromiseLike<unknown>['then'] }
+              const then = r.then.bind(r)
+              r.then = ((ok?: (v: unknown) => unknown, err?: (e: unknown) => unknown) => then((v) => (ok ? ok(after(v)) : after(v)), err)) as PromiseLike<unknown>['then']
+              return r
+            }
+            return q
+          },
+        })
+      }
+      return { deadlineAt, now: () => t }
+    }
+
+    it('contacts: one chunk of 200 written, then out of time — the cursor moves past those 200, the next run writes the rest', () =>
+      inRollback(async (db) => {
+        const owner = await seedUser(db, { status: 'approved' })
+        const conn = await seedConnection(db, owner, 'bitrix24')
+        vi.stubGlobal('fetch', fakeBitrix({ contacts: range(450).map((i) => bxContact(i)), deals: [] }).fetchImpl)
+        const sb = ownerClient(db, owner)
+        const clock = clockJump(sb, 'crm_sync_insert_clients')
+        const first = await syncCrmConnection(sb, conn, { deadlineAt: clock.deadlineAt, now: clock.now, resolve: publicDns })
+        expect(first).toMatchObject({ status: 'partial', inserted: 200, notWritten: 250 })
+        expect(first.contacts).toEqual({ read: 450, passRead: 200, passTotal: 450, passComplete: false })
+        expect(first.problems[0]).toBe('Не успели записать клиентов: 250 — записаны первые 200 из 450 прочитанных контактов, следующая синхронизация продолжит после них.')
+        const c = await connRow(db, conn.id)
+        expect(c).toMatchObject({ last_sync_status: 'partial', synced_contacts: 200 })
+        expect(c.sync_cursor).toMatchObject({ catching_up: true, contacts: { position: '200', read: 200, started_at: expect.any(String) } })
+
+        const second = await run(sb, conn)
+        expect(second).toMatchObject({ status: 'success', inserted: 250, unchanged: 0 })
+        expect(second.contacts).toEqual({ read: 250, passRead: 450, passTotal: 450, passComplete: true })
+        const rows = await clients(db, owner)
+        expect(rows.map((r) => Number(r.external_id))).toEqual(range(450))
+      }))
+
+    it('deals: one chunk of 200 written, then out of time — the deals cursor moves past them; avg_check once all are in', () =>
+      inRollback(async (db) => {
+        const owner = await seedUser(db, { status: 'approved' })
+        const conn = await seedConnection(db, owner, 'bitrix24')
+        // Deal i belongs to contact 1 + (i mod 3) and is worth i ₸; every 7th has no contact (counted, not written).
+        const deals = range(450).map((i) => bxDeal(i, i % 7 === 0 ? null : 1 + (i % 3), String(i)))
+        vi.stubGlobal('fetch', fakeBitrix({ contacts: range(3).map((i) => bxContact(i)), deals }).fetchImpl)
+        const sb = ownerClient(db, owner)
+        const clock = clockJump(sb, 'crm_sync_deals')
+        const first = await syncCrmConnection(sb, conn, { deadlineAt: clock.deadlineAt, now: clock.now, resolve: publicDns })
+        expect(first).toMatchObject({ status: 'partial', inserted: 3 })
+        // The first 200 qualifying deals are deals 1…233 (33 of those have no contact).
+        expect(first.deals).toEqual({ read: 450, passRead: 233, passTotal: 450, passComplete: false })
+        expect(first.problems.join(' ')).toMatch(/Не успели записать сделки: записаны первые 233 из 450 прочитанных/)
+        expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ deals: { position: '233', read: 233, without_contact: 33 } })
+
+        const second = await run(sb, conn)
+        expect(second).toMatchObject({ status: 'success', dealsWithoutContact: 64, avgUpdated: 3 })
+        const mean = (c: number) => {
+          const xs = range(450).filter((i) => i % 7 !== 0 && 1 + (i % 3) === c)
+          return Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)
+        }
+        const rows = await clients(db, owner)
+        expect(rows.map((r) => r.avg_check)).toEqual([mean(1), mean(2), mean(3)])
+      }))
+  })
+
   it('race: the update fills only fields empty at write time and never re-inserts a client deleted meanwhile', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })

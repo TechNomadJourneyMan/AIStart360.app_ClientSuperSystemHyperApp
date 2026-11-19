@@ -401,8 +401,13 @@ async function runSync(
     byPhone: new Map(phoneRows.filter((r) => r.phone).map((r) => [r.phone as string, r])),
   })
 
+  // L3 (wave 3): rows go out in the CRM order of their contacts, so the rows written before a stop
+  // cover a leading run of the contacts read (updates first, then inserts, each in that order).
+  const crmOrder = new Map(drafts.map((dr, i) => [dr.externalId, i]))
+  const at = (externalId: string) => crmOrder.get(externalId) ?? 0
+  const updates = [...plan.updates].sort((a, b) => at(a.external_id) - at(b.external_id))
   const upd = await writeChunks<(typeof plan.updates)[number], { id: string; changed: boolean }>(
-    plan.updates,
+    updates,
     (chunk) => db(sb.rpc('crm_sync_update_clients', { p_user: userId, p_source: src, p_seen_at: runIso, p_rows: chunk })),
     ctx.timeLeft,
   )
@@ -417,6 +422,13 @@ async function runSync(
   const changed = upd.rows.filter((r) => r.changed)
   const linkedNow = changed.filter((r) => linkIds.has(r.id)).length
   const clientsWritten = !upd.stopped && !ins.stopped
+  // L3: how many leading contacts of this run are fully written — each contact's client row went
+  // through (or it needed none: joined another contact's client, or a phone conflict). Credited to
+  // the pass, so a slow database still moves the cursor forward. Safe with the identity rules: the
+  // next run reads the rest with these clients already in the database (a contact sharing a phone
+  // with one of them is then a phone conflict instead of a merge — nothing is added twice).
+  const unwritten = [...updates.slice(upd.sent), ...plan.inserts.slice(ins.sent)]
+  const contactsDone = unwritten.length === 0 ? drafts.length : Math.min(...unwritten.map((r) => at(r.external_id)))
 
   // ── deals ──
   const classes = snapshot.deals ? classifyDeals(snapshot.deals.items) : null
@@ -460,11 +472,22 @@ async function runSync(
       problems.push(`Контакты: прочитано ${ofTotal(passRead, passTotal)} (${why(c, cap)}) — следующая синхронизация продолжит с этого места.`)
     }
   } else {
-    contacts = { read: c.items.length, passRead: cursor.contacts.read, passTotal: null, passComplete: false }
     const stopped = upd.stopped ? upd : ins
+    const k = contactsDone
+    const done = k > 0 ? ` — записаны первые ${k} из ${c.items.length} прочитанных контактов, следующая синхронизация продолжит после них.` : ' — следующая синхронизация повторит эту часть.'
     problems.push(stopped.stopped === 'time'
-      ? `Не успели записать клиентов: ${upd.notWritten + ins.notWritten} — следующая синхронизация повторит эту часть.`
-      : `База не приняла запись клиентов (${stopped.error?.code ?? 'ошибка'}) — следующая синхронизация повторит эту часть.`)
+      ? `Не успели записать клиентов: ${upd.notWritten + ins.notWritten}${done}`
+      : `База не приняла запись клиентов (${stopped.error?.code ?? 'ошибка'})${done}`)
+    if (k > 0) {
+      const credited = new Set(drafts.slice(0, k).map((dr) => dr.externalId))
+      const passRead = cursor.contacts.read + k
+      const passTotal = c.total !== null ? cursor.contacts.read + c.total : null
+      const conflicts = addConflicts(cursor.contacts.conflicts, plan.conflicts.filter((x) => credited.has(x.contact)))
+      contacts = { read: c.items.length, passRead, passTotal, passComplete: false }
+      next.contacts = { started_at: contactsPass, position: c.positions[k - 1], read: passRead, conflicts }
+    } else {
+      contacts = { read: c.items.length, passRead: cursor.contacts.read, passTotal: null, passComplete: false }
+    }
   }
 
   let deals: PassReport | null = null
@@ -478,9 +501,27 @@ async function runSync(
   } else if (!dealsW) {
     problems.push('Сделки не записаны (клиенты не записаны до конца) — следующая синхронизация повторит.')
   } else if (dealsW.stopped) {
+    // L3: the deals before the first qualifying one not written are done (the others of them are
+    // only counted) — credited to the pass like the contacts.
+    const firstUnwritten = classes.qualifying[dealsW.sent]?.deal_id
+    const k = firstUnwritten === undefined ? d.items.length : Math.max(0, d.items.findIndex((x) => x.id === firstUnwritten))
+    const done = k > 0 ? `: записаны первые ${k} из ${d.items.length} прочитанных, следующая синхронизация продолжит после них.` : ' — следующая синхронизация повторит эту часть.'
     problems.push(dealsW.stopped === 'time'
-      ? 'Не успели записать сделки — следующая синхронизация повторит эту часть.'
-      : `База не приняла запись сделок (${dealsW.error?.code ?? 'ошибка'}) — следующая синхронизация повторит эту часть.`)
+      ? `Не успели записать сделки${done}`
+      : `База не приняла запись сделок (${dealsW.error?.code ?? 'ошибка'})${done}`)
+    if (k > 0) {
+      const prefix = classifyDeals(d.items.slice(0, k))
+      const passRead = cursor.deals.read + k
+      const passTotal = d.total !== null ? cursor.deals.read + d.total : null
+      deals = { read: d.items.length, passRead, passTotal, passComplete: false }
+      next.deals = {
+        started_at: dealsPass,
+        position: d.positions[k - 1],
+        read: passRead,
+        without_contact: cursor.deals.without_contact + prefix.withoutContact,
+        other_currency: cursor.deals.other_currency + prefix.otherCurrency,
+      }
+    }
   } else {
     const passRead = cursor.deals.read + d.items.length
     const passTotal = d.total !== null ? cursor.deals.read + d.total : null

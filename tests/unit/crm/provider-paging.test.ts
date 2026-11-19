@@ -28,6 +28,7 @@ describe('Bitrix24 reading (H2, M2)', () => {
     vi.stubGlobal('fetch', crm.fetchImpl)
     const list = await bitrix24.listContacts(B24, { maxRecords: 2000 })
     expect(list.items).toHaveLength(120)
+    expect(list.positions).toEqual(list.items.map((c) => c.id)) // L3: continue right after each record
     expect(list).toMatchObject({ total: 120, complete: true, stoppedBy: null, position: null })
     expect(crm.calls.map((c) => c.body?.filter)).toEqual([{}, { '>ID': '50' }, { '>ID': '100' }])
     expect(crm.calls.every((c) => c.body?.start === 0 && (c.body?.order as Record<string, string>).ID === 'ASC')).toBe(true)
@@ -147,6 +148,8 @@ describe('amoCRM reading (H3, M2)', () => {
     vi.stubGlobal('fetch', crm.fetchImpl)
     const first = await amocrm.listContacts(AMO, { maxRecords: 250 })
     expect(first).toMatchObject({ complete: false, stoppedBy: 'cap', total: null, position: '2:250' })
+    // L3: where to continue right after each record (a run whose writes stopped part-way).
+    expect([first.positions[0], first.positions[99], first.positions[249]]).toEqual(['2:1', '2:100', '2:250'])
     expect(first.items).toHaveLength(250)
     const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
     expect(rest).toMatchObject({ complete: true, position: null })
