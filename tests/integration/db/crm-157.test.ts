@@ -218,6 +218,46 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect((await db.query(`SELECT user_id FROM public.crm_sync_deals WHERE connection_id = $1`, [conn])).rows).toEqual([{ user_id: victim }])
     }))
 
+  it('M3 (wave 3): the rollback moves amoCRM clients back from the account id to the host key 155 looks up', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const other = await seedUser(db, { status: 'approved' })
+      await db.query(`INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token) VALUES ($1, 'amocrm', 'https://Acme.amocrm.ru/', 't')`, [owner])
+      await db.query(`INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token) VALUES ($1, 'bitrix24', 'acme.bitrix24.kz', 't')`, [owner])
+      // As the sync of 157 left them: keyed by the account id. '2' also has a host-keyed client (a duplicate the move cannot merge).
+      const moved = await client(db, owner, { external_source: 'amocrm:28805383', external_id: '1' })
+      const dupNew = await client(db, owner, { external_source: 'amocrm:28805383', external_id: '2' })
+      const dupOld = await client(db, owner, { external_source: 'amocrm:acme.amocrm.ru', external_id: '2' })
+      const b24 = await client(db, owner, { external_source: SRC, external_id: '1' })
+      // A user whose amoCRM connection is gone: no host to rebuild, the key stays.
+      const orphan = await client(db, other, { external_source: 'amocrm:777', external_id: '1' })
+      // A user who switched accounts: only the account the connection's cursor reads goes back to its host.
+      const switched = await seedUser(db, { status: 'approved' })
+      await db.query(
+        `INSERT INTO public.crm_provider_connections (user_id, provider, base_url, access_token, sync_cursor) VALUES ($1, 'amocrm', 'shop.kommo.com', 't', $2)`,
+        [switched, JSON.stringify({ v: 1, source: 'amocrm:555' })],
+      )
+      const current = await client(db, switched, { external_source: 'amocrm:555', external_id: '1' })
+      const earlier = await client(db, switched, { external_source: 'amocrm:444', external_id: '1' })
+
+      await db.query(DOWN)
+      const key = async (id: string) => (await db.query(`SELECT external_source AS s FROM public.crm_clients WHERE id = $1`, [id])).rows[0].s as string
+      expect(await key(moved)).toBe('amocrm:acme.amocrm.ru')
+      expect(await key(dupNew)).toBe('amocrm:28805383')
+      expect(await key(dupOld)).toBe('amocrm:acme.amocrm.ru')
+      expect(await key(b24)).toBe(SRC)
+      expect(await key(orphan)).toBe('amocrm:777')
+      expect(await key(current)).toBe('amocrm:shop.kommo.com')
+      expect(await key(earlier)).toBe('amocrm:444')
+      // What the sync of 155 asks: the clients of the contacts it read, by the host key.
+      const { rows } = await db.query(
+        `SELECT id FROM public.crm_clients WHERE user_id = $1 AND external_source = 'amocrm:acme.amocrm.ru' AND external_id = ANY($2::text[]) ORDER BY external_id`,
+        [owner, ['1', '2']],
+      )
+      expect(rows.map((r) => r.id)).toEqual([moved, dupOld])
+      await db.query(UP)
+    }))
+
   it('157 → rollback → rollback → 157 → 157: all gone, then the same definitions; the backfill marks existing figures', () =>
     inRollback(async (db) => {
       const snapshot = async () => ({
