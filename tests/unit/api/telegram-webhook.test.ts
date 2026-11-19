@@ -104,7 +104,7 @@ describe('/api/telegram/webhook (client bot)', () => {
   })
 
   it('rejects with 401 a wrong, a shorter or a missing secret header', async () => {
-    for (const headers of [{ 'x-telegram-bot-api-secret-token': 'nope' }, { 'x-telegram-bot-api-secret-token': SECRET.slice(1) }, {}]) {
+    for (const headers of [{ 'x-telegram-bot-api-secret-token': 'nope' }, { 'x-telegram-bot-api-secret-token': SECRET.slice(1) }, {}] as Array<Record<string, string>>) {
       const res = await POST(req(start('c0de'), headers))
       expect(res.status).toBe(401)
     }
