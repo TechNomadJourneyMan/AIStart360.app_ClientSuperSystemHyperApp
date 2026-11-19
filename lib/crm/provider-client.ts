@@ -67,11 +67,14 @@ export async function identifyProvider(
   }
   // Also proves the token: a refused token fails here, before any listing.
   const account = await amocrm.fetchAccount({ domain: host, accessToken: token, resolve: opts.resolve }, opts)
+  // L1 (wave 3): never the host instead — an identity that flips between runs would link the same
+  // contacts twice (clients without a phone would be added again).
+  if (!account.id) throw new Error('amoCRM не сообщила номер аккаунта — синхронизация остановлена, чтобы не перепутать клиентов. Попробуйте позже.')
   return {
     provider,
-    externalSource: account.id ? `amocrm:${account.id}` : `amocrm:${host}`,
+    externalSource: `amocrm:${account.id}`,
     // Before wave 2 amoCRM clients were keyed by the host.
-    legacySources: account.id ? [`amocrm:${host}`] : [],
+    legacySources: [`amocrm:${host}`],
     host,
     webhookUrl: null,
     currency: account.currency,

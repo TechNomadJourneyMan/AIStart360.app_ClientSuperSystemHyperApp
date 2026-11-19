@@ -278,6 +278,35 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(byExt(rows, '1')).toMatchObject({ id: legacy.id, name: 'Старый ключ', avg_check: null })
     }))
 
+  it('L1 (wave 3): a failed move of the host-keyed amoCRM clients fails the run, the cursor stays, the next run moves them', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'amocrm')
+      // Contact 1 has a host-keyed client AND an account-keyed one: the move meets the unique key.
+      const { rows: [legacy] } = await db.query(
+        `INSERT INTO public.crm_clients (user_id, name, source, external_source, external_id) VALUES ($1, 'Старый ключ', 'amocrm', 'amocrm:acme.amocrm.ru', '1') RETURNING id`,
+        [owner],
+      )
+      const { rows: [dup] } = await db.query(
+        `INSERT INTO public.crm_clients (user_id, name, source, external_source, external_id) VALUES ($1, 'Дубль', 'amocrm', 'amocrm:28805383', '1') RETURNING id`,
+        [owner],
+      )
+      vi.stubGlobal('fetch', fakeAmo({ contacts: range(3).map((i) => amoContact(i, { custom_fields_values: null })), leads: [] }).fetchImpl)
+      const sb = ownerClient(db, owner)
+      const failed = await run(sb, conn)
+      expect(failed.status).toBe('error')
+      expect(failed.message).toMatch(/старым ключом/)
+      expect(await connRow(db, conn.id)).toMatchObject({ last_sync_status: 'error', sync_cursor: null, sync_lease_token: null })
+      expect(await clients(db, owner)).toHaveLength(2) // nothing written under the new key meanwhile
+
+      // Once the duplicate is gone, the next run moves the host-keyed client over and goes on.
+      await db.query(`DELETE FROM public.crm_clients WHERE id = $1`, [dup.id])
+      expect(await run(sb, conn)).toMatchObject({ status: 'success', inserted: 2 })
+      const rows = await clients(db, owner)
+      expect(rows).toHaveLength(3)
+      expect(byExt(rows, '1')).toMatchObject({ id: legacy.id, external_source: 'amocrm:28805383' })
+    }))
+
   it('M2 (wave 3): amoCRM records deleted below the place between runs — none skipped: every contact becomes a client, every deal counts once', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db, { status: 'approved' })

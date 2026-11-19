@@ -160,12 +160,17 @@ function emptyReport(status: CrmSyncRunStatus, message: string): CrmSyncReport {
 
 export const BUSY_MESSAGE = 'Синхронизация этого подключения уже идёт — дождитесь её окончания (обычно меньше минуты).'
 
+const LEGACY_STEP = 'legacy source'
+
 const missingObject = (sig: string) => /42703|42883|PGRST202|external_source|external_id|crm_sync_|sync_cursor|sync_lease/.test(sig)
 
 /** A user-facing message for an error before any write. */
 function failureMessage(e: unknown): string {
   if (e instanceof SyncDbError) {
     const sig = `${e.pg?.code ?? ''} ${e.pg?.message ?? ''}`
+    if (e.step === LEGACY_STEP && e.pg?.code === '23505') {
+      return 'Клиенты amoCRM со старым ключом (по адресу аккаунта) не перенесены на номер аккаунта: у части этих контактов уже есть второй клиент. Синхронизация остановлена, чтобы не добавить дубли, — обратитесь в поддержку.'
+    }
     if (missingObject(sig)) return 'Синхронизация недоступна: в базе нет полей и функций синхронизации CRM (миграции 155 / 157 не применены)'
     return 'Ошибка базы данных при синхронизации — попробуйте позже'
   }
@@ -314,10 +319,13 @@ async function runSync(
   const raw = (stored as { sync_cursor?: unknown } | null)?.sync_cursor
   const cursor = readCursor(raw, src)
   // Clients keyed by an earlier identity of the same account (amoCRM before wave 2: the host) move over.
+  // L1 (wave 3): a move that fails stops the run before anything is read or written — writing under
+  // the new key next to unmoved clients would add duplicates — and the cursor keeps its old source,
+  // so the next run tries the move again.
   if ((raw as { source?: unknown } | null)?.source !== src) {
     for (const legacy of account.legacySources) {
       const { error } = await db(sb.from('crm_clients').update({ external_source: src }).eq('user_id', userId).eq('external_source', legacy))
-      if (error) console.warn(`[crm/sync] legacy source of ${conn.id} not moved: ${error.code ?? ''}`)
+      if (error) throw new SyncDbError(LEGACY_STEP, error)
     }
   }
 

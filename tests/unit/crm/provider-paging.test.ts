@@ -264,6 +264,15 @@ describe('identifyProvider + fetchProviderSnapshot', () => {
     expect(refused.calls).toHaveLength(1)
   })
 
+  it('L1 (wave 3): an amoCRM answer without the account id fails — the identity never falls back to the host', async () => {
+    const noId = fakeAmo({
+      contacts: [], leads: [],
+      fail: (entity) => (entity === 'account' ? new Response(JSON.stringify({ name: 'Acme', currency: 'KZT' }), { status: 200 }) : null),
+    })
+    vi.stubGlobal('fetch', noId.fetchImpl)
+    await expect(identifyProvider('amocrm', 'acme.amocrm.ru', 't', { resolve: publicDns })).rejects.toThrow(/номер аккаунта/)
+  })
+
   it('Bitrix24: identity = provider + portal host; failed deals do not stop the contacts; positions are used', async () => {
     const crm = fakeBitrix({
       contacts: range(3).map((i) => bxContact(i)),
