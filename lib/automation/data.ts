@@ -259,6 +259,60 @@ export async function fetchLastDigests(userIds: string[]): Promise<Map<string, {
   return out
 }
 
+/** Keys are long (a uuid and a date): fewer per `.in()` so the URL stays short. */
+const KEY_CHUNK = 50
+
+/**
+ * Which of these dedupe keys are already in the journal (automation_sends; the key is unique there).
+ * Review of wave 1A: a run (reminders, client-digest, crm-digest) drops what was already sent BEFORE
+ * it spends its budget — a duplicate still cost the journal round trips of notifyClient, and the
+ * clients deferred last time could be deferred again behind them. null — the journal could not be
+ * read: the caller goes on without this filter (the claim in notifyClient / claimSend still dedupes).
+ */
+export async function fetchSentDedupeKeys(keys: string[]): Promise<Set<string> | null> {
+  const out = new Set<string>()
+  if (!keys.length) return out
+  const sb = createServiceClient()
+  try {
+    for (const part of chunks(Array.from(new Set(keys)), KEY_CHUNK)) {
+      const { data, error } = await sb.from('automation_sends').select('dedupe_key').in('dedupe_key', part).limit(QUERY_LIMIT)
+      if (error) throw new Error(error.message)
+      for (const r of (data ?? []) as Array<{ dedupe_key: string | null }>) if (r.dedupe_key) out.add(r.dedupe_key)
+    }
+    return out
+  } catch (e) {
+    console.warn('[automation] journal of sends not read:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
+/**
+ * The users of `userIds` an automatic reminder reached since `sinceIso` (automation_sends rows that
+ * count toward the weekly cap). null — the journal could not be read.
+ */
+export async function fetchTouchedSince(userIds: string[], sinceIso: string): Promise<Set<string> | null> {
+  const out = new Set<string>()
+  if (!userIds.length) return out
+  const sb = createServiceClient()
+  try {
+    for (const ids of chunks(userIds)) {
+      const { data, error } = await sb
+        .from('automation_sends')
+        .select('user_id')
+        .eq('counts_toward_cap', true)
+        .gte('sent_at', sinceIso)
+        .in('user_id', ids)
+        .limit(QUERY_LIMIT)
+      if (error) throw new Error(error.message)
+      for (const r of (data ?? []) as Array<{ user_id: string | null }>) if (r.user_id) out.add(r.user_id)
+    }
+    return out
+  } catch (e) {
+    console.warn('[automation] journal of sends not read:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 // ─── Сводка персоналу ────────────────────────────────────────────────────────
 
 export interface PendingRequest {
