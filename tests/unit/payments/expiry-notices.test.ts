@@ -184,3 +184,83 @@ describe('GET /api/cron/billing-expiry also sends the warnings', () => {
     }
   })
 })
+
+// Review of wave 1A (HIGH): during maintenance the job must still downgrade (profiles.tier 'pro' must
+// not outlive the plan), but the «доступ закончился» right after the downgrade waits — the first run
+// after maintenance catches it up from the rows the job itself cancelled (same key, so never twice).
+describe('maintenance: downgrade now, the «ended» notice after it', () => {
+  const ago = (h: number) => new Date(Date.now() - h * H).toISOString().replace('Z', '')
+  const DUE = () => [
+    { orgId: 'company-1', tier: 'pro', status: 'active', currentPeriodEnd: ago(2), source: 'admin', updatedAt: ago(30) },
+    { orgId: U3, tier: 'pilot', status: 'trialing', trialEndsAt: ago(1), currentPeriodEnd: null, source: 'trial', updatedAt: ago(30) },
+  ]
+
+  it('expireDuePlans({ notify: false }) downgrades and says nothing; sendMissedEndNotices then sends each «ended» once, with the keys of the immediate path', async () => {
+    const due = DUE()
+    db.tables.subscriptions = due.map((r) => ({ ...r }))
+    const r = await billing.expireDuePlans({ now: new Date(), notify: false }, state.client as never)
+    expect(r).toMatchObject({ due: 2, downgraded: 2, failed: 0 })
+    expect(db.tables.profiles.find((p) => p.id === U1)?.tier).toBe('free')
+    expect(state.sent).toEqual([])
+
+    const caught = await notices.sendMissedEndNotices({ now: new Date() }, state.client as never)
+    expect(caught).toEqual({ due: 2, sent: 2, duplicate: 0, failed: 0 })
+    expect(state.sent.map((x) => [x.userId, x.stage, x.trial]).sort()).toEqual([[U1, 'ended', false], [U3, 'ended', true]])
+    expect(state.sent.map((x) => x.dedupeKey).sort()).toEqual([
+      notices.expiryNoticeKey('ended', 'company-1', new Date(`${due[0].currentPeriodEnd}Z`).toISOString()),
+      notices.expiryNoticeKey('ended', U3, new Date(`${due[1].trialEndsAt}Z`).toISOString()),
+    ].sort())
+
+    expect(await notices.sendMissedEndNotices({ now: new Date() }, state.client as never)).toEqual({ due: 2, sent: 0, duplicate: 2, failed: 0 })
+    expect(state.sent).toHaveLength(2)
+  })
+
+  it('outside maintenance the immediate notice and the catch-up share the key: nothing is sent twice', async () => {
+    db.tables.subscriptions = DUE()
+    await billing.expireDuePlans({ now: new Date() }, state.client as never)
+    expect(state.sent).toHaveLength(2)
+    expect(await notices.sendMissedEndNotices({ now: new Date() }, state.client as never)).toMatchObject({ sent: 0, duplicate: 2 })
+    expect(state.sent).toHaveLength(2)
+  })
+
+  it('no catch-up for a person with Pro again (renewed / another live plan), a row an admin cancelled, or a downgrade older than 14 days', async () => {
+    db.tables.subscriptions = [
+      // cancelled by the job, but U1 has Pro again
+      { orgId: 'company-1', tier: 'pro', status: 'canceled', currentPeriodEnd: ago(30), assignedBy: billing.SYSTEM_EXPIRY_ACTOR.id, source: 'system', updatedAt: ago(20) },
+      // cancelled by an administrator, not by the expiry job
+      { orgId: U2, tier: 'pro', status: 'canceled', currentPeriodEnd: ago(30), assignedBy: 'admin-uuid', source: 'admin', updatedAt: ago(20) },
+      // cancelled by the job 15 days ago — too late to say it now
+      { orgId: U4, tier: 'pro', status: 'canceled', currentPeriodEnd: ago(16 * 24), assignedBy: billing.SYSTEM_EXPIRY_ACTOR.id, source: 'system', updatedAt: ago(15 * 24) },
+      // cancelled by the job yesterday: the one to tell
+      { orgId: U5, tier: 'pro', status: 'canceled', currentPeriodEnd: ago(26), assignedBy: billing.SYSTEM_EXPIRY_ACTOR.id, source: 'system', updatedAt: ago(24) },
+    ]
+    for (const p of db.tables.profiles) p.tier = p.id === U1 ? 'pro' : 'free'
+    const r = await notices.sendMissedEndNotices({ now: new Date() }, state.client as never)
+    expect(r).toEqual({ due: 1, sent: 1, duplicate: 0, failed: 0 })
+    expect(state.sent.map((x) => [x.userId, x.stage])).toEqual([[U5, 'ended']])
+  })
+
+  it('GET in maintenance: the plan is downgraded, nothing is sent; the next run without maintenance sends the «ended» once', async () => {
+    const saved = process.env.CRON_SECRET
+    process.env.CRON_SECRET = 'cron-secret-for-tests'
+    const get = async () => (await GET(new NextRequest('http://localhost/api/cron/billing-expiry', { headers: { authorization: 'Bearer cron-secret-for-tests' } }))).json()
+    try {
+      db.tables.subscriptions = [DUE()[0]]
+      db.tables.system_settings = [{ key: 'maintenance', value: { enabled: true }, updated_at: ago(1), updated_by: null }]
+      const during = await get()
+      expect(during).toMatchObject({ ok: true, due: 1, downgraded: 1, warnings: null, noticesSkippedReason: 'maintenance' })
+      expect(db.tables.profiles.find((p) => p.id === U1)?.tier).toBe('free')
+      expect(state.sent).toEqual([])
+
+      db.tables.system_settings = [{ key: 'maintenance', value: { enabled: false }, updated_at: ago(0), updated_by: null }]
+      const after = await get()
+      expect(after).toMatchObject({ ok: true, due: 0, downgraded: 0, ended: { sent: 1 } })
+      expect(state.sent.map((x) => [x.userId, x.stage])).toEqual([[U1, 'ended']])
+      expect(await get()).toMatchObject({ ended: { sent: 0, duplicate: 1 } })
+      expect(state.sent).toHaveLength(1)
+    } finally {
+      if (saved === undefined) delete process.env.CRON_SECRET
+      else process.env.CRON_SECRET = saved
+    }
+  })
+})
