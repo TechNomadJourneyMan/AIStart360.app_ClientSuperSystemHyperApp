@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { parseJsonBody } from '@/lib/validation/http'
 import { CrmReminderPatchBody } from '@/lib/validation/schemas'
+import { applyContact, queueNotUpdated } from '@/lib/crm/contact'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -52,7 +53,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     )
   if (current.status !== 'open') return closed()
 
-  const now = new Date().toISOString()
+  const nowMs = Date.now()
+  const now = new Date(nowMs).toISOString()
   const patch: Record<string, unknown> = { status }
   if (status === 'done') patch.done_at = now
 
@@ -67,23 +69,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (error) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
   if (!data || data.length === 0) return closed()
 
-  // Выполнено → фиксируем касание и обновляем контактные даты клиента. «Выполнено» — это владелец
-  // говорит, что запланированный контакт состоялся, поэтому last_contact_at двигается (а простая
-  // заметка — нет: app/api/v1/crm/clients/[id]/interactions). «Отменено» контакта не означает.
+  // «Выполнено» — the owner says the planned contact happened: it is a CONTACT. A history entry,
+  // then the same rule as a logged call (lib/crm/contact.ts): last_contact_at moves and every plan
+  // due by the end of today is fulfilled; a next contact given with it is a call-back and stays.
+  // «Отменено» is not a contact. Every write is checked — never a silent 200.
   if (status === 'done') {
-    await sb.from('crm_interactions').insert({
+    const failed = (what: string, e: { message?: string } | null) => {
+      console.error(`[crm/reminders] ${what} failed`, e?.message)
+      return NextResponse.json(
+        queueNotUpdated('Напоминание отмечено выполненным, но очередь «Кому звонить» не обновилась. Обновите страницу.'),
+        { status: 500 },
+      )
+    }
+    const history = await sb.from('crm_interactions').insert({
       client_id: current.client_id,
       user_id: userId,
       kind: 'note',
       comment: 'Напоминание выполнено',
     })
-    const clientPatch: Record<string, unknown> = { last_contact_at: now, updated_at: now }
-    if (nextContactAt) clientPatch.next_contact_at = nextContactAt
-    await sb
-      .from('crm_clients')
-      .update(clientPatch)
-      .eq('id', current.client_id)
-      .eq('user_id', userId)
+    if (history.error) return failed('history entry', history.error)
+    const applied = await applyContact(sb, { clientId: current.client_id, userId, nowMs, nextContactAt })
+    if (!applied.ok) return failed('queue update', applied.error)
   }
 
   return NextResponse.json({ ok: true, data: { reminder: data[0] } })

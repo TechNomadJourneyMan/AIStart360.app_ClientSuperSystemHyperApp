@@ -49,6 +49,40 @@ async function addClient(db: Db, userId: string, c: Seed): Promise<string> {
   )
   return rows[0].id as string
 }
+/**
+ * The owner's session, with the writes `op` of `table` failing — only those whose query also calls
+ * `onlyWith` (e.g. 'lt': closing the plans, not the reminder's own update) when it is given.
+ */
+function failingSession(db: Db, owner: string, table: string, op: 'update' | 'insert', onlyWith?: string) {
+  session(db, owner)
+  const real = h.client as { from: (t: string) => Record<string, unknown> }
+  h.client = {
+    ...real,
+    from: (t: string) => {
+      const q = real.from(t)
+      if (t !== table) return q
+      const called = new Set<string>()
+      const failing = () => called.has(op) && (!onlyWith || called.has(onlyWith))
+      const proxy: Record<string, unknown> = new Proxy(q, {
+        get(target, prop) {
+          if (prop === 'then' && failing()) {
+            return (ok: (r: unknown) => unknown, err: (e: unknown) => unknown) =>
+              Promise.resolve({ data: null, error: { message: 'boom', code: 'XX000' } }).then(ok, err)
+          }
+          const v = Reflect.get(target, prop)
+          if (typeof v !== 'function') return v
+          return (...args: unknown[]) => {
+            called.add(String(prop))
+            const r = (v as (...a: unknown[]) => unknown).apply(target, args)
+            return r === target ? proxy : r
+          }
+        },
+      })
+      return proxy
+    },
+  }
+}
+
 async function addReminder(db: Db, userId: string, clientId: string, dueAt: string, status = 'open') {
   await db.query(
     `INSERT INTO public.crm_reminders (client_id, user_id, due_at, status) VALUES ($1, $2, $3, $4)`,
@@ -316,43 +350,13 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
         )
         return { status: res.status, body: (await res.json()) as { ok: boolean; code?: string; message?: string } }
       }
-      /** The session, with every UPDATE of `table` failing. */
-      const failUpdatesOf = (table: string) => {
-        session(db, owner)
-        const real = h.client as { from: (t: string) => Record<string, unknown> }
-        h.client = {
-          ...real,
-          from: (t: string) => {
-            const q = real.from(t)
-            if (t !== table) return q
-            let failing = false
-            const proxy: Record<string, unknown> = new Proxy(q, {
-              get(target, prop) {
-                if (prop === 'then' && failing) {
-                  return (ok: (r: unknown) => unknown, err: (e: unknown) => unknown) =>
-                    Promise.resolve({ data: null, error: { message: 'boom', code: 'XX000' } }).then(ok, err)
-                }
-                const v = Reflect.get(target, prop)
-                if (typeof v !== 'function') return v
-                return (...args: unknown[]) => {
-                  if (prop === 'update') failing = true
-                  const r = (v as (...a: unknown[]) => unknown).apply(target, args)
-                  return r === target ? proxy : r
-                }
-              },
-            })
-            return proxy
-          },
-        }
-      }
-
-      failUpdatesOf('crm_reminders')
+      failingSession(db, owner, 'crm_reminders', 'update')
       let r = await post()
       expect(r.status).toBe(500)
       expect(r.body).toMatchObject({ ok: false, code: 'queue_not_updated' })
       expect(r.body.message).toContain('очередь')
 
-      failUpdatesOf('crm_clients')
+      failingSession(db, owner, 'crm_clients', 'update')
       r = await post()
       expect(r.status).toBe(500)
       expect(r.body).toMatchObject({ ok: false, code: 'queue_not_updated' })
@@ -372,7 +376,7 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       const owner = await seedUser(db)
       const id = await addClient(db, owner, { name: 'Иван', status: 'in_progress' })
       await addReminder(db, owner, id, '2026-11-19T10:00:00Z')
-      await addReminder(db, owner, id, '2026-11-19T11:00:00Z')
+      await addReminder(db, owner, id, '2026-11-20T11:00:00Z') // tomorrow: «done» today leaves it open
       const [r1, r2] = (await db.query(`SELECT id FROM public.crm_reminders WHERE client_id = $1 ORDER BY due_at`, [id])).rows.map((r) => r.id as string)
       session(db, owner)
       const patch = async (rid: string, status: 'done' | 'dismissed') => {
@@ -403,6 +407,84 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect((await patch(r2, 'dismissed')).status).toBe(200)
       expect((await patch(r2, 'done')).status).toBe(409)
       expect(await state()).toEqual({ last: NOW.toISOString(), touches: 1, reminders: ['done', 'dismissed'] })
+    }))
+
+  /** PATCH /api/v1/crm/reminders/[id] as the owner. */
+  const patchReminder = async (rid: string, body: Record<string, unknown>) => {
+    const res = await remindersRoute.PATCH(
+      new NextRequest(`http://localhost/api/v1/crm/reminders/${rid}`, {
+        method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+      }),
+      { params: { id: rid } },
+    )
+    return { status: res.status, body: (await res.json()) as { ok: boolean; code?: string; message?: string } }
+  }
+
+  // Follow-up: «Выполнено» moves the last contact, so it is a contact — it fulfils the client's
+  // plans exactly as a logged call does (one shared rule, lib/crm/contact.ts).
+  it('«Выполнено» on a reminder fulfils the plans due by the end of today, like a logged contact', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const id = await addClient(db, owner, { name: 'Иван', status: 'in_progress', next_contact_at: '2026-11-19T12:00:00Z' })
+      await addReminder(db, owner, id, '2026-11-18T06:00:00Z') // yesterday — the one marked «Выполнено»
+      await addReminder(db, owner, id, '2026-11-19T10:00:00Z') // 15:00 Almaty today, made before
+      await addReminder(db, owner, id, '2026-11-19T19:00:00Z') // 00:00 tomorrow: another day
+      const later = await addClient(db, owner, { name: 'Перезвон', status: 'in_progress' })
+      await addReminder(db, owner, later, '2026-11-18T06:00:00Z')
+      const rid = async (clientId: string, due: string) =>
+        (await db.query(`SELECT id FROM public.crm_reminders WHERE client_id = $1 AND due_at = $2`, [clientId, due])).rows[0].id as string
+      session(db, owner)
+
+      expect((await patchReminder(await rid(id, '2026-11-18T06:00:00Z'), { status: 'done' })).status).toBe(200)
+      const rows = (await db.query(
+        `SELECT due_at, status FROM public.crm_reminders WHERE client_id = $1 ORDER BY due_at`, [id],
+      )).rows.map((r) => [(r.due_at as Date).toISOString(), r.status])
+      expect(rows).toEqual([
+        ['2026-11-18T06:00:00.000Z', 'done'],
+        ['2026-11-19T10:00:00.000Z', 'done'], // later today, planned before: fulfilled
+        ['2026-11-19T19:00:00.000Z', 'open'], // tomorrow: untouched
+      ])
+      const client = (await db.query(`SELECT next_contact_at, last_contact_at FROM public.crm_clients WHERE id = $1`, [id])).rows[0]
+      expect(client.next_contact_at).toBeNull() // the plan for 17:00 today is fulfilled
+      expect((client.last_contact_at as Date).toISOString()).toBe(NOW.toISOString())
+
+      // «Выполнено» with a next contact later today (a call-back proposed with it) keeps that plan
+      expect((await patchReminder(await rid(later, '2026-11-18T06:00:00Z'), { status: 'done', next_contact_at: '2026-11-19T13:00:00Z' })).status).toBe(200)
+      // …and a reminder added after it is a call-back too
+      await addReminder(db, owner, id, '2026-11-19T14:00:00Z')
+      const p = await getToday()
+      expect(Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))).toEqual({ [id]: 1, [later]: 1 })
+      const next = (await db.query(`SELECT next_contact_at FROM public.crm_clients WHERE id = $1`, [later])).rows[0].next_contact_at as Date
+      expect(next.toISOString()).toBe('2026-11-19T13:00:00.000Z')
+    }))
+
+  // Follow-up: the history entry, the last-contact move and the closing of plans of «Выполнено»
+  // were not checked — a failed write still answered 200.
+  it('«Выполнено» whose history / last contact / plans write fails answers 500 queue_not_updated', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const id = await addClient(db, owner, { name: 'Иван', status: 'in_progress' })
+      for (const due of ['2026-11-18T01:00:00Z', '2026-11-18T02:00:00Z', '2026-11-18T03:00:00Z', '2026-11-20T04:00:00Z']) {
+        await addReminder(db, owner, id, due)
+      }
+      const ids = (await db.query(`SELECT id FROM public.crm_reminders WHERE client_id = $1 ORDER BY due_at`, [id])).rows.map((r) => r.id as string)
+      const cases: Array<[string, 'update' | 'insert', string | undefined]> = [
+        ['crm_interactions', 'insert', undefined], // the history entry
+        ['crm_clients', 'update', undefined], // the last contact
+        ['crm_reminders', 'update', 'lt'], // closing the other plans (not the reminder itself)
+      ]
+      for (const [i, [table, op, onlyWith]] of cases.entries()) {
+        failingSession(db, owner, table, op, onlyWith)
+        // the next open reminder (each case's «done» closes the ones due today, so add one back)
+        await db.query(`UPDATE public.crm_reminders SET status = 'open', done_at = NULL WHERE id = $1`, [ids[i]])
+        const r = await patchReminder(ids[i], { status: 'done' })
+        expect(r.status, table).toBe(500)
+        expect(r.body, table).toMatchObject({ ok: false, code: 'queue_not_updated' })
+        expect(r.body.message, table).toContain('очередь')
+      }
+      session(db, owner)
+      await db.query(`UPDATE public.crm_reminders SET status = 'open', done_at = NULL WHERE id = $1`, [ids[3]])
+      expect((await patchReminder(ids[3], { status: 'done' })).status).toBe(200)
     }))
 
   it('/today returns at most 50 queue rows with the true total and cut notes (review M3)', () =>
