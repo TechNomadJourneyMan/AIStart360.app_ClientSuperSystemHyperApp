@@ -19,4 +19,10 @@ export interface StoreDecision {
 export interface RateLimitStore {
   readonly backend: RateLimitBackend
   hit(key: string, windowSeconds: number, max: number): Promise<StoreDecision>
+  /**
+   * Give back ONE allowed hit of `key` (the latest window that holds one; never below zero) — for
+   * limiters that count only failed attempts: reserve with hit() before the check, refund on
+   * success. Optional: a store without it cannot refund (the hit stays counted).
+   */
+  refund?(key: string, windowSeconds: number, max: number): Promise<void>
 }

@@ -263,6 +263,30 @@ describe.skipIf(!dbTestsEnabled)('migration 158', () => {
       expect(await pgErrorCode(attempt(db, `INSERT INTO public.email_deliveries (kind, recipient, subject, status) VALUES ('notification', 'a@b.kz', 'S', 'queued')`))).toBe('23514')
     }))
 
+  it('R5 M-2: an automation_sends claim may be «pending» with claimed_at; a row written without status is «sent»', () =>
+    inRollback(async (db) => {
+      const key = `t158:${randomUUID()}`
+      const { rows } = await asService(db, () => db.query(
+        `INSERT INTO public.automation_sends (kind, dedupe_key, status) VALUES ('gri_completed', $1, 'pending') RETURNING status, claimed_at`,
+        [key],
+      ))
+      expect(rows[0].status).toBe('pending')
+      expect(rows[0].claimed_at).toBeInstanceOf(Date)
+      // The writers that do not opt in (staff digest, Point B) insert no status: final at insert.
+      const legacy = await asService(db, () => db.query(
+        `INSERT INTO public.automation_sends (kind, dedupe_key) VALUES ('staff_digest', $1) RETURNING status`, [`t158:${randomUUID()}`],
+      ))
+      expect(legacy.rows[0].status).toBe('sent')
+      expect(await pgErrorCode(attempt(db, `INSERT INTO public.automation_sends (kind, status) VALUES ('x', 'failed')`))).toBe('23514')
+      // The claim and the takeover of lib/notifications/store.ts: only a stale pending row is taken.
+      await db.query(`UPDATE public.automation_sends SET claimed_at = now() - interval '11 minutes' WHERE dedupe_key = $1`, [key])
+      const take = (sql: string) => asService(db, () => db.query(sql, [key]))
+      const taken = await take(`UPDATE public.automation_sends SET claimed_at = now() WHERE dedupe_key = $1 AND status = 'pending' AND claimed_at < now() - interval '10 minutes' RETURNING id`)
+      expect(taken.rowCount).toBe(1)
+      const again = await take(`UPDATE public.automation_sends SET claimed_at = now() WHERE dedupe_key = $1 AND status = 'pending' AND claimed_at < now() - interval '10 minutes' RETURNING id`)
+      expect(again.rowCount).toBe(0)
+    }))
+
   it('rollback: 158 → down → down → up → up restores the previous definitions, then the same again', () =>
     inRollback(async (db) => {
       await ensureStorageOwnerId(db)
@@ -272,6 +296,10 @@ describe.skipIf(!dbTestsEnabled)('migration 158', () => {
         `INSERT INTO public.email_deliveries (kind, recipient, subject, dedupe_key, status) VALUES ('notification', 'a@b.kz', 'S', $1, 'pending')`,
         [`t158:${randomUUID()}`],
       ))
+      const pendingSend = `t158:${randomUUID()}`
+      await asService(db, () => db.query(
+        `INSERT INTO public.automation_sends (kind, dedupe_key, status) VALUES ('gri_completed', $1, 'pending')`, [pendingSend],
+      ))
       const check = async (applied: boolean) => {
         expect(await probeIdentityGuardActive(db, client)).toBe(applied)
         expect(await probeCompanyGrantsActive(db, client, company)).toBe(applied)
@@ -279,6 +307,11 @@ describe.skipIf(!dbTestsEnabled)('migration 158', () => {
         expect((await approvedByRule(db))?.convalidated).toBe(true)
         expect(await hasColumn(db, 'profiles', 'telegram_link_code_expires_at')).toBe(applied)
         expect(await hasColumn(db, 'email_deliveries', 'claimed_at')).toBe(applied)
+        expect(await hasColumn(db, 'automation_sends', 'status')).toBe(applied)
+        expect(await hasColumn(db, 'automation_sends', 'claimed_at')).toBe(applied)
+        expect((await db.query(`SELECT 1 FROM pg_constraint WHERE conname = 'automation_sends_status_check'`)).rows.length).toBe(applied ? 1 : 0)
+        // The claim row itself survives either way: before 158 a row means «this key went out».
+        expect((await db.query(`SELECT 1 FROM public.automation_sends WHERE dedupe_key = $1`, [pendingSend])).rows.length).toBe(1)
         expect((await db.query(`SELECT 1 FROM pg_trigger WHERE tgname = 'companies_touch_updated_at' AND tgrelid = 'public.companies'::regclass`)).rows.length).toBe(applied ? 1 : 0)
         const src = (await db.query(`SELECT prosrc FROM pg_proc WHERE oid = 'public.admin_purge_user(uuid, boolean)'::regprocedure`)).rows[0].prosrc as string
         // 158 deletes the answer history after the profile and the account (the cascade writes history rows).

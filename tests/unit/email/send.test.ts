@@ -40,6 +40,17 @@ vi.mock('@/lib/supabase-service', () => ({
         s.rows.push(row)
         return { select: () => ({ single: async () => ({ data: { id: `row-${s.rows.length}` }, error: null }) }) }
       },
+      // The claim lookup after a 23505: the row of the key, with the status its outcome wrote.
+      select: () => ({
+        eq: (_col: string, key: string) => ({
+          maybeSingle: async () => {
+            const i = s.rows.findIndex((r) => r.dedupe_key === key)
+            if (i < 0) return { data: null, error: null }
+            const outcome = [...s.updates].reverse().find((u) => typeof u.status === 'string')
+            return { data: { id: `row-${i + 1}`, status: outcome?.status ?? s.rows[i].status, claimed_at: new Date().toISOString() }, error: null }
+          },
+        }),
+      }),
       update: (patch: Record<string, unknown>) => ({ eq: async () => { s.updates.push(patch); return { error: null } } }),
     }),
   }),

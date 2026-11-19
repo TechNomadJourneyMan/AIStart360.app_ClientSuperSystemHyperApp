@@ -19,6 +19,10 @@
  *     pay or work here, are few, and their AI routes are rate-limited; the budget
  *     is a cost guard for them, not an access control — an outage of the meter
  *     must not take their AI down.
+ * Who is staff and who is paid comes from the project's resolvers (budgetTierOf):
+ * staff — migration 140 (staff_roles, active expert; lib/access/actor.ts), paid —
+ * the entitlements incl. overrides and the company's tariff (lib/access/server.ts),
+ * never profiles.role / profiles.tier alone (R5 review M-1).
  *
  * Check and record are not one atomic step: concurrent requests of one user all
  * pass the check before their usage is recorded (lib/ai/usage writes ai_usage
@@ -30,6 +34,8 @@
  */
 
 import { NextResponse } from 'next/server'
+import type { AccessActor } from '@/lib/access/actor'
+import { hasPaidAccess, type Entitlements } from '@/lib/access/entitlements'
 import { setAiActor, type AiActor, type AiFeature } from './usage'
 
 export const AI_BUDGET_MESSAGE = 'Дневной лимит ИИ исчерпан, попробуйте завтра'
@@ -75,25 +81,39 @@ export interface AiBudgetDeps {
   readSpentTodayUsd: (userId: string) => Promise<number>
 }
 
-// Platform staff (profiles.role) — the staff budget applies.
-const STAFF_PROFILE_ROLES = new Set([
-  'super_admin', 'admin', 'owner', 'expert', 'manager', 'analyst',
-  'super_expert', 'crm_manager', 'content_manager', 'support',
-])
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/**
+ * The budget tier from what the project's resolvers say (pure):
+ *   • staff — the caller per migration 140 (lib/access/actor.ts): a staff_roles row of an approved
+ *     profile, or an active expert. NOT profiles.role: invited staff and roles granted in GIGA keep
+ *     profiles.role = 'client', and a legacy profiles.role admin without staff_roles is a client;
+ *   • pro — paid access per lib/access/server.ts readEntitlements: own tier, a feature_flags
+ *     override, or the tariff of a company the user is an active member of (148, Q3);
+ *   • free — neither; null — unknown (the actor could not be read and nothing says «paid»).
+ */
+export function budgetTierOf(actor: AccessActor | null, ent: Entitlements): AiBudgetTier | null {
+  if (actor && actor.kind !== 'client') return 'staff'
+  if (hasPaidAccess(ent)) return 'pro'
+  return actor ? 'free' : null
+}
+
+/** readTier of the real deps: resolveActor + readEntitlements (service role), in parallel. Throws when unknown. */
+export async function readBudgetTier(userId: string): Promise<AiBudgetTier> {
+  const [{ resolveActor }, { readEntitlements }, { createServiceClient }] = await Promise.all([
+    import('@/lib/access/actor'),
+    import('@/lib/access/server'),
+    import('@/lib/supabase-service'),
+  ])
+  const [actor, ent] = await Promise.all([resolveActor(userId), readEntitlements(createServiceClient(), userId)])
+  const tier = budgetTierOf(actor, ent)
+  // An unreadable caller is unknown, not «free with a working meter».
+  if (!tier) throw new Error('staff / profile unreadable')
+  return tier
+}
+
 const defaultDeps: AiBudgetDeps = {
-  async readTier(userId) {
-    const { createServiceClient } = await import('@/lib/supabase-service')
-    const { data, error } = await createServiceClient()
-      .from('profiles').select('role, tier').eq('id', userId).maybeSingle()
-    // An unreadable tier is unknown, not «free with a working meter».
-    if (error) throw new Error(error.message)
-    const row = data as { role?: unknown; tier?: unknown } | null
-    if (typeof row?.role === 'string' && STAFF_PROFILE_ROLES.has(row.role)) return 'staff'
-    return row?.tier === 'pro' ? 'pro' : 'free'
-  },
+  readTier: readBudgetTier,
   async readLimitUsd(tier) {
     const { getSetting } = await import('@/lib/settings/store')
     const key = tier === 'staff' ? 'ai_daily_budget_usd_staff' : tier === 'pro' ? 'ai_daily_budget_usd_pro' : 'ai_daily_budget_usd_free'
@@ -109,9 +129,12 @@ const defaultDeps: AiBudgetDeps = {
 
 let injected: AiBudgetDeps | null = null
 
-/** Test hook: replace the data readers (pass `null` to restore). */
-export function __setAiBudgetDeps(deps: AiBudgetDeps | null): void {
-  injected = deps
+/**
+ * Test hook: replace the data readers (pass `null` to restore). A reader left out is the real
+ * one — e.g. inject the meter only and keep the real tier resolution.
+ */
+export function __setAiBudgetDeps(deps: Partial<AiBudgetDeps> | null): void {
+  injected = deps ? { ...defaultDeps, ...deps } : null
 }
 
 /**
