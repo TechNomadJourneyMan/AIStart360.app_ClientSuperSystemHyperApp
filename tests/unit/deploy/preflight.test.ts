@@ -100,19 +100,24 @@ function fakeRun(w: World = {}) {
 
 const deps = (w: World = {}, extra: Record<string, unknown> = {}) => ({ run: fakeRun(w).run, now: DAY, tools: TOOLS, ...extra })
 // N5-1b: --since is mandatory in production; the default is the commit «on prod» of these tests.
-const prod = (extra: string[] = []) => parseArgs(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD, ...extra])
+// Review of wave 1A: so is the prod journal — the tests that are not about it opt out (--no-prod-journal).
+const prod = (extra: string[] = []) => parseArgs([
+  '--label', 'round4w3', '--verified', BRANCH, '--since', OLD,
+  ...(extra.includes('--prod-journal') || extra.includes('--no-prod-journal') ? [] : ['--no-prod-journal']),
+  ...extra,
+])
 const staging = (extra: string[] = []) => parseArgs(['--env', 'staging', '--label', 'w3', ...extra])
 const check = (r: { checks: Array<{ name: string }> }, name: string) =>
   r.checks.find((c) => c.name === name) as { name: string; ok: boolean; warn?: boolean; detail: string[] }
 
 describe('parseArgs', () => {
   it('defaults: production, the prod domain, fetch on', () => {
-    expect(prod()).toMatchObject({ env: 'production', label: 'round4w3', baseUrl: PROD_BASE_URL, fetch: true, commit: null, since: OLD, verified: BRANCH, prodJournal: null })
+    expect(prod()).toMatchObject({ env: 'production', label: 'round4w3', baseUrl: PROD_BASE_URL, fetch: true, commit: null, since: OLD, verified: BRANCH, prodJournal: null, noProdJournal: true })
   })
 
   it('https only; the URL is reduced to its origin', () => {
-    expect(parseArgs(['--since', OLD, '--base-url', 'https://p.example.test/x?y=1']).baseUrl).toBe('https://p.example.test')
-    expect(() => parseArgs(['--since', OLD, '--base-url', 'http://portal.example.test'])).toThrow(UsageError)
+    expect(parseArgs(['--since', OLD, '--no-prod-journal', '--base-url', 'https://p.example.test/x?y=1']).baseUrl).toBe('https://p.example.test')
+    expect(() => parseArgs(['--since', OLD, '--no-prod-journal', '--base-url', 'http://portal.example.test'])).toThrow(UsageError)
   })
 
   it('refuses bad input', () => {
@@ -129,7 +134,7 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--env', 'staging', '--verified', BRANCH])).toThrow(/только для production/)
     expect(() => parseArgs(['--revert'])).toThrow(/--commit/)
     expect(() => parseArgs(['--allow-drift'])).toThrow(/--verified/)
-    expect(parseArgs(['--since', OLD, '--staging-journal', '-']).stagingJournal).toBe('-')
+    expect(parseArgs(['--since', OLD, '--no-prod-journal', '--staging-journal', '-']).stagingJournal).toBe('-')
   })
 })
 
@@ -282,7 +287,7 @@ describe('runPreflight — production', () => {
   })
 
   it('W3B-5: without --verified production is refused — the deployed merge commit must be compared with what was checked', () => {
-    const r = runPreflight(parseArgs(['--label', 'round4w3', '--since', OLD]), deps())
+    const r = runPreflight(parseArgs(['--label', 'round4w3', '--since', OLD, '--no-prod-journal']), deps())
     expect(r.ok).toBe(false)
     expect(check(r, 'проверенный код').detail[0]).toContain('--verified')
   })
@@ -303,7 +308,7 @@ describe('runPreflight — production', () => {
     expect(check(r, 'проверенный код')).toMatchObject({ ok: true, warn: true })
     expect(check(r, 'проверенный код').detail[0]).toContain('!!! ВЫКАТЫВАЕТСЯ НЕ ТОТ КОД')
 
-    const unknown = runPreflight(parseArgs(['--label', 'x', '--verified', 'deadbeef', '--since', OLD]), deps())
+    const unknown = runPreflight(parseArgs(['--label', 'x', '--verified', 'deadbeef', '--since', OLD, '--no-prod-journal']), deps())
     expect(check(unknown, 'проверенный код')).toMatchObject({ ok: false })
   })
 
@@ -366,8 +371,8 @@ describe('N5-1b — --since is mandatory, the prod journal is compared', () => {
   const MAIN = [...ON_PROD, '155_crm_sync_external_ids.sql', '156_archive_legacy_crm_integrations.sql', '157_crm_sync_catchup_lease_provenance.sql']
 
   it('production without --since is a usage error (exit 2); a rollback and staging do not need it', () => {
-    expect(() => parseArgs(['--label', 'x', '--verified', BRANCH])).toThrow(/--since: обязателен/)
-    expect(main(['--label', 'x', '--verified', BRANCH], { ...deps(), log: () => {} })).toBe(2)
+    expect(() => parseArgs(['--label', 'x', '--verified', BRANCH, '--prod-journal', 'pj'])).toThrow(/--since: обязателен/)
+    expect(main(['--label', 'x', '--verified', BRANCH, '--prod-journal', 'pj'], { ...deps(), log: () => {} })).toBe(2)
     expect(parseArgs(['--revert', '--commit', OLD]).since).toBeNull()
     expect(parseArgs(['--env', 'staging']).since).toBeNull()
     expect(() => parseArgs(['--env', 'staging', '--prod-journal', 'j'])).toThrow(/только для production/)
@@ -421,11 +426,11 @@ describe('N5-1b — --since is mandatory, the prod journal is compared', () => {
     expect(check(empty, 'полнота миграций').detail[0]).toContain('журнал прода пуст')
   })
 
-  it('without --prod-journal: «applied» = what --since has, a warning; a migration only in --verified (drift) is refused', () => {
-    const plain = runPreflight(prod(), deps())
+  it('--no-prod-journal: «applied» = what --since has, a loud warning; a migration only in --verified (drift) is refused', () => {
+    const plain = runPreflight(prod(['--no-prod-journal']), deps())
     expect(plain.ok).toBe(true)
     expect(check(plain, 'полнота миграций')).toMatchObject({ ok: true, warn: true })
-    expect(check(plain, 'полнота миграций').detail.join('\n')).toContain('журнал прода не сверен (нет --prod-journal)')
+    expect(check(plain, 'полнота миграций').detail.join('\n')).toContain('!!! ЖУРНАЛ ПРОДА НЕ СВЕРЕН (--no-prod-journal)')
 
     const tree = { [SHA]: ON_PROD, [OLD]: ON_PROD, [BRANCH]: [...ON_PROD, '155_crm_sync_external_ids.sql'] }
     const drift = runPreflight(prod(['--allow-drift']), deps({ tree, drift: 'supabase/migrations/155_crm_sync_external_ids.sql\n' }))
@@ -443,6 +448,50 @@ describe('N5-1b — --since is mandatory, the prod journal is compared', () => {
     const journal = new Map([['083_a.sql', 'x'.repeat(64)]])
     expect(migrationCoverage({ atCommit: ['001_z.sql', '083_a.sql', '155_b.sql'], atVerified: ['001_z.sql', '083_a.sql', '155_b.sql'], atSince: [], planned: ['155_b.sql'], journal })).toMatchObject({ ok: true, toApply: ['155_b.sql'] })
     expect(migrationCoverage({ atCommit: ['083_a.sql', '155_b.sql'], atVerified: ['083_a.sql', '155_b.sql'], atSince: [], planned: [], journal }).ok).toBe(false)
+  })
+})
+
+// Review of wave 1A (MEDIUM): without the prod journal the coverage check could never fail — every
+// migration is either in --since or in the since..sha diff — so a --since that is too new silently
+// left 155–157 out. The journal is now required in production; skipping it is an explicit,
+// recorded decision.
+describe('review of wave 1A — --prod-journal is mandatory in production', () => {
+  const MAIN = ['154_ops_job_runs.sql', '155_crm_sync_external_ids.sql', '156_archive_legacy_crm_integrations.sql', '157_crm_sync_catchup_lease_provenance.sql']
+
+  it('production without --prod-journal or --no-prod-journal is a usage error (exit 2), naming both', () => {
+    expect(() => parseArgs(['--label', 'x', '--verified', BRANCH, '--since', OLD])).toThrow(/--prod-journal: обязателен[\s\S]*--no-prod-journal/)
+    expect(main(['--label', 'x', '--verified', BRANCH, '--since', OLD], { ...deps(), log: () => {} })).toBe(2)
+  })
+
+  it('--no-prod-journal is only for production deploys, and not together with --prod-journal', () => {
+    expect(() => parseArgs(['--since', OLD, '--prod-journal', 'pj', '--no-prod-journal'])).toThrow(/либо/)
+    expect(() => parseArgs(['--env', 'staging', '--no-prod-journal'])).toThrow(/только для production/)
+    expect(() => parseArgs(['--revert', '--commit', OLD, '--no-prod-journal'])).toThrow(/не для отката/)
+  })
+
+  it('--revert still needs neither (as before)', () => {
+    expect(parseArgs(['--revert', '--commit', OLD])).toMatchObject({ revert: true, prodJournal: null, noProdJournal: false })
+  })
+
+  it('the silent case: --since too new (it already has 155–157) passes only under --no-prod-journal, and then loudly, in the checks, the plan and the report line', () => {
+    const tree = { [SHA]: MAIN, [OLD]: MAIN, [BRANCH]: MAIN }
+    const out: string[] = []
+    expect(main(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD, '--no-prod-journal'], { ...deps({ tree }), log: (l: string) => out.push(l) })).toBe(0)
+    const text = out.join('\n')
+    expect(text).toContain('!!! ЖУРНАЛ ПРОДА НЕ СВЕРЕН (--no-prod-journal)')
+    expect(text).toMatch(/Записать в отчёт выкатки[^\n]*журнал прода не сверен \(--no-prod-journal\)/)
+    const r = runPreflight(prod(['--no-prod-journal']), deps({ tree }))
+    expect(check(r, 'полнота миграций')).toMatchObject({ ok: true, warn: true })
+    expect(r.plan!.join('\n')).toContain('--no-prod-journal')
+  })
+
+  it('with the journal the plan says nothing about skipping it', () => {
+    const MIG = (name: string) => `-- ${name}\nSELECT 1;\n`
+    const tree = { [SHA]: MAIN, [OLD]: MAIN, [BRANCH]: MAIN }
+    const journal = MAIN.map((f) => `${f}|${sum(MIG(f))}`).join('\n') + '\n'
+    const r = runPreflight(prod(['--prod-journal', 'pj']), deps({ tree }, { readFile: (p: string) => Buffer.from(MIG(p.split('/').pop()!)), readJournal: () => journal }))
+    expect(r.ok).toBe(true)
+    expect(r.plan!.join('\n')).not.toContain('--no-prod-journal')
   })
 })
 
@@ -546,11 +595,11 @@ describe('main', () => {
   it('exit 0 with the plan; 1 without it; 2 on bad arguments; --help 0', () => {
     const out: string[] = []
     const log = (l: string) => out.push(l)
-    expect(main(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD], { ...deps(), log })).toBe(0)
+    expect(main(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD, '--no-prod-journal'], { ...deps(), log })).toBe(0)
     expect(out.join('\n')).toContain('ПЛАН ВЫКАТКИ')
 
     out.length = 0
-    expect(main(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD], { ...deps({ porcelain: '?? x\n' }), log })).toBe(1)
+    expect(main(['--label', 'round4w3', '--verified', BRANCH, '--since', OLD, '--no-prod-journal'], { ...deps({ porcelain: '?? x\n' }), log })).toBe(1)
     expect(out.join('\n')).toContain('ВЫКАТКА ЗАПРЕЩЕНА')
     expect(out.join('\n')).not.toContain('ПЛАН ВЫКАТКИ')
 

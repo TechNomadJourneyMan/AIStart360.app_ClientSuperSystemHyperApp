@@ -5,8 +5,10 @@
  *
  *   production (runbook §2), from a clean copy detached on origin/main:
  *     node scripts/deploy/preflight.mjs --label round4w3 --verified <sha checked locally against staging>
- *         --since <commit deployed now> [--staging-journal <file|->] [--prod-journal <file|->] [--commit <sha>] [--allow-drift]
+ *         --since <commit deployed now> --prod-journal <file|-> [--staging-journal <file|->] [--commit <sha>] [--allow-drift]
  *         [--base-url <url>] [--no-fetch] [--dir <path>]
+ *     (--no-prod-journal instead of --prod-journal: a deliberate deploy without the prod journal — a loud
+ *      warning in the checks and the plan, to be written into the report of the deploy)
  *   rollback, path B (runbook §9) — run from a copy on main, --dir points at the copy on the old commit:
  *     node <copy on main>/scripts/deploy/preflight.mjs --revert --commit <old sha> --dir <deploy copy> --label …
  *   staging (runbook §4), in the working copy of the branch — no PR, push or CI needed:
@@ -49,8 +51,12 @@
  *             ahead of its schema). «Applied» is the prod journal given with --prod-journal (the output
  *             of a read-only `SELECT file, checksum FROM public.schema_migrations` through db-tools,
  *             runbook §2): a file from 083 on that is missing there and not in the bundle, or recorded
- *             with another checksum, is refused; one already recorded leaves the bundle. Without
- *             --prod-journal «applied» is what --since contains, with a warning.
+ *             with another checksum, is refused; one already recorded leaves the bundle. The journal is
+ *             MANDATORY in production (review of wave 1A): without it «applied» can only be what --since
+ *             contains, and then the check cannot fail — every migration is in --since or in the diff —
+ *             so a --since that is too new would silently drop migrations. --no-prod-journal is the
+ *             explicit opt-out: «applied» = --since, a loud warning in the checks, in the plan and in the
+ *             line for the report.
  *
  * Plain ESM, no dependencies, Node 20+. The logic is in pure functions; `run`, `now` and file reads are
  * injected (tests/unit/deploy/preflight.test.ts runs it without git, gh or network).
@@ -83,7 +89,7 @@ export class UsageError extends Error {}
 export function parseArgs(argv) {
   const opts = {
     env: 'production', label: 'deploy', commit: null, since: null, verified: null, allowDrift: false, revert: false,
-    stagingJournal: null, prodJournal: null, baseUrl: null, fetch: true, dir: '.',
+    stagingJournal: null, prodJournal: null, noProdJournal: false, baseUrl: null, fetch: true, dir: '.',
   }
   const value = (i, flag) => {
     const v = argv[i + 1]
@@ -103,6 +109,7 @@ export function parseArgs(argv) {
       case '--base-url': opts.baseUrl = value(i, a); i++; break
       case '--dir': opts.dir = value(i, a); i++; break
       case '--allow-drift': opts.allowDrift = true; break
+      case '--no-prod-journal': opts.noProdJournal = true; break
       case '--revert': opts.revert = true; break
       case '--no-fetch': opts.fetch = false; break
       case '-h': case '--help': throw new UsageError('help')
@@ -117,15 +124,22 @@ export function parseArgs(argv) {
   if (opts.env === 'staging') {
     if (opts.revert || opts.verified || opts.allowDrift) throw new UsageError('--revert / --verified / --allow-drift — только для production: кода на staging не выкатывают (runbook §4)')
     if (opts.baseUrl !== null) throw new UsageError('--base-url не для staging: код проверяется локально (runbook §4)')
-    if (opts.prodJournal !== null) throw new UsageError('--prod-journal — только для production: на staging сверяется журнал staging (--staging-journal)')
+    if (opts.prodJournal !== null || opts.noProdJournal) throw new UsageError('--prod-journal / --no-prod-journal — только для production: на staging сверяется журнал staging (--staging-journal)')
   }
-  if (opts.revert && opts.prodJournal !== null) throw new UsageError('--prod-journal не для отката: откат кода схему не трогает (runbook §9–10)')
+  if (opts.revert && (opts.prodJournal !== null || opts.noProdJournal)) throw new UsageError('--prod-journal / --no-prod-journal не для отката: откат кода схему не трогает (runbook §9–10)')
+  if (opts.prodJournal !== null && opts.noProdJournal) throw new UsageError('либо --prod-journal <файл>, либо --no-prod-journal')
   if (opts.revert && !opts.commit) throw new UsageError('--revert: укажите --commit <коммит, на который откатываемся>')
   if (opts.allowDrift && !opts.verified) throw new UsageError('--allow-drift: только вместе с --verified')
   // N5-1b: without the commit on prod the migrations of the deploy are a guess — a missing one ships
   // code ahead of its schema. A rollback (--revert) does not touch the schema and needs none.
   if (opts.env === 'production' && !opts.revert && !opts.since) {
     throw new UsageError('--since: обязателен для production — коммит, который сейчас на проде (отчёт прошлой выкатки или runbook §8): по нему preflight находит миграции этой выкатки')
+  }
+  // Review of wave 1A: without the prod journal the coverage check cannot fail (every migration is in
+  // --since or in the diff), so a --since that is too new drops migrations silently. Skipping it is a
+  // decision said out loud (--no-prod-journal), never a default.
+  if (opts.env === 'production' && !opts.revert && opts.prodJournal === null && !opts.noProdJournal) {
+    throw new UsageError('--prod-journal: обязателен для production — журнал прода (SELECT file, checksum FROM public.schema_migrations через db-tools, runbook §2; «-» — из stdin). Без него — только осознанно: --no-prod-journal (громкое предупреждение, запись в отчёт выкатки)')
   }
   if (opts.baseUrl !== null) {
     let u
@@ -261,6 +275,9 @@ export function stagingState(files, journal) {
   return { applied, missing, different }
 }
 
+/** The line every output of a deploy without the prod journal carries (--no-prod-journal). */
+export const NO_PROD_JOURNAL_WARNING = '!!! ЖУРНАЛ ПРОДА НЕ СВЕРЕН (--no-prod-journal): полнота миграций проверена только против --since'
+
 /** The migrations journal starts with 083 (public.schema_migrations): older files are not in it. */
 export const JOURNAL_FROM = 83
 
@@ -339,7 +356,7 @@ export function utcStamp(now) {
  * The plan: commands for a human to run one by one. Nothing here is executed.
  * @param {{ env: string, label: string, sha: string, baseUrl: string | null, stamp: string,
  *           migrations: string[] | null, toApply?: string[] | null, bundle?: string[] | null,
- *           verified?: string | null, revert?: boolean, dir?: string, tools?: string }} ctx
+ *           verified?: string | null, revert?: boolean, dir?: string, tools?: string, noProdJournal?: boolean }} ctx
  *   migrations null — unknown (no --since); toApply (staging) — those not yet in the staging journal;
  *   bundle (production) — the new ones not yet in the prod journal (migrationCoverage)
  * @returns {string[]}
@@ -393,6 +410,7 @@ function productionPlan(ctx) {
   } else {
     L.push(`ПЛАН ВЫКАТКИ ${short} → ${env} (${label}). Ничего не выполнено: команды по одной, по docs/deploy/runbook.md.`)
     if (ctx.verified) L.push(`Проверенный коммит: ${ctx.verified.slice(0, 12)} (локально против staging).`)
+    if (ctx.noProdJournal) L.push(`${NO_PROD_JOURNAL_WARNING} — убедитесь, что --since = коммит на проде.`)
   }
   L.push('')
   L.push(`0. Перед выкаткой (runbook §2): «да» PO есть; \`railway status\` в ${dir} — нужный проект и окружение.`)
@@ -440,7 +458,7 @@ function productionPlan(ctx) {
   L.push('')
   L.push(ctx.revert
     ? '4. Записать в отчёт: на какой коммит откатились, deploymentId portal и agents, почему.'
-    : '6. Записать в отчёт выкатки: коммит, deploymentId portal и agents, имя и сумму бэкапа, миграции. Откат — runbook §9–10.')
+    : `6. Записать в отчёт выкатки: коммит, deploymentId portal и agents, имя и сумму бэкапа, миграции${ctx.noProdJournal ? '; журнал прода не сверен (--no-prod-journal) — почему' : ''}. Откат — runbook §9–10.`)
   return L
 }
 
@@ -682,7 +700,7 @@ export function runPreflight(opts, deps = {}) {
         bundle = c.toApply
         add('полнота миграций', c.ok, journal
           ? c.lines
-          : [...c.lines, 'журнал прода не сверен (нет --prod-journal): применёнными считаются миграции коммита --since (runbook §2)'], c.ok && !journal)
+          : [...c.lines, NO_PROD_JOURNAL_WARNING, 'применёнными считаются миграции коммита --since: --since новее прода — и миграции этой выкатки молча выпадут из пакета (runbook §2)'], c.ok && !journal)
       }
     }
   }
@@ -692,6 +710,7 @@ export function runPreflight(opts, deps = {}) {
     ? buildPlan({
         env: opts.env, label: opts.label, sha, baseUrl: opts.baseUrl, stamp: utcStamp(now), migrations, toApply, bundle,
         verified: opts.verified, revert: opts.revert, dir: opts.dir === '.' ? '.' : path.resolve(opts.dir), tools: deps.tools ?? TOOLS_ROOT,
+        noProdJournal: opts.noProdJournal,
       })
     : null
   return { ok, checks, plan, sha }
@@ -707,8 +726,9 @@ export function formatChecks(result) {
   return lines
 }
 
-const HELP = `прод:    node scripts/deploy/preflight.mjs --label <имя> --verified <проверенный коммит> --since <коммит на проде>
-             [--staging-journal <файл|->] [--prod-journal <файл|->] [--commit <sha>] [--allow-drift] [--base-url https://…] [--no-fetch] [--dir <папка>]
+const HELP = `прод:    node scripts/deploy/preflight.mjs --label <имя> --verified <проверенный коммит> --since <коммит на проде> --prod-journal <файл|->
+             [--staging-journal <файл|->] [--commit <sha>] [--allow-drift] [--base-url https://…] [--no-fetch] [--dir <папка>]
+         (--no-prod-journal вместо --prod-journal — только осознанно: громкое предупреждение и запись в отчёт)
 откат:   node <копия на main>/scripts/deploy/preflight.mjs --revert --commit <старый sha> --dir <копия для выкатки> --label <имя>
 staging: node scripts/deploy/preflight.mjs --env staging --label <имя> [--since <коммит на проде>] [--staging-journal <файл|->]
 Только проверяет и печатает план; ничего не выполняет. Подробно — docs/deploy/runbook.md.`
