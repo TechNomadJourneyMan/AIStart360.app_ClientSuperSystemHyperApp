@@ -33,12 +33,14 @@ export interface AgentConfigRow {
   daily_budget_usd: number | null
   max_output_tokens: number | null
   settings: Record<string, unknown>
+  /** Last change of the row (trigger of migration 086). */
+  updated_at?: Date | string | null
 }
 
 export async function loadConfig(agentKey: string): Promise<AgentConfigRow | null> {
   const rows = await prisma.$queryRaw<AgentConfigRow[]>`
     SELECT agent_key, enabled, tier_override, model_override, schedule_cron,
-           per_run_budget_usd, daily_budget_usd, max_output_tokens, settings
+           per_run_budget_usd, daily_budget_usd, max_output_tokens, settings, updated_at
     FROM public.agent_configs WHERE agent_key = ${agentKey}`
   const r = rows[0]
   if (!r) return null

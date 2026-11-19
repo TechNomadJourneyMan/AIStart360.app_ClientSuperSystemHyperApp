@@ -37,7 +37,7 @@ export function AgentsOverviewPage() {
     setSaving(agent.key)
     try {
       await gigaFetch(`/api/giga-admin/agents/${encodeURIComponent(agent.key)}`, { method: 'PATCH', json: { enabled } })
-      q.setData((d) => (d ? { ...d, agents: d.agents.map((a) => (a.key === agent.key ? { ...a, enabled, nextRunAt: enabled ? a.nextRunAt : null } : a)) } : d))
+      q.setData((d) => (d ? { ...d, agents: d.agents.map((a) => (a.key === agent.key ? { ...a, enabled, nextRunAt: enabled ? a.nextRunAt : null, enabledSince: enabled ? new Date().toISOString() : null } : a)) } : d))
       toast.success(`${agent.name}: ${enabled ? 'включён' : 'выключен'}`)
       if (enabled) void q.reload() // next scheduled run is computed by the server
       return true

@@ -4,6 +4,10 @@
  * stopped days ago. An ENABLED agent that has not run within its expected interval (its cron's
  * longest gap, with half of it as slack; > 2 days when it has no schedule) is now marked
  * «не запускался N дн.» in a warning style.
+ * Review of wave 1A (LOW): an ENABLED agent that has NEVER run was left grey («ещё не было») forever.
+ * When the overview knows since when it is enabled (agent_configs.updated_at — the last change of its
+ * config, so at the latest the moment it was switched on), it is flagged «не запускался» once that is
+ * longer ago than its expected interval (the same allowance; 2 days without a schedule).
  */
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +19,8 @@ const MIN = 60_000
 const H = 60 * MIN
 const DAY = 24 * H
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString()
-const agent = (cron: string | null, lastRunAt: string | null, enabled = true) => ({ enabled, triggers: { cron }, stats: { lastRunAt } })
+const agent = (cron: string | null, lastRunAt: string | null, enabled = true, enabledSince: string | null = null) =>
+  ({ enabled, enabledSince, triggers: { cron }, stats: { lastRunAt } })
 
 describe('cronGapMs — the longest gap between two firings', () => {
   it('every 10 minutes, daily, weekly; none for no or a bad schedule', () => {
@@ -51,10 +56,37 @@ describe('agentStaleness', () => {
     expect(agentStaleness(agent(null, ago(2 * DAY + MIN)), NOW)).toMatchObject({ days: 2, label: 'не запускался 2 дн.' })
   })
 
-  it('a disabled agent, or one that never ran (no date to count from), is not marked', () => {
+  it('a disabled agent, or one that never ran with no date to count from (no config row), is not marked', () => {
     expect(agentStaleness(agent('*/10 * * * *', ago(9 * DAY), false), NOW)).toBeNull()
     expect(agentStaleness(agent('*/10 * * * *', null), NOW)).toBeNull()
   })
+})
+
+describe('agentStaleness — enabled but never ran (review of wave 1A)', () => {
+  it('a 10-minute agent enabled 3 days ago without a single run: «не запускался», with the interval and since when', () => {
+    const s = agentStaleness(agent('*/10 * * * *', null, true, ago(3 * DAY + H)), NOW)
+    expect(s).toMatchObject({ days: 3, label: 'не запускался' })
+    expect(s?.title).toContain('ни одного запуска')
+    expect(s?.title).toContain('каждые 10 мин')
+  })
+
+  it('within its interval since it was enabled: not yet', () => {
+    expect(agentStaleness(agent('*/10 * * * *', null, true, ago(14 * MIN)), NOW)).toBeNull()
+    expect(agentStaleness(agent('0 4 * * 1', null, true, ago(6 * DAY)), NOW)).toBeNull()
+    expect(agentStaleness(agent('0 4 * * *', null, true, ago(2 * DAY)), NOW)?.label).toBe('не запускался')
+  })
+
+  it('no schedule: flagged after 2 days enabled; a disabled one never; a bad date is ignored', () => {
+    expect(agentStaleness(agent(null, null, true, ago(47 * H)), NOW)).toBeNull()
+    expect(agentStaleness(agent(null, null, true, ago(2 * DAY + MIN)), NOW)).toMatchObject({ days: 2, label: 'не запускался' })
+    expect(agentStaleness(agent(null, null, false, ago(30 * DAY)), NOW)).toBeNull()
+    expect(agentStaleness(agent('*/10 * * * *', null, true, 'not a date'), NOW)).toBeNull()
+  })
+
+  it('once it has run, the last run counts, not the enabled date', () => {
+    expect(agentStaleness(agent('*/10 * * * *', ago(5 * MIN), true, ago(30 * DAY)), NOW)).toBeNull()
+  })
+  // The date itself (enabledSince from agent_configs.updated_at): tests/integration/db/agents-admin.test.ts.
 })
 
 describe('the overview card uses it', () => {

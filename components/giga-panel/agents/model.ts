@@ -375,24 +375,35 @@ export interface AgentStaleness {
 /**
  * R-063: an ENABLED agent that has not run within its expected interval — its cron's longest gap
  * with half of it as slack (at least 15 min), or STALE_WITHOUT_SCHEDULE_MS without a schedule.
- * null when it is fine, disabled, or never ran (there is no date to count from).
+ * Review of wave 1A: one that has NEVER run is counted from `enabledSince` (the last change of its
+ * config, so at the latest when it was switched on) and marked «не запускался». null when it is
+ * fine, disabled, or never ran with no date to count from.
  */
 export function agentStaleness(
-  agent: { enabled: boolean; triggers: { cron: string | null }; stats: { lastRunAt: string | null } },
+  agent: { enabled: boolean; enabledSince?: string | null; triggers: { cron: string | null }; stats: { lastRunAt: string | null } },
   now: Date = new Date(),
 ): AgentStaleness | null {
-  if (!agent.enabled || !agent.stats.lastRunAt) return null
-  const last = Date.parse(agent.stats.lastRunAt)
+  if (!agent.enabled) return null
+  const never = !agent.stats.lastRunAt
+  const from = never ? agent.enabledSince : agent.stats.lastRunAt
+  if (!from) return null
+  const last = Date.parse(from)
   if (!Number.isFinite(last)) return null
   const gap = cronGapMs(agent.triggers.cron, now)
   const allowed = gap === null ? STALE_WITHOUT_SCHEDULE_MS : Math.max(gap * 1.5, gap + 15 * MIN_MS)
   const age = now.getTime() - last
   if (age <= allowed) return null
   const days = Math.floor(age / DAY_MS)
-  const label = days >= 1 ? `не запускался ${days} дн.` : `не запускался ${Math.max(1, Math.floor(age / HOUR_MS))} ч`
-  const title = gap === null
-    ? 'Расписания нет (запуск по событиям или вручную): больше 2 дн. без запусков — проверьте, приходят ли события и не упирается ли агент в лимит расхода.'
-    : `По расписанию ${intervalLabel(gap)} (cron ${agent.triggers.cron}, UTC) — запусков нет дольше. Проверьте сервис агентов, очередь и дневной лимит расхода.`
+  const ageLabel = days >= 1 ? `${days} дн.` : `${Math.max(1, Math.floor(age / HOUR_MS))} ч`
+  const label = never ? 'не запускался' : `не запускался ${ageLabel}`
+  const expected = gap === null
+    ? 'Расписания нет (запуск по событиям или вручную)'
+    : `По расписанию ${intervalLabel(gap)} (cron ${agent.triggers.cron}, UTC)`
+  const title = never
+    ? `${expected}: включён ${ageLabel} назад, ни одного запуска. Проверьте сервис агентов, очередь${gap === null ? ', приходят ли события' : ''} и дневной лимит расхода.`
+    : gap === null
+      ? `${expected}: больше 2 дн. без запусков — проверьте, приходят ли события и не упирается ли агент в лимит расхода.`
+      : `${expected} — запусков нет дольше. Проверьте сервис агентов, очередь и дневной лимит расхода.`
   return { days, label, title }
 }
 
