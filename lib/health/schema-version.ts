@@ -9,4 +9,4 @@
  * Adding a migration → set it here to the new file name. CI refuses a stale value twice:
  * scripts/deploy/check-migrations.mjs (the first CI step) and tests/unit/health/schema-version.test.ts.
  */
-export const NEWEST_MIGRATION = '157_crm_sync_catchup_lease_provenance.sql'
+export const NEWEST_MIGRATION = '158_server_owned_columns.sql'
