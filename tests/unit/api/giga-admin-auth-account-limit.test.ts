@@ -23,8 +23,13 @@ vi.mock('@/lib/rate-limit', () => ({
     if (s.storeDown && bucket === 'giga-owner-login-account') return opts.failClosed !== false
     const k = `${bucket}:${id}`
     const n = (s.hits.get(k) ?? 0) + 1
+    if (n > (opts.max ?? 10)) return true // a refused hit is not counted
     s.hits.set(k, n)
-    return n > (opts.max ?? 10)
+    return false
+  },
+  refundRateLimit: async (id: string, bucket: string) => {
+    const k = `${bucket}:${id}`
+    s.hits.set(k, Math.max(0, (s.hits.get(k) ?? 0) - 1))
   },
 }))
 vi.mock('@/lib/audit', () => ({ logAudit: async () => {} }))

@@ -253,6 +253,26 @@ export async function checkRateLimit(
   }
 }
 
+/**
+ * Give back one hit that checkRateLimit / isRateLimitedKey counted for `identifier` in `bucket`
+ * (pass the same options). For a limit on FAILED attempts only: reserve a slot before the check,
+ * so concurrent attempts cannot all pass it, and refund it when the attempt succeeded. Never
+ * throws; when the store cannot refund, the hit stays counted (the limit errs on the safe side).
+ */
+export async function refundRateLimit(identifier: string, bucket: string, opts: RateLimitOptions = {}): Promise<void> {
+  const max = Math.max(1, Math.floor(opts.max ?? DEFAULT_MAX))
+  const windowSeconds = Math.max(1, Math.round((opts.windowMs ?? DEFAULT_WINDOW_MS) / 1000))
+  const key = storeKey(bucket, identifier || 'unknown')
+  const s = getStore()
+  try {
+    await s.refund?.(key, windowSeconds, max)
+  } catch (err) {
+    logStoreError(s.backend, key, err)
+    // Outside production the hit itself may have gone to the in-memory fallback.
+    if (!isProduction() && s.backend !== 'memory') await getMemoryStore().refund?.(key, windowSeconds, max).catch(() => {})
+  }
+}
+
 /** checkRateLimit keyed by the client IP. */
 export function checkRateLimitForRequest(
   req: Request,

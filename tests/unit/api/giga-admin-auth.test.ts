@@ -14,7 +14,7 @@ const s = vi.hoisted(() => ({
   audits: [] as string[],
 }))
 
-vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
+vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited, refundRateLimit: async () => {} }))
 vi.mock('@/lib/audit', () => ({ logAudit: async (e: { action: string }) => { s.audits.push(e.action) } }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({

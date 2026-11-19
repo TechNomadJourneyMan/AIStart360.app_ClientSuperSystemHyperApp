@@ -37,6 +37,22 @@ export function createPostgresStore(): RateLimitStore {
         retryAfterSeconds: Number(row.retry_after_seconds) || 0,
       }
     },
+    async refund(key, windowSeconds): Promise<void> {
+      const prisma = await getPrisma()
+      // The latest window row of the key that still holds a hit (the one the reserved hit went
+      // into, unless the window rolled over in between — then the newest one with a count).
+      // The table owner's connection, like rate_limit_hit (100: no grants to API roles).
+      await prisma.$executeRaw`
+        UPDATE public.rate_limit_hits h
+           SET count = h.count - 1
+         WHERE (h.key, h.window_seconds, h.window_start) = (
+                 SELECT r.key, r.window_seconds, r.window_start
+                   FROM public.rate_limit_hits r
+                  WHERE r.key = ${key}::text AND r.window_seconds = ${windowSeconds}::int AND r.count > 0
+                  ORDER BY r.window_start DESC
+                  LIMIT 1)
+           AND h.count > 0`
+    },
   }
 }
 
