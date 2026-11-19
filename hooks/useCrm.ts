@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { ClientStatus } from '@/lib/crm/client-validate'
 
 // ─── Types (mirror app/api/v1/crm/* contracts) ──────────────────────────────
@@ -322,10 +322,9 @@ export interface LogInteractionInput {
   comment?: string
 }
 
-/** POST /api/v1/crm/clients/[id]/interactions. Bumps client.last_contact_at. */
-export function useLogInteraction() {
-  const qc = useQueryClient()
-  return useMutation({
+/** The options of useLogInteraction (exported for tests). */
+export function logInteractionMutation(qc: Pick<QueryClient, 'invalidateQueries'>) {
+  return {
     mutationFn: ({ clientId, kind, comment }: LogInteractionInput) =>
       fetchEnvelope<{ interaction: CrmInteraction }>(
         `/api/v1/crm/clients/${clientId}/interactions`,
@@ -335,12 +334,22 @@ export function useLogInteraction() {
           body: JSON.stringify({ kind, comment }),
         },
       ),
-    onSuccess: (_data, { clientId }) => {
+    // A contact closes the client's reminders due today on the server — the drawer's reminder list
+    // is refreshed with the queue. On settle, not only success: a 500 «queue_not_updated» still
+    // recorded the touch (and may have closed some), so the screen re-reads what is stored.
+    onSettled: (_data: unknown, _error: unknown, { clientId }: LogInteractionInput) => {
       qc.invalidateQueries({ queryKey: crmKeys.today() })
       qc.invalidateQueries({ queryKey: crmKeys.clientsRoot() })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
+      qc.invalidateQueries({ queryKey: crmKeys.reminders(clientId) })
     },
-  })
+  }
+}
+
+/** POST /api/v1/crm/clients/[id]/interactions. Bumps client.last_contact_at. */
+export function useLogInteraction() {
+  const qc = useQueryClient()
+  return useMutation(logInteractionMutation(qc))
 }
 
 export interface AddReminderInput {
@@ -383,7 +392,8 @@ export function useCompleteReminder() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, next_contact_at }),
       }),
-    onSuccess: (_data, { clientId }) => {
+    // On settle: a 409 «уже закрыто» means the list on screen is stale — re-read it.
+    onSettled: (_data, _error, { clientId }) => {
       qc.invalidateQueries({ queryKey: crmKeys.reminders(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.today() })

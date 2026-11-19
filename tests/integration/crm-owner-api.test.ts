@@ -25,6 +25,7 @@ const clients = await import('../../app/api/v1/crm/clients/route')
 const importRoute = await import('../../app/api/v1/crm/clients/import/route')
 const clientRoute = await import('../../app/api/v1/crm/clients/[id]/route')
 const interactions = await import('../../app/api/v1/crm/clients/[id]/interactions/route')
+const remindersRoute = await import('../../app/api/v1/crm/reminders/[id]/route')
 
 // 2026-11-18 19:30 UTC = 2026-11-19 00:30 in Almaty (UTC+5).
 const NOW = new Date('2026-11-18T19:30:00Z')
@@ -358,6 +359,46 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
 
       session(db, owner)
       expect((await post()).status).toBe(200)
+    }))
+
+  // Review (low): PATCH /reminders/[id] acted on any reminder — a done one could become dismissed,
+  // or be «done» again: a second history entry and a second move of the last contact.
+  it('a reminder is closed once: done or dismissed again is a 409, nothing written twice', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const id = await addClient(db, owner, { name: 'Иван', status: 'in_progress' })
+      await addReminder(db, owner, id, '2026-11-19T10:00:00Z')
+      await addReminder(db, owner, id, '2026-11-19T11:00:00Z')
+      const [r1, r2] = (await db.query(`SELECT id FROM public.crm_reminders WHERE client_id = $1 ORDER BY due_at`, [id])).rows.map((r) => r.id as string)
+      session(db, owner)
+      const patch = async (rid: string, status: 'done' | 'dismissed') => {
+        const res = await remindersRoute.PATCH(
+          new NextRequest(`http://localhost/api/v1/crm/reminders/${rid}`, {
+            method: 'PATCH', body: JSON.stringify({ status }), headers: { 'content-type': 'application/json' },
+          }),
+          { params: { id: rid } },
+        )
+        return { status: res.status, body: (await res.json()) as { ok: boolean; error?: string } }
+      }
+      const state = async () => {
+        const c = (await db.query(`SELECT last_contact_at FROM public.crm_clients WHERE id = $1`, [id])).rows[0]
+        const n = (await db.query(`SELECT count(*)::int AS n FROM public.crm_interactions WHERE client_id = $1`, [id])).rows[0].n
+        const rem = (await db.query(`SELECT status FROM public.crm_reminders WHERE client_id = $1 ORDER BY due_at`, [id])).rows.map((r) => r.status)
+        return { last: (c.last_contact_at as Date | null)?.toISOString() ?? null, touches: n as number, reminders: rem }
+      }
+
+      expect((await patch(r1, 'done')).status).toBe(200)
+      expect(await state()).toEqual({ last: NOW.toISOString(), touches: 1, reminders: ['done', 'open'] })
+
+      vi.setSystemTime(new Date(NOW.getTime() + 3_600_000)) // an hour later
+      expect(await patch(r1, 'done')).toMatchObject({ status: 409, body: { ok: false, error: 'reminder_closed' } })
+      expect(await patch(r1, 'dismissed')).toMatchObject({ status: 409, body: { ok: false, error: 'reminder_closed' } })
+      expect(await state()).toEqual({ last: NOW.toISOString(), touches: 1, reminders: ['done', 'open'] })
+
+      // a dismissed one is closed too; an open one still closes normally
+      expect((await patch(r2, 'dismissed')).status).toBe(200)
+      expect((await patch(r2, 'done')).status).toBe(409)
+      expect(await state()).toEqual({ last: NOW.toISOString(), touches: 1, reminders: ['done', 'dismissed'] })
     }))
 
   it('/today returns at most 50 queue rows with the true total and cut notes (review M3)', () =>

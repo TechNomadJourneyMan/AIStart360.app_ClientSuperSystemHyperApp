@@ -36,27 +36,36 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   // Напоминание должно принадлежать пользователю; нужен client_id для касания.
   const { data: current, error: curErr } = await sb
     .from('crm_reminders')
-    .select('id, client_id')
+    .select('id, client_id, status')
     .eq('id', params.id)
     .eq('user_id', userId)
     .maybeSingle()
   if (curErr) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
   if (!current) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
 
+  // Only a still-OPEN reminder is closed: a done one is not «done» twice (a second history entry, a
+  // second move of the last contact) and does not become dismissed; a dismissed one stays so.
+  const closed = () =>
+    NextResponse.json(
+      { ok: false, error: 'reminder_closed', code: 'reminder_closed', message: 'Напоминание уже закрыто' },
+      { status: 409 },
+    )
+  if (current.status !== 'open') return closed()
+
   const now = new Date().toISOString()
   const patch: Record<string, unknown> = { status }
   if (status === 'done') patch.done_at = now
 
+  // `status = open` again in the UPDATE: two clicks at once close it once.
   const { data, error } = await sb
     .from('crm_reminders')
     .update(patch)
     .eq('id', params.id)
     .eq('user_id', userId)
+    .eq('status', 'open')
     .select('*')
   if (error) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
-  if (!data || data.length === 0) {
-    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
-  }
+  if (!data || data.length === 0) return closed()
 
   // Выполнено → фиксируем касание и обновляем контактные даты клиента. «Выполнено» — это владелец
   // говорит, что запланированный контакт состоялся, поэтому last_contact_at двигается (а простая
