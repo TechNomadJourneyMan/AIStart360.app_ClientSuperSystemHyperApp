@@ -42,10 +42,16 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Неверный запрос' }, { status: 400 })
 
+  const email = parsed.data.email.toLowerCase()
+  // R-049: per account too (as /api/auth/password) — rotating addresses must not multiply the
+  // guesses at the owner password. Before the password check; fail-closed when the store is down.
+  if (await isRateLimitedKey(email, 'giga-owner-login-account', { max: 8, windowMs: 10 * 60_000, failClosed: true })) {
+    return NextResponse.json({ error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })
+  }
+
   const hash = process.env.GIGA_OWNER_PASSWORD_HASH
   if (!hash) return NextResponse.json({ error: 'Вход не настроен: нет GIGA_OWNER_PASSWORD_HASH' }, { status: 503 })
 
-  const email = parsed.data.email.toLowerCase()
   // Always run the hash check so a wrong email and a wrong password take the same time.
   const passwordOk = verifyOwnerPassword(parsed.data.password, hash)
   if (email !== ownerEmail() || !passwordOk) {
