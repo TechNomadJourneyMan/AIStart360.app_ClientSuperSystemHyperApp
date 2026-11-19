@@ -99,7 +99,9 @@ interface Target {
 function fillEmpty(t: ClientFields, row: ClientDraft): void {
   if (row.phone && t.phone == null) {
     // The phone and the form it is shown in go together: an old raw phone that never normalised
-    // would otherwise be on screen while «Позвонить» dials the imported number.
+    // would otherwise be on screen while «Позвонить» dials the imported number. This is the ONE
+    // accepted exception to «an import never overwrites what the owner entered» (agreed in review):
+    // that unnormalised phone_raw is replaced by the imported number's form.
     t.phone = row.phone
     t.phone_raw = empty(row.phone_raw) ? row.phone : row.phone_raw
   } else if (row.phone && t.phone === row.phone) {
