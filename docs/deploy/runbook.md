@@ -99,7 +99,7 @@ pg_restore -l ~/AI-Portal-backups/$N.dump | grep -c ' TABLE '   # = число �
    - `.env.local` смотрит на staging: `NEXT_PUBLIC_SUPABASE_URL` и ключи Supabase staging, `DATABASE_URL`/`DIRECT_URL` staging-базы, `ENABLE_DEV_AUTH_ROUTES=1` (docs/dev-login.md). Значения — вне репозитория;
    - `npm run dev -- -H 127.0.0.1`;
    - браузер `http://127.0.0.1:3000`, панель DEV → «Войти как роль» (`POST /api/dev/login {role}`), пройти изменённый путь каждой нужной ролью;
-   - smoke в локальном режиме: `node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000`. Редиректы без входа, 401/403 API, CSP без `*.supabase.co` и связь с базой staging — строго. Чего у dev-сервера быть не может (`deploymentId`, очередь Workflow, планировщик, Inngest, `CRON_SECRET`, локальный «Рынок» в CSP) — предупреждения.
+   - smoke в локальном режиме: `node scripts/smoke/post-deploy.mjs --base-url http://127.0.0.1:3000`. Редиректы без входа, 401/403 API, CSP без `*.supabase.co`, связь с базой staging и `schema: ok` в `/api/health` (миграции этого кода уже в журнале staging) — строго. Чего у dev-сервера быть не может (`deploymentId`, очередь Workflow, планировщик, Inngest, `CRON_SECRET`, локальный «Рынок» в CSP) — предупреждения.
 4. Записать проверенный коммит V (`git rev-parse HEAD`) — он пойдёт в `--verified` на проде. Если после проверки в ветку что-то добавили — проверить заново.
 
 **Прод.** На прод идут только те байты, что прошли staging. Порядок такой.
@@ -135,7 +135,8 @@ pg_restore -l ~/AI-Portal-backups/$N.dump | grep -c ' TABLE '   # = число �
 Ещё до PR CI проверяет файлы миграций (`check-migrations.mjs`):
 - номер новой миграции не повторяется. 15 старых повторов перечислены по полным именам файлов;
 - у каждой миграции с номером от 140 есть `rollback/<имя>.down.sql`;
-- в `rollback/` нет файлов без миграции.
+- в `rollback/` нет файлов без миграции;
+- `NEWEST_MIGRATION` в `lib/health/schema-version.ts` — имя новейшей миграции папки (N5-1a). С ним `/api/health` сверяет журнал базы: добавили миграцию — поправьте и константу, иначе CI красный.
 
 ## 5. Код
 
@@ -179,7 +180,7 @@ npm run smoke:prod -- --expect-deployment <deploymentId portal из §5> [--expe
 | Путь | Ожидается |
 |---|---|
 | `/api/healthz` | 200 `ok`, `deploymentId` = только что выкаченный. Другой id — провал. **Поля нет — тоже провал**: у любой сборки начиная с R4-A4 на Railway оно есть, значит, отвечает старый деплой. Только при откате на код до R4-A4 (§9) smoke запускают с `--revert`, и тогда это предупреждение со сверкой по `railway deployment list` |
-| `/api/health` | 200, все проверки `ok` (`unknown` — предупреждение: данных ещё нет, повторить через 15 мин) |
+| `/api/health` | 200, все проверки `ok` (`unknown` — предупреждение: данных ещё нет, повторить через 15 мин). **`schema`** — только `ok`: `fail` значит, что новейшей миграции этого кода нет в `schema_migrations` прода (код выкачен без миграций, §4) — провал, `unknown` (журнал не прочитан) — тоже провал. Какой файл ждёт код и какой последний в журнале — ГИГА → Настройки → «Состояние системы» (`/api/giga-admin/system/health` → `schema`); наружу `/api/health` имён файлов не отдаёт. Нет `schema` вовсе — код до N5-1a (откат), предупреждение |
 | `/`, `/login` | 200; у `/login` есть Content-Security-Policy с `connect-src`, без `localhost` и `*.supabase.co` |
 | `/client/home`, `/point-a`, `/dashboard` без входа | редирект на `/login?from=<путь>` |
 | `/admin-giga-panel`, `/super-expert` без входа | `/giga-login`, `/super-expert/login` |

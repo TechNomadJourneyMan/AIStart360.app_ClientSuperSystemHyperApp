@@ -15,6 +15,12 @@
  *     last 15 min (public.ops_job_runs, migration 154; with no call at all: a failure once the role
  *     has rows older than 15 min, or — no row of the role at all — once this process has been up
  *     for 15 min).
+ *   • schema (N5-1a) — on every server: the newest migration this build ships (NEWEST_MIGRATION,
+ *     lib/health/schema-version.ts) is recorded in public.schema_migrations. Not recorded — the
+ *     code went out without its migrations (runbook §4: migrations go first) — or no journal table
+ *     at all is a failure; a journal that cannot be read while the database answers is 'unknown'.
+ *     The public answer says only «schema behind»; which file is expected and which is recorded
+ *     last is for staff (GET /api/giga-admin/system/health → schema).
  *   A check whose evidence is not there yet (journal table missing, no row yet after a fresh start)
  *   is 'unknown', never a failure. Every check is bounded (DB_TIMEOUT_MS) and the whole result is
  *   cached for READINESS_CACHE_MS, one computation at a time, so a burst of probes is one query.
@@ -25,6 +31,7 @@ import { getMissingServerEnv, missingServiceLinkEnv } from '@/lib/env'
 import { inngestTarget } from '@/lib/inngest-target'
 import { isPersistentServer } from '@/lib/runtime/platform'
 import { portalRole, servesWeb, type PortalRole } from '@/lib/runtime/role'
+import { NEWEST_MIGRATION } from '@/lib/health/schema-version'
 
 export type CheckStatus = 'online' | 'degraded' | 'offline'
 
@@ -88,6 +95,38 @@ export type ReadinessCheck = 'ok' | 'fail' | 'unknown' | 'off'
 export interface Readiness extends PlatformHealth {
   inngest: ReadinessCheck
   jobs: ReadinessCheck
+  /** N5-1a: the newest migration of the build is in the journal. Never 'off'. */
+  schema: Exclude<ReadinessCheck, 'off'>
+}
+
+// ─── Schema (N5-1a) ──────────────────────────────────────────────────────────
+
+export interface SchemaStatus {
+  /** The newest migration this build ships. */
+  expected: string
+  /** public.schema_migrations exists. */
+  journal: boolean
+  /** `expected` is recorded there. */
+  applied: boolean
+  /** The newest file recorded (by name: NNN_ sorts by number); null without a journal or rows. */
+  latestRecorded: string | null
+}
+
+/** Reads the journal for the build's newest migration. Throws when the database does. */
+export async function schemaStatus(expected: string = NEWEST_MIGRATION): Promise<SchemaStatus> {
+  const [t] = await prisma.$queryRaw<Array<{ journal: boolean }>>`
+    SELECT to_regclass('public.schema_migrations') IS NOT NULL AS journal`
+  if (!t?.journal) return { expected, journal: false, applied: false, latestRecorded: null }
+  const [r] = await prisma.$queryRaw<Array<{ applied: boolean; latest: string | null }>>`
+    SELECT EXISTS (SELECT 1 FROM public.schema_migrations WHERE file = ${expected}) AS applied,
+           (SELECT max(file) FROM public.schema_migrations) AS latest`
+  return { expected, journal: true, applied: r?.applied === true, latestRecorded: r?.latest ?? null }
+}
+
+/** The readiness verdict of a schema status. Pure. */
+export function judgeSchema(s: SchemaStatus | null): Exclude<ReadinessCheck, 'off'> {
+  if (!s) return 'unknown'
+  return s.journal && s.applied ? 'ok' : 'fail'
 }
 
 type Env = Partial<NodeJS.ProcessEnv>
@@ -170,13 +209,14 @@ export interface ReadinessDeps {
   processStartedAt?: () => Date
   platform?: () => Promise<PlatformHealth>
   journal?: (role: PortalRole) => Promise<JournalEvidence | null>
+  schema?: () => Promise<SchemaStatus>
 }
 
 async function computeReadiness(deps: ReadinessDeps): Promise<Readiness> {
   const env = deps.env ?? process.env
   const scope = readinessScope(env)
   const needJournal = scope.inngest || scope.jobs
-  const [platform, journal] = await Promise.all([
+  const [platform, journal, schema] = await Promise.all([
     (deps.platform ?? checkPlatformHealth)(),
     needJournal
       ? withTimeout((deps.journal ?? loadJournalEvidence)(scope.role), DB_TIMEOUT_MS, 'journal').then(
@@ -187,7 +227,14 @@ async function computeReadiness(deps: ReadinessDeps): Promise<Readiness> {
           },
         )
       : Promise.resolve({ ok: true as const, e: null }),
+    // A journal that cannot be read says nothing about the schema: 'unknown' (with the database down
+    // the db check already fails).
+    withTimeout((deps.schema ?? schemaStatus)(), DB_TIMEOUT_MS, 'schema').catch((err: unknown) => {
+      console.error('[health] schema check failed:', err instanceof Error ? err.message : err)
+      return null
+    }),
   ])
+  const schemaCheck = judgeSchema(schema)
   // A journal that cannot be read while the database answers is a failure of those checks; with
   // the database down the db check already fails, and the journal says nothing more.
   const judged = journal.ok
@@ -202,8 +249,9 @@ async function computeReadiness(deps: ReadinessDeps): Promise<Readiness> {
   return {
     ...platform,
     missingEnv,
-    allOnline: platform.db.status === 'online' && missingEnv === 0 && judged.inngest !== 'fail' && judged.jobs !== 'fail',
+    allOnline: platform.db.status === 'online' && missingEnv === 0 && judged.inngest !== 'fail' && judged.jobs !== 'fail' && schemaCheck !== 'fail',
     ...judged,
+    schema: schemaCheck,
   }
 }
 

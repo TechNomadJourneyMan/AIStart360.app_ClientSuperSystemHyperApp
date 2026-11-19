@@ -32,6 +32,11 @@ export const dynamic = 'force-dynamic'
  * that tie the services together (by number). The result is cached for 15 s and every check is
  * bounded, so the probe stays cheap; the agents service reads it every 3 minutes
  * (lib/ops/crosswatch.ts). Railway's deploy check is /api/healthz, which touches none of this.
+ *
+ * Schema (N5-1a): on every server «Схема базы данных» — the newest migration this build ships is
+ * recorded in public.schema_migrations. Not recorded fails the check (503, «Схема базы отстаёт от
+ * кода»); no file name is said here — staff see the expected and the last recorded file in
+ * GET /api/giga-admin/system/health. The post-deploy smoke fails on it (scripts/smoke/post-deploy.mjs).
  */
 interface ServiceResult {
   name: string
@@ -68,6 +73,8 @@ export async function GET() {
     latencyMs: 0,
     uptime: NOT_MEASURED,
   }
+  // N5-1a: the newest migration of this build is in the journal — only «behind» or not, no file names.
+  const schema: ServiceResult = { name: 'Схема базы данных', status: JOURNAL_STATUS[health.schema], latencyMs: 0, uptime: NOT_MEASURED }
   const queue: ServiceResult | null = isPersistentServer() && servesWeb()
     ? { name: 'Очередь Workflow', status: QUEUE_STATUS[getWorkflowQueueStatus().state], latencyMs: 0, uptime: NOT_MEASURED }
     : null
@@ -77,20 +84,22 @@ export async function GET() {
   const jobs: ServiceResult | null = health.jobs !== 'off'
     ? { name: 'Задачи по расписанию', status: JOURNAL_STATUS[health.jobs], latencyMs: 0, uptime: NOT_MEASURED }
     : null
-  const services = [db, config, queue, inngest, jobs].filter((s): s is ServiceResult => s !== null)
+  const services = [db, config, schema, queue, inngest, jobs].filter((s): s is ServiceResult => s !== null)
   const degradedCount = services.filter((s) => s.status !== 'online').length
   const dbOk = db.status !== 'offline'
   const configOk = missing === 0
+  const schemaOk = health.schema !== 'fail'
   const queueOk = queue ? queue.status !== 'offline' : true
   const inngestOk = health.inngest !== 'fail'
   const jobsOk = health.jobs !== 'fail'
-  const ok = dbOk && configOk && queueOk && inngestOk && jobsOk
+  const ok = dbOk && configOk && schemaOk && queueOk && inngestOk && jobsOk
 
   return NextResponse.json({
     ok,
     checks: {
       db: dbOk ? 'ok' : 'fail',
       config: configOk ? 'ok' : 'fail',
+      schema: health.schema,
       ...(queue ? { queue: queueOk ? 'ok' : 'fail' } : {}),
       ...(inngest ? { inngest: health.inngest } : {}),
       ...(jobs ? { jobs: health.jobs } : {}),
@@ -105,13 +114,17 @@ export async function GET() {
         ? 'Конфигурация сервера неполная — подробности в GIGA → Система'
         : db.status !== 'online'
           ? 'База данных отвечает медленно или недоступна'
+          : health.schema === 'fail'
+            ? 'Схема базы отстаёт от кода: не применены миграции — подробности в GIGA → Система'
           : queue && queue.status !== 'online'
             ? 'Очередь Workflow не запущена или ещё запускается — подробности в логах сервера'
             : health.inngest === 'fail'
               ? 'Фоновые задачи (Inngest) давно не запускались — подробности в GIGA → Система'
               : health.jobs === 'fail'
                 ? 'Задачи по расписанию давно не запускались — подробности в GIGA → Система'
-                : 'Проверки фоновых задач ещё собирают данные',
+                : health.schema === 'unknown'
+                  ? 'Схему базы проверить не удалось — проверка повторится'
+                  : 'Проверки фоновых задач ещё собирают данные',
     timestamp: new Date().toISOString(),
   }, {
     status: ok ? 200 : 503,

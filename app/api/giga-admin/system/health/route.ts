@@ -6,12 +6,15 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { platformHealthSnapshot } from '@/lib/agents/definitions/monitoring'
 import { classifyCheckError, crmHealthFrom, envChecks, type CheckFailure, type CrmHealth } from '@/lib/admin/system-health'
 import { opsOverview, type OpsOverview } from '@/lib/ops/job-watchdog'
+import { schemaStatus, type SchemaStatus } from '@/lib/health/platform'
 
 /**
  * GET /api/giga-admin/system/health — configuration and data-layer status.
  * Env values are never returned — only whether each is configured.
  * `ops` (R4-A1): every scheduled job with its last run and health from the journal of job outcomes
  * (migration 154, lib/ops/job-watchdog.ts), and where alarms can go («тревогам некуда приходить»).
+ * `schema` (N5-1a): the newest migration this build ships, whether public.schema_migrations has it,
+ * and the newest file recorded there — the detail behind /api/health `schema: fail`.
  */
 const TABLES = [
   'profiles', 'survey_answers', 'gri_assessments', 'user_events', 'admin_audit_log',
@@ -67,6 +70,17 @@ export async function GET(req: NextRequest) {
     console.error('[system/health] platform health snapshot failed:', agentsError.message)
   }
 
+  // N5-1a: what the public /api/health only calls «schema behind» — the newest migration of this
+  // build and the newest one in the journal. A failed read is said as such.
+  let schema: SchemaStatus | null = null
+  let schemaError: CheckFailure | null = null
+  try {
+    schema = await schemaStatus()
+  } catch (err) {
+    schemaError = classifyCheckError(err)
+    console.error('[system/health] schema check failed:', schemaError.message)
+  }
+
   // Scheduled jobs and alarm routes (R4-A1). A failed read is said as such, never as «all fine».
   let ops: OpsOverview | null = null
   let opsError: CheckFailure | null = null
@@ -95,6 +109,8 @@ export async function GET(req: NextRequest) {
     integrations: { crm, crmError },
     agents,
     agentsError,
+    schema,
+    schemaError,
     ops,
     opsError,
   })
