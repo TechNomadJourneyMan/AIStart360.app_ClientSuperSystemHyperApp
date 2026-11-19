@@ -9,7 +9,8 @@
 --    longer has (counted, never deleted) and their phone may be re-linked to a surviving contact (M5).
 --    crm_sync_deals keeps the qualifying deals of the current pass (not lost, amount > 0, KZT, with
 --    a contact), one row per deal (re-reading a deal is idempotent); avg_check is applied from them
---    once every deal was read (crm_sync_apply_deal_totals). Operational rows, owner-only.
+--    once every deal was read (crm_sync_apply_deal_totals). Operational rows, owner-only: a row only
+--    on the owner's own connection (wave 3, M1).
 --
 -- 2. One sync per connection at a time (M3): sync_lease_until / sync_lease_token, taken by
 --    crm_sync_acquire_lease (a conditional UPDATE with an expiry, the database clock) and released
@@ -113,9 +114,23 @@ REVOKE ALL ON public.crm_sync_deals FROM PUBLIC;
 REVOKE ALL ON public.crm_sync_deals FROM anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.crm_sync_deals TO authenticated;
 GRANT ALL ON public.crm_sync_deals TO service_role;
+-- M1 (wave 3): a row is the owner's only on the owner's OWN connection. The foreign key does not see
+-- RLS, so a check of user_id alone let a user put rows on another user's connection_id: that user's
+-- upsert of the same deal then met a row it may not update (42501, the deals pass never advanced).
 DROP POLICY IF EXISTS crm_sync_deals_own ON public.crm_sync_deals;
 CREATE POLICY crm_sync_deals_own ON public.crm_sync_deals
-  FOR ALL USING ((SELECT auth.uid()) = user_id) WITH CHECK ((SELECT auth.uid()) = user_id);
+  FOR ALL USING (
+    (SELECT auth.uid()) = user_id
+    AND EXISTS (SELECT 1 FROM public.crm_provider_connections c
+                 WHERE c.id = crm_sync_deals.connection_id AND c.user_id = (SELECT auth.uid()))
+  ) WITH CHECK (
+    (SELECT auth.uid()) = user_id
+    AND EXISTS (SELECT 1 FROM public.crm_provider_connections c
+                 WHERE c.id = crm_sync_deals.connection_id AND c.user_id = (SELECT auth.uid()))
+  );
+-- Rows the old policy let in (a user other than the connection's owner) are removed.
+DELETE FROM public.crm_sync_deals s
+ WHERE NOT EXISTS (SELECT 1 FROM public.crm_provider_connections c WHERE c.id = s.connection_id AND c.user_id = s.user_id);
 
 -- ── 4. functions of the sync ───────────────────────────────────────────────────
 
@@ -225,6 +240,7 @@ END $$;
 -- sync owns ('crm' or empty) = the mean of its contact's qualifying deals, rounded to whole tenge;
 -- a 'crm' figure without a qualifying deal any more becomes NULL. 'manual' figures are never
 -- touched. Rows of older passes are removed (the current pass stays, so a repeat is idempotent).
+-- Every read and delete of crm_sync_deals is limited to p_user's rows of p_user's own connection.
 CREATE OR REPLACE FUNCTION public.crm_sync_apply_deal_totals(p_connection UUID, p_user UUID, p_source TEXT, p_pass_started_at TIMESTAMPTZ)
 RETURNS TABLE (updated INTEGER, cleared INTEGER) LANGUAGE plpgsql SET search_path = public AS $$
 #variable_conflict use_column
@@ -232,6 +248,11 @@ DECLARE
   v_updated INTEGER;
   v_cleared INTEGER;
 BEGIN
+  -- Only the user's own connection (the cron calls this as the service role, without RLS).
+  IF NOT EXISTS (SELECT 1 FROM public.crm_provider_connections c WHERE c.id = p_connection AND c.user_id = p_user) THEN
+    RETURN QUERY SELECT 0, 0;
+    RETURN;
+  END IF;
   PERFORM set_config('aistart360.crm_sync', 'on', true);
   WITH t AS (
     SELECT s.contact_id, round(avg(s.amount)) AS avg
@@ -251,11 +272,12 @@ BEGIN
      SET avg_check = NULL, avg_check_source = NULL, updated_at = now()
    WHERE c.user_id = p_user AND c.external_source = p_source AND c.avg_check_source = 'crm'
      AND NOT EXISTS (SELECT 1 FROM public.crm_sync_deals s
-                      WHERE s.connection_id = p_connection AND s.pass_started_at = p_pass_started_at
-                        AND s.contact_id = c.external_id);
+                      WHERE s.connection_id = p_connection AND s.user_id = p_user
+                        AND s.pass_started_at = p_pass_started_at AND s.contact_id = c.external_id);
   GET DIAGNOSTICS v_cleared = ROW_COUNT;
 
-  DELETE FROM public.crm_sync_deals s WHERE s.connection_id = p_connection AND s.pass_started_at < p_pass_started_at;
+  DELETE FROM public.crm_sync_deals s
+   WHERE s.connection_id = p_connection AND s.user_id = p_user AND s.pass_started_at < p_pass_started_at;
   PERFORM set_config('aistart360.crm_sync', '', true);
   RETURN QUERY SELECT v_updated, v_cleared;
 END $$;

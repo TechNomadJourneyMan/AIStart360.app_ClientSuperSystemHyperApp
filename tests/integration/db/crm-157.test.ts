@@ -182,6 +182,42 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(await pgErrorCode(asUser(db, null, () => db.query(`SELECT * FROM public.crm_sync_deals`)))).toBe('42501')
     }))
 
+  it('M1 (wave 3): another user can neither plant crm_sync_deals rows on a connection nor sway its totals; rows planted before are removed', () =>
+    inRollback(async (db) => {
+      await db.query(UP)
+      const victim = await seedUser(db, { status: 'approved' })
+      const attacker = await seedUser(db, { status: 'approved' })
+      const conn = await connection(db, victim)
+      const pass = new Date().toISOString()
+      const deal = (as: string, userId: string, dealId: string, contact: string, amount: number) => asUser(db, as, () => db.query(
+        `INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (connection_id, deal_id) DO UPDATE SET user_id = EXCLUDED.user_id, contact_id = EXCLUDED.contact_id, amount = EXCLUDED.amount, pass_started_at = EXCLUDED.pass_started_at`,
+        [conn, userId, dealId, contact, amount, pass],
+      ))
+      // The foreign key ignores RLS: only the policy can refuse a row on someone else's connection.
+      expect(await pgErrorCode(deal(attacker, attacker, 'd1', '1', 1))).toBe('42501')
+      expect(await pgErrorCode(deal(attacker, victim, 'd1', '1', 1))).toBe('42501')
+      expect(await pgErrorCode(asUser(db, attacker, () => db.query( // a plain INSERT is checked by WITH CHECK alone
+        `INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, 'd1', '1', 1, $3)`, [conn, attacker, pass],
+      )))).toBe('42501')
+      expect(await pgErrorCode(deal(victim, victim, 'd1', '1', 500))).toBeNull()
+      expect(await pgErrorCode(deal(victim, victim, 'd1', '1', 600))).toBeNull() // the sync's upsert of a deal read again
+
+      // A row of another user on the victim's connection, as the old policy let in: the cron (service role)
+      // neither counts it nor lets it keep a figure the victim's CRM no longer backs.
+      await db.query(`INSERT INTO public.crm_sync_deals (connection_id, user_id, deal_id, contact_id, amount, pass_started_at) VALUES ($1, $2, 'x9', '2', 9999, $3)`, [conn, attacker, pass])
+      const one = await client(db, victim, { external_source: SRC, external_id: '1' })
+      const two = await client(db, victim, { avg_check: 300, avg_check_source: 'crm', external_source: SRC, external_id: '2' })
+      const { rows } = await asService(db, () => db.query(`SELECT * FROM public.crm_sync_apply_deal_totals($1, $2, $3, $4)`, [conn, victim, SRC, pass]))
+      expect(rows[0]).toEqual({ updated: 1, cleared: 1 })
+      expect(await source(db, one)).toEqual({ avg: 600, src: 'crm' })
+      expect(await source(db, two)).toEqual({ avg: null, src: null })
+
+      // Re-applying 157 removes rows whose user is not the connection's owner.
+      await db.query(UP)
+      expect((await db.query(`SELECT user_id FROM public.crm_sync_deals WHERE connection_id = $1`, [conn])).rows).toEqual([{ user_id: victim }])
+    }))
+
   it('157 → rollback → rollback → 157 → 157: all gone, then the same definitions; the backfill marks existing figures', () =>
     inRollback(async (db) => {
       const snapshot = async () => ({
@@ -218,6 +254,3 @@ describe.skipIf(!dbTestsEnabled)('migration 157', () => {
       expect(await source(db, empty)).toEqual({ avg: null, src: null })
     }))
 })
-
-// The service role reaches every function (the cron) — exercised end to end in crm-sync.test.ts.
-void asService
