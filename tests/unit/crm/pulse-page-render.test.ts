@@ -33,6 +33,7 @@ vi.mock('@/hooks/useCrm', async (orig) => {
 
 import PulsePage from '@/app/(dashboard)/pulse/page'
 import { ClientsTable } from '@/components/crm/ClientsTable'
+import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
 import { funnelSumLabel } from '@/components/crm/FunnelBar'
 import { fetchWholeBase } from '@/hooks/useCrm'
 
@@ -108,6 +109,19 @@ describe('CRM section with data (M2: no invented numbers)', () => {
     // the tooltips name every rule of the score and of the action (review, low)
     expect(html).toContain('чек выше двух средних −5')
     expect(html).toContain('Звонок — статус «Потерян»')
+  })
+})
+
+// Review (medium): a name-only row is the one client with that name; with several, it is skipped —
+// and the dialog says the rule it applies (it said «без телефона и email — имя и комментарий»).
+describe('import dialog copy', () => {
+  it('states the name rule for rows without a phone and an e-mail', () => {
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: new QueryClient() }, createElement(CsvImportDialog, { open: true, onClose: () => {} })),
+    )
+    expect(html).toContain('Строка только с именем (без телефона и email) дополняет клиента с таким же именем')
+    expect(html).toContain('если таких клиентов несколько, строка пропускается')
+    expect(html).not.toContain('имя и комментарий')
   })
 })
 

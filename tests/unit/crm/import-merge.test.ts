@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { parseClientsCsv } from '@/lib/crm/csv-import'
-import { anonymousKey, nameKey, planImport, type ExistingClient } from '@/lib/crm/import-merge'
+import { nameKey, planImport, type ExistingClient } from '@/lib/crm/import-merge'
 
 const rows = (csv: string) => parseClientsCsv(csv).rows
 
@@ -43,7 +43,7 @@ describe('planImport — identity (H1)', () => {
 
   it('the same phone under another name is a conflict: not imported, nothing moved to the other person', () => {
     const plan = planImport(rows('Имя,Телефон,Сумма,Комментарий\nАнна Смирнова,8 701 000 00 01,5000,новая заметка'), [petr()])
-    expect(plan).toEqual({ inserts: [], updates: [], unchanged: 0, duplicates: 0, conflicts: 1 })
+    expect(plan).toEqual({ inserts: [], updates: [], unchanged: 0, duplicates: 0, conflicts: 1, ambiguous: 0 })
   })
 
   it('names compare without case, «ё», punctuation and word order', () => {
@@ -86,27 +86,52 @@ describe('planImport — fill empty fields only (M2: a stale re-import never rev
       existing({ id: 'e3', name: 'Аноним' }),
     ]
     const csv = 'Имя,Телефон,Email,Комментарий\nИван,+77010000001,ivan@ex.kz,\nБез телефона,,NoPhone@Ex.kz,n\nАноним,,,'
-    expect(planImport(rows(csv), base)).toEqual({ inserts: [], updates: [], unchanged: 3, duplicates: 0, conflicts: 0 })
+    expect(planImport(rows(csv), base)).toEqual({ inserts: [], updates: [], unchanged: 3, duplicates: 0, conflicts: 0, ambiguous: 0 })
   })
 })
 
-describe('planImport — rows without a phone and an e-mail (M2)', () => {
-  it('match only a client without contacts, with the same name AND the same note', () => {
-    const base = [existing({ id: 'i1', name: 'Иван', note: 'склад' }), existing({ id: 'o1', name: 'Ольга', email: 'olga@ex.kz' })]
-    const plan = planImport(rows('Имя,Комментарий,Сумма\nИван,склад,900\nИван,офис,\nОльга,,'), base)
-    expect(plan.updates).toEqual([{ id: 'i1', patch: { avg_check: 900 } }])
-    // another note → another Иван; Ольга has an e-mail in the base → not this anonymous row
-    expect(plan.inserts.map((i) => [i.name, i.note])).toEqual([['Иван', 'офис'], ['Ольга', null]])
-    expect(anonymousKey('Иван', null, null)).toBe(anonymousKey('иван', '', ''))
+// Review (medium): a name-only row matched only a client that ALSO had no phone / e-mail and the
+// same note and raw phone — so «Иван,,,,900» next to the base's «Иван, +7 701…» made a second Иван.
+// The rule: a row with only a name (no phone, no valid e-mail) is the ONE client with that name,
+// whatever its phone / e-mail / note, and only fills its empty fields; with several such clients
+// the row is neither merged nor created — it is skipped and counted («несколько клиентов»).
+describe('planImport — rows without a phone and an e-mail: matched by the name', () => {
+  it('the one client with that name — whatever its phone, e-mail and note; only empty fields are filled', () => {
+    const base = [
+      existing({ id: 'i1', name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', note: 'склад' }),
+      existing({ id: 'o1', name: 'Ольга', email: 'olga@ex.kz' }),
+    ]
+    const plan = planImport(rows('Имя,Комментарий,Сумма\nИван,офис,900\nиван,,\nОльга,,\nПётр,,100'), base)
+    expect(plan.updates).toEqual([{ id: 'i1', patch: { avg_check: 900 } }]) // «склад» stays, the check is filled
+    expect(plan.inserts.map((i) => [i.name, i.avg_check])).toEqual([['Пётр', 100]])
+    expect(plan).toMatchObject({ unchanged: 1, duplicates: 1, ambiguous: 0 })
+    expect(nameKey('Иван')).toBe(nameKey('иван'))
   })
 
-  it('identical name-only rows of one file collapse; the repeat only fills empty fields', () => {
-    const plan = planImport(rows('Имя,Комментарий,Сумма\nМария,,\nМария,,700\nМария,другая,'), [])
-    expect(plan.inserts).toEqual([
-      { name: 'Мария', phone: null, phone_raw: null, email: null, note: null, avg_check: 700 },
-      { name: 'Мария', phone: null, phone_raw: null, email: null, note: 'другая', avg_check: null },
-    ])
-    expect(plan.duplicates).toBe(1)
+  it('several clients with that name: not merged, not created — skipped as ambiguous', () => {
+    const base = [
+      existing({ id: 'i1', name: 'Иван', phone: '+77010000001' }),
+      existing({ id: 'i2', name: 'Иван', email: 'ivan2@ex.kz' }),
+    ]
+    const plan = planImport(rows('Имя,Комментарий,Сумма\nИван,,500\n"Иван",новая,'), base)
+    expect(plan).toEqual({ inserts: [], updates: [], unchanged: 0, duplicates: 0, conflicts: 0, ambiguous: 2 })
+    // two clients with that name made by this very file are just as ambiguous
+    const file = planImport(rows('Имя,Телефон,Сумма\nМария,+77010000005,\nМария,+77010000006,\nМария,,700'), [])
+    expect(file.inserts.map((i) => [i.phone, i.avg_check])).toEqual([['+77010000005', null], ['+77010000006', null]])
+    expect(file.ambiguous).toBe(1)
+  })
+
+  it('name-only rows of one file are one client; a repeat only fills empty fields', () => {
+    const plan = planImport(rows('Имя,Комментарий,Сумма\nМария,,\nМария,,700\nМария,другая,\nМария,третья,1'), [])
+    expect(plan.inserts).toEqual([{ name: 'Мария', phone: null, phone_raw: null, email: null, note: 'другая', avg_check: 700 }])
+    expect(plan.duplicates).toBe(3)
+  })
+
+  it('an e-mail still matches only with the same name and a valid format', () => {
+    const base = [existing({ id: 'a', name: 'Анна', email: 'anna@ex.kz' })]
+    expect(planImport(rows('Имя,Email\nБорис,anna@ex.kz'), base).inserts.map((i) => i.name)).toEqual(['Борис'])
+    // «-» is no e-mail: the row has only a name → the one «Анна»
+    expect(planImport(rows('Имя,Email,Сумма\nАнна,-,300'), base).updates).toEqual([{ id: 'a', patch: { avg_check: 300 } }])
   })
 })
 
@@ -122,6 +147,14 @@ describe('planImport — inside one file', () => {
     const plan = planImport(rows('Имя,Телефон,Сумма\nПервый,+77010000005,100\nДругой,+77010000005,900'), [])
     expect(plan.inserts.map((i) => [i.name, i.avg_check])).toEqual([['Первый', 100]])
     expect(plan.conflicts).toBe(1)
+  })
+
+  // Review (low): filling an empty phone kept an old raw phone that never normalised, so the
+  // screen showed «12-34 доб. 5» while «Позвонить» dialled the imported number.
+  it('filling an empty phone also sets its raw form: the screen shows the number that is dialled', () => {
+    const anna = existing({ id: 'anna', name: 'Анна', phone: null, phone_raw: '12-34 доб. 5', email: 'anna@ex.kz' })
+    const plan = planImport(rows('Имя,Телефон,Email\nАнна,+7 701 000 00 02,anna@ex.kz'), [anna])
+    expect(plan.updates).toEqual([{ id: 'anna', patch: { phone: '+77010000002', phone_raw: '+7 701 000 00 02' } }])
   })
 
   it('a raw phone that did not normalise is kept only where there is no phone at all', () => {

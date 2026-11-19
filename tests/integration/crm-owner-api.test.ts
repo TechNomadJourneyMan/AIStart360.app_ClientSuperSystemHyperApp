@@ -183,14 +183,17 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       const owner = await seedUser(db)
       await addClient(db, owner, { name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000 })
       await addClient(db, owner, { name: 'Анна', email: 'anna@ex.kz', note: 'заметка' })
-      await addClient(db, owner, { name: 'Пётр' })
+      await addClient(db, owner, { name: 'Пётр', phone: '+77010000003' })
+      await addClient(db, owner, { name: 'Ольга', phone: '+77010000004' })
+      await addClient(db, owner, { name: 'Ольга', email: 'olga@ex.kz' })
       session(db, owner)
 
       const csv = [
         'Имя,Телефон,Email,Комментарий,Сумма',
         'Иван,8 701 000 00 01,,старая заметка,1000', // same phone + name: the owner's note / check stay
         'Анна,,ANNA@ex.kz,,', // same e-mail (any case) + name
-        'Пётр,,,,', // no phone, no e-mail: the same name and (empty) note
+        'Пётр,,,,700', // no phone, no e-mail: the ONE «Пётр» (whatever his phone) — his empty check is filled
+        'Ольга,,,,', // two «Ольга» in the base: neither merged nor created — skipped
         'Анна Смирнова,,anna@ex.kz,,9000', // a shared mailbox under another name: a new client
         'Самозванец,+7 701 000 00 01,,,500', // Иван's phone under another name: not imported
         'Борис,,-,,', // «-» is no e-mail…
@@ -206,14 +209,15 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
         return ((await res.json()) as { data: Record<string, number> }).data
       }
 
-      expect(await post()).toEqual({ inserted: 4, updated: 0, unchanged: 3, duplicates: 1, conflicts: 1, skipped: 0 })
-      expect(await post()).toEqual({ inserted: 0, updated: 0, unchanged: 7, duplicates: 1, conflicts: 1, skipped: 0 })
+      expect(await post()).toEqual({ inserted: 4, updated: 1, unchanged: 2, duplicates: 1, conflicts: 1, ambiguous: 1, skipped: 1 })
+      expect(await post()).toEqual({ inserted: 0, updated: 0, unchanged: 7, duplicates: 1, conflicts: 1, ambiguous: 1, skipped: 1 })
 
       const { rows } = await db.query(
         `SELECT name, phone, phone_raw, email, note, avg_check::float8 AS avg_check FROM public.crm_clients WHERE user_id = $1 ORDER BY name`,
         [owner],
       )
-      expect(rows.map((r) => r.name as string).sort((a, b) => a.localeCompare(b, 'ru'))).toEqual(['Анна', 'Анна Смирнова', 'Борис', 'Вера', 'Иван', 'Новый', 'Пётр'])
+      expect(rows.map((r) => r.name as string).sort((a, b) => a.localeCompare(b, 'ru'))).toEqual(['Анна', 'Анна Смирнова', 'Борис', 'Вера', 'Иван', 'Новый', 'Ольга', 'Ольга', 'Пётр'])
+      expect(rows.find((r) => r.name === 'Пётр')).toMatchObject({ phone: '+77010000003', avg_check: 700 })
       expect(rows.find((r) => r.name === 'Иван')).toEqual({
         name: 'Иван', phone: '+77010000001', phone_raw: '+7 701 000 00 01', email: 'ivan@ex.kz', note: 'VIP', avg_check: 150000,
       })
