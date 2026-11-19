@@ -166,12 +166,13 @@ describe('Base tab (M3)', () => {
   })
 
   // Review (low): a server whose max-rows is below the page size returns short pages that are not the end.
-  it('keeps reading after short pages until every counted client is loaded', async () => {
+  it('keeps reading after short pages until the server says there is no next page', async () => {
     const urls: string[] = []
     const pages = [0, 400, 800].map((from) => {
       const clients = Array.from({ length: Math.min(400, 1005 - from) }, (_, i) => client(from + i))
       return { clients, total: 1005, nextCursor: clients[clients.length - 1].id }
     })
+    pages.push({ clients: [], total: 1005, nextCursor: null as unknown as string }) // the end: an empty page
     vi.stubGlobal('fetch', async (url: string) => {
       urls.push(url)
       return new Response(JSON.stringify({ ok: true, data: pages[urls.length - 1] }), { status: 200 })
@@ -179,6 +180,31 @@ describe('Base tab (M3)', () => {
     try {
       const all = await fetchWholeBase()
       expect(all.clients).toHaveLength(1005)
+      expect(urls).toHaveLength(4)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // Review (low): it stopped once it had `total` clients — but the count is a separate query, stale
+  // during a concurrent insert: a client added between the count and the pages was never shown.
+  it('the end is nextCursor == null, not «as many as the count said»', async () => {
+    const urls: string[] = []
+    const pages = [
+      // counted 1000 before the import's last row landed; the page already has a next cursor
+      { clients: Array.from({ length: 1000 }, (_, i) => client(i)), total: 1000, nextCursor: 'id-999' },
+      { clients: [client(1000)], total: 1001, nextCursor: 'id-1000' },
+      { clients: [], total: 1001, nextCursor: null },
+    ]
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url)
+      return new Response(JSON.stringify({ ok: true, data: pages[urls.length - 1] }), { status: 200 })
+    })
+    try {
+      const all = await fetchWholeBase()
+      expect(all.clients.map((c) => c.id)).toContain('id-1000')
+      expect(all.clients).toHaveLength(1001)
+      expect(all.total).toBe(1001)
       expect(urls).toHaveLength(3)
     } finally {
       vi.unstubAllGlobals()

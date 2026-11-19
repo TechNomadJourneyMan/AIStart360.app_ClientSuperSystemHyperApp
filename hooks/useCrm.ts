@@ -209,8 +209,10 @@ export async function fetchWholeBase(status?: CrmClientStatus): Promise<CrmClien
       seen.add(c.id)
       all.push(c)
     }
-    // Done on an empty page, or once every counted client is here (saves the empty request).
-    if (!page.nextCursor || all.length >= total) break
+    // Done only when the server says there is no next page (it answers an empty page with
+    // nextCursor null). Not «once `total` clients are here»: the count is a separate query and is
+    // stale during a concurrent insert — a client added meanwhile would never be shown.
+    if (!page.nextCursor) break
     after = page.nextCursor
   }
   return { clients: sortBase(all), total }
