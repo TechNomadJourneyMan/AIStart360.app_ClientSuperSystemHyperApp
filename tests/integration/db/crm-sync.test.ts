@@ -266,7 +266,7 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       const r1 = await run(sb, conn, { maxRecords: 250 })
       expect(r1.status).toBe('partial')
       expect(r1.problems[0]).toBe('Контакты: прочитано 250, есть ещё (за один раз читается до 250) — следующая синхронизация продолжит с этого места.')
-      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ source: 'amocrm:28805383', contacts: { position: '2' } })
+      expect((await connRow(db, conn.id)).sync_cursor).toMatchObject({ source: 'amocrm:28805383', contacts: { position: '2:250' } })
       await run(sb, conn, { maxRecords: 250 })
       const r3 = await run(sb, conn, { maxRecords: 250 })
       expect(r3).toMatchObject({ status: 'success', dealsOtherCurrency: 5, missingInCrm: 0 })
@@ -276,6 +276,26 @@ describe.skipIf(!dbTestsEnabled)('CRM sync on the real schema', () => {
       expect(rows).toHaveLength(600)
       expect(new Set(rows.map((r) => r.external_source))).toEqual(new Set(['amocrm:28805383']))
       expect(byExt(rows, '1')).toMatchObject({ id: legacy.id, name: 'Старый ключ', avg_check: null })
+    }))
+
+  it('M2 (wave 3): amoCRM records deleted below the place between runs — none skipped: every contact becomes a client, every deal counts once', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db, { status: 'approved' })
+      const conn = await seedConnection(db, owner, 'amocrm')
+      const state = { contacts: range(600).map((i) => amoContact(i)), leads: range(600).map((i) => amoLead(i, [1], 1000 + i)), currency: 'KZT' }
+      vi.stubGlobal('fetch', fakeAmo(state).fetchImpl)
+      const sb = ownerClient(db, owner)
+      expect((await run(sb, conn, { maxRecords: 250 })).status).toBe('partial')
+      // In amoCRM between the runs: 20 contacts and 20 deals below the place are deleted (amoCRM pages
+      // by offset, so every later record moves back by 20).
+      state.contacts = state.contacts.filter((c) => Number(c.id) < 2 || Number(c.id) > 21)
+      state.leads = state.leads.filter((l) => Number(l.id) > 20)
+      await run(sb, conn, { maxRecords: 250 })
+      expect(await run(sb, conn, { maxRecords: 250 })).toMatchObject({ status: 'success', avgUpdated: 1 })
+      expect(await clients(db, owner)).toHaveLength(600) // 251…270 were not skipped (the 20 deleted ones are kept)
+      // Every deal read in the pass once: 1…250 (read before 1…20 were deleted), 251…600 — mean of 1001…1600.
+      expect((await db.query(`SELECT count(*)::int AS n FROM public.crm_sync_deals WHERE connection_id = $1`, [conn.id])).rows[0].n).toBe(600)
+      expect(byExt(await clients(db, owner), '1')).toMatchObject({ avg_check: 1301, avg_check_source: 'crm' })
     }))
 
   it('amoCRM: amounts in another currency never become avg_check and are counted', () =>

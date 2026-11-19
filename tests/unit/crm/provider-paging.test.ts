@@ -146,12 +146,73 @@ describe('amoCRM reading (H3, M2)', () => {
     const crm = fakeAmo({ contacts: range(600).map((i) => amoContact(i)), leads: [] })
     vi.stubGlobal('fetch', crm.fetchImpl)
     const first = await amocrm.listContacts(AMO, { maxRecords: 250 })
-    expect(first).toMatchObject({ complete: false, stoppedBy: 'cap', total: null, position: '2' })
+    expect(first).toMatchObject({ complete: false, stoppedBy: 'cap', total: null, position: '2:250' })
     expect(first.items).toHaveLength(250)
     const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
     expect(rest).toMatchObject({ complete: true, position: null })
     expect([...first.items, ...rest.items].map((c) => Number(c.id))).toEqual(range(600))
     expect(crm.calls.every((c) => new URL(c.url).searchParams.get('limit') === '250')).toBe(true)
+  })
+
+  // Wave 3, M2: amoCRM pages by offset, so a record deleted below the stored place shifts every later
+  // one back. The position is `<next page>:<last id read>`; a resume reads one page earlier and
+  // continues after that id once a page shows an id already read (proof that nothing was skipped),
+  // stepping back further while it does not.
+  const ids = (l: { items: Array<{ id: string }> }) => l.items.map((c) => Number(c.id))
+  const pages = (crm: ReturnType<typeof fakeAmo>) => crm.calls.filter((c) => c.url.includes('/contacts')).map((c) => Number(new URL(c.url).searchParams.get('page')))
+
+  it('M2 (wave 3): records deleted below the place between runs never make the next run skip any', async () => {
+    const state = { contacts: range(600).map((i) => amoContact(i)), leads: [] }
+    const crm = fakeAmo(state)
+    vi.stubGlobal('fetch', crm.fetchImpl)
+    const first = await amocrm.listContacts(AMO, { maxRecords: 250 })
+    expect(first).toMatchObject({ complete: false, stoppedBy: 'cap', position: '2:250' })
+    state.contacts = state.contacts.filter((c) => Number(c.id) < 5 || Number(c.id) > 14) // 10 deleted below the place
+    crm.calls.length = 0
+    const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
+    expect(ids(rest)).toEqual(range(350, 251))
+    expect(rest).toMatchObject({ complete: true, position: null })
+    expect(pages(crm)).toEqual([1, 2, 3])
+  })
+
+  it('M2: more than a page deleted below the place — it steps back until an id already read proves the place', async () => {
+    const state = { contacts: range(600).map((i) => amoContact(i)), leads: [] }
+    const crm = fakeAmo(state)
+    vi.stubGlobal('fetch', crm.fetchImpl)
+    const first = await amocrm.listContacts(AMO, { maxRecords: 500 })
+    expect(first.position).toBe('3:500')
+    state.contacts = state.contacts.filter((c) => Number(c.id) > 300) // 300 deleted: page 2 now starts after 500
+    crm.calls.length = 0
+    const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
+    expect(ids(rest)).toEqual(range(100, 501))
+    expect(pages(crm)).toEqual([2, 1]) // page 2 is kept, not asked twice
+  })
+
+  it('M2: records restored below the place are neither read twice nor make it skip', async () => {
+    const state = { contacts: range(600).filter((i) => i < 100 || i > 109).map((i) => amoContact(i)), leads: [] }
+    const crm = fakeAmo(state)
+    vi.stubGlobal('fetch', crm.fetchImpl)
+    const first = await amocrm.listContacts(AMO, { maxRecords: 250 })
+    expect(first.position).toBe('2:260')
+    state.contacts = range(600).map((i) => amoContact(i))
+    const rest = await amocrm.listContacts(AMO, { maxRecords: 2000, from: first.position })
+    expect(ids(rest)).toEqual(range(340, 261))
+  })
+
+  it('M2: a place inside a page resumes right after its id; a place in the old page-only form starts again from page 1', async () => {
+    vi.stubGlobal('fetch', fakeAmo({ contacts: range(600).map((i) => amoContact(i)), leads: [] }).fetchImpl)
+    expect(ids(await amocrm.listContacts(AMO, { maxRecords: 2000, from: '2:100' }))).toEqual(range(500, 101))
+    expect(ids(await amocrm.listContacts(AMO, { maxRecords: 2000, from: '3' }))).toEqual(range(600))
+  })
+
+  it('M2: out of time while finding the place — the place is kept and the next run finds it', async () => {
+    const state = { contacts: range(600).map((i) => amoContact(i)), leads: [] }
+    vi.stubGlobal('fetch', fakeAmo(state).fetchImpl)
+    state.contacts = state.contacts.filter((c) => Number(c.id) > 300)
+    let t = 0
+    const short = await amocrm.listContacts(AMO, { maxRecords: 2000, from: '3:500', fetchUntil: 1, now: () => t++ })
+    expect(short).toMatchObject({ items: [], complete: false, stoppedBy: 'time', position: '2:500' })
+    expect(ids(await amocrm.listContacts(AMO, { maxRecords: 2000, from: short.position }))).toEqual(range(100, 501))
   })
 
   it('maps leads: the main contact, price «0» as no amount, status 143 as lost, the account currency', async () => {
