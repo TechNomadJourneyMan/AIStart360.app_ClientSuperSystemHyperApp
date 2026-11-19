@@ -37,6 +37,8 @@ import {
   type StaffTask,
 } from '@/lib/automation/data'
 import { addDays, hoursBetween, localDate, startOfLocalDay } from '@/lib/automation/time'
+import { dayRotation, runBudget, type RunBudget } from '@/lib/automation/run-budget'
+import { beforeDeadline, runBounded } from '@/lib/crm/bounded-run'
 
 /** Просроченные задачи по исполнителю; без исполнителя — ключ null. */
 export function groupTasksByAssignee(tasks: StaffTask[]): Map<string | null, StaffTask[]> {
@@ -148,9 +150,17 @@ export interface StaffDigestStats {
   proEnded: number
   assigneesNotified: number
   overdueTasks: number
+  /** R-015: assignees not started — the run's budget was spent. */
+  deferred: number
+  /** R-015: sends cut by the run's deadline (a provider that did not answer in time). */
+  timedOut: number
+  /** R-015: the admin summary was claimed but its send did not answer before the deadline. */
+  adminSummaryTimedOut?: boolean
 }
 
-export async function runStaffDigest(now: Date = new Date()): Promise<StaffDigestStats> {
+export async function runStaffDigest(now: Date = new Date(), opts: { budget?: RunBudget } = {}): Promise<StaffDigestStats> {
+  // R-015: the budget starts with the run — the reads below count against it too.
+  const budget = opts.budget ?? runBudget()
   let slaHours = 4
   try {
     slaHours = await getSetting('request_sla_hours')
@@ -190,17 +200,41 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
     proEnded: proNotices.filter((r) => r.stage === 'ended').length,
     assigneesNotified: 0,
     overdueTasks: tasks.length,
+    deferred: 0,
+    timedOut: 0,
   }
 
-  // 1. Каждому исполнителю — его просроченные задачи.
   const clientIds = Array.from(new Set([
     ...tasks.map((t) => t.clientId),
     ...proNotices.map((r) => r.userId),
   ].filter((v): v is string => Boolean(v))))
   const labels = clientIds.length ? await fetchProfileLabels(clientIds) : new Map<string, string>()
-  for (const [assigneeId, list] of Array.from(byAssignee.entries())) {
-    if (!assigneeId) continue
-    const res = await notifyClient(
+
+  // 1. Сводка администраторам — первой (R-015): она важнее и не зависит от рассылки исполнителям,
+  //    так что долгая рассылка не съедает её время.
+  const lines = buildStaffSummaryLines({ paid, sla, slaHours, yesterday, unassignedOverdue: unassigned, proNotices, labels })
+  // Идемпотентно: одна сводка в сутки, даже если cron перезапустили.
+  const claim = lines.length
+    ? await claimSend({ userId: null, kind: 'staff_digest', dedupeKey: `staff_digest:${today}`, countsTowardCap: false, channels: ['admin'] })
+    : null
+  if (claim && claim.result !== 'duplicate') {
+    const sent = await beforeDeadline(() => notifyAdmins('staff_digest', {
+      id: `staff_digest:${today}`,
+      title: staffSummaryTitle(paid, sla),
+      lines,
+    }), budget.deadlineAt, budget.now)
+    // Cut at the deadline: the send is abandoned, not cancelled — it may still arrive; the claim stays
+    // (no second summary today), and the run says it did not see it through.
+    if (sent.ok) stats.adminSummarySent = true
+    else stats.adminSummaryTimedOut = true
+  }
+
+  // 2. Каждому исполнителю — его просроченные задачи: ≤ 2 одновременно, в бюджете прогона.
+  const assignees = Array.from(byAssignee.entries())
+    .filter((e): e is [string, StaffTask[]] => Boolean(e[0]))
+    .sort((a, b) => dayRotation(today, a[0]) - dayRotation(today, b[0]))
+  const run = await runBounded(assignees, budget, async ([assigneeId, list]) => {
+    const cut = await beforeDeadline(() => notifyClient(
       {
         userId: assigneeId,
         category: 'team',
@@ -216,23 +250,13 @@ export async function runStaffDigest(now: Date = new Date()): Promise<StaffDiges
         metadata: { tasks: list.length },
       },
       now,
-    )
-    if (res.ok) stats.assigneesNotified += 1
-  }
-
-  // 2. Сводка администраторам.
-  const lines = buildStaffSummaryLines({ paid, sla, slaHours, yesterday, unassignedOverdue: unassigned, proNotices, labels })
-  // Идемпотентно: одна сводка в сутки, даже если cron перезапустили.
-  const claim = lines.length
-    ? await claimSend({ userId: null, kind: 'staff_digest', dedupeKey: `staff_digest:${today}`, countsTowardCap: false, channels: ['admin'] })
-    : null
-  if (claim && claim.result !== 'duplicate') {
-    await notifyAdmins('staff_digest', {
-      id: `staff_digest:${today}`,
-      title: staffSummaryTitle(paid, sla),
-      lines,
-    })
-    stats.adminSummarySent = true
+    ), budget.deadlineAt, budget.now)
+    if (!cut.ok) stats.timedOut += 1
+    else if (cut.value.ok) stats.assigneesNotified += 1
+  })
+  stats.deferred = run.deferred
+  if (run.deferred > 0 || stats.timedOut > 0 || stats.adminSummaryTimedOut) {
+    console.warn(JSON.stringify({ event: 'automation_budget_spent', job: 'staff-digest', deferred: run.deferred, timed_out: stats.timedOut, admin_summary_timed_out: Boolean(stats.adminSummaryTimedOut) }))
   }
   return stats
 }

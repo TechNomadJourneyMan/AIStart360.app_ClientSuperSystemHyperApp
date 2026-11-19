@@ -43,6 +43,8 @@ import { expressSummary } from '@/lib/survey/express'
 import { recommendedBlocks } from '@/lib/survey/blocks'
 import { formatAttributionDate } from '@/lib/survey/attribution-label'
 import { maintenanceSkipReason, type MaintenanceSkipReason } from '@/lib/automation/maintenance-gate'
+import { dayRotation, runBudget, type RunBudget } from '@/lib/automation/run-budget'
+import { beforeDeadline, runBounded } from '@/lib/crm/bounded-run'
 import type { SurveyMode } from '@/lib/survey/modes'
 import { getSurveyModes } from '@/lib/survey/modes-server'
 
@@ -336,57 +338,80 @@ export interface ReminderRunStats {
   byKind: Record<string, number>
   /** R-026: the run was skipped as a whole (the cabinet is in maintenance, or that is unknown). */
   skippedReason?: MaintenanceSkipReason
+  /** R-015: clients with a due touch not started — the run's budget was spent (the next run sends). */
+  deferred?: number
+  /** R-015: sends cut by the run's deadline (a provider that did not answer in time). */
+  timedOut?: number
 }
 
-/** Отправляет касания по плану: первое неотправленное, не больше одного на клиента. */
+/**
+ * Отправляет касания по плану: первое неотправленное, не больше одного на клиента.
+ * R-015: within the run's budget (lib/automation/run-budget.ts) — ≤ 2 clients at a time, nobody
+ * started with too little time left (counted in `deferred`), every send cut at the deadline
+ * (`timedOut`: that client's ladder stops there). Clients go in a per-day order, so when a run
+ * cannot reach everyone, not the same ones are left every day; their touches are idempotent and
+ * the next day's run sends what is still due.
+ */
 export async function deliverPlanned(
   plans: PlannedTouch[][],
   now: Date,
   stats: ReminderRunStats,
+  budget: RunBudget = runBudget(),
 ): Promise<void> {
-  const CONCURRENCY = 10
-  for (let i = 0; i < plans.length; i += CONCURRENCY) {
-    await Promise.all(
-      plans.slice(i, i + CONCURRENCY).map(async (touches) => {
-        if (!touches.length) return
-        stats.candidates += 1
-        for (const t of touches) {
-          const res: NotifyClientResult = await notifyClient(
-            {
-              userId: t.userId,
-              category: 'reminders',
-              event: t.kind,
-              title: t.title,
-              body: t.body,
-              ctaUrl: t.ctaUrl,
-              ctaLabel: t.ctaLabel,
-              eyebrow: t.eyebrow,
-              dedupeKey: t.dedupeKey,
-              automated: { kind: t.kind },
-              emailKind: t.kind === 'welcome' ? 'welcome' : 'reminder',
-              metadata: t.stage ? { stage: t.stage } : undefined,
-            },
-            now,
-          )
-          if (res.skipped === 'duplicate') {
-            stats.duplicate += 1
-            continue // это касание уже было — пробуем следующее по важности
-          }
-          if (res.skipped === 'capped' || res.skipped === 'journal_unavailable') stats.capped += 1
-          else if (res.skipped === 'disabled' || res.skipped === 'automation_off') stats.disabled += 1
-          else if (res.ok) {
-            stats.sent += 1
-            stats.byKind[t.kind] = (stats.byKind[t.kind] ?? 0) + 1
-          } else stats.failed += 1
-          break
-        }
-      }),
-    )
+  const day = localDate(now)
+  const due = plans
+    .filter((touches) => touches.length > 0)
+    .sort((a, b) => dayRotation(day, a[0].userId) - dayRotation(day, b[0].userId))
+  stats.candidates += due.length
+  let timedOut = 0
+  const run = await runBounded(due, budget, async (touches) => {
+    for (const t of touches) {
+      const cut = await beforeDeadline(() => notifyClient(
+        {
+          userId: t.userId,
+          category: 'reminders',
+          event: t.kind,
+          title: t.title,
+          body: t.body,
+          ctaUrl: t.ctaUrl,
+          ctaLabel: t.ctaLabel,
+          eyebrow: t.eyebrow,
+          dedupeKey: t.dedupeKey,
+          automated: { kind: t.kind },
+          emailKind: t.kind === 'welcome' ? 'welcome' : 'reminder',
+          metadata: t.stage ? { stage: t.stage } : undefined,
+        },
+        now,
+      ), budget.deadlineAt, budget.now)
+      if (!cut.ok) {
+        timedOut += 1
+        return
+      }
+      const res: NotifyClientResult = cut.value
+      if (res.skipped === 'duplicate') {
+        stats.duplicate += 1
+        continue // это касание уже было — пробуем следующее по важности
+      }
+      if (res.skipped === 'capped' || res.skipped === 'journal_unavailable') stats.capped += 1
+      else if (res.skipped === 'disabled' || res.skipped === 'automation_off') stats.disabled += 1
+      else if (res.ok) {
+        stats.sent += 1
+        stats.byKind[t.kind] = (stats.byKind[t.kind] ?? 0) + 1
+      } else stats.failed += 1
+      break
+    }
+  })
+  stats.deferred = (stats.deferred ?? 0) + run.deferred
+  stats.timedOut = (stats.timedOut ?? 0) + timedOut
+  if (run.deferred > 0 || timedOut > 0) {
+    console.warn(JSON.stringify({ event: 'automation_budget_spent', job: 'reminders', deferred: run.deferred, timed_out: timedOut, candidates: due.length }))
   }
 }
 
-export async function runReminders(now: Date = new Date()): Promise<ReminderRunStats> {
-  const stats: ReminderRunStats = { clients: 0, candidates: 0, sent: 0, capped: 0, duplicate: 0, disabled: 0, failed: 0, byKind: {} }
+export async function runReminders(now: Date = new Date(), opts: { budget?: RunBudget } = {}): Promise<ReminderRunStats> {
+  // R-015: the budget starts with the run — the reads below count against it too.
+  const budget = opts.budget ?? runBudget()
+  const stats: ReminderRunStats = { clients: 0, candidates: 0, sent: 0, capped: 0, duplicate: 0, disabled: 0, failed: 0, byKind: {}, deferred: 0, timedOut: 0 }
   // R-026: no reminders into a cabinet that is closed for maintenance.
   const skip = await maintenanceSkipReason('reminders')
   if (skip) return { ...stats, skippedReason: skip }
@@ -422,6 +447,6 @@ export async function runReminders(now: Date = new Date()): Promise<ReminderRunS
     )
   })
 
-  await deliverPlanned(plans, now, stats)
+  await deliverPlanned(plans, now, stats, budget)
   return stats
 }
