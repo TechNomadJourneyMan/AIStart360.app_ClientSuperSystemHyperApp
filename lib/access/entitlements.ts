@@ -192,3 +192,12 @@ export function canRunFullGri(ent: Entitlements, alreadyCompleted: number): bool
 export function can(ent: Entitlements, feature: Feature): boolean {
   return ent[feature] === true
 }
+
+/**
+ * A paying (or paid-for) account: tier pro, or any paid feature open — by a per-user override
+ * (the access editor in GIGA) or by the tariff of a company the user is a member of (148, Q3).
+ * The free tier opens none of them. Used by the AI budget (lib/ai/budget.ts) for «paid».
+ */
+export function hasPaidAccess(ent: Entitlements): boolean {
+  return ent.tier === 'pro' || ALL_FEATURES.some((f) => ent[f] === true)
+}
