@@ -155,6 +155,17 @@ describe('claimSend — callers that do not opt in keep «final at insert»', ()
     expect(await claim('l1', false)).toMatchObject({ result: 'duplicate' })
   })
 
+  it('a plain claim is never taken over as stale — by a plain repeat or by a pending caller, however old', async () => {
+    const c = await claim('l0', false)
+    s.rows[0].claimed_at = minutesAgo(24 * 60)
+    const before = { ...s.rows[0] }
+    expect(await claim('l0', false)).toMatchObject({ result: 'duplicate', id: null })
+    const both = await Promise.all([claim('l0'), claim('l0'), claim('l0')])
+    expect(both.map((x) => x.result)).toEqual(['duplicate', 'duplicate', 'duplicate'])
+    expect(s.rows).toEqual([before])
+    expect(c.id).toBe(before.id)
+  })
+
   it('even a stale «pending» row of the same key is a duplicate for them', async () => {
     s.rows.push({ id: 'p', dedupe_key: 'l2', status: 'pending', claimed_at: minutesAgo(60) })
     expect(await claim('l2', false)).toMatchObject({ result: 'duplicate' })

@@ -188,10 +188,19 @@ describe.skipIf(!dbTestsEnabled)('send claims under real concurrency (R5 M-2, mi
       expect(all.filter((c) => c.result === 'in_flight')).toHaveLength(3)
     })
 
-    it('a writer that does not opt in keeps «final at insert» (status defaults to sent)', async () => {
+    it('a plain claim (staff / CRM digest, Point B) is final at insert and never taken over as stale', async () => {
       const k = key('send-legacy')
-      expect(await claimSend({ userId: null, kind: sfx, dedupeKey: k, countsTowardCap: false, channels: ['admin'] })).toMatchObject({ result: 'claimed' })
-      expect(await sendRow(k)).toEqual([expect.objectContaining({ status: 'sent' })])
+      const plain = () => claimSend({ userId: null, kind: sfx, dedupeKey: k, countsTowardCap: false, channels: ['admin'] })
+      const first = await plain()
+      expect(first).toMatchObject({ result: 'claimed' })
+      expect(first.confirm).toBeUndefined()
+      expect(await sendRow(k)).toEqual([{ id: first.id, status: 'sent' }])
+      // A day later (far past the stale window): neither a plain repeat nor concurrent pending callers take it.
+      await pool().query(`UPDATE public.automation_sends SET claimed_at = now() - interval '1 day' WHERE id = $1`, [first.id])
+      const later = await Promise.all([plain(), plain(), claim(k), claim(k)])
+      expect(later.map((c) => c.result)).toEqual(['duplicate', 'duplicate', 'duplicate', 'duplicate'])
+      const { rows } = await pool().query(`SELECT id, status, claimed_at < now() - interval '23 hours' AS untouched FROM public.automation_sends WHERE dedupe_key = $1`, [k])
+      expect(rows).toEqual([{ id: first.id, status: 'sent', untouched: true }])
     })
   })
 
