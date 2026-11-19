@@ -92,24 +92,42 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const nowMs = Date.now()
     const now = new Date(nowMs).toISOString()
     const endOfToday = new Date(almatyDay(nowMs).endMs).toISOString()
-    await sb
+    const touched = await sb
       .from('crm_clients')
       .update({ last_contact_at: now, updated_at: now })
       .eq('id', params.id)
       .eq('user_id', userId)
-    await sb
-      .from('crm_clients')
-      .update({ next_contact_at: null })
-      .eq('id', params.id)
-      .eq('user_id', userId)
-      .lt('next_contact_at', endOfToday)
-    await sb
-      .from('crm_reminders')
-      .update({ status: 'done', done_at: now })
-      .eq('client_id', params.id)
-      .eq('user_id', userId)
-      .eq('status', 'open')
-      .lt('due_at', endOfToday)
+    const planCleared = touched.error
+      ? null
+      : await sb
+          .from('crm_clients')
+          .update({ next_contact_at: null })
+          .eq('id', params.id)
+          .eq('user_id', userId)
+          .lt('next_contact_at', endOfToday)
+    const remindersClosed = touched.error || planCleared?.error
+      ? null
+      : await sb
+          .from('crm_reminders')
+          .update({ status: 'done', done_at: now })
+          .eq('client_id', params.id)
+          .eq('user_id', userId)
+          .eq('status', 'open')
+          .lt('due_at', endOfToday)
+    // The touch is in the timeline, but the queue was not updated: say so — never a silent 200
+    // that the screen reports as «зафиксировано» while the client stays in «Кому звонить».
+    if (touched.error || planCleared?.error || remindersClosed?.error) {
+      console.error('[crm/interactions] queue update failed', (touched.error ?? planCleared?.error ?? remindersClosed?.error)?.message)
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'queue_not_updated',
+          code: 'queue_not_updated',
+          message: 'Касание записано, но очередь «Кому звонить» не обновилась. Обновите страницу и повторите.',
+        },
+        { status: 500 },
+      )
+    }
   }
 
   return NextResponse.json({ ok: true, data: { interaction: data } })

@@ -10,6 +10,7 @@ import {
   useAddReminder,
   useCompleteReminder,
   useLogInteraction,
+  touchErrorText,
   type InteractionKind,
 } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
@@ -112,7 +113,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
     window.open(`tel:${seed.phone ?? phoneDigits}`, '_self')
     logInteraction.mutate(
       { clientId: client.id, kind: 'call', comment: 'Звонок из карточки' },
-      { onSuccess: () => toast.success('Звонок зафиксирован') },
+      { onSuccess: () => toast.success('Звонок зафиксирован'), onError: (e: unknown) => toast.error(touchErrorText(e)) },
     )
   }
   const doMessage = () => {
@@ -120,7 +121,7 @@ export function ClientDrawer({ client, onClose }: { client: DrawerClient | null;
     window.open(`https://wa.me/${phoneDigits}`, '_blank')
     logInteraction.mutate(
       { clientId: client.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
-      { onSuccess: () => toast.success('Сообщение зафиксировано') },
+      { onSuccess: () => toast.success('Сообщение зафиксировано'), onError: (e: unknown) => toast.error(touchErrorText(e)) },
     )
   }
 

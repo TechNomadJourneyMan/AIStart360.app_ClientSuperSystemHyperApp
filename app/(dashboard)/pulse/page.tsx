@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import {
-  useCrmToday, useLogInteraction, useCrmInteractions, type CrmClient, type CrmTodayClient,
+  useCrmToday, useLogInteraction, useCrmInteractions, touchErrorText, type CrmClient, type CrmTodayClient,
 } from '@/hooks/useCrm'
 import { ClientsTable } from '@/components/crm/ClientsTable'
 import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
@@ -49,7 +49,7 @@ function CallModal({ client, onClose }: { client: ModalClient | null; onClose: (
       { clientId: client.id, kind: 'call', comment: note.trim() || undefined },
       {
         onSuccess: () => { setStatus('done'); toast.success('Звонок зафиксирован') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -139,7 +139,7 @@ function MessageModal({ client, onClose }: { client: ModalClient | null; onClose
       { clientId: client.id, kind: 'message', comment: text.trim() || undefined },
       {
         onSuccess: () => { setSent(true); toast.success('Сообщение зафиксировано') },
-        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }
@@ -931,7 +931,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
       {
         onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])
@@ -947,7 +947,7 @@ function CrmMonitorSection() {
       { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
       {
         onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`),
-        onError: () => toast.error('Не удалось записать касание'),
+        onError: (e: unknown) => toast.error(touchErrorText(e)),
       },
     )
   }, [logInteraction])

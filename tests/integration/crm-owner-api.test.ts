@@ -295,6 +295,71 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect(Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))).toEqual({ [called]: 1, [callBack]: 1, [noted]: 0 })
     }))
 
+  // Review (low): the route ignored the errors of moving last_contact_at and of closing the plans
+  // and still answered 200 — the screen said «зафиксирован» while the queue was not updated.
+  it('a contact whose queue update fails answers 500 with a code (the touch itself is kept)', () =>
+    inRollback(async (db) => {
+      const owner = await seedUser(db)
+      const id = await addClient(db, owner, { name: 'Иван', status: 'in_progress' })
+      await addReminder(db, owner, id, '2026-11-18T06:00:00Z')
+      const post = async () => {
+        const res = await interactions.POST(
+          new NextRequest(`http://localhost/api/v1/crm/clients/${id}/interactions`, {
+            method: 'POST', body: JSON.stringify({ kind: 'call' }), headers: { 'content-type': 'application/json' },
+          }),
+          { params: { id } },
+        )
+        return { status: res.status, body: (await res.json()) as { ok: boolean; code?: string; message?: string } }
+      }
+      /** The session, with every UPDATE of `table` failing. */
+      const failUpdatesOf = (table: string) => {
+        session(db, owner)
+        const real = h.client as { from: (t: string) => Record<string, unknown> }
+        h.client = {
+          ...real,
+          from: (t: string) => {
+            const q = real.from(t)
+            if (t !== table) return q
+            let failing = false
+            const proxy: Record<string, unknown> = new Proxy(q, {
+              get(target, prop) {
+                if (prop === 'then' && failing) {
+                  return (ok: (r: unknown) => unknown, err: (e: unknown) => unknown) =>
+                    Promise.resolve({ data: null, error: { message: 'boom', code: 'XX000' } }).then(ok, err)
+                }
+                const v = Reflect.get(target, prop)
+                if (typeof v !== 'function') return v
+                return (...args: unknown[]) => {
+                  if (prop === 'update') failing = true
+                  const r = (v as (...a: unknown[]) => unknown).apply(target, args)
+                  return r === target ? proxy : r
+                }
+              },
+            })
+            return proxy
+          },
+        }
+      }
+
+      failUpdatesOf('crm_reminders')
+      let r = await post()
+      expect(r.status).toBe(500)
+      expect(r.body).toMatchObject({ ok: false, code: 'queue_not_updated' })
+      expect(r.body.message).toContain('очередь')
+
+      failUpdatesOf('crm_clients')
+      r = await post()
+      expect(r.status).toBe(500)
+      expect(r.body).toMatchObject({ ok: false, code: 'queue_not_updated' })
+
+      // the touches were recorded (the timeline shows them); nothing else moved
+      const { rows } = await db.query(`SELECT count(*)::int AS n FROM public.crm_interactions WHERE client_id = $1 AND kind = 'call'`, [id])
+      expect(rows[0].n).toBe(2)
+
+      session(db, owner)
+      expect((await post()).status).toBe(200)
+    }))
+
   it('/today returns at most 50 queue rows with the true total and cut notes (review M3)', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db)

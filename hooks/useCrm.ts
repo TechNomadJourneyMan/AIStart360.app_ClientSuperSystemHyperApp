@@ -113,11 +113,24 @@ async function fetchEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     /* non-JSON error body */
   }
-  const body = (json ?? {}) as { ok?: boolean; data?: T; error?: string; message?: string }
+  const body = (json ?? {}) as { ok?: boolean; data?: T; error?: string; code?: string; message?: string }
   if (!res.ok || body.ok === false) {
-    throw new Error(body.message || body.error || `request failed (${res.status})`)
+    const err = new Error(body.message || body.error || `request failed (${res.status})`) as Error & { code?: string }
+    err.code = body.code ?? body.error
+    throw err
   }
   return body.data as T
+}
+
+/**
+ * What the screen says when logging a touch failed. «queue_not_updated»: the touch IS in the
+ * timeline but the queue was not updated (app/api/v1/crm/clients/[id]/interactions) — the
+ * server's message says so; anything else: the touch was not recorded.
+ */
+export function touchErrorText(e: unknown): string {
+  const err = e as { code?: unknown; message?: unknown } | null
+  if (err && err.code === 'queue_not_updated' && typeof err.message === 'string' && err.message) return err.message
+  return 'Не удалось записать касание'
 }
 
 export const crmKeys = {
