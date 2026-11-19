@@ -11,7 +11,8 @@
  *   - a Bitrix24 incoming-webhook URL must point at the same host and have the
  *     /rest/<user>/<secret>/ shape;
  *   - every host must resolve to public addresses only (private, loopback,
- *     link-local, CGNAT, metadata, NAT64 and 6to4 ranges are refused) — this also
+ *     link-local, CGNAT, metadata, NAT64, 6to4 and Teredo ranges are refused, in every IPv6
+ *     spelling of them — IPv4-compatible, -mapped and -translated forms included) — this also
  *     covers DNS that points an allowed-looking name inward.
  *
  * Accepted residual risk: DNS rebinding. The guard resolves the name, fetch()
@@ -45,27 +46,65 @@ function customHosts(): Set<string> {
   )
 }
 
-/** True for addresses a server must never be pushed to. */
+function privateV4(a: number, b: number): boolean {
+  return (
+    a === 0 || a === 10 || a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) || // CGNAT
+    (a === 169 && b === 254) ||           // link-local / cloud metadata
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  )
+}
+
+/** The eight 16-bit groups of an IPv6 address (`::` expanded, a dotted IPv4 tail read, a zone id dropped); null when it is none. */
+function v6Groups(ip: string): number[] | null {
+  let s = ip.toLowerCase()
+  const zone = s.indexOf('%')
+  if (zone >= 0) s = s.slice(0, zone)
+  if (isIP(s) !== 6) return null
+  const tail = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(s)
+  if (tail) {
+    const q = tail[2].split('.').map(Number)
+    s = `${tail[1]}${((q[0] << 8) | q[1]).toString(16)}:${((q[2] << 8) | q[3]).toString(16)}`
+  }
+  const halves = s.split('::')
+  const part = (h: string) => (h ? h.split(':').map((g) => Number.parseInt(g, 16)) : [])
+  const head = part(halves[0])
+  const rest = halves.length === 2 ? part(halves[1]) : []
+  const groups = halves.length === 2 ? [...head, ...Array(8 - head.length - rest.length).fill(0), ...rest] : head
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null
+}
+
+/**
+ * True for addresses a server must never be pushed to. Fails closed: anything that is not a readable
+ * IPv4 / IPv6 address counts as private. IPv6 is read into its groups, so every spelling of an
+ * address (hex or dotted tail, `::` anywhere, a zone id) is judged the same.
+ */
 export function isPrivateAddress(ip: string): boolean {
   if (isIP(ip) === 4) {
     const [a, b] = ip.split('.').map(Number)
-    return (
-      a === 0 || a === 10 || a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) || // CGNAT
-      (a === 169 && b === 254) ||           // link-local / cloud metadata
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 192 && b === 0) ||
-      (a === 198 && (b === 18 || b === 19)) ||
-      a >= 224
-    )
+    return privateV4(a, b)
   }
-  const v6 = ip.toLowerCase()
-  if (v6.startsWith('::ffff:')) return isPrivateAddress(v6.slice(7))
+  const g = v6Groups(ip)
+  if (!g) return true
+  const zero = (n: number) => g.slice(0, n).every((x) => x === 0)
+  // An IPv4 address in the low 32 bits: IPv4-compatible ::a.b.c.d (also :: and ::1), IPv4-mapped
+  // ::ffff:a.b.c.d, IPv4-translated ::ffff:0:a.b.c.d — judged as that IPv4 address.
+  if (zero(6) || (zero(5) && g[5] === 0xffff) || (zero(4) && g[4] === 0xffff && g[5] === 0)) {
+    return privateV4(g[6] >> 8, g[6] & 0xff)
+  }
   return (
-    v6 === '::' || v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80') || v6.startsWith('ff') ||
-    // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) embed an IPv4 address that may be internal: refused whole.
-    v6.startsWith('64:ff9b:') || v6.startsWith('2002:')
+    (g[0] & 0xfe00) === 0xfc00 || // unique local fc00::/7
+    (g[0] & 0xff80) === 0xfe80 || // link-local fe80::/10 and site-local fec0::/10
+    (g[0] & 0xff00) === 0xff00 || // multicast ff00::/8
+    // NAT64 (64:ff9b::/96, local-use 64:ff9b:1::/48), 6to4 (2002::/16) and Teredo (2001::/32) embed an
+    // IPv4 address that may be internal: refused whole.
+    (g[0] === 0x64 && g[1] === 0xff9b) ||
+    g[0] === 0x2002 ||
+    (g[0] === 0x2001 && g[1] === 0)
   )
 }
 
