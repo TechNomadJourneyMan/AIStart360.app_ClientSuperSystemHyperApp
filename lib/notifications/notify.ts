@@ -21,6 +21,11 @@
  *     по тому же dedupeKey)                     — если включено и есть адрес;
  *   • Telegram                                  — только если чат привязан
  *                                                 И канал включён в категории.
+ * Бронь dedupeKey (automation_sends) — 'pending' до доставки хотя бы одним каналом, потом
+ * 'sent'. Процесс умер между бронью и доставкой — повтор с тем же ключом после
+ * STALE_SEND_CLAIM_MS (10 мин) забирает бронь и доставляет; раньше — ответ { ok: false,
+ * retryable: true }. Письмо при этом уходит один раз (своя бронь в email_deliveries), лента и
+ * Telegram после падения в миллисекунды между доставкой и подтверждением могут повториться.
  * Необязательно: `channels` — принудительно выключить/включить канал;
  * `email` — готовый фирменный шаблон вместо универсального письма;
  * `automated` — это автоматическое касание (cron): пишется в журнал
@@ -103,6 +108,13 @@ export type NotifySkipReason = 'no_profile' | 'disabled' | 'automation_off' | 'c
 export interface NotifyClientResult {
   ok: boolean
   skipped?: NotifySkipReason
+  /**
+   * true (with ok: false) — not delivered by this call, and not done either: another process holds
+   * a fresh claim of the dedupeKey (sending now, or died less than STALE_SEND_CLAIM_MS ago), or the
+   * e-mail is held that way and no other channel delivered. Retry later: a dead claim is then taken
+   * over and delivered (R5 review M-2). Never «duplicate» — callers count that as done.
+   */
+  retryable?: boolean
   delivered: { inApp: boolean; email: boolean; telegram: boolean }
 }
 
@@ -178,8 +190,11 @@ export async function notifyClient(input: NotifyClientInput, now: Date = new Dat
       if (gate) return { ok: gate !== 'journal_unavailable', skipped: gate, delivered: NONE }
     }
 
-    // Бронь в журнале: идемпотентность + учёт касания в потолке.
+    // Бронь в журнале: идемпотентность + учёт касания в потолке. 'pending' до доставки, 'sent'
+    // после (confirm): бронь процесса, умершего между бронью и доставкой, через
+    // STALE_SEND_CLAIM_MS забирает повтор с тем же ключом (lib/notifications/store.ts).
     let claimId: string | null = null
+    let confirm: (() => Promise<boolean>) | null = null
     if (automated || input.dedupeKey) {
       const claim = await claimSend({
         userId: input.userId,
@@ -188,16 +203,21 @@ export async function notifyClient(input: NotifyClientInput, now: Date = new Dat
         countsTowardCap: automated ? automated.countsTowardCap !== false : false,
         channels: [channels.inApp && 'in_app', channels.email && 'email', channels.telegram && 'telegram'].filter(Boolean) as string[],
         metadata: { event: input.event, category: input.category, ...(input.metadata ?? {}) },
+        pending: true,
       })
       if (claim.result === 'duplicate') return { ok: true, skipped: 'duplicate', delivered: NONE }
+      // Свежая бронь другого процесса: не доставлено этим вызовом и не «уже было» — повторить позже.
+      if (claim.result === 'in_flight') return { ok: false, retryable: true, delivered: NONE }
       // Автоматика без журнала не шлёт (иначе каждый запуск cron повторял бы касание);
       // событие продукта уходит — лучше лишнее уведомление, чем потерянное.
       if (claim.result === 'unavailable' && automated) return { ok: false, skipped: 'journal_unavailable', delivered: NONE }
       claimId = claim.id
+      confirm = claim.confirm ?? null
     }
 
     const url = absoluteUrl(input.ctaUrl)
     const delivered = { inApp: false, email: false, telegram: false }
+    let emailRetryable = false
 
     const tasks: Array<Promise<void>> = []
     if (channels.inApp) {
@@ -235,7 +255,9 @@ export async function notifyClient(input: NotifyClientInput, now: Date = new Dat
           metadata: { event: input.event, category: input.category },
         }).then((res) => {
           // skipped = уже отправлено ранее или отправка отключена (тесты) — не ошибка.
+          // retryable = письмо держит другой процесс — не доставлено.
           delivered.email = res.ok
+          emailRetryable = res.retryable === true
         }),
       )
     }
@@ -251,9 +273,10 @@ export async function notifyClient(input: NotifyClientInput, now: Date = new Dat
     const any = delivered.inApp || delivered.email || delivered.telegram
     if (!any && claimId) {
       await releaseSend(claimId)
-      return { ok: false, skipped: 'not_delivered', delivered }
+      return { ok: false, skipped: 'not_delivered', ...(emailRetryable ? { retryable: true } : {}), delivered }
     }
-    return { ok: any, delivered }
+    if (any && confirm) await confirm()
+    return { ok: any, ...(!any && emailRetryable ? { retryable: true } : {}), delivered }
   } catch (err) {
     console.error('[notifyClient]', input.event, err)
     return { ok: false, delivered: NONE }

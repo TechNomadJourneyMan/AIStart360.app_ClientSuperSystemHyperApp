@@ -32,7 +32,7 @@ vi.mock('@/lib/admin/staff-actions', () => ({ ...actions, REPORT_WRONG_STATUS: {
 
 const overview = {
   key: 'monitoring', name: 'Мониторинг платформы', description: 'Проверки', version: '1', scope: 'platform', enabled: true,
-  tier: 'none', model: null, promptVersion: null, tools: [], triggers: { events: [], cron: null }, nextRunAt: null,
+  tier: 'none', model: null, promptVersion: null, tools: [], triggers: { events: [], cron: null }, nextRunAt: null, enabledSince: null,
   limits: { perRunBudgetUsd: 0, dailyBudgetUsd: 0, maxOutputTokens: 0, maxAttempts: 3 }, permissions: {},
   stats: { runs7d: 4, succeeded7d: 4, failed7d: 0, successRate: 1, errorRate: 0, avgDurationMs: 10, tokensIn7d: 0, tokensOut7d: 0, costUsd7d: 0, costUsdToday: 0, queued: 0, running: 0, awaitingApproval: 0, dead24h: 0, lastRunAt: null, lastRunStatus: null },
 }

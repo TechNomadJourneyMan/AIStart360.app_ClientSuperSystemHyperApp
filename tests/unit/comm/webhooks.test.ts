@@ -1,7 +1,7 @@
 /**
  * Inbound wiring of the webhooks:
- *   /api/telegram/webhook   free text → lib/comm (only with the webhook secret);
- *                           /start linking unchanged.
+ *   /api/telegram/webhook   free text → lib/comm (only with the webhook secret — without
+ *                           it the webhook answers 503); /start linking unchanged.
  *   /api/webhooks/whatsapp-web  the omnichannel inbox path runs exactly as
  *                           before AND the message is mirrored into lib/comm
  *                           (phone known); a LID-only sender is not mirrored;
@@ -35,8 +35,10 @@ vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: vi.fn(async () => false) 
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: () => ({
-      select: () => ({ eq: () => ({ limit: async () => ({ data: [{ id: 'user-1' }] }) }) }),
-      update: (patch: Record<string, unknown>) => ({ eq: async () => { m.updates.push(patch); return { error: null } } }),
+      select: () => ({ eq: () => ({ gt: () => ({ limit: async () => ({ data: [{ id: 'user-1' }] }) }) }) }),
+      update: (patch: Record<string, unknown>) => ({
+        eq: () => ({ eq: () => ({ select: async () => { m.updates.push(patch); return { data: [{ id: 'user-1' }], error: null } } }) }),
+      }),
     }),
   }),
 }))
@@ -77,10 +79,10 @@ describe('/api/telegram/webhook → lib/comm', () => {
     expect(m.handleTelegramInbound).toHaveBeenCalledWith(expect.objectContaining({ text: 'Вот счёт' }))
   })
 
-  it('without the webhook secret free text is ignored (an update could be forged)', async () => {
+  it('without the webhook secret nothing is processed (503, R-139: an update could be forged)', async () => {
     delete process.env.TELEGRAM_WEBHOOK_SECRET
     const res = await telegramPOST(tgReq({ message: { chat: { id: 555 }, text: 'Привет' } }, null))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(503)
     expect(m.handleTelegramInbound).not.toHaveBeenCalled()
   })
 

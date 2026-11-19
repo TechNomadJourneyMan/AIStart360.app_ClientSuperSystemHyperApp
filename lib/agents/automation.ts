@@ -10,7 +10,7 @@
  *                            exponential backoff (agent_finish_task, 086)      ON
  *   agents_auto_diagnostic   survey / document events start a company
  *                            diagnostic, at most once per company per day      ON
- *   agents_daily_digest      09:00 Almaty summary to the admin bot (digest.ts) ON
+ *   agents_daily_digest      ~09:45 Almaty summary to the admin bot (digest.ts) ON
  *   agents_stuck_alerts      CRITICAL once per stuck task (lifecycle.ts)       ON
  *   agents_stuck_minutes     no progress for N minutes = stuck                 20
  *

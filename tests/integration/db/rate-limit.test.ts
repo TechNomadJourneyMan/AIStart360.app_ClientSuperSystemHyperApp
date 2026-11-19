@@ -107,6 +107,25 @@ describe.skipIf(!dbTestsEnabled)('rate limits in Postgres (100)', () => {
     expect(Math.abs(denied.retry_after_seconds - Math.ceil(expectedRetry))).toBeLessThanOrEqual(2)
   })
 
+  it('refundRateLimit gives one counted hit back (R5 L-3: count only failed attempts), never below zero', async () => {
+    const rl = await postgresInstance()
+    const opts = { max: 3, windowMs: 3_600_000 }
+    for (let i = 0; i < 3; i++) expect(await rl.isRateLimitedKey('owner@example.test', bucket('refund'), opts)).toBe(false)
+    expect(await rl.isRateLimitedKey('owner@example.test', bucket('refund'), opts)).toBe(true)
+    await rl.refundRateLimit('owner@example.test', bucket('refund'), opts)
+    const key = `${bucket('refund')}:${rl.hashIdentifier('owner@example.test')}`
+    const count = async () => Number((await pool.query(`SELECT coalesce(sum(count), 0) AS n FROM public.rate_limit_hits WHERE key = $1`, [key])).rows[0].n)
+    expect(await count()).toBe(2)
+    expect(await rl.isRateLimitedKey('owner@example.test', bucket('refund'), opts)).toBe(false)
+    expect(await rl.isRateLimitedKey('owner@example.test', bucket('refund'), opts)).toBe(true)
+    for (let i = 0; i < 5; i++) await rl.refundRateLimit('owner@example.test', bucket('refund'), opts)
+    expect(await count()).toBe(0)
+    // Another identifier of the bucket is untouched.
+    await rl.isRateLimitedKey('someone-else', bucket('refund'), opts)
+    await rl.refundRateLimit('owner@example.test', bucket('refund'), opts)
+    expect(Number((await pool.query(`SELECT count FROM public.rate_limit_hits WHERE key = $1`, [`${bucket('refund')}:${rl.hashIdentifier('someone-else')}`])).rows[0].count)).toBe(1)
+  })
+
   it('rejects invalid arguments', async () => {
     await expect(pool.query(`SELECT * FROM public.rate_limit_hit('', 60, 1)`)).rejects.toThrow(/invalid key/)
     await expect(pool.query(`SELECT * FROM public.rate_limit_hit('k', 0, 1)`)).rejects.toThrow(/invalid window/)

@@ -17,7 +17,12 @@
  *                               missing one means the OLD code still answers (the first deploy of A4 goes
  *                               over code without it — overlap, a smoke run too early). Only --revert
  *                               (a rollback to code from before R4-A4, runbook §9) turns that into a warning;
- *   /api/health                 200, every check «ok» («unknown» — no data yet — is a warning);
+ *   /api/health                 200, every check «ok» («unknown» — no data yet — is a warning); `schema`
+ *                               (N5-1a: every migration of the code from 140 on is in schema_migrations)
+ *                               must be «ok» — «fail» fails everywhere, locally too; «unknown» (the journal
+ *                               was not read) fails in production and only warns locally (a cold dev
+ *                               server against a remote staging can run out of the check's time); code
+ *                               without the check (from before N5-1a) is a warning;
  *   /, /login                   200; /login carries a Content-Security-Policy with connect-src and no
  *                               localhost / 127.0.0.1 / *.supabase.co (docs/deploy/csp.md);
  *   without a session           /client/home, /point-a, /dashboard → /login?from=<path>;
@@ -30,8 +35,9 @@
  *
  * Local mode (base URL on localhost / 127.0.0.1 — the dev server against staging, runbook §4): there is no
  * code deploy to staging, so the same smoke runs against `next dev`. What a dev server cannot have is a
- * warning there, not a failure: no deploymentId; /api/health checks other than `db` (no Workflow queue,
- * no scheduler, no Inngest locally); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
+ * warning there, not a failure: no deploymentId; /api/health checks other than `db` and `schema` (no
+ * Workflow queue, no scheduler, no Inngest locally), and `schema: unknown` (the journal of the remote
+ * staging not read in time by a cold dev server — `schema: fail` stays a failure); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
  * (no CRON_SECRET locally); /api/inngest. Redirects, 401/403 and `db` stay strict.
  * --revert (W3B-3, NV3-3): a rollback to code from before R4-A4 — a /api/healthz without deploymentId is a
  * warning, the deployment is checked by `railway deployment list`. A deploymentId that is there and differs
@@ -100,6 +106,7 @@ const redirectTo = (target, from) => (/** @type {Got} */ r, base) => {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const SCHEMA_BEHIND = 'схема базы отстаёт от кода: миграции этого кода не применены (runbook §4) — код без них не выкатывать / откатить'
 
 /**
  * The checks, in order. `verify(got, base, opts)` → Verdict.
@@ -135,17 +142,34 @@ export function checks() {
         const body = /** @type {{ ok?: unknown, checks?: Record<string, unknown> } | null} */ (r.json)
         const entries = Object.entries(body?.checks ?? {})
         const got = `${r.status} ${entries.map(([k, v]) => `${k}:${v}`).join(' ') || '(нет checks)'}`
+        // N5-1a: every migration of the deployed code (from 140 on) must be in the journal. «Behind»
+        // (fail) is strict everywhere, locally too (staging must carry the migrations of the code under
+        // test, runbook §4). «Not read» (unknown) is strict in production; locally it only warns — a cold
+        // dev server against a remote staging can run out of the 3 s of the check (review of wave 1A).
+        const schema = body?.checks && 'schema' in body.checks ? body.checks.schema : undefined
+        const SCHEMA_UNREAD = 'журнал миграций не прочитан — схема не проверена, повторить'
+        const schemaBad = schema !== undefined && schema !== 'ok'
+          ? { ok: false, got, note: schema === 'fail' ? SCHEMA_BEHIND : SCHEMA_UNREAD }
+          : null
         if (o.local && (r.status === 200 || r.status === 503) && body?.checks) {
-          // dev server: only the database is required (staging); the rest a laptop does not run
+          // dev server: only the database (staging) and its schema are required; the rest a laptop does not run
           if (body.checks.db !== 'ok') return { ok: false, got, note: 'база staging не отвечает' }
-          const rest = entries.filter(([k, v]) => k !== 'db' && v !== 'ok').map(([k]) => k)
-          return rest.length ? { ok: true, warn: true, got, note: `локально: ${rest.join(', ')} — без них dev-сервер работает` } : { ok: true, got }
+          if (schemaBad && schema !== 'unknown') return schemaBad
+          const notes = schema === 'unknown' ? [`${SCHEMA_UNREAD} (локально — предупреждение: холодный dev-сервер и удалённый staging)`] : []
+          const rest = entries.filter(([k, v]) => k !== 'db' && k !== 'schema' && v !== 'ok').map(([k]) => k)
+          if (rest.length) notes.push(`локально: ${rest.join(', ')} — без них dev-сервер работает`)
+          return notes.length ? { ok: true, warn: true, got, note: notes.join('; ') } : { ok: true, got }
         }
+        if (schemaBad) return schemaBad
         if (r.status !== 200 || body?.ok !== true || entries.length === 0) return { ok: false, got }
         const bad = entries.filter(([, v]) => v !== 'ok' && v !== 'unknown')
         if (bad.length) return { ok: false, got }
         const unknown = entries.filter(([, v]) => v === 'unknown').map(([k]) => k)
-        return unknown.length ? { ok: true, warn: true, got, note: `нет данных: ${unknown.join(', ')} — повторить через 15 мин` } : { ok: true, got }
+        if (unknown.length) return { ok: true, warn: true, got, note: `нет данных: ${unknown.join(', ')} — повторить через 15 мин` }
+        // code from before N5-1a (a rollback to it) has no schema check: say so, the journal is checked by hand
+        return schema === undefined
+          ? { ok: true, warn: true, got, note: 'нет проверки schema (код до N5-1a) — журнал миграций сверить вручную (runbook §4)' }
+          : { ok: true, got }
       },
     },
     { path: '/', expect: '200', verify: status(200) },

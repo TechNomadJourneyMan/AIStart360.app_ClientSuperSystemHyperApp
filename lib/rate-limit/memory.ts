@@ -101,6 +101,18 @@ export function createMemoryStore(opts: MemoryStoreOptions = {}): MemoryStore {
       }
       return decision
     },
+    async refund(key, windowSeconds) {
+      const e = entries.get(`${windowSeconds}|${key}`)
+      if (!e) return
+      const windowMs = windowSeconds * 1000
+      const windowStart = Math.floor(now() / windowMs) * windowMs
+      // The hit went into the entry's current window; if a new window has started since, that
+      // window is now the previous one (a hit() would roll cur into prev).
+      if (e.windowStart === windowStart || e.windowStart === windowStart - windowMs) {
+        if (e.cur > 0) e.cur -= 1
+        else if (e.prev > 0) e.prev -= 1
+      }
+    },
     size: () => entries.size,
     clear: () => entries.clear(),
   }

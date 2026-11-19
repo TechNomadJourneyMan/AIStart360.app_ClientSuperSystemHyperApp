@@ -334,6 +334,79 @@ export function nextCronRuns(expr: string, from: Date, count = 5): Date[] {
   return out
 }
 
+// ─── Staleness (R-063) ───────────────────────────────────────────────────────
+
+const MIN_MS = 60_000
+const HOUR_MS = 60 * MIN_MS
+const DAY_MS = 24 * HOUR_MS
+/** An agent without a schedule (events / manual) is «not running» after this long. */
+export const STALE_WITHOUT_SCHEDULE_MS = 2 * DAY_MS
+
+/**
+ * The longest gap between two firings of `cron` (UTC), from the next 8 firings after `from`; null
+ * without a (valid) schedule. A valid one that fires less than twice in that search (monthly and
+ * rarer) counts as a month apart.
+ */
+export function cronGapMs(cron: string | null | undefined, from: Date): number | null {
+  if (!cron || !isValidCron(cron)) return null
+  const runs = nextCronRuns(cron, from, 8)
+  if (runs.length < 2) return 31 * DAY_MS
+  let gap = 0
+  for (let i = 1; i < runs.length; i++) gap = Math.max(gap, runs[i].getTime() - runs[i - 1].getTime())
+  return gap
+}
+
+function intervalLabel(ms: number): string {
+  if (ms < HOUR_MS) return `каждые ${Math.round(ms / MIN_MS)} мин`
+  if (ms < DAY_MS) return `каждые ${Math.round(ms / HOUR_MS)} ч`
+  const d = Math.round(ms / DAY_MS)
+  return d === 1 ? 'раз в сутки' : `раз в ${d} дн.`
+}
+
+export interface AgentStaleness {
+  /** Whole days since the last run. */
+  days: number
+  /** «не запускался 3 дн.» (under a day: «не запускался 5 ч»). */
+  label: string
+  /** What was expected, for the tooltip. */
+  title: string
+}
+
+/**
+ * R-063: an ENABLED agent that has not run within its expected interval — its cron's longest gap
+ * with half of it as slack (at least 15 min), or STALE_WITHOUT_SCHEDULE_MS without a schedule.
+ * Review of wave 1A: one that has NEVER run is counted from `enabledSince` (the last change of its
+ * config, so at the latest when it was switched on) and marked «не запускался». null when it is
+ * fine, disabled, or never ran with no date to count from.
+ */
+export function agentStaleness(
+  agent: { enabled: boolean; enabledSince?: string | null; triggers: { cron: string | null }; stats: { lastRunAt: string | null } },
+  now: Date = new Date(),
+): AgentStaleness | null {
+  if (!agent.enabled) return null
+  const never = !agent.stats.lastRunAt
+  const from = never ? agent.enabledSince : agent.stats.lastRunAt
+  if (!from) return null
+  const last = Date.parse(from)
+  if (!Number.isFinite(last)) return null
+  const gap = cronGapMs(agent.triggers.cron, now)
+  const allowed = gap === null ? STALE_WITHOUT_SCHEDULE_MS : Math.max(gap * 1.5, gap + 15 * MIN_MS)
+  const age = now.getTime() - last
+  if (age <= allowed) return null
+  const days = Math.floor(age / DAY_MS)
+  const ageLabel = days >= 1 ? `${days} дн.` : `${Math.max(1, Math.floor(age / HOUR_MS))} ч`
+  const label = never ? 'не запускался' : `не запускался ${ageLabel}`
+  const expected = gap === null
+    ? 'Расписания нет (запуск по событиям или вручную)'
+    : `По расписанию ${intervalLabel(gap)} (cron ${agent.triggers.cron}, UTC)`
+  const title = never
+    ? `${expected}: включён ${ageLabel} назад, ни одного запуска. Проверьте сервис агентов, очередь${gap === null ? ', приходят ли события' : ''} и дневной лимит расхода.`
+    : gap === null
+      ? `${expected}: больше 2 дн. без запусков — проверьте, приходят ли события и не упирается ли агент в лимит расхода.`
+      : `${expected} — запусков нет дольше. Проверьте сервис агентов, очередь и дневной лимит расхода.`
+  return { days, label, title }
+}
+
 // ─── Costs ───────────────────────────────────────────────────────────────────
 
 export interface DayPoint { day: string; label: string; cost: number; runs: number; tokensIn: number; tokensOut: number }

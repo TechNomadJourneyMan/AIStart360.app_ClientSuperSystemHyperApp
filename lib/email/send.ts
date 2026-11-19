@@ -4,8 +4,26 @@
  * Здесь и только здесь письмо уходит в Resend. Что даёт этот слой:
  *   • идемпотентность — `dedupeKey` бронируется строкой в `email_deliveries`
  *     (уникальный индекс), поэтому «анкета пройдена» не уйдёт дважды даже при
- *     гонке двух фоновых задач;
+ *     гонке двух фоновых задач. Бронь — 'pending' до отправки, 'sent' после
+ *     (R-152): если процесс умер между бронью и отправкой, бронь старше
+ *     STALE_CLAIM_MS забирает следующий вызов (условный UPDATE — забирает один)
+ *     и шлёт с тем же ключом идемпотентности Resend, что и первая попытка.
+ *     Свежая бронь ДРУГОГО процесса — не «доставлено»: ответ { ok: false,
+ *     retryable: true } (ревью R5, M-2), повтор задачи вернётся и после
+ *     STALE_CLAIM_MS заберёт бронь, если тот процесс умер;
+ *   • повтор после зависшей брони безопасен и при другом содержимом письма
+ *     (ссылку перевыпустили, текст пересобрали): ключ Resend тот же, и Resend
+ *     либо отдаёт ответ первой отправки (то же содержимое), либо отказывает
+ *     409 invalid_idempotent_request (содержимое другое — значит, первая
+ *     попытка дошла до Resend и письмо ушло: пишем 'sent', второго письма нет),
+ *     либо принимает письмо (первая попытка до Resend не дошла — это и есть
+ *     единственное письмо). Ключи Resend живут 24 часа: бронь, забранная позже
+ *     суток после потерянного исхода отправки, может дать дубль — для этого
+ *     нужны и отправка без записанного исхода (две неудачные записи подряд или
+ *     падение в миллисекунды между ответом Resend и записью), и повтор позже суток;
  *   • журнал доставки — что, кому и чем закончилось (без токенов и ссылок);
+ *     запись исхода проверяет ошибку, которую возвращает клиент, повторяется
+ *     один раз и громко пишет в лог, если не удалась (ревью R5, L-4);
  *   • повтор при временной ошибке сети/провайдера;
  *   • честный результат — функция никогда не бросает, но и не врёт: при
  *     ошибке возвращает { ok: false, error }.
@@ -82,9 +100,18 @@ export interface TransactionalEmailResult {
   ok: boolean
   /** true — письмо с таким dedupeKey уже уходило, повтор не нужен. */
   skipped?: boolean
+  /**
+   * true (with ok: false) — NOT delivered by this call, and not failed either: another process
+   * holds a fresh claim of this dedupeKey (it is sending right now, or died less than
+   * STALE_CLAIM_MS ago), or the claim could not be checked. Retry later: after STALE_CLAIM_MS a
+   * dead claim is taken over and sent.
+   */
+  retryable?: boolean
   providerId?: string
   error?: string
 }
+
+export const EMAIL_IN_FLIGHT_ERROR = 'письмо с этим ключом сейчас отправляет другой процесс — повторите позже'
 
 const MAX_ATTEMPTS = 3
 
@@ -132,47 +159,111 @@ function isTransient(message: string): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** Бронь ключа идемпотентности. `false` — письмо уже отправлено. */
-async function claimDedupe(input: TransactionalEmailInput): Promise<{ claimed: boolean; rowId: string | null }> {
-  if (!input.dedupeKey) return { claimed: true, rowId: null }
+/**
+ * A 'pending' claim older than this belongs to a process that died before the send. Far above
+ * the longest send: MAX_ATTEMPTS × the attachments timeout (30 s) + the retry pauses ≈ 95 s.
+ */
+export const STALE_CLAIM_MS = 10 * 60_000
+
+type ServiceClient = ReturnType<typeof createServiceClient>
+
+/**
+ * The claim of a letter's idempotency key:
+ *   'claimed'   — this call sends (rowId: its journal row; null — no key, or no journal);
+ *   'sent'      — the letter already went out under this key: nothing to do;
+ *   'in_flight' — another process holds a fresh claim, or the claim could not be checked:
+ *                 not delivered by this call — retryable.
+ */
+type Claim = { state: 'claimed'; rowId: string | null } | { state: 'sent' } | { state: 'in_flight' }
+
+/** Бронь ключа идемпотентности: строка 'pending'. */
+async function claimDedupe(input: TransactionalEmailInput): Promise<Claim> {
+  if (!input.dedupeKey) return { state: 'claimed', rowId: null }
   try {
-    const { data, error } = await createServiceClient()
-      .from('email_deliveries')
-      .insert({
-        kind: input.kind,
-        recipient: input.to,
-        subject: input.subject,
-        user_id: input.userId ?? null,
-        dedupe_key: input.dedupeKey,
-        status: 'sent',
-        metadata: input.metadata ?? {},
-      })
-      .select('id')
-      .single()
-    if (error) {
-      // 23505 — уникальный индекс: такое письмо уже уходило.
-      if ((error as { code?: string }).code === '23505') return { claimed: false, rowId: null }
+    const sb = createServiceClient()
+    const row = {
+      kind: input.kind,
+      recipient: input.to,
+      subject: input.subject,
+      user_id: input.userId ?? null,
+      dedupe_key: input.dedupeKey,
+      metadata: input.metadata ?? {},
+    }
+    const insert = (status: 'pending' | 'sent') =>
+      sb.from('email_deliveries').insert({ ...row, status }).select('id').single()
+    // Two rounds: the conflicting row may vanish under us (its send failed and released the key).
+    for (let round = 0; round < 2; round++) {
+      let { data, error } = await insert('pending')
+      // 23514 — CHECK без 'pending' (миграция 158 ещё не применена): бронь значит «отправлено», как раньше.
+      if (error && (error as { code?: string }).code === '23514') ({ data, error } = await insert('sent'))
+      if (!error) return { state: 'claimed', rowId: (data as { id: string }).id }
+      // 23505 — уникальный индекс: такое письмо уже уходило или уходит сейчас.
+      if ((error as { code?: string }).code === '23505') {
+        const existing = await takeOverStaleClaim(sb, input.dedupeKey)
+        if (existing === 'vanished') continue
+        return existing
+      }
       // Таблицы ещё нет (миграция не применена) — не блокируем отправку.
       console.warn(`[email] журнал недоступен (${error.message}) — шлём без идемпотентности`)
-      return { claimed: true, rowId: null }
+      return { state: 'claimed', rowId: null }
     }
-    return { claimed: true, rowId: (data as { id: string }).id }
+    return { state: 'in_flight' }
   } catch (e) {
     console.warn('[email] журнал недоступен:', e instanceof Error ? e.message : e)
-    return { claimed: true, rowId: null }
+    return { state: 'claimed', rowId: null }
   }
 }
 
+/**
+ * The key is taken. Only a 'pending' claim older than STALE_CLAIM_MS is taken over — by a
+ * conditional UPDATE, so of two callers racing for it exactly one wins. The winner sends under
+ * the SAME row (the same Resend idempotency key): if the dead process did reach Resend, Resend
+ * drops the repeat (or refuses it with 409 — see sendTransactionalEmail). 'sent' (or 'skipped')
+ * — done. A fresh 'pending', a lost race, a read / write error — in flight: retryable, never
+ * «delivered». The row gone — 'vanished' (claim again).
+ */
+async function takeOverStaleClaim(sb: ServiceClient, dedupeKey: string): Promise<Claim | 'vanished'> {
+  try {
+    const { data: existing, error: readError } = await sb
+      .from('email_deliveries')
+      .select('id, status, claimed_at')
+      .eq('dedupe_key', dedupeKey)
+      .maybeSingle()
+    if (readError) return { state: 'in_flight' }
+    const row = existing as { id: string; status: string; claimed_at: string | null } | null
+    if (!row) return 'vanished'
+    if (row.status !== 'pending') return { state: 'sent' }
+    const { data: taken, error: takeError } = await sb
+      .from('email_deliveries')
+      .update({ claimed_at: new Date().toISOString() })
+      .eq('id', row.id)
+      .eq('status', 'pending')
+      .lt('claimed_at', new Date(Date.now() - STALE_CLAIM_MS).toISOString())
+      .select('id')
+    if (takeError || !taken || (taken as unknown[]).length === 0) return { state: 'in_flight' }
+    console.warn('[email] бронь письма зависла (процесс не дошёл до отправки или не записал исход) — отправляем повторно с тем же ключом')
+    return { state: 'claimed', rowId: row.id }
+  } catch {
+    return { state: 'in_flight' }
+  }
+}
+
+/**
+ * The journal row of the outcome. The client RETURNS its errors (it does not throw them): both are
+ * checked, the write is retried once, then logged loudly. A 'sent' that is not written leaves the
+ * claim 'pending' — after STALE_CLAIM_MS a caller takes it over and sends with the same Resend
+ * key, which Resend drops or refuses (409): no second letter within the key's 24 hours.
+ */
 async function recordOutcome(
   input: TransactionalEmailInput,
   rowId: string | null,
   status: 'sent' | 'failed',
   extra: { providerId?: string; error?: string },
-): Promise<void> {
-  try {
+): Promise<boolean> {
+  const write = async (): Promise<{ error: { message?: string } | null }> => {
     const sb = createServiceClient()
     if (rowId) {
-      await sb
+      const { error } = await sb
         .from('email_deliveries')
         .update({
           status,
@@ -182,9 +273,9 @@ async function recordOutcome(
           ...(status === 'failed' ? { dedupe_key: null } : {}),
         })
         .eq('id', rowId)
-      return
+      return { error }
     }
-    await sb.from('email_deliveries').insert({
+    const { error } = await sb.from('email_deliveries').insert({
       kind: input.kind,
       recipient: input.to,
       subject: input.subject,
@@ -195,9 +286,34 @@ async function recordOutcome(
       error: extra.error ?? null,
       metadata: input.metadata ?? {},
     })
-  } catch {
-    /* журнал — не критичный путь */
+    return { error }
   }
+  let why = ''
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { error } = await write()
+      if (!error) return true
+      why = error.message ?? 'error'
+    } catch (e) {
+      why = e instanceof Error ? e.message : String(e)
+    }
+  }
+  console.error(
+    `[email] ${input.kind} → ${maskEmail(input.to)}: журнал не записал «${status}» (2 попытки): ${why}` +
+      (rowId && status === 'sent' ? ' — бронь осталась pending; повтор после её устаревания уйдёт с тем же ключом Resend' : '') +
+      (rowId && status === 'failed' ? ' — ключ не освобождён; после устаревания брони письмо отправит следующий вызов' : ''),
+  )
+  return false
+}
+
+/** Resend refused the reused idempotency key: an earlier attempt of THIS row used it with other content. */
+function keyAlreadyUsed(err: unknown): boolean {
+  return (err as { name?: unknown } | null)?.name === 'invalid_idempotent_request'
+}
+
+/** Resend is still processing an earlier request with this key (e.g. our own timed-out attempt). */
+function keyInProgress(err: unknown): boolean {
+  return (err as { name?: unknown } | null)?.name === 'concurrent_idempotent_requests'
 }
 
 export async function sendTransactionalEmail(input: TransactionalEmailInput): Promise<TransactionalEmailResult> {
@@ -224,11 +340,16 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
     }
   }
 
-  const { claimed, rowId } = await claimDedupe(input)
-  if (!claimed) {
+  const claim = await claimDedupe(input)
+  if (claim.state === 'sent') {
     console.info(`[email] ${input.kind} → ${maskEmail(input.to)}: уже отправлено ранее, пропуск`)
     return { ok: true, skipped: true }
   }
+  if (claim.state === 'in_flight') {
+    console.warn(`[email] ${input.kind} → ${maskEmail(input.to)}: бронь занята другим процессом — не доставлено этим вызовом, повторите позже`)
+    return { ok: false, retryable: true, error: EMAIL_IN_FLIGHT_ERROR }
+  }
+  const rowId = claim.rowId
 
   const { html, text } = renderEmail(input.content)
   const resend = new Resend(apiKey)
@@ -253,7 +374,14 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
       const err = (res as { error?: unknown } | null)?.error
       if (err) {
         lastError = typeof err === 'string' ? err : (err as { message?: string })?.message ?? JSON.stringify(err)
-        if (attempt < MAX_ATTEMPTS && isTransient(lastError)) {
+        if (rowId && keyAlreadyUsed(err)) {
+          // A taken-over claim whose letter was rendered again (a new link, a rebuilt text): the key
+          // of this row already reached Resend with the first content — that letter went out.
+          await recordOutcome(input, rowId, 'sent', { error: 'resend: ключ уже использован первой попыткой — письмо ушло тогда' })
+          console.warn(`[email] ${input.kind} → ${maskEmail(input.to)}: ключ Resend уже использован первой попыткой — письмо ушло тогда, второе не отправляем`)
+          return { ok: true, skipped: true }
+        }
+        if (attempt < MAX_ATTEMPTS && (isTransient(lastError) || keyInProgress(err))) {
           await sleep(attempt * 400)
           continue
         }

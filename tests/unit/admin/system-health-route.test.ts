@@ -10,6 +10,7 @@ const s = vi.hoisted(() => ({
   crm: { data: [] as unknown[] | null, error: null as { message: string } | null },
   snapshot: (async () => []) as () => Promise<unknown>,
   ops: (async () => ({ journal: 'ok', jobs: [], alertRoutes: { linkedStaff: 1, envChats: 0, direct: false, nowhere: false } })) as () => Promise<unknown>,
+  schema: (async () => ({ expected: '157_x.sql', checked: 18, journal: true, applied: true, missing: [], latestRecorded: '157_x.sql' })) as () => Promise<unknown>,
 }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
@@ -26,6 +27,7 @@ vi.mock('@/lib/supabase-service', () => ({
 }))
 vi.mock('@/lib/agents/definitions/monitoring', () => ({ platformHealthSnapshot: () => s.snapshot() }))
 vi.mock('@/lib/ops/job-watchdog', () => ({ opsOverview: () => s.ops() }))
+vi.mock('@/lib/health/platform', () => ({ schemaStatus: () => s.schema() }))
 
 import { GET } from '@/app/api/giga-admin/system/health/route'
 
@@ -92,6 +94,31 @@ describe('system health — scheduled jobs and alarm routes', () => {
     const body = await call()
     expect(body.ops).toBeNull()
     expect(body.opsError).toEqual({ kind: 'failed', message: "Can't reach database server at db:5432" })
+  })
+})
+
+// N5-1a: the detail behind the public «schema behind» — for staff only.
+describe('system health — database schema against the build', () => {
+  it('the expected, the missing ones (review of wave 1A: every file from 140 on) and the last recorded migration are shown', async () => {
+    const status = {
+      expected: '157_crm_sync_catchup_lease_provenance.sql',
+      checked: 18,
+      journal: true,
+      applied: false,
+      missing: ['155_crm_sync_external_ids.sql', '156_archive_legacy_crm_integrations.sql'],
+      latestRecorded: '157_crm_sync_catchup_lease_provenance.sql',
+    }
+    s.schema = async () => status
+    const body = await call()
+    expect(body.schema).toEqual(status)
+    expect(body.schemaError).toBeNull()
+  })
+
+  it('a failed read is a failure with its message', async () => {
+    s.schema = async () => { throw new Error('permission denied for table schema_migrations') }
+    const body = await call()
+    expect(body.schema).toBeNull()
+    expect(body.schemaError).toEqual({ kind: 'failed', message: 'permission denied for table schema_migrations' })
   })
 })
 

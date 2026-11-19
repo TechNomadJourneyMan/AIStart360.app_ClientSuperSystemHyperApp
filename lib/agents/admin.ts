@@ -126,9 +126,21 @@ export interface AgentOverview {
   tools: Array<{ name: string; permission: string; description: string }>
   triggers: { events: string[]; cron: string | null }
   nextRunAt: string | null
+  /**
+   * Since when the agent is enabled, at the latest: the last change of its config row (review of
+   * wave 1A — «enabled but never ran» needs a date to count from). null when disabled or when there
+   * is no config row (enabled by default in code: no date to count from).
+   */
+  enabledSince: string | null
   limits: { perRunBudgetUsd: number; dailyBudgetUsd: number; maxOutputTokens: number; maxAttempts: number }
   permissions: Record<Permission, Decision>
   stats: AgentStats
+}
+
+function isoOrNull(v: Date | string | null | undefined): string | null {
+  if (!v) return null
+  const t = v instanceof Date ? v.getTime() : Date.parse(v)
+  return Number.isFinite(t) ? new Date(t).toISOString() : null
 }
 
 export async function listAgentOverviews(now = new Date(), only?: string): Promise<AgentOverview[]> {
@@ -155,6 +167,7 @@ export async function listAgentOverviews(now = new Date(), only?: string): Promi
       }),
       triggers: { events: [...(def.triggers?.events ?? [])], cron },
       nextRunAt: enabled && cron && def.scope === 'platform' ? nextCronRun(cron, now)?.toISOString() ?? null : null,
+      enabledSince: enabled ? isoOrNull(config?.updated_at) : null,
       limits: {
         perRunBudgetUsd: config?.per_run_budget_usd ?? def.limits.perRunBudgetUsd,
         dailyBudgetUsd: config?.daily_budget_usd ?? def.limits.dailyBudgetUsd,

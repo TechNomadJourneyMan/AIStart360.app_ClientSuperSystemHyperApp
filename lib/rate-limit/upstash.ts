@@ -48,5 +48,11 @@ export function createUpstashStore(): RateLimitStore {
         retryAfterSeconds: res.success ? 0 : Math.max(1, Math.ceil((res.reset - Date.now()) / 1000)),
       }
     },
+    async refund(key, windowSeconds, max): Promise<void> {
+      // A negative rate is the refund of @upstash/ratelimit's sliding window (its script skips the
+      // limit check for it and decrements the current window).
+      const res = await limiter(max, windowSeconds).limit(key, { rate: -1 })
+      if (res.reason === 'timeout') throw new Error('upstash timeout')
+    },
   }
 }

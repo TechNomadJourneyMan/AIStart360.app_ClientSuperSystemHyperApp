@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { STAFF_COOKIE_NAME } from '@/lib/admin/giga-actor'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isRateLimitedKey } from '@/lib/rate-limit'
+import { isRateLimitedKey, refundRateLimit } from '@/lib/rate-limit'
 import { logAudit } from '@/lib/audit'
 import { MAX_PASSWORD_LENGTH, ownerEmail, verifyOwnerPassword } from '@/lib/admin/owner-password'
 // R-049: the trusted hop of X-Forwarded-For, not the first entry the client writes.
@@ -34,6 +34,10 @@ const bodySchema = z.object({
 
 const INVALID = () => NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
 
+/** Failed attempts at the owner account (R-049, R5 L-3). */
+const ACCOUNT_BUCKET = 'giga-owner-login-account'
+const ACCOUNT_LIMIT = { max: 8, windowMs: 10 * 60_000, failClosed: true }
+
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
   if (await isRateLimitedKey(ip, 'giga-owner-login', { max: 8, windowMs: 10 * 60_000 })) {
@@ -42,19 +46,45 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Неверный запрос' }, { status: 400 })
 
-  const hash = process.env.GIGA_OWNER_PASSWORD_HASH
-  if (!hash) return NextResponse.json({ error: 'Вход не настроен: нет GIGA_OWNER_PASSWORD_HASH' }, { status: 503 })
-
   const email = parsed.data.email.toLowerCase()
+  // R-049: per account too (as /api/auth/password) — rotating addresses must not multiply the
+  // guesses at the owner password. R5 review (L-3): only the owner's e-mail has this limit, and
+  // only FAILED attempts count — the owner's own sign-ins never use it up, and others' failures
+  // lock the account only until the window has passed (refused attempts are not counted). A slot
+  // is reserved BEFORE the password check (a burst of concurrent guesses cannot all be checked)
+  // and given back when the attempt turns out not to be a failed guess. Fail-closed when the
+  // store is down.
+  const ownerAttempt = email === ownerEmail()
+  let reserved = false
+  if (ownerAttempt) {
+    if (await isRateLimitedKey(email, ACCOUNT_BUCKET, ACCOUNT_LIMIT)) {
+      return NextResponse.json({ error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })
+    }
+    reserved = true
+  }
+  const giveBack = async () => {
+    if (reserved) await refundRateLimit(email, ACCOUNT_BUCKET, ACCOUNT_LIMIT)
+    reserved = false
+  }
+
+  const hash = process.env.GIGA_OWNER_PASSWORD_HASH
+  if (!hash) {
+    await giveBack()
+    return NextResponse.json({ error: 'Вход не настроен: нет GIGA_OWNER_PASSWORD_HASH' }, { status: 503 })
+  }
+
   // Always run the hash check so a wrong email and a wrong password take the same time.
   const passwordOk = verifyOwnerPassword(parsed.data.password, hash)
-  if (email !== ownerEmail() || !passwordOk) {
+  if (!ownerAttempt || !passwordOk) {
+    // A failed guess at the owner account keeps its slot.
     await logAudit({
       entityType: 'system', entityId: 'giga_panel', action: 'admin.login_failed',
       performedBy: 'giga:anonymous', diff: { after: { method: 'owner_password' } }, ipAddress: ip,
     })
     return INVALID()
   }
+  // The right password: not a failed attempt — the slot goes back.
+  await giveBack()
 
   const sb = createServiceClient()
   const { data: profile } = await sb.from('profiles').select('id, role, status').ilike('email', email).maybeSingle()

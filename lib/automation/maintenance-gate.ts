@@ -6,6 +6,10 @@
  * a «Ведутся работы» page: a reminder or a digest that says «зайдите в кабинет» only leads there.
  * The automatic client mailings ask this gate first and skip the whole run when it says so; the
  * next run (a day / a week later) sends what is still due — their touches are idempotent.
+ * Who asks: the crons reminders, client-digest, crm-digest and billing-expiry (N5-3) — billing-expiry
+ * only for its client notices: the downgrade of an ended plan never waits for maintenance. The crons of
+ * staff (staff-digest, agents-digest, access-requests, expert-sla, the watchdogs) do not: staff work
+ * in ГИГА during maintenance.
  *
  * The setting is read fresh (not the 5 s cache). When it cannot be read the gate says «skip»: the
  * cabinet may well be closed, and a missed run costs one day's reminder at most.

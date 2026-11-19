@@ -50,9 +50,9 @@ beforeEach(() => {
 })
 
 describe('telegram webhook — replay table (#63)', () => {
-  it('without a configured secret an unauthenticated update never writes the replay table', async () => {
+  it('without a configured secret nothing is processed (503, R-139) and the replay table is never written', async () => {
     const res = await POST(req({ update_id: 777, message: { chat: { id: 5 }, text: 'привет' } }, null))
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(503)
     expect(m.firstSeenUpdate).not.toHaveBeenCalled()
   })
 

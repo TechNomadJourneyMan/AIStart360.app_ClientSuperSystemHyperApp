@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS storage.objects (
   bucket_id   TEXT REFERENCES storage.buckets(id),
   name        TEXT,
   owner       UUID,
+  -- Supabase Storage keeps the owner as text too (admin_purge_user reads both).
+  owner_id    TEXT,
   metadata    JSONB,
   created_at  TIMESTAMPTZ DEFAULT now(),
   updated_at  TIMESTAMPTZ DEFAULT now()

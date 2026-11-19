@@ -29,9 +29,19 @@ export interface CronJob {
 export const CRON_JOBS: readonly CronJob[] = [
   { path: '/api/cron/billing-expiry', schedule: '15 0 * * *' },
   { path: '/api/cron/staff-digest', schedule: '0 3 * * *' },
-  { path: '/api/cron/crm-digest', schedule: '0 4 * * *' },
-  { path: '/api/cron/agents-digest', schedule: '0 4 * * *', role: 'agents' },
-  { path: '/api/cron/client-digest', schedule: '0 4 * * 1' },
+  // Утренние сводки (R-230): раньше все три — в 04:00 UTC, в одну минуту (по понедельникам три
+  // рассылки разом) и на час пересчёта Точки Б (Inngest pb-recompute, :00). Разведены по минутам,
+  // каждая — в минуту без других задач: 09:11, 09:26 (пн) и 09:41 по Алматы. Сторож задач
+  // (ops_job_expectations) знает их по пути, не по времени, — его ожидания не меняются.
+  // Сводка CRM (ревью волны 1A): 04:11 и догоняющий прогон в 05:11 UTC — одна сводка владельцу в сутки по
+  // Алматы (бронь в журнале касаний), второй прогон доходит только до не охваченных утренним.
+  { path: '/api/cron/crm-digest', schedule: '11 4,5 * * *' },
+  { path: '/api/cron/agents-digest', schedule: '41 4 * * *', role: 'agents' },
+  // Дайджест клиентам (ревью волны 1A): по понедельникам в 04:26 и ещё раз в 05:26 UTC — догоняющий
+  // прогон для клиентов, до которых первый не дошёл в своём бюджете (44 с, ≤ 2 одновременно); каждый
+  // прогон берёт только тех, у кого нет дайджеста этой недели (lib/automation/client-digest.ts).
+  // Одна строка — один путь: ожидания сторожа (ops_job_expectations) по-прежнему по пути.
+  { path: '/api/cron/client-digest', schedule: '26 4,5 * * 1' },
   { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
   { path: '/api/cron/reminders', schedule: '0 6 * * *' },
   // 21:30, не 22:00 (N4A-14): в 22:00 UTC стартуют ночной пересчёт Точки А и пересчёт Точки Б.

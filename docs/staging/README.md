@@ -56,7 +56,7 @@ STAGING_PG_PASSWORD_FILE="$PW" scripts/staging/apply-migration.sh supabase/migra
 ```
 
 Миграции в staging применяются через psql с явной строкой подключения staging. Не используйте
-`scripts/apply-migration.js`: он берёт `DIRECT_URL` из `.env.local`, а это может быть прод.
+`scripts/apply-migration.js`: он берёт `DIRECT_URL` из `.env.local`, а это может быть прод (скрипт печатает цель и без `--yes` ничего не применяет — runbook §4).
 Запись в `schema_migrations` повторяет `apply-migration.js`: имя файла, sha256 содержимого и автор.
 
 Что делает `load.sh`:

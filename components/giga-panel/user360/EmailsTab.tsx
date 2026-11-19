@@ -9,7 +9,7 @@ interface Delivery {
   kind: string
   recipient: string
   subject: string
-  status: 'sent' | 'failed' | 'skipped'
+  status: 'pending' | 'sent' | 'failed' | 'skipped'
   provider_id: string | null
   error: string | null
   created_at: string
@@ -25,6 +25,7 @@ const KIND: Record<string, string> = {
 }
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
+  pending: { label: 'отправляется', tone: 'amber' },
   sent: { label: 'отправлено', tone: 'green' },
   failed: { label: 'ошибка', tone: 'red' },
   skipped: { label: 'пропущено', tone: 'neutral' },
