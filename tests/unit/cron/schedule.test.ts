@@ -19,7 +19,8 @@ const timesOf = (jobs: readonly { path: string; schedule: string }[]) => jobs.ma
 const VERCEL_SCHEDULE = [
   { path: '/api/cron/billing-expiry', schedule: '15 0 * * *' },
   { path: '/api/cron/staff-digest', schedule: '0 3 * * *' },
-  { path: '/api/cron/crm-digest', schedule: '11 4 * * *' },
+  // R-230 moved it to 04:11; the review of wave 1A added the catch-up run at 05:11 (one digest per owner per day).
+  { path: '/api/cron/crm-digest', schedule: '11 4,5 * * *' },
   { path: '/api/cron/agents-digest', schedule: '41 4 * * *' },
   // Vercel ran it at 04:00 Mondays; R-230 moved it to 04:26, the review of wave 1A added the catch-up run at 05:26.
   { path: '/api/cron/client-digest', schedule: '26 4,5 * * 1' },
@@ -50,7 +51,7 @@ describe('CRON_JOBS', () => {
     const expected = [
       { path: '/api/cron/billing-expiry', schedule: '15 0 * * *' },
       { path: '/api/cron/staff-digest', schedule: '0 3 * * *' },
-      { path: '/api/cron/crm-digest', schedule: '11 4 * * *' },
+      { path: '/api/cron/crm-digest', schedule: '11 4,5 * * *' },
       { path: '/api/cron/agents-digest', schedule: '41 4 * * *', role: 'agents' },
       { path: '/api/cron/client-digest', schedule: '26 4,5 * * 1' },
       { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
@@ -196,8 +197,9 @@ describe('R-230: the morning digests are spread by minutes', () => {
 
   // Review of wave 1A: the 44 s / ≤ 2 budget can defer clients; a catch-up run an hour later starts
   // only those without this week's digest (lib/automation/client-digest.ts).
-  it('client-digest runs again at 05:26 to catch up; the agents digest once', () => {
+  it('client-digest and crm-digest run again an hour later to catch up; the agents digest once', () => {
     expect(minutesOf('/api/cron/client-digest').map(iso)).toEqual(['04:26', '05:26'])
+    expect(minutesOf('/api/cron/crm-digest').map(iso)).toEqual(['04:11', '05:11'])
     expect(minutesOf('/api/cron/agents-digest').map(iso)).toEqual(['04:41'])
   })
 

@@ -20,6 +20,8 @@ import { DIGEST_CONCURRENCY, DIGEST_MIN_START_MS, DIGEST_RUN_MS } from '@/lib/cr
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { cloudApiConfigured } from '@/lib/whatsapp/config'
 import { maintenanceSkipReason } from '@/lib/automation/maintenance-gate'
+import { fetchSentDedupeKeys } from '@/lib/automation/data'
+import { claimSend, releaseSend } from '@/lib/notifications/store'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -37,6 +39,15 @@ export const maxDuration = 60
  *   • слабый блок текущей GRI-диагностики (довесок №9).
  * И доставляет по каналам из preferences.notifications.crm: in-app (колокольчик),
  * email (Resend) и Telegram (если чат привязан). Каждый канал — best-effort.
+ *
+ * Один дайджест на владельца в сутки по Алматы (ревью волны 1A): перед отправкой — бронь в журнале
+ * автоматических касаний (claimSend, ключ crm_digest:<владелец>:<день по Алматы>, вне недельного
+ * потолка). Второй прогон в тот же день ничего не шлёт: ни повтор после выкатки или отката, ни
+ * догоняющий слот 05:11 UTC (lib/cron/schedule.ts), который доходит до владельцев, не охваченных
+ * утренним прогоном (бюджет, пропущенный слот). Уже получившие отсеиваются до старта (одно чтение
+ * журнала). Ни один канал не доставил — бронь снимается (догоняющий прогон повторит); отправка,
+ * обрезанная сроком прогона, бронь сохраняет (поздний ответ провайдера ещё может дойти — второй копии
+ * не будет). Журнал недоступен — владельцу не шлём: крон без журнала повторял бы дайджест.
  *
  * Auth: Vercel Cron присылает `Authorization: Bearer ${CRON_SECRET}`.
  * Секрет принимается только в заголовке (не в `?secret=` — он попадает в логи).
@@ -179,18 +190,26 @@ export async function GET(req: NextRequest) {
       console.warn(`[crm-digest] ${affected.length} users affected, capping at ${MAX_USERS}`)
     }
     const day = almatyDay(now.getTime()).day
+    const digestKey = (userId: string) => `crm_digest:${userId}:${day}`
     // The most urgent owners first; ties in a per-day order, so when a run cannot reach everyone
     // the same owners are not the ones left out every day.
     const urgency = (u: string) => {
       const c = countsByUser.get(u)
       return c ? [c.overdue, c.dueToday, c.sleeping] : [0, 0, 0]
     }
-    const targets = affected
+    const ordered = affected
       .sort((a, b) => {
         const [ua, ub] = [urgency(a), urgency(b)]
         return ub[0] - ua[0] || ub[1] - ua[1] || ub[2] - ua[2] || dayRotation(day, a) - dayRotation(day, b)
       })
       .slice(0, MAX_USERS)
+    // Review of wave 1A: one digest per owner per Almaty day — the owners who already have today's
+    // are dropped before the run (one read of the journal; the claim below still guards a race).
+    const sentToday = await fetchSentDedupeKeys(ordered.map(digestKey))
+    const targets = sentToday ? ordered.filter((u) => !sentToday.has(digestKey(u))) : ordered
+    let alreadySent = ordered.length - targets.length
+    /** Owners not sent to because the journal could not take the claim. */
+    let journalUnavailable = 0
 
     if (targets.length === 0) {
       // Re-scan-напоминания должны уйти и в «тихий» день без CRM-дайджестов.
@@ -210,6 +229,8 @@ export async function GET(req: NextRequest) {
           deferred: 0,
           rescanReminders: rescan.sent,
           rescanDeferred: rescan.deferred,
+          alreadySent,
+          journalUnavailable,
           elapsedMs: Date.now() - now.getTime(),
         },
       })
@@ -269,10 +290,11 @@ export async function GET(req: NextRequest) {
     /** Channel sends cut by the run's deadline (a provider that did not answer in time). */
     let timedOut = 0
     /** One channel send of one owner, bounded by the run's deadline (lib/crm/bounded-run.ts). */
-    const send = async <T,>(start: () => Promise<T>): Promise<T | undefined> => {
+    const send = async <T,>(start: () => Promise<T>, onCut?: () => void): Promise<T | undefined> => {
       const r = await beforeDeadline(start, deadlineAt)
       if (r.ok) return r.value
       timedOut += 1
+      onCut?.()
       return undefined
     }
 
@@ -306,6 +328,29 @@ export async function GET(req: NextRequest) {
         }
         const title = buildDigestTitle(data)
         let delivered = false
+        /** A send of this owner was cut by the deadline: its late answer may still be delivered. */
+        let cut = false
+        const markCut = () => { cut = true }
+
+        // Review of wave 1A: today's digest of this owner, once — claimed before the first channel.
+        const waPhoneForClaim = whatsappByUser.get(userId) ?? null
+        const claim = await claimSend({
+          userId,
+          kind: 'crm_digest',
+          dedupeKey: digestKey(userId),
+          countsTowardCap: false,
+          channels: [channels.inApp && 'in_app', channels.email && email && 'email', channels.telegram && chatId && 'telegram', waPhoneForClaim && 'whatsapp']
+            .filter((c): c is string => typeof c === 'string'),
+          metadata: { day, overdue, dueToday, sleeping: sleep },
+        })
+        if (claim.result === 'duplicate') {
+          alreadySent += 1
+          return
+        }
+        if (claim.result === 'unavailable') {
+          journalUnavailable += 1
+          return
+        }
 
         if (channels.inApp) {
           const done = await send(async () => {
@@ -319,7 +364,7 @@ export async function GET(req: NextRequest) {
               metadata: { overdue, dueToday, sleeping: sleep },
             })
             return true
-          })
+          }, markCut)
           if (done) delivered = true
         }
 
@@ -331,7 +376,7 @@ export async function GET(req: NextRequest) {
             body: buildDigestBody(data),
             ctaLabel: 'Открыть «Клиенты»',
             ctaPath: '/pulse',
-          }))
+          }), markCut)
           if (res?.ok) {
             emailsSent += 1
             delivered = true
@@ -339,7 +384,7 @@ export async function GET(req: NextRequest) {
         }
 
         if (channels.telegram && chatId) {
-          const ok = await send(() => sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`)))
+          const ok = await send(() => sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`)), markCut)
           if (ok) {
             telegramSent += 1
             delivered = true
@@ -352,7 +397,7 @@ export async function GET(req: NextRequest) {
         const message = { title, body: buildDigestBody(data), data, day }
         for (const ch of EXTRA_DIGEST_CHANNELS) {
           if (!ch.isEnabled(recipient)) continue
-          const ok = await send(() => ch.send(recipient, message))
+          const ok = await send(() => ch.send(recipient, message), markCut)
           if (ok) {
             if (ch.key === 'whatsapp') whatsappSent += 1
             delivered = true
@@ -366,11 +411,17 @@ export async function GET(req: NextRequest) {
           totalSleeping += sleep
         } else {
           undelivered += 1
+          // Nothing reached the owner and nothing is still on its way: give today's claim back, the
+          // catch-up run (05:11 UTC) tries again. A cut send keeps it — no second copy.
+          if (!cut && claim.id) await releaseSend(claim.id)
         }
       },
     )
     if (run.deferred > 0) {
-      console.warn(`[crm-digest] run budget spent: ${run.deferred} of ${targets.length} owners deferred`)
+      console.warn(`[crm-digest] run budget spent: ${run.deferred} of ${targets.length} owners deferred (the 05:11 UTC run catches up)`)
+    }
+    if (journalUnavailable > 0) {
+      console.warn(`[crm-digest] journal of sends unavailable: ${journalUnavailable} owners not sent today's digest`)
     }
     if (timedOut > 0) {
       console.warn(`[crm-digest] ${timedOut} channel sends cut by the run's deadline; ${undelivered} owners not delivered`)
@@ -385,6 +436,8 @@ export async function GET(req: NextRequest) {
         usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalDueToday, totalSleeping,
         undelivered, timedOut,
         deferred: run.deferred,
+        alreadySent,
+        journalUnavailable,
         rescanReminders: rescan.sent,
         rescanDeferred: rescan.deferred,
         elapsedMs: Date.now() - now.getTime(),
