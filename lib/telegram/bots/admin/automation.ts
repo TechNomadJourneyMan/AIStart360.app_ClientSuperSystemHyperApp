@@ -28,7 +28,7 @@ const SHORT: Record<AutomationToggle, string> = {
   agents_notify_lifecycle: 'Уведомления',
   agents_auto_retry: 'Авто-повтор',
   agents_auto_diagnostic: 'Авто-диагностика',
-  agents_daily_digest: 'Сводка 09:00',
+  agents_daily_digest: 'Утренняя сводка',
   agents_stuck_alerts: 'Зависшие задачи',
 }
 
