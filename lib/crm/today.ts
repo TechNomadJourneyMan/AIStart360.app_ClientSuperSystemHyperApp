@@ -36,6 +36,8 @@ export function almatyDay(nowMs: number): CrmDay {
 }
 
 export const ACTIVE_STATUSES: readonly string[] = ['new', 'in_progress', 'waiting']
+/** A lost client is never in the queue and never overdue, whatever is still planned for it. */
+export const LOST_STATUS = 'lost'
 export const SLEEPING_STATUSES: readonly string[] = ['customer', 'sleeping']
 /** A customer / sleeping client with no touch for MORE than this many days is «спящий». */
 export const SLEEPING_DAYS = 30
@@ -79,6 +81,10 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
  * `last_contact_at` is the last CONTACT (a call, message or meeting — a note is not a contact,
  * app/api/v1/crm/clients/[id]/interactions).
  *
+ *  0. A LOST client is never in the queue — not «просрочено», not «на сегодня» — whatever is still
+ *     planned for it (the plans stay stored; the risk list still shows it). Every reader of
+ *     «overdue» goes through this rule: the screen, next-best-action and the digest.
+ *
  *  1. Pending plan items: every open reminder and next_contact_at whose time is AFTER the last
  *     contact (or with no contact at all). A contact at or after the planned time answers it.
  *     Logging a contact also FULFILS every plan due before the end of today that exists at that
@@ -92,7 +98,7 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
  *       contacted today (at or after Almaty midnight)        → not in the queue: handled today
  *       an active status (new / in_progress / waiting)        → 2 «без плана»
  *       customer / sleeping with no contact for > 30 days     → 3 «спящий»
- *     Anything else (a lost client, a recent customer) is not in the queue.
+ *     Anything else (a recent customer) is not in the queue.
  */
 export function queueBucket(
   c: QueueClientInput,
@@ -100,6 +106,7 @@ export function queueBucket(
   day: CrmDay,
   nowMs: number,
 ): QueueBucket | null {
+  if (c.status === LOST_STATUS) return null
   const last = ms(c.last_contact_at)
   const answered = (t: number) => last != null && last >= t
 

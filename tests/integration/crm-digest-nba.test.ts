@@ -103,6 +103,35 @@ describe.skipIf(!dbTestsEnabled)('CRM digest and next-best-action', () => {
       expect(queue.stats.queue).toMatchObject({ overdue: 1, today: 1, sleeping: 2 })
     }))
 
+  // Review (low): a lost client with an old plan stayed «Просрочено» forever — in the queue, in
+  // next-best-action and in the digest. Lost = none of them; its plans stay stored.
+  it('a lost client with an old plan is not in the queue, the digest or next-best-action', () =>
+    inRollback(async (db) => {
+      h.db = pgPostgrest(db, null)
+      const owner = await seedUser(db)
+      const lost = await addClient(db, owner, 'Потерянный', { status: 'lost', last_contact_at: '2026-11-01T05:00:00Z' })
+      await addReminder(db, owner, lost, '2026-11-10T06:00:00Z')
+      await addReminder(db, owner, lost, '2026-11-19T10:00:00Z') // today
+      await db.query(`UPDATE public.crm_clients SET next_contact_at = '2026-11-12T06:00:00Z' WHERE id = $1`, [lost])
+
+      const res = await digest.GET(new NextRequest('http://localhost/api/cron/crm-digest', { headers: { authorization: 'Bearer test-cron-secret' } }))
+      expect(res.status).toBe(200)
+      const calls = h.createNotification.mock.calls as unknown as Array<[{ userId: string }]>
+      expect(calls.map((c) => c[0]).filter((n) => n.userId === owner)).toEqual([])
+
+      asOwner(db, owner)
+      const queue = (await (await todayRoute.GET()).json()) as { stats: { queue: Record<string, number> }; todayClients: Array<{ id: string }>; riskClients: Array<{ id: string }> }
+      expect(queue.stats.queue).toEqual({ overdue: 0, today: 0, noPlan: 0, sleeping: 0 })
+      expect(queue.todayClients).toEqual([])
+      expect(queue.riskClients.map((c) => c.id)).toContain(lost) // still on the risk list
+      const action = ((await (await nba.GET({} as never)).json()) as { action: { key: string } | null }).action
+      expect(action?.key).not.toBe('crm_overdue')
+
+      // the plans stay stored
+      const { rows } = await db.query(`SELECT count(*)::int AS n FROM public.crm_reminders WHERE client_id = $1 AND status = 'open'`, [lost])
+      expect(rows[0].n).toBe(2)
+    }))
+
   it('next-best-action counts overdue CLIENTS by the queue rule and the Almaty day (M6, review)', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db)
