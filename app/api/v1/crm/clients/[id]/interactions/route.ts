@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { parseJsonBody } from '@/lib/validation/http'
 import { CrmInteractionBody } from '@/lib/validation/schemas'
+import { almatyDay } from '@/lib/crm/today'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -80,23 +81,35 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (error || !data) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
 
   // Only a CONTACT (call / message / meeting) is a contact: it moves last_contact_at — «Обработано
-  // сегодня» and the queue (lib/crm/today.ts) go by it — and closes the client's open reminders
-  // that were due by now: the contact is what they asked for. A note is just a note: it changes
-  // neither, so writing a note never takes a client off «Кому звонить сегодня».
+  // сегодня» and the queue (lib/crm/today.ts) go by it — and it FULFILS every plan of the client
+  // due before the end of today's Almaty day that exists at this moment: the open reminders are
+  // closed and a next contact planned for today (or missed) is cleared. A call at 11:00 answers
+  // the plan for 15:00 made yesterday; a real call-back is planned AFTER the contact (a new
+  // reminder / next contact), so it survives and keeps the client on today's list. Plans for later
+  // days are untouched. A note is just a note: it changes nothing, so writing a note never takes a
+  // client off «Кому звонить сегодня».
   if (CONTACT_KINDS.has(kind)) {
-    const now = new Date().toISOString()
+    const nowMs = Date.now()
+    const now = new Date(nowMs).toISOString()
+    const endOfToday = new Date(almatyDay(nowMs).endMs).toISOString()
     await sb
       .from('crm_clients')
       .update({ last_contact_at: now, updated_at: now })
       .eq('id', params.id)
       .eq('user_id', userId)
     await sb
+      .from('crm_clients')
+      .update({ next_contact_at: null })
+      .eq('id', params.id)
+      .eq('user_id', userId)
+      .lt('next_contact_at', endOfToday)
+    await sb
       .from('crm_reminders')
       .update({ status: 'done', done_at: now })
       .eq('client_id', params.id)
       .eq('user_id', userId)
       .eq('status', 'open')
-      .lte('due_at', now)
+      .lt('due_at', endOfToday)
   }
 
   return NextResponse.json({ ok: true, data: { interaction: data } })

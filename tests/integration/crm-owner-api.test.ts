@@ -222,13 +222,22 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
       expect(rows.find((r) => r.name === 'Новый')).toMatchObject({ email: 'new@ex.kz', note: 'звонить после 18' })
     }))
 
-  it('a contact closes the reminders due by then and moves «today»; a note does neither; a call-back later today is queued (review M1)', () =>
+  // Review (medium): a plan made BEFORE the call (call at 11:00, plan for 15:00 the same day) was
+  // treated as a call-back — the client stayed «на сегодня» and was «просрочено» the next morning.
+  // A logged contact fulfils every plan due before the end of the Almaty day that exists at that
+  // moment; a call-back is planned AFTER the contact and stays queued; later days are untouched.
+  it('a contact fulfils every plan due by the end of today; a note does nothing; a call-back planned after the call is queued', () =>
     inRollback(async (db) => {
       const owner = await seedUser(db)
-      const called = await addClient(db, owner, { name: 'Позвонили', status: 'in_progress' })
-      await addReminder(db, owner, called, '2026-11-18T06:00:00Z') // yesterday — this call answers it
-      await addReminder(db, owner, called, '2026-11-19T10:00:00Z') // call back at 15:00 Almaty today
-      const noted = await addClient(db, owner, { name: 'Заметка', status: 'in_progress' })
+      // 00:30 Almaty on the 19th; the plan for 17:00 today was made before the call
+      const called = await addClient(db, owner, { name: 'Позвонили', status: 'in_progress', next_contact_at: '2026-11-19T12:00:00Z' })
+      await addReminder(db, owner, called, '2026-11-18T06:00:00Z') // yesterday
+      await addReminder(db, owner, called, '2026-11-19T10:00:00Z') // 15:00 Almaty today, made before the call
+      await addReminder(db, owner, called, '2026-11-19T18:59:00Z') // 23:59 Almaty today
+      await addReminder(db, owner, called, '2026-11-19T19:00:00Z') // 00:00 tomorrow: another day
+      const tomorrow = await addClient(db, owner, { name: 'Завтра', status: 'in_progress', next_contact_at: '2026-11-20T05:00:00Z' })
+      const callBack = await addClient(db, owner, { name: 'Перезвонить', status: 'in_progress' })
+      const noted = await addClient(db, owner, { name: 'Заметка', status: 'in_progress', next_contact_at: '2026-11-19T10:00:00Z' })
       await addReminder(db, owner, noted, '2026-11-18T06:00:00Z')
       session(db, owner)
 
@@ -242,24 +251,48 @@ describe.skipIf(!dbTestsEnabled)('owner CRM api', () => {
         expect(res.status).toBe(200)
       }
       await log(called, 'call')
+      await log(tomorrow, 'message')
+      await log(callBack, 'meeting')
       await log(noted, 'note')
 
-      const { rows } = await db.query(
-        `SELECT c.name, c.last_contact_at IS NOT NULL AS contacted, r.due_at, r.status
-           FROM public.crm_clients c JOIN public.crm_reminders r ON r.client_id = c.id
+      const reminders = async () => (await db.query(
+        `SELECT c.name, r.due_at, r.status FROM public.crm_clients c JOIN public.crm_reminders r ON r.client_id = c.id
           WHERE c.user_id = $1 ORDER BY c.name, r.due_at`,
         [owner],
-      )
-      expect(rows.map((r) => [r.name, r.contacted, r.status])).toEqual([
-        ['Заметка', false, 'open'], // a note is not a contact: nothing moves
-        ['Позвонили', true, 'done'], // due before the call: closed by it
-        ['Позвонили', true, 'open'], // the call-back later today stays
+      )).rows.map((r) => [r.name, (r.due_at as Date).toISOString(), r.status])
+      expect(await reminders()).toEqual([
+        ['Заметка', '2026-11-18T06:00:00.000Z', 'open'], // a note is not a contact: nothing moves
+        ['Позвонили', '2026-11-18T06:00:00.000Z', 'done'],
+        ['Позвонили', '2026-11-19T10:00:00.000Z', 'done'], // later today, but planned before the call
+        ['Позвонили', '2026-11-19T18:59:00.000Z', 'done'],
+        ['Позвонили', '2026-11-19T19:00:00.000Z', 'open'], // tomorrow: untouched
       ])
+      const plans = async () => Object.fromEntries((await db.query(
+        `SELECT name, next_contact_at, last_contact_at IS NOT NULL AS contacted FROM public.crm_clients WHERE user_id = $1`, [owner],
+      )).rows.map((r) => [r.name, [r.next_contact_at && (r.next_contact_at as Date).toISOString(), r.contacted]]))
+      expect(await plans()).toEqual({
+        'Позвонили': [null, true], // the plan for 17:00 today is fulfilled by the call
+        'Завтра': ['2026-11-20T05:00:00.000Z', true], // another day: kept
+        'Перезвонить': [null, true],
+        'Заметка': ['2026-11-19T10:00:00.000Z', false],
+      })
 
-      const p = await getToday()
-      const buckets = Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))
-      expect(buckets).toEqual({ [called]: 1, [noted]: 0 })
-      expect(p.stats.processedToday).toBe(1)
+      let p = await getToday()
+      expect(Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))).toEqual({ [noted]: 0 })
+      expect(p.stats.processedToday).toBe(3)
+
+      // A call-back planned AFTER the contact — a new reminder, or a next contact saved in the
+      // drawer — survives and puts the client back on today's list.
+      await addReminder(db, owner, called, '2026-11-19T13:00:00Z') // «перезвонить в 18:00»
+      const res = await clientRoute.PATCH(
+        new NextRequest(`http://localhost/api/v1/crm/clients/${callBack}`, {
+          method: 'PATCH', body: JSON.stringify({ next_contact_at: '2026-11-19T14:00:00Z' }), headers: { 'content-type': 'application/json' },
+        }),
+        { params: { id: callBack } },
+      )
+      expect(res.status).toBe(200)
+      p = await getToday()
+      expect(Object.fromEntries(p.todayClients.map((c) => [c.id, c.queueBucket]))).toEqual({ [called]: 1, [callBack]: 1, [noted]: 0 })
     }))
 
   it('/today returns at most 50 queue rows with the true total and cut notes (review M3)', () =>

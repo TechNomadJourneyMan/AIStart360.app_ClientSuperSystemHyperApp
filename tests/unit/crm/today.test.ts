@@ -49,7 +49,9 @@ describe('queueBucket (M1: a handled client leaves today\'s queue)', () => {
   })
 
   // Review M1: «touched today → out» ran before the plan, so a call-back planned for later the same
-  // day never showed — and was overdue the next morning.
+  // day never showed — and was overdue the next morning. A plan for later today that is still open
+  // after a contact was made AFTER it: logging the contact fulfils the plans due by the end of the
+  // day that existed then (app/api/v1/crm/clients/[id]/interactions; tests/integration/crm-owner-api).
   it("a call-back planned for later today after this morning's call is in today's queue", () => {
     const touched = iso(ALMATY_MIDNIGHT + 10 * 60_000)
     expect(bucket(client({ last_contact_at: touched, next_contact_at: iso(ALMATY_MIDNIGHT + 5 * H) }))).toBe(1)

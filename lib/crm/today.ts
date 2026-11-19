@@ -80,9 +80,10 @@ export function isSleepingClient(c: QueueClientInput, nowMs: number): boolean {
  * app/api/v1/crm/clients/[id]/interactions).
  *
  *  1. Pending plan items: every open reminder and next_contact_at whose time is AFTER the last
- *     contact (or with no contact at all). A contact at or after the planned time answers it — and
- *     logging that contact also closes the open reminders due by then (the interactions route), so
- *     the drawer, the digest and next-best-action see the same thing.
+ *     contact (or with no contact at all). A contact at or after the planned time answers it.
+ *     Logging a contact also FULFILS every plan due before the end of today that exists at that
+ *     moment (the interactions route closes those reminders and clears that next_contact_at), so a
+ *     plan for later today that is still here was made AFTER the contact — a call-back.
  *       any pending item before today       → 0 «просрочено»
  *       any pending item today              → 1 «на сегодня» — also a call-back planned for later
  *                                              today after this morning's call
