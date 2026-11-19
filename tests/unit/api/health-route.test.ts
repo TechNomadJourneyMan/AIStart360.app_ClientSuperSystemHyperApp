@@ -6,8 +6,13 @@
  * R4-A1 (readiness): on a persistent server also our Inngest (the ops-ping heartbeat in the journal)
  * and the in-process cron of this role (the journal of job outcomes), the variables that tie the
  * services together (counted with the configuration), every check bounded and the result cached.
+ *
+ * Schema (N5-1a, review of wave 1A): the mock answers the journal query from the files it is ASKED
+ * about (the query's parameter), so the tests pin which files readiness checks — every migration of
+ * the bundle era, not only the newest — and a database missing an older one fails.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NEWEST_MIGRATION, SHIPPED_MIGRATIONS } from '@/lib/health/schema-version'
 
 const state = vi.hoisted(() => ({
   dbFails: false,
@@ -18,13 +23,15 @@ const state = vi.hoisted(() => ({
   journalPresent: true,
   evidence: { last_cron: null as Date | null, role_since: null as Date | null, last_ping: null as Date | null },
   pingSince: null as Date | null,
-  /** N5-1a: public.schema_migrations exists / holds the newest migration of the build. */
-  schema: { journal: true, applied: true as boolean, latest: '157_crm_sync_catchup_lease_provenance.sql' as string | null, fails: false },
+  /** N5-1a: public.schema_migrations exists; `recorded` — the files in it (null = every file asked about). */
+  schema: { journal: true, recorded: null as Set<string> | null, latest: null as string | null, fails: false },
+  /** The parameter of each journal query: the files readiness asked about. */
+  schemaAsked: [] as unknown[],
   queries: [] as string[],
 }))
 vi.mock('@/lib/db', () => ({
   prisma: {
-    $queryRaw: async (strings: TemplateStringsArray) => {
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?')
       state.queries.push(sql)
       if (state.dbFails) throw new Error('connection refused')
@@ -33,7 +40,11 @@ vi.mock('@/lib/db', () => ({
       if (sql.includes('schema_migrations')) {
         if (state.schema.fails) throw new Error('permission denied for table schema_migrations')
         if (sql.includes('to_regclass')) return [{ journal: state.schema.journal }]
-        return [{ applied: state.schema.applied, latest: state.schema.latest }]
+        const asked = values[0]
+        state.schemaAsked.push(asked)
+        if (!Array.isArray(asked) || !sql.includes('ANY(')) throw new Error(`unexpected journal query: ${sql}`)
+        const recorded = asked.filter((f) => state.schema.recorded === null || state.schema.recorded.has(String(f)))
+        return [{ recorded, latest: state.schema.latest ?? recorded.slice().sort().at(-1) ?? null }]
       }
       if (sql.includes('to_regclass')) return [{ present: state.journalPresent, expectations: state.journalPresent }]
       if (sql.includes('ops_job_expectations')) return state.pingSince ? [{ since: state.pingSince }] : []
@@ -59,7 +70,8 @@ beforeEach(() => {
   state.journalPresent = true
   state.evidence = { last_cron: null, role_since: null, last_ping: null }
   state.pingSince = null
-  state.schema = { journal: true, applied: true, latest: '157_crm_sync_catchup_lease_provenance.sql', fails: false }
+  state.schema = { journal: true, recorded: null, latest: null, fails: false }
+  state.schemaAsked = []
   state.queries = []
   resetReadinessCache()
 })
@@ -471,18 +483,26 @@ describe('GET /api/health: readiness of the background work (R4-A1)', () => {
 describe('GET /api/health: the database schema matches the build (N5-1a)', () => {
   const entry = (body: { services: { name: string; status: string }[] }) => body.services.find((s) => s.name === 'Схема базы данных')
 
-  it('the newest migration of the build is in schema_migrations: schema ok, 200', async () => {
+  /** Every file of the build recorded except `missing`. */
+  const recordAllBut = (...missing: string[]) => {
+    state.schema.recorded = new Set(SHIPPED_MIGRATIONS.filter((f) => !missing.includes(f)))
+  }
+
+  it('every migration of the bundle era is in schema_migrations: schema ok, 200 — and it asked for exactly those files', async () => {
     const res = await GET()
     const body = await res.json()
     expect(res.status).toBe(200)
     expect(body.checks.schema).toBe('ok')
     expect(entry(body)).toMatchObject({ status: 'online', latencyMs: 0, uptime: 'не измеряется' })
-    // it asks for exactly the file the build ships
-    expect(state.queries.some((q) => q.includes('FROM public.schema_migrations') && q.includes('file = ?'))).toBe(true)
+    // it asks for exactly the files the build ships: 140 … newest, not only the newest
+    expect(state.schemaAsked).toEqual([[...SHIPPED_MIGRATIONS]])
+    expect(SHIPPED_MIGRATIONS[0]).toMatch(/^140_/)
+    expect(SHIPPED_MIGRATIONS).toContain(NEWEST_MIGRATION)
+    expect(state.queries.some((q) => q.includes('FROM public.schema_migrations') && q.includes('ANY('))).toBe(true)
   })
 
-  it('not recorded: schema fail, 503, «schema behind» and not one file name in the public answer', async () => {
-    state.schema.applied = false
+  it('the newest not recorded: schema fail, 503, «schema behind» and not one file name in the public answer', async () => {
+    recordAllBut(NEWEST_MIGRATION)
     state.schema.latest = '154_ops_job_runs.sql'
     const res = await GET()
     const text = await res.text()
@@ -494,6 +514,24 @@ describe('GET /api/health: the database schema matches the build (N5-1a)', () =>
     expect(body.summary).toMatch(/Схема базы отстаёт от кода/)
     expect(text).not.toMatch(/\d{3}_[a-z0-9_]+\.sql/)
     expect(text).not.toContain('schema_migrations')
+  })
+
+  it('review of wave 1A: an OLDER migration of the bundle missing (156) while the newest is recorded — fail too', async () => {
+    const older = SHIPPED_MIGRATIONS.find((f) => f.startsWith('156_'))!
+    recordAllBut(older)
+    const res = await GET()
+    const text = await res.text()
+    expect(res.status).toBe(503)
+    expect(JSON.parse(text).checks.schema).toBe('fail')
+    expect(text).not.toContain(older)
+  })
+
+  it('a file outside the list (older than 140, or another build’s) is not what decides', async () => {
+    recordAllBut()
+    state.schema.latest = '999_other.sql'
+    const res = await GET()
+    expect(res.status).toBe(200)
+    expect(state.schemaAsked[0]).not.toContain('139_alem_light_route_qwen.sql')
   })
 
   it('no journal table at all is a database that predates the journal: fail too', async () => {
@@ -515,7 +553,7 @@ describe('GET /api/health: the database schema matches the build (N5-1a)', () =>
   it('the database and configuration summaries still win; schema wins over the queue', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '1')
     setWorkflowQueueStatus({ state: 'retrying', attempts: 2 })
-    state.schema.applied = false
+    recordAllBut(NEWEST_MIGRATION)
     expect((await (await GET()).json()).summary).toMatch(/Схема базы/)
     resetReadinessCache()
     state.dbFails = true
@@ -525,7 +563,7 @@ describe('GET /api/health: the database schema matches the build (N5-1a)', () =>
   it('also on the agents service (same build, same database)', async () => {
     vi.stubEnv('PERSISTENT_SERVER', '1')
     vi.stubEnv('PORTAL_ROLE', 'agents')
-    state.schema.applied = false
+    recordAllBut(SHIPPED_MIGRATIONS[0])
     const res = await GET()
     expect(res.status).toBe(503)
     expect((await res.json()).checks).toEqual({ db: 'ok', config: 'ok', schema: 'fail' })

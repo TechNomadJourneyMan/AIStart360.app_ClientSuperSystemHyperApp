@@ -17,6 +17,8 @@ vi.mock('@/lib/automation/data', () => ({
   fetchSurveyRows: async () => new Map([['runner', [{ question_key: 's1_company_name', step: 1, answer: { value: 'ТОО' } }]]]),
   fetchGriDrafts: async () => new Map(),
   fetchPulseWeeks: async () => new Map(),
+  fetchSentDedupeKeys: async () => new Set(),
+  fetchTouchedSince: async () => new Set(),
 }))
 vi.mock('@/lib/automation/survey-modes', () => ({
   fetchSurveyModes: async () => { if (h.modesFail) throw new Error('down'); return h.modes },

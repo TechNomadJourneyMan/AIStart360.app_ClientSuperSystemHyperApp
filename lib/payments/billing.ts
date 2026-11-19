@@ -322,8 +322,11 @@ export interface ExpiryReport {
  * the downgrade — only when the access was really taken away (review WB-4: with
  * a second live paid subscription billing_set_plan keeps profiles.tier 'pro',
  * kept_access); a failed notice never fails the downgrade.
+ * `notify: false` (maintenance, review of wave 1A): the downgrade still happens — the access must
+ * not outlive the plan — but the notice waits; sendMissedEndNotices (lib/payments/expiry-notices.ts)
+ * sends it on the first run after maintenance, under the same key.
  */
-export async function expireDuePlans(opts: { now?: Date; limit?: number } = {}, svc: Svc = createServiceClient()): Promise<ExpiryReport> {
+export async function expireDuePlans(opts: { now?: Date; limit?: number; notify?: boolean } = {}, svc: Svc = createServiceClient()): Promise<ExpiryReport> {
   const now = opts.now ?? new Date()
   const { data, error } = await svc.rpc('billing_due_expirations', { p_now: now.toISOString(), p_limit: opts.limit ?? 500 })
   if (error) {
@@ -346,7 +349,7 @@ export async function expireDuePlans(opts: { now?: Date; limit?: number } = {}, 
       if (r.applied) {
         report.downgraded++
         const userId = r.userId ?? row.user_id
-        if (userId && r.after?.accessTier !== 'pro') {
+        if (opts.notify !== false && userId && r.after?.accessTier !== 'pro') {
           await import('./expiry-notices')
             .then((m) => m.notifyPlanEnded({ orgId: row.org_id, userId, endsAt: row.ends_at, trial: row.status === 'trialing' || row.tier === 'pilot' }))
             .catch((err) => console.error('[billing/expiry] ended notice failed:', row.org_id, err instanceof Error ? err.message : err))

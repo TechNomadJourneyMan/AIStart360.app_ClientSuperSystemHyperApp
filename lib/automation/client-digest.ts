@@ -1,7 +1,10 @@
 /**
  * lib/automation/client-digest.ts — еженедельный дайджест клиенту + лучший
  * Next Best Action (F-059). Вызывается из /api/cron/client-digest
- * по понедельникам около 09:30 Алматы (04:26 UTC, R-230).
+ * по понедельникам около 09:30 Алматы (04:26 UTC, R-230) и ещё раз через час
+ * (05:26 UTC) — догоняющий прогон для тех, до кого первый не дошёл в своём
+ * бюджете (ревью волны 1A): каждый прогон берёт только клиентов без дайджеста
+ * этой недели.
  *
  * Получают одобренные клиенты с включённой категорией «digest» (хотя бы один
  * канал). Письмо + запись в ленте. Если сказать нечего (нет GRI, задач,
@@ -25,6 +28,7 @@ import {
   fetchOpenPlanTasks,
   fetchPublishedContent,
   fetchPulseWeeks,
+  fetchSentDedupeKeys,
   type ContentPage,
   type GriSnapshot,
   type PlanTask,
@@ -140,6 +144,8 @@ export interface DigestRunStats {
   skippedReason?: MaintenanceSkipReason
   /** R-015: clients not started — the run's budget was spent. */
   deferred?: number
+  /** Review of wave 1A: clients who already have this week's digest — not started at all. */
+  alreadySent?: number
   /** R-015: sends cut by the run's deadline (a provider that did not answer in time). */
   timedOut?: number
 }
@@ -147,7 +153,7 @@ export interface DigestRunStats {
 export async function runClientDigest(now: Date = new Date(), opts: { budget?: RunBudget } = {}): Promise<DigestRunStats> {
   // R-015: the budget starts with the run — the reads below count against it too.
   const budget = opts.budget ?? runBudget()
-  const stats: DigestRunStats = { eligible: 0, sent: 0, empty: 0, duplicate: 0, disabled: 0, failed: 0, switchedOff: false, deferred: 0, timedOut: 0 }
+  const stats: DigestRunStats = { eligible: 0, sent: 0, empty: 0, duplicate: 0, disabled: 0, failed: 0, switchedOff: false, deferred: 0, timedOut: 0, alreadySent: 0 }
   let enabled = true
   try {
     enabled = await getSetting('client_digest_enabled')
@@ -158,7 +164,17 @@ export async function runClientDigest(now: Date = new Date(), opts: { budget?: R
   // R-026: no digest into a cabinet that is closed for maintenance.
   const skip = await maintenanceSkipReason('client-digest')
   if (skip) return { ...stats, skippedReason: skip }
-  const approved = (await fetchClientStates()).filter((s) => s.status === 'approved').map((s) => s.user_id)
+  const allApproved = (await fetchClientStates()).filter((s) => s.status === 'approved').map((s) => s.user_id)
+  if (!allApproved.length) return stats
+  const week = mondayOf(localDate(now))
+  const keyOf = (userId: string) => `client_digest:${userId}:${week}`
+  // Review of wave 1A: the run starts only the clients without this week's digest (one read of the
+  // journal), so the catch-up run an hour later (lib/cron/schedule.ts) spends its budget on the
+  // clients the first one deferred, not on duplicates. Journal not read → everyone, as before: the
+  // key in notifyClient still makes a repeat a no-op.
+  const done = await fetchSentDedupeKeys(allApproved.map(keyOf))
+  const approved = done ? allApproved.filter((u) => !done.has(keyOf(u))) : allApproved
+  stats.alreadySent = allApproved.length - approved.length
   if (!approved.length) return stats
 
   const since7 = new Date(now.getTime() - 7 * DAY_MS).toISOString()
@@ -170,7 +186,6 @@ export async function runClientDigest(now: Date = new Date(), opts: { budget?: R
     fetchPulseWeeks(approved, addDays(localDate(now), -84)),
     fetchPublishedContent(since7),
   ])
-  const week = mondayOf(localDate(now))
 
   const one = async (userId: string): Promise<void> => {
     // Категория выключена целиком — дайджест не собираем (дешевле, чем notifyClient).
@@ -213,7 +228,7 @@ export async function runClientDigest(now: Date = new Date(), opts: { budget?: R
         ctaUrl: plan.nba?.cta.href && plan.nba.cta.href.startsWith('/') ? plan.nba.cta.href : '/client/home',
         ctaLabel: plan.nba?.cta.label ?? 'Открыть кабинет',
         eyebrow: 'Дайджест недели',
-        dedupeKey: `client_digest:${userId}:${week}`,
+        dedupeKey: keyOf(userId),
         // Маркер в automation_sends, но вне потолка напоминаний.
         automated: { kind: 'client_digest', countsTowardCap: false },
         emailKind: 'client_digest',
@@ -233,8 +248,8 @@ export async function runClientDigest(now: Date = new Date(), opts: { budget?: R
   }
 
   // R-015: ≤ 2 clients at a time within the run's budget, in a per-week order (not the same clients
-  // left out every Monday); a client not reached is «deferred» — a repeat run the same week sends
-  // only to them (the key client_digest:<user>:<monday> makes the others a no-op).
+  // left out every Monday); a client not reached is «deferred» — the catch-up run the same Monday
+  // (05:26 UTC) starts only them (the ones with this week's key are filtered out above).
   const run = await runBounded([...approved].sort((a, b) => dayRotation(week, a) - dayRotation(week, b)), budget, one)
   stats.deferred = run.deferred
   if (run.deferred > 0 || (stats.timedOut ?? 0) > 0) {

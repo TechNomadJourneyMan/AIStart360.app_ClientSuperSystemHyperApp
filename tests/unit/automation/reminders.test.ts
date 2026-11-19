@@ -24,6 +24,10 @@ vi.mock('@/lib/automation/data', () => ({
   fetchSurveyRows: async (ids: string[]) => new Map(ids.filter((id) => h.surveyRows.has(id)).map((id) => [id, h.surveyRows.get(id)!])),
   fetchGriDrafts: async (ids: string[]) => new Map(ids.filter((id) => h.drafts.has(id)).map((id) => [id, h.drafts.get(id)!])),
   fetchPulseWeeks: async (ids: string[]) => new Map(ids.filter((id) => h.pulse.has(id)).map((id) => [id, h.pulse.get(id)!])),
+  // the journal of sends (review of wave 1A: what was sent is dropped before the run)
+  fetchSentDedupeKeys: async (keys: string[]) => new Set(keys.filter((k) => h.sends.some((s) => s.dedupeKey === k))),
+  fetchTouchedSince: async (ids: string[], sinceIso: string) =>
+    new Set(h.sends.filter((s) => s.userId && ids.includes(s.userId) && s.countsTowardCap && s.sentAt >= Date.parse(sinceIso)).map((s) => s.userId as string)),
 }))
 vi.mock('@/lib/notifications/store', () => ({
   getRecipient: async (id: string) => h.profiles.get(id) ?? null,

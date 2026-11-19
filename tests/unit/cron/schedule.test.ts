@@ -19,9 +19,11 @@ const timesOf = (jobs: readonly { path: string; schedule: string }[]) => jobs.ma
 const VERCEL_SCHEDULE = [
   { path: '/api/cron/billing-expiry', schedule: '15 0 * * *' },
   { path: '/api/cron/staff-digest', schedule: '0 3 * * *' },
-  { path: '/api/cron/crm-digest', schedule: '11 4 * * *' },
+  // R-230 moved it to 04:11; the review of wave 1A added the catch-up run at 05:11 (one digest per owner per day).
+  { path: '/api/cron/crm-digest', schedule: '11 4,5 * * *' },
   { path: '/api/cron/agents-digest', schedule: '41 4 * * *' },
-  { path: '/api/cron/client-digest', schedule: '26 4 * * 1' },
+  // Vercel ran it at 04:00 Mondays; R-230 moved it to 04:26, the review of wave 1A added the catch-up run at 05:26.
+  { path: '/api/cron/client-digest', schedule: '26 4,5 * * 1' },
   { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
   { path: '/api/cron/reminders', schedule: '0 6 * * *' },
   // Vercel ran it at 22:00; R4-A1 (N4A-14) moved it to 21:30, away from the 22:00 recalculations of Points A and B.
@@ -49,9 +51,9 @@ describe('CRON_JOBS', () => {
     const expected = [
       { path: '/api/cron/billing-expiry', schedule: '15 0 * * *' },
       { path: '/api/cron/staff-digest', schedule: '0 3 * * *' },
-      { path: '/api/cron/crm-digest', schedule: '11 4 * * *' },
+      { path: '/api/cron/crm-digest', schedule: '11 4,5 * * *' },
       { path: '/api/cron/agents-digest', schedule: '41 4 * * *', role: 'agents' },
-      { path: '/api/cron/client-digest', schedule: '26 4 * * 1' },
+      { path: '/api/cron/client-digest', schedule: '26 4,5 * * 1' },
       { path: '/api/telegram/personal/sync', schedule: '0 5 * * *' },
       { path: '/api/cron/reminders', schedule: '0 6 * * *' },
       { path: '/api/cron/analytics-rollup', schedule: '30 21 * * *' },
@@ -182,22 +184,32 @@ describe('R-230: the morning digests are spread by minutes', () => {
   const monday = Array.from({ length: 24 * 60 }, (_, m) => new Date(Date.UTC(2026, 10, 23, 0, m)))
   const minutesOf = (path: string) => monday.filter((minute) => dueJobs(minute, jobsForRole('all')).some((job) => job.path === path))
 
-  it('each fires once in the 04:xx UTC morning (09:xx Almaty), off the hour, each in a minute of its own', () => {
+  const iso = (m: Date) => m.toISOString().slice(11, 16)
+
+  it('each fires first in the 04:xx UTC morning (09:xx Almaty), off the hour, each in a minute of its own', () => {
     const at = DIGESTS.map((p) => minutesOf(p))
     for (const m of at) {
-      expect(m).toHaveLength(1)
       expect(m[0].getUTCHours()).toBe(4)
       expect(m[0].getUTCMinutes()).not.toBe(0)
     }
     expect(new Set(at.map((m) => m[0].getUTCMinutes())).size).toBe(3)
   })
 
-  it('no other job of either service is due in their minutes (agents: only its every-minute queue drain)', () => {
+  // Review of wave 1A: the 44 s / ≤ 2 budget can defer clients; a catch-up run an hour later starts
+  // only those without this week's digest (lib/automation/client-digest.ts).
+  it('client-digest and crm-digest run again an hour later to catch up; the agents digest once', () => {
+    expect(minutesOf('/api/cron/client-digest').map(iso)).toEqual(['04:26', '05:26'])
+    expect(minutesOf('/api/cron/crm-digest').map(iso)).toEqual(['04:11', '05:11'])
+    expect(minutesOf('/api/cron/agents-digest').map(iso)).toEqual(['04:41'])
+  })
+
+  it('no other job of either service is due in any of their minutes (agents: only its every-minute queue drain)', () => {
     for (const path of DIGESTS) {
-      const [minute] = minutesOf(path)
-      expect(dueJobs(minute, jobsForRole('all')).map((j) => j.path)).toEqual([path])
-      const agents = dueJobs(minute, jobsForRole('agents')).map((j) => j.path).filter((p) => p !== '/api/cron/agents')
-      expect(agents.filter((p) => p !== path)).toEqual([])
+      for (const minute of minutesOf(path)) {
+        expect(dueJobs(minute, jobsForRole('all')).map((j) => j.path)).toEqual([path])
+        const agents = dueJobs(minute, jobsForRole('agents')).map((j) => j.path).filter((p) => p !== '/api/cron/agents')
+        expect(agents.filter((p) => p !== path)).toEqual([])
+      }
     }
   })
 })

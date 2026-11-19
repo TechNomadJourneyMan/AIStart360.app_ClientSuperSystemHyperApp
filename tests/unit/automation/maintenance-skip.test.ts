@@ -28,6 +28,8 @@ vi.mock('@/lib/automation/data', () => ({
   fetchNbaDone: async () => new Map(),
   fetchOpenPlanTasks: async () => new Map(),
   fetchPublishedContent: async () => [],
+  fetchSentDedupeKeys: async () => new Set(),
+  fetchTouchedSince: async () => new Set(),
 }))
 vi.mock('@/lib/automation/survey-modes', () => ({ fetchSurveyModes: async () => new Map() }))
 vi.mock('@/lib/notifications/notify', () => ({ notifyClient: vi.fn() }))

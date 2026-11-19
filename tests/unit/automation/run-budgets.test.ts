@@ -33,6 +33,8 @@ vi.mock('@/lib/automation/data', () => ({
   fetchNbaDone: async () => new Map(),
   fetchOpenPlanTasks: async (ids: string[]) => new Map(ids.map((id) => [id, [{ id: `t-${id}`, title: 'Задача', priority: 1, dueDate: null }]])),
   fetchPublishedContent: async () => [],
+  fetchSentDedupeKeys: async () => new Set(),
+  fetchTouchedSince: async () => new Set(),
   fetchPendingRequests: async () => [],
   fetchOpenPaidRequests: async () => [],
   fetchProNoticesSince: async () => [],

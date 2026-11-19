@@ -8,7 +8,8 @@
  *   'ended' — срок прошёл и ночной крон перевёл кабинет на бесплатный доступ
  *             (expireDuePlans в lib/payments/billing.ts, сразу после снижения).
  * Крон /api/cron/billing-expiry (ежедневно 00:15 UTC) сначала снижает истёкшие
- * тарифы, затем рассылает 'd7' / 'd1'. Идемпотентно: ключ уведомления — этап +
+ * тарифы, затем рассылает 'd7' / 'd1' и досылает 'ended', задержанные режимом
+ * техработ (sendMissedEndNotices). Идемпотентно: ключ уведомления — этап +
  * подписка + дата окончания (журнал notifyClient), повторный прогон в те же сутки
  * ничего не повторяет, а продление (новая дата) предупредит заново.
  *
@@ -20,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
 import { notifyProExpiry, type ProExpiryStage } from '@/lib/notifications/product'
 import { utcIso } from './plan-state'
+import { SYSTEM_EXPIRY_ACTOR } from './billing'
 
 const DAY_MS = 24 * 3_600_000
 const LIVE = ['trialing', 'active', 'past_due']
@@ -148,6 +150,67 @@ export async function sendExpiryWarnings(opts: { now?: Date } = {}, sb: Sb = cre
       trial: p.trial,
       dedupeKey: expiryNoticeKey(stage, p.orgId, p.endsAt),
     })
+    if (res.skipped === 'duplicate') report.duplicate += 1
+    else if (res.ok) report.sent += 1
+    else report.failed += 1
+  }
+  return report
+}
+
+/** How far back the catch-up of «закончился» looks: older news is not worth a message. */
+export const ENDED_CATCH_UP_DAYS = 14
+
+interface CanceledRow extends SubRow {
+  updatedAt: unknown
+}
+
+/**
+ * Ревью волны 1A: в режиме техработ крон снижает тариф, но «Доступ закончился» не шлёт
+ * (expireDuePlans({ notify: false })). Первый прогон после техработ досылает его здесь: подписки,
+ * которые отменил сам крон (status 'canceled', assignedBy = system:billing-expiry) за последние
+ * ENDED_CATCH_UP_DAYS суток, — человеку, у которого сейчас нет Pro (продлил или есть другая живая
+ * подписка — сказать нечего). На человека — одна строка, с самым поздним сроком. Ключ — тот же,
+ * что у уведомления сразу после снижения (этап + подписка + дата окончания; дата — как в
+ * billing_due_expirations: пробный — trialEndsAt, иначе currentPeriodEnd), поэтому уже
+ * отправленное не повторяется. Ошибка чтения — исключение.
+ */
+export async function sendMissedEndNotices(opts: { now?: Date } = {}, sb: Sb = createServiceClient()): Promise<ExpiryWarningsReport> {
+  const now = opts.now ?? new Date()
+  const { data, error } = await sb
+    .from('subscriptions')
+    .select('orgId,tier,status,trialEndsAt,currentPeriodEnd,updatedAt')
+    .eq('status', 'canceled')
+    .eq('assignedBy', SYSTEM_EXPIRY_ACTOR.id)
+    .limit(READ_LIMIT)
+  if (error) throw new Error(`subscriptions: ${String(error.message ?? '').slice(0, 160)}`)
+  const since = now.getTime() - ENDED_CATCH_UP_DAYS * DAY_MS
+  const recent = ((data ?? []) as CanceledRow[]).filter((r) => {
+    const at = utcIso(r.updatedAt)
+    return r.tier && r.tier !== 'free' && at !== null && Date.parse(at) >= since
+  })
+  const report: ExpiryWarningsReport = { due: 0, sent: 0, duplicate: 0, failed: 0 }
+  if (!recent.length) return report
+  const people = await resolvePeople(sb, Array.from(new Set(recent.map((r) => r.orgId))))
+  // Per person: the row that ended last.
+  const last = new Map<string, { row: CanceledRow; end: string; trial: boolean }>()
+  for (const row of recent) {
+    const userId = people.get(row.orgId)
+    if (!userId) continue
+    const periodEnd = utcIso(row.currentPeriodEnd)
+    const trial = row.tier === 'pilot' || periodEnd === null
+    const end = trial ? utcIso(row.trialEndsAt) : periodEnd
+    if (!end) continue
+    const cur = last.get(userId)
+    if (!cur || Date.parse(end) > Date.parse(cur.end)) last.set(userId, { row, end, trial })
+  }
+  if (!last.size) return report
+  const { data: profiles, error: pErr } = await sb.from('profiles').select('id, tier').in('id', Array.from(last.keys()))
+  if (pErr) throw new Error(`profiles: ${String(pErr.message ?? '').slice(0, 160)}`)
+  const pro = new Set(((profiles ?? []) as Array<{ id: string; tier: unknown }>).filter((p) => p.tier === 'pro').map((p) => String(p.id)))
+  for (const [userId, { row, end, trial }] of Array.from(last.entries())) {
+    if (pro.has(userId)) continue
+    report.due += 1
+    const res = await notifyProExpiry(userId, { stage: 'ended', endsAt: end, trial, dedupeKey: expiryNoticeKey('ended', row.orgId, end) })
     if (res.skipped === 'duplicate') report.duplicate += 1
     else if (res.ok) report.sent += 1
     else report.failed += 1

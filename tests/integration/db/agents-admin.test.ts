@@ -72,6 +72,26 @@ describe.skipIf(!dbTestsEnabled)('agent control center data', async () => {
     expect(reset.ok && reset.effective.READ_CLIENT_DATA).toBe('ALLOW')
   })
 
+  // Review of wave 1A: «enabled but never ran» needs a date to count from — the last change of the
+  // agent's config (agent_configs.updated_at, set by the trigger of migration 086). No config row
+  // (enabled by default in code) or a disabled agent → null.
+  it('enabledSince: the config change that left the agent enabled; null without a row or when disabled', async () => {
+    await prisma.$executeRaw`DELETE FROM public.agent_configs WHERE agent_key = ${platformKey}`
+    let p = (await admin.listAgentOverviews()).find((x) => x.key === platformKey)!
+    expect(p.enabledSince).toBeNull()
+
+    const before = Date.now()
+    expect(await admin.updateAgentConfig(platformKey, { enabled: true }, 'staff:t')).toEqual({ ok: true })
+    p = (await admin.listAgentOverviews()).find((x) => x.key === platformKey)!
+    expect(p.enabled).toBe(true)
+    expect(typeof p.enabledSince).toBe('string')
+    expect(Math.abs(Date.parse(p.enabledSince!) - before)).toBeLessThan(60_000)
+
+    const disabled = (await admin.listAgentOverviews()).find((x) => x.key === key)!
+    expect(disabled.enabled).toBe(false)
+    expect(disabled.enabledSince).toBeNull()
+  })
+
   it('retries a dead task and cancels a queued one; filters and details work', async () => {
     await admin.updateAgentConfig(key, { enabled: true }, 'staff:t')
     const { id } = await enqueueAgentTask({ agentKey: key, companyId: null, trigger: 'manual', kick: false, idempotencyKey: `cc-${randomUUID()}` })

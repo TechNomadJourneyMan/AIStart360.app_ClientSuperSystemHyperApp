@@ -18,9 +18,11 @@
  *                               over code without it — overlap, a smoke run too early). Only --revert
  *                               (a rollback to code from before R4-A4, runbook §9) turns that into a warning;
  *   /api/health                 200, every check «ok» («unknown» — no data yet — is a warning); `schema`
- *                               (N5-1a: the newest migration of the code is in schema_migrations) must be
- *                               «ok» — «fail» and «unknown» fail, locally too; code without the check
- *                               (from before N5-1a) is a warning;
+ *                               (N5-1a: every migration of the code from 140 on is in schema_migrations)
+ *                               must be «ok» — «fail» fails everywhere, locally too; «unknown» (the journal
+ *                               was not read) fails in production and only warns locally (a cold dev
+ *                               server against a remote staging can run out of the check's time); code
+ *                               without the check (from before N5-1a) is a warning;
  *   /, /login                   200; /login carries a Content-Security-Policy with connect-src and no
  *                               localhost / 127.0.0.1 / *.supabase.co (docs/deploy/csp.md);
  *   without a session           /client/home, /point-a, /dashboard → /login?from=<path>;
@@ -33,8 +35,9 @@
  *
  * Local mode (base URL on localhost / 127.0.0.1 — the dev server against staging, runbook §4): there is no
  * code deploy to staging, so the same smoke runs against `next dev`. What a dev server cannot have is a
- * warning there, not a failure: no deploymentId; /api/health checks other than `db` (no Workflow queue,
- * no scheduler, no Inngest locally); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
+ * warning there, not a failure: no deploymentId; /api/health checks other than `db` and `schema` (no
+ * Workflow queue, no scheduler, no Inngest locally), and `schema: unknown` (the journal of the remote
+ * staging not read in time by a cold dev server — `schema: fail` stays a failure); the dev CSP allows the local «Рынок» (localhost:5173); a cron at 503
  * (no CRON_SECRET locally); /api/inngest. Redirects, 401/403 and `db` stay strict.
  * --revert (W3B-3, NV3-3): a rollback to code from before R4-A4 — a /api/healthz without deploymentId is a
  * warning, the deployment is checked by `railway deployment list`. A deploymentId that is there and differs
@@ -139,18 +142,23 @@ export function checks() {
         const body = /** @type {{ ok?: unknown, checks?: Record<string, unknown> } | null} */ (r.json)
         const entries = Object.entries(body?.checks ?? {})
         const got = `${r.status} ${entries.map(([k, v]) => `${k}:${v}`).join(' ') || '(нет checks)'}`
-        // N5-1a: the newest migration of the deployed code must be in the journal — strict everywhere,
-        // locally too (staging must carry the migrations of the code under test, runbook §4).
+        // N5-1a: every migration of the deployed code (from 140 on) must be in the journal. «Behind»
+        // (fail) is strict everywhere, locally too (staging must carry the migrations of the code under
+        // test, runbook §4). «Not read» (unknown) is strict in production; locally it only warns — a cold
+        // dev server against a remote staging can run out of the 3 s of the check (review of wave 1A).
         const schema = body?.checks && 'schema' in body.checks ? body.checks.schema : undefined
+        const SCHEMA_UNREAD = 'журнал миграций не прочитан — схема не проверена, повторить'
         const schemaBad = schema !== undefined && schema !== 'ok'
-          ? { ok: false, got, note: schema === 'fail' ? SCHEMA_BEHIND : 'журнал миграций не прочитан — схема не проверена, повторить' }
+          ? { ok: false, got, note: schema === 'fail' ? SCHEMA_BEHIND : SCHEMA_UNREAD }
           : null
         if (o.local && (r.status === 200 || r.status === 503) && body?.checks) {
           // dev server: only the database (staging) and its schema are required; the rest a laptop does not run
           if (body.checks.db !== 'ok') return { ok: false, got, note: 'база staging не отвечает' }
-          if (schemaBad) return schemaBad
-          const rest = entries.filter(([k, v]) => k !== 'db' && v !== 'ok').map(([k]) => k)
-          return rest.length ? { ok: true, warn: true, got, note: `локально: ${rest.join(', ')} — без них dev-сервер работает` } : { ok: true, got }
+          if (schemaBad && schema !== 'unknown') return schemaBad
+          const notes = schema === 'unknown' ? [`${SCHEMA_UNREAD} (локально — предупреждение: холодный dev-сервер и удалённый staging)`] : []
+          const rest = entries.filter(([k, v]) => k !== 'db' && k !== 'schema' && v !== 'ok').map(([k]) => k)
+          if (rest.length) notes.push(`локально: ${rest.join(', ')} — без них dev-сервер работает`)
+          return notes.length ? { ok: true, warn: true, got, note: notes.join('; ') } : { ok: true, got }
         }
         if (schemaBad) return schemaBad
         if (r.status !== 200 || body?.ok !== true || entries.length === 0) return { ok: false, got }

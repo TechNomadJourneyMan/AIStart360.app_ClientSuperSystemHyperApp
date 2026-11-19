@@ -33,10 +33,10 @@ export const dynamic = 'force-dynamic'
  * bounded, so the probe stays cheap; the agents service reads it every 3 minutes
  * (lib/ops/crosswatch.ts). Railway's deploy check is /api/healthz, which touches none of this.
  *
- * Schema (N5-1a): on every server «Схема базы данных» — the newest migration this build ships is
- * recorded in public.schema_migrations. Not recorded fails the check (503, «Схема базы отстаёт от
- * кода»); no file name is said here — staff see the expected and the last recorded file in
- * GET /api/giga-admin/system/health. The post-deploy smoke fails on it (scripts/smoke/post-deploy.mjs).
+ * Schema (N5-1a, review of wave 1A): on every server «Схема базы данных» — every migration this build
+ * ships from 140 on is recorded in public.schema_migrations. One missing fails the check (503, «Схема
+ * базы отстаёт от кода»); no file name is said here — staff see the missing files and the last
+ * recorded one in GET /api/giga-admin/system/health. The post-deploy smoke fails on it (scripts/smoke/post-deploy.mjs).
  */
 interface ServiceResult {
   name: string
@@ -73,7 +73,7 @@ export async function GET() {
     latencyMs: 0,
     uptime: NOT_MEASURED,
   }
-  // N5-1a: the newest migration of this build is in the journal — only «behind» or not, no file names.
+  // N5-1a: every migration of this build (from 140 on) is in the journal — only «behind» or not, no file names.
   const schema: ServiceResult = { name: 'Схема базы данных', status: JOURNAL_STATUS[health.schema], latencyMs: 0, uptime: NOT_MEASURED }
   const queue: ServiceResult | null = isPersistentServer() && servesWeb()
     ? { name: 'Очередь Workflow', status: QUEUE_STATUS[getWorkflowQueueStatus().state], latencyMs: 0, uptime: NOT_MEASURED }
