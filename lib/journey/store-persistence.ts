@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase-service'
 import { JourneyConflictError, JourneyPersistenceUnavailableError } from './persistence'
 import { journeyGoalSchema, journeyMessageSchema, journeyRoadmapItemSchema } from './schema'
+import { STORE_JOURNEY_WORKSPACE_PREFIX } from './workspace-scope'
 
 export const storeLayoutSchema = z.object({
   id: z.string().max(120), collapsed: z.boolean(), hidden: z.boolean(), focused: z.boolean(),
@@ -24,7 +25,7 @@ export type StoredStoreJourney = { overlay: StoreJourneyOverlay; revision: numbe
 
 /** The client cannot select a workspace or obtain a generic Journey credential. */
 export function storeJourneyWorkspaceId(userId: string, companyId: string): string {
-  return `store-v2:${createHash('sha256').update(JSON.stringify([userId, companyId])).digest('hex')}`
+  return `${STORE_JOURNEY_WORKSPACE_PREFIX}${createHash('sha256').update(JSON.stringify([userId, companyId])).digest('hex')}`
 }
 
 export function emptyStoreOverlay(companyId: string): StoreJourneyOverlay {

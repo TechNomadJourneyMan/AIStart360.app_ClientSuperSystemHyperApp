@@ -13,8 +13,9 @@ import {
   type JourneyDeviceSyncRepository,
 } from '@/lib/journey/device-sync'
 import { journeyErrorResponse } from '@/lib/journey/http'
-import { hashJourneyCredential, JourneyConflictError } from '@/lib/journey/persistence'
-import type { JourneyIdentity } from '@/lib/journey/schema'
+import { hashJourneyCredential, JourneyAccessError, JourneyConflictError } from '@/lib/journey/persistence'
+import { journeyIdentitySchema, type JourneyIdentity } from '@/lib/journey/schema'
+import { STORE_JOURNEY_WORKSPACE_PREFIX } from '@/lib/journey/workspace-scope'
 
 const NOW = new Date('2026-07-14T10:00:00.000Z')
 const IDENTITY: JourneyIdentity = {
@@ -32,6 +33,7 @@ class MemoryRepository implements JourneyDeviceSyncRepository {
     revision: 4,
   }
   canonicalUserId: string | null = null
+  canonicalWorkspaceId = 'journey-canonical-workspace'
   sourceUserId: string | null = null
 
   async authorizeSource(identity: JourneyIdentity) {
@@ -48,7 +50,7 @@ class MemoryRepository implements JourneyDeviceSyncRepository {
   async findCanonicalWorkspace(actorUserId: string) {
     if (this.canonicalUserId !== actorUserId) return null
     return {
-      workspaceId: 'journey-canonical-workspace',
+      workspaceId: this.canonicalWorkspaceId,
       userId: actorUserId,
       state: createEmptyJourneyState('journey-canonical-workspace'),
       revision: 8,
@@ -124,6 +126,21 @@ describe('Journey cross-device sync', () => {
       deps(repository),
     )
     expect(result.workspaceId).toBe('journey-canonical-workspace')
+  })
+
+  it('keeps store workspaces outside the general Journey identity and device code flows', async () => {
+    const repository = new MemoryRepository()
+    const actorUserId = '5cd75337-ff7a-49df-80ef-7cb63d7fe8c4'
+    const storeId = `${STORE_JOURNEY_WORKSPACE_PREFIX}${'a'.repeat(64)}`
+    expect(journeyIdentitySchema.safeParse({ ...IDENTITY, workspaceId: storeId }).success).toBe(false)
+
+    repository.canonicalUserId = actorUserId
+    repository.canonicalWorkspaceId = storeId
+    await expect(createJourneyConnectCode({ actorUserId }, deps(repository))).rejects.toBeInstanceOf(JourneyAccessError)
+    expect(repository.inserted).toHaveLength(0)
+
+    repository.claimResult = { ...repository.claimResult, workspaceId: storeId }
+    await expect(redeemJourneyConnectCode({ code: 'ABCD-2345', actorUserId }, deps(repository))).rejects.toBeInstanceOf(JourneyAccessError)
   })
 
   it('rejects an active identity that is not owned by the signed-in account', async () => {

@@ -10,6 +10,7 @@ import {
   type AuthorizedJourneyWorkspace,
 } from './persistence'
 import { journeyIdentitySchema, journeyStateSchema, type JourneyIdentity, type JourneyState } from './schema'
+import { isStoreJourneyWorkspace, STORE_JOURNEY_WORKSPACE_PREFIX } from './workspace-scope'
 
 export const JOURNEY_CONNECT_CODE_TTL_MS = 10 * 60_000
 export const JOURNEY_CONNECT_CODE_MAX_ATTEMPTS = 5
@@ -136,6 +137,7 @@ export async function createJourneyConnectCode(
     throw new JourneyAccessError()
   }
   if (source.userId && source.userId !== input.actorUserId) throw new JourneyAccessError()
+  if (isStoreJourneyWorkspace(source.workspaceId)) throw new JourneyAccessError()
 
   const expiresAt = new Date(deps.now().getTime() + JOURNEY_CONNECT_CODE_TTL_MS).toISOString()
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -177,6 +179,7 @@ export async function redeemJourneyConnectCode(
   if (claim.status !== 'claimed' || !claim.workspaceId || !claim.state) {
     throw claimError(claim.status)
   }
+  if (isStoreJourneyWorkspace(claim.workspaceId)) throw new JourneyAccessError()
   const state = journeyStateSchema.parse({
     ...(claim.state as Record<string, unknown>),
     workspaceId: claim.workspaceId,
@@ -284,6 +287,8 @@ class SupabaseJourneyDeviceSyncRepository implements JourneyDeviceSyncRepository
       .from('ai_journey_workspaces')
       .select('workspace_key,user_id,state,revision')
       .eq('user_id', actorUserId)
+      // Store paths use the normal account and never issue shareable device codes.
+      .not('workspace_key', 'like', `${STORE_JOURNEY_WORKSPACE_PREFIX}%`)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
