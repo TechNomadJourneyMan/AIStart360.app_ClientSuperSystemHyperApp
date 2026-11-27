@@ -77,6 +77,7 @@ describe('getPortfolioGRI — real GRI assessments', () => {
       overall: 5.38, // (6.5 + 4.25) / 2 = 5.375
       product: 7, trust: 5, bizmodel: 5, cash: 6, ops: 8, team: 3, founder: 5,
       reportCount: 2,
+      sampleCounts: { overall: 2, product: 2, trust: 2, bizmodel: 2, cash: 2, ops: 2, team: 2, founder: 2 },
     })
   })
 
@@ -102,6 +103,19 @@ describe('getPortfolioGRI — real GRI assessments', () => {
     expect(p?.cash).toBeNull()    // nobody answered
     expect(p?.founder).toBeNull()
     expect(p?.reportCount).toBe(2)
+    expect(p?.sampleCounts).toEqual({ overall: 2, product: 2, trust: 0, bizmodel: 0, cash: 0, ops: 0, team: 1, founder: 0 })
+  })
+
+  it('records independent denominators when an assessment has a section but no overall index', async () => {
+    s.rows = [
+      { user_id: 'u1', gri_index: 6, created_at: null, section_avgs: { team: 8 } },
+      { user_id: 'u2', gri_index: 0, created_at: null, section_avgs: { 'product-demand': 4 } },
+      { user_id: 'u3', gri_index: 11, created_at: null, section_avgs: { team: -1, operations: 'invalid' } },
+    ]
+    const p = await getPortfolioGRI()
+    expect(p?.reportCount).toBe(2)
+    expect(p?.overall).toBe(6)
+    expect(p?.sampleCounts).toEqual({ overall: 1, product: 1, trust: 0, bizmodel: 0, cash: 0, ops: 0, team: 1, founder: 0 })
   })
 
   it('no assessments → null', async () => {
@@ -146,6 +160,8 @@ describe('pure helpers', () => {
     expect(p?.team).toBe(6)
     expect(p?.overall).toBe(6)
     expect(p?.reportCount).toBe(2)
+    expect(p?.sampleCounts?.overall).toBe(2)
+    expect(p?.sampleCounts?.team).toBe(2)
   })
 
   it('gri_index distribution uses the 8 / 6 / 4 bands of the 0–10 index, not Point A 90 / 70 / 50', () => {

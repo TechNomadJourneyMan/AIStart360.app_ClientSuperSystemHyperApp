@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { PORTFOLIO_GRI_DOMAINS, type PortfolioGRI } from '@/lib/portfolio-gri'
 import { plural } from '@/lib/crm/digest'
 import { formatGri, griColor, griPercentOfScale, griZone } from '@/lib/format/gri'
+import { PortfolioGriDetails } from './PortfolioGriDetails'
 
 /**
  * Portfolio GRI on the staff dashboard: mean of the clients' current GRI
@@ -49,31 +50,39 @@ function scoreLabel(s: number) {
   return griZone(s)?.label ?? 'нет данных'
 }
 
-function Header({ overall, count }: { overall: number | null; count: number | null }) {
+function Header({ overall, count, data }: { overall: number | null; count: number | null; data?: PortfolioGRI }) {
   const color = overall !== null ? scoreColor(overall) : undefined
+  const value = (
+    <span className="flex items-baseline gap-1.5 mt-0.5">
+      {overall !== null ? (
+        <>
+          <span className="text-xl font-mono font-bold" style={{ color }}>{formatGri(overall)}</span>
+          <span className="text-xs text-on-surface-variant">/ 10</span>
+          <span
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded-full border"
+            style={{ color, borderColor: `${color}33`, background: `${color}11` }}
+          >
+            {scoreLabel(overall)}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="text-xl font-mono font-bold text-on-surface-variant/40">—</span>
+          <span className="text-xs text-on-surface-variant/40">/ 10</span>
+        </>
+      )}
+    </span>
+  )
+  const detailsClass = 'flex items-center gap-0.5 text-xs text-on-surface-variant hover:text-primary transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40'
   return (
     <div className="flex items-start justify-between gap-3 mb-3">
       <div>
         <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">GRI портфеля</p>
-        <div className="flex items-baseline gap-1.5 mt-0.5">
-          {overall !== null ? (
-            <>
-              <span className="text-xl font-mono font-bold" style={{ color }}>{formatGri(overall)}</span>
-              <span className="text-xs text-on-surface-variant">/ 10</span>
-              <span
-                className="text-[10px] font-mono px-1.5 py-0.5 rounded-full border"
-                style={{ color, borderColor: `${color}33`, background: `${color}11` }}
-              >
-                {scoreLabel(overall)}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-xl font-mono font-bold text-on-surface-variant/40">—</span>
-              <span className="text-xs text-on-surface-variant/40">/ 10</span>
-            </>
-          )}
-        </div>
+        {data ? (
+          <PortfolioGriDetails data={data} domains={PORTFOLIO_GRI_DOMAINS} className="rounded-lg text-left hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary/40">
+            {value}
+          </PortfolioGriDetails>
+        ) : value}
       </div>
       <div className="flex items-center gap-3">
         {count !== null && (
@@ -81,13 +90,14 @@ function Header({ overall, count }: { overall: number | null; count: number | nu
             {count} {plural(count, 'оценка', 'оценки', 'оценок')}
           </span>
         )}
-        <Link
-          href="/gri"
-          className="flex items-center gap-0.5 text-xs text-on-surface-variant hover:text-primary transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
-        >
-          Подробнее
-          <span className="material-symbols-outlined text-sm" aria-hidden="true">arrow_forward</span>
-        </Link>
+        {data ? (
+          <PortfolioGriDetails data={data} domains={PORTFOLIO_GRI_DOMAINS} className={detailsClass} />
+        ) : (
+          <Link href="/gri" className={detailsClass}>
+            Подробнее
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">arrow_forward</span>
+          </Link>
+        )}
       </div>
     </div>
   )
@@ -126,7 +136,7 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
-      <Header overall={data.overall} count={data.reportCount} />
+      <Header overall={data.overall} count={data.reportCount} data={data} />
 
       <div className="flex flex-col sm:flex-row gap-4 items-start">
         <svg
@@ -179,9 +189,15 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
 
         <div className="flex-1 w-full flex flex-col gap-2 pt-1">
           {domains.map((d) => (
-            <div key={d.key}>
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[11px] text-on-surface-variant">{d.label}</span>
+            <PortfolioGriDetails
+              key={d.key}
+              data={data}
+              domains={PORTFOLIO_GRI_DOMAINS}
+              selection={d.key}
+              className="group block w-full rounded-md text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span className="flex items-center justify-between mb-0.5">
+                <span className="text-[11px] text-on-surface-variant group-hover:text-primary">{d.label}</span>
                 {d.score !== null ? (
                   <span className="text-[11px] font-mono font-bold" style={{ color: scoreColor(d.score) }}>
                     {formatGri(d.score)}
@@ -189,16 +205,16 @@ export function PortfolioGriPanel({ data, failed = false }: Props) {
                 ) : (
                   <span className="text-[10px] font-mono text-on-surface-variant/50">нет данных</span>
                 )}
-              </div>
-              <div className="h-1 bg-surface-container rounded-full overflow-hidden">
+              </span>
+              <span className="block h-1 bg-surface-container rounded-full overflow-hidden">
                 {d.score !== null && (
-                  <div
-                    className="h-full rounded-full"
+                  <span
+                    className="block h-full rounded-full"
                     style={{ width: `${griPercentOfScale(d.score)}%`, background: scoreColor(d.score), opacity: 0.8 }}
                   />
                 )}
-              </div>
-            </div>
+              </span>
+            </PortfolioGriDetails>
           ))}
           <p className="text-[10px] text-on-surface-variant/60 leading-relaxed mt-1">
             Среднее по актуальным оценкам GRI клиентов (одна на клиента). Разделы без ответов в среднее не входят.

@@ -52,6 +52,8 @@ export interface PortfolioGRI {
   founder:     number | null
   /** Number of assessments in the averages — one (the current) per user. */
   reportCount: number
+  /** Actual denominator of each mean; older saved aggregates may not include it. */
+  sampleCounts?: Record<'overall' | PortfolioGriDomainKey, number>
 }
 
 export interface GriAssessmentRow {
@@ -84,9 +86,9 @@ function sectionValue(row: GriAssessmentRow, sectionId: string): number | null {
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-function mean(values: Array<number | null>): number | null {
+function summarize(values: Array<number | null>): { value: number | null; count: number } {
   const xs = values.filter((v): v is number => v !== null)
-  return xs.length ? round2(xs.reduce((a, b) => a + b, 0) / xs.length) : null
+  return { value: xs.length ? round2(xs.reduce((a, b) => a + b, 0) / xs.length) : null, count: xs.length }
 }
 
 const ts = (iso: string | null): number => {
@@ -113,12 +115,19 @@ function hasData(r: GriAssessmentRow): boolean {
 export function aggregatePortfolioGri(rows: GriAssessmentRow[]): PortfolioGRI | null {
   const usable = latestPerUser(rows).filter(hasData)
   if (usable.length === 0) return null
-  const domain = (sectionId: string) => mean(usable.map((r) => sectionValue(r, sectionId)))
-  const byKey = Object.fromEntries(PORTFOLIO_GRI_DOMAINS.map((d) => [d.key, domain(d.sectionId)])) as Record<PortfolioGriDomainKey, number | null>
+  const overall = summarize(usable.map((r) => griValue(r.gri_index)))
+  const domains = PORTFOLIO_GRI_DOMAINS.map((d) => ({
+    key: d.key,
+    ...summarize(usable.map((r) => sectionValue(r, d.sectionId))),
+  }))
   return {
-    overall: mean(usable.map((r) => griValue(r.gri_index))),
-    ...byKey,
+    overall: overall.value,
+    ...Object.fromEntries(domains.map((d) => [d.key, d.value])) as Record<PortfolioGriDomainKey, number | null>,
     reportCount: usable.length,
+    sampleCounts: {
+      overall: overall.count,
+      ...Object.fromEntries(domains.map((d) => [d.key, d.count])) as Record<PortfolioGriDomainKey, number>,
+    },
   }
 }
 
