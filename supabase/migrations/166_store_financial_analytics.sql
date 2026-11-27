@@ -188,7 +188,7 @@ DROP POLICY IF EXISTS store_financial_imports_owner_published_read
 CREATE POLICY store_financial_imports_owner_published_read
   ON public.store_financial_imports
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id AND status = 'published');
+  USING ((SELECT auth.uid()) = user_id AND status = 'published');
 
 DROP POLICY IF EXISTS store_financial_periods_owner_current_read
   ON public.store_financial_periods;
@@ -196,7 +196,7 @@ CREATE POLICY store_financial_periods_owner_current_read
   ON public.store_financial_periods
   FOR SELECT TO authenticated
   USING (
-    auth.uid() = user_id
+    (SELECT auth.uid()) = user_id
     AND superseded_at IS NULL
     AND EXISTS (
       SELECT 1

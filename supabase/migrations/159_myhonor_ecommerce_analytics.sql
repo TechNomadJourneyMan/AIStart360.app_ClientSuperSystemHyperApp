@@ -274,35 +274,35 @@ DROP POLICY IF EXISTS ecommerce_products_owner_read
 CREATE POLICY ecommerce_products_owner_read
   ON public.ecommerce_products
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS ecommerce_orders_owner_read
   ON public.ecommerce_orders;
 CREATE POLICY ecommerce_orders_owner_read
   ON public.ecommerce_orders
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS ecommerce_order_items_owner_read
   ON public.ecommerce_order_items;
 CREATE POLICY ecommerce_order_items_owner_read
   ON public.ecommerce_order_items
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS ecommerce_order_ingest_events_owner_read
   ON public.ecommerce_order_ingest_events;
 CREATE POLICY ecommerce_order_ingest_events_owner_read
   ON public.ecommerce_order_ingest_events
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS ecommerce_order_ingest_state_owner_read
   ON public.ecommerce_order_ingest_state;
 CREATE POLICY ecommerce_order_ingest_state_owner_read
   ON public.ecommerce_order_ingest_state
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 CREATE OR REPLACE FUNCTION public.ingest_myhonor_ecommerce_order(
   p_user_id UUID,

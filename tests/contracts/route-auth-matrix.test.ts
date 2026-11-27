@@ -76,7 +76,7 @@ const STAFF_DIRECT = /\b(requireGiga|requireGigaClient|requireGigaCompany|requir
 const STAFF_DELEGATED = /\b(guardPointAExpert|guardPlanRoute|resolveTokenManager|getGigaActor|isGigaSuperAdmin)\s*\(/
 const EVIDENCE: Record<string, RegExp> = {
   session:
-    /\.auth\.getUser\s*\(|\b(getSessionUser|getSessionUserId|authorizeClient|requireCrmOrg|resolveTenant\w*|handleDocumentFinalize|decideSuggestion|resolveJourneyActor|resolveTargetUserId|readImpersonation|endImpersonationInThisBrowser|liveFileAccessDeps|resolveCallerContext|sessionUser)\s*\(|from '@\/lib\/point-b\/whatif-http'/,
+    /\.auth\.getUser\s*\(|\b(getSessionUser|getSessionUserId|authorizeClient|requireCrmOrg|resolveTenant\w*|handleDocumentFinalize|decideSuggestion|resolveJourneyActor|resolveTargetUserId|readImpersonation|endImpersonationInThisBrowser|liveFileAccessDeps|resolveCallerContext|sessionUser|authorizeStore|authorizeMyHonorAccount|getStoreJourney|postStoreJourneyChat)\s*\(|from '@\/lib\/(?:point-b\/whatif-http|journey\/store-handlers)'/,
   expert: /\b(resolveExpert|requireExpert|resolveExpertBotUser|authorizeUserDataRead|resolveTokenManager)\s*\(/,
   cron: /\b(isAuthorizedCron|rejectUnauthorizedCron|isBearerAuthorized)\s*\(/,
   'internal-token': /\b(hasValidInternalToken|verifyInternalToken)\s*\(/,

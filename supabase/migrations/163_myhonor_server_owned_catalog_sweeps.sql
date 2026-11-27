@@ -92,7 +92,7 @@ DROP POLICY IF EXISTS ecommerce_catalog_sweeps_owner_read
 CREATE POLICY ecommerce_catalog_sweeps_owner_read
   ON public.ecommerce_catalog_sweeps
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 COMMENT ON TABLE public.ecommerce_catalog_sweeps IS
   'Durable server-owned MyHonor catalog import state with generation fencing.';

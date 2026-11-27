@@ -53,7 +53,7 @@ DROP POLICY IF EXISTS ecommerce_catalog_sync_state_owner_read
 CREATE POLICY ecommerce_catalog_sync_state_owner_read
   ON public.ecommerce_catalog_sync_state
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 CREATE OR REPLACE FUNCTION public.finalize_myhonor_ecommerce_catalog_sweep(
   p_user_id UUID,

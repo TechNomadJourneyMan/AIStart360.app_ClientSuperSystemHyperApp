@@ -164,7 +164,7 @@ DROP POLICY IF EXISTS store_import_variant_mappings_owner_read
 CREATE POLICY store_import_variant_mappings_owner_read
   ON public.store_import_variant_mappings
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 -- Close a Phase 1 ownership gap: a product link must belong to both the same
 -- owner and the same company. Re-run this check when company_id itself changes.

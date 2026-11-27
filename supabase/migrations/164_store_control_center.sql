@@ -344,21 +344,21 @@ DROP POLICY IF EXISTS store_import_runs_owner_read
 CREATE POLICY store_import_runs_owner_read
   ON public.store_import_runs
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS store_warehouses_owner_read
   ON public.store_warehouses;
 CREATE POLICY store_warehouses_owner_read
   ON public.store_warehouses
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS store_product_variants_owner_read
   ON public.store_product_variants;
 CREATE POLICY store_product_variants_owner_read
   ON public.store_product_variants
   FOR SELECT TO authenticated
-  USING (auth.uid() = user_id);
+  USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS store_price_snapshots_owner_read
   ON public.store_price_snapshots;
@@ -366,11 +366,11 @@ CREATE POLICY store_price_snapshots_owner_read
   ON public.store_price_snapshots
   FOR SELECT TO authenticated
   USING (
-    auth.uid() = user_id
+    (SELECT auth.uid()) = user_id
     AND EXISTS (
       SELECT 1 FROM public.store_import_runs AS run
        WHERE run.id = import_run_id
-         AND run.user_id = auth.uid()
+         AND run.user_id = (SELECT auth.uid())
          AND run.status = 'published'
     )
   );
@@ -381,11 +381,11 @@ CREATE POLICY store_inventory_snapshots_owner_read
   ON public.store_inventory_snapshots
   FOR SELECT TO authenticated
   USING (
-    auth.uid() = user_id
+    (SELECT auth.uid()) = user_id
     AND EXISTS (
       SELECT 1 FROM public.store_import_runs AS run
        WHERE run.id = import_run_id
-         AND run.user_id = auth.uid()
+         AND run.user_id = (SELECT auth.uid())
          AND run.status = 'published'
     )
   );
@@ -396,11 +396,11 @@ CREATE POLICY store_sales_lines_owner_read
   ON public.store_sales_lines
   FOR SELECT TO authenticated
   USING (
-    auth.uid() = user_id
+    (SELECT auth.uid()) = user_id
     AND EXISTS (
       SELECT 1 FROM public.store_import_runs AS run
        WHERE run.id = import_run_id
-         AND run.user_id = auth.uid()
+         AND run.user_id = (SELECT auth.uid())
          AND run.status = 'published'
     )
   );
