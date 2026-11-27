@@ -7,6 +7,7 @@
  * from the catalog; saved per company (pa_company_config.client_view.keyMetrics).
  */
 import { useMemo, useState } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { useKeyMetrics } from '@/hooks/usePointAState'
@@ -21,26 +22,65 @@ const MAX = 8
 
 export function KeyMetricTile({ m, goal }: { m: MetricView; goal?: PointAPageState['goals'][number] }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 min-w-0" title={m.what ?? undefined}>
-      <p className="truncate text-[11px] text-on-surface-variant">{m.label}</p>
-      <p className={cn('mt-1 font-mono text-lg font-bold leading-tight', m.value === null ? 'text-on-surface-variant' : 'text-on-surface')}>{metricValue(m)}</p>
-      <p className="truncate text-[10px] text-on-surface-variant">
-        {m.value !== null ? [m.period, m.source].filter(Boolean).join(' · ') : 'нет данных'}
-      </p>
-      <div className="mt-1.5 flex items-center justify-between gap-1">
-        <TrendChip m={m} />
-        <MiniSpark values={m.history} />
-      </div>
-      {goal && goal.evaluation.progress !== null && (
-        <div className="mt-2" title={goal.evaluation.realismText}>
-          <div className="flex justify-between text-[10px] font-mono text-on-surface-variant">
-            <span>цель {fmtValue(goal.goal.targetValue, goal.goal.unit)}</span><span>{Math.round(goal.evaluation.progress)}%</span>
+    <Dialog.Root>
+      <Dialog.Trigger className="min-w-0 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-left transition-colors hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+        <span className="flex items-start justify-between gap-2 text-[11px] text-on-surface-variant">
+          <span className="truncate">{m.label}</span>
+          <Icon name="info" className="shrink-0 text-sm text-primary" />
+        </span>
+        <span className={cn('mt-1 block font-mono text-lg font-bold leading-tight', m.value === null ? 'text-on-surface-variant' : 'text-on-surface')}>{metricValue(m)}</span>
+        <span className="block truncate text-[10px] text-on-surface-variant">
+          {m.value !== null ? [m.period, m.source].filter(Boolean).join(' · ') : 'нет данных'}
+        </span>
+        <span className="mt-1.5 flex items-center justify-between gap-1">
+          <TrendChip m={m} />
+          <MiniSpark values={m.history} />
+        </span>
+        {goal && goal.evaluation.progress !== null && (
+          <span className="mt-2 block" title={goal.evaluation.realismText}>
+            <span className="flex justify-between text-[10px] font-mono text-on-surface-variant">
+              <span>цель {fmtValue(goal.goal.targetValue, goal.goal.unit)}</span><span>{Math.round(goal.evaluation.progress)}%</span>
+            </span>
+            <span className="mt-0.5 block h-1 rounded-full bg-white/[0.06]"><span className="block h-full rounded-full bg-primary" style={{ width: `${goal.evaluation.progress}%` }} /></span>
+          </span>
+        )}
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/60" />
+        <Dialog.Content className="fixed inset-x-0 bottom-0 z-[101] mx-auto max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/10 bg-surface-container p-5 shadow-modal sm:inset-x-4 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <Dialog.Title className="font-headline text-lg font-bold text-on-surface">{m.label}</Dialog.Title>
+            <Dialog.Close className={cn(BTN_GHOST, 'shrink-0 px-2')} aria-label="Закрыть"><Icon name="close" /></Dialog.Close>
           </div>
-          <div className="mt-0.5 h-1 rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-primary" style={{ width: `${goal.evaluation.progress}%` }} /></div>
-        </div>
-      )}
-    </div>
+          <Dialog.Description className="sr-only">Значение, источник и история показателя</Dialog.Description>
+          <p className="mt-1 font-mono text-2xl font-bold text-on-surface">{metricValue(m)}</p>
+          <dl className="mt-4 space-y-3 text-sm text-on-surface">
+            <MetricDetail label="Источник" value={m.source ?? m.needs ?? 'Нет данных об источнике'} />
+            <MetricDetail label="Период" value={m.period ?? 'Период не указан'} />
+            <MetricDetail label="Что показывает" value={m.what} />
+            <MetricDetail label="Как считается" value={m.how} />
+            <MetricDetail label="Зачем следить" value={m.why} />
+            {goal && <MetricDetail label="Цель" value={fmtValue(goal.goal.targetValue, goal.goal.unit)} />}
+            {m.history.length > 1 && (
+              <div>
+                <dt className="text-on-surface-variant">Последние значения, от раннего к позднему</dt>
+                <dd>
+                  <ol className="mt-1 flex flex-wrap gap-2">
+                    {m.history.map((value, index) => <li key={index} className="rounded bg-white/[0.05] px-2 py-1 font-mono">{metricValue({ ...m, value })}</li>)}
+                  </ol>
+                </dd>
+              </div>
+            )}
+          </dl>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
+}
+
+function MetricDetail({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null
+  return <div><dt className="text-on-surface-variant">{label}</dt><dd className="mt-0.5">{value}</dd></div>
 }
 
 function Picker({ state, onClose, readonly }: { state: PointAPageState; onClose: () => void; readonly?: boolean }) {
