@@ -73,14 +73,15 @@ export async function patchStoreJourney(request: Request) {
         : item) }
     } else {
       const candidate = overlay.goals.at(-1)
-      if (!candidate || candidate.status !== 'draft' || candidate.id !== payload.goalId || !measurableGoalSchema.safeParse({ metric: candidate.metric, target: candidate.target, deadline: candidate.deadline }).success) {
+      const details = measurableGoalSchema.safeParse({ metric: candidate?.metric, target: candidate?.target, deadline: candidate?.deadline })
+      if (!candidate || candidate.status !== 'draft' || candidate.id !== payload.goalId || !details.success) {
         throw new StoreJourneyAccessError(409, 'store_goal_changed', 'Черновик цели изменился. Обновите доску и проверьте его снова.')
       }
       overlay = {
-        ...overlay, goals: overlay.goals.map((goal) => goal.id === candidate.id ? { ...goal, status: 'confirmed' as const } : goal),
+        ...overlay, goals: overlay.goals.map((goal) => goal.id === candidate.id ? { ...goal, ...details.data, status: 'confirmed' as const } : goal),
         roadmap: [{ id: `roadmap-${randomUUID()}`, title: 'Определить первый шаг к цели',
           description: `Для цели «${candidate.title}» выберите действие и ответственного. Прогноз результата пока не рассчитан.`,
-          horizon: candidate.deadline, progress: 0, status: 'next' }],
+          horizon: details.data.deadline, progress: 0, status: 'next' }],
         planModules: ['point_b_goals', 'roadmap_actions', 'tasks_reminders'],
       }
       overlay = await prepareConfirmedStorePlan(context.live, overlay, payload.revision)
