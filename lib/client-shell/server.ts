@@ -16,6 +16,7 @@ import type { User } from '@supabase/supabase-js'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getRequestUserFacts } from '@/lib/platform/facts'
+import { storeHref } from '@/lib/store/links'
 import { getRequestAccess } from '@/lib/access/request-access'
 import {
   buildClientMoreNav,
@@ -78,6 +79,7 @@ async function unreadMessages(userId: string): Promise<number> {
 export interface ClientShellAccount {
   approved: boolean
   profileRole: string | null
+  storeHref?: string | null
   unreadMessages: number
   /** R-096: unread notifications (the bell). */
   unreadNotifications: number
@@ -99,12 +101,22 @@ export async function loadViewerRoles(userId: string): Promise<ViewerRoles | nul
 /** The per-user part (runs in parallel with the section filter in the layout). */
 export async function loadClientShellAccount(user: Pick<User, 'id' | 'email'> | null): Promise<ClientShellAccount> {
   if (!user) return { approved: false, profileRole: null, unreadMessages: 0, unreadNotifications: 0, panel: null, email: null }
-  const [roles, unread, notifications] = await Promise.all([loadViewerRoles(user.id), unreadMessages(user.id), unreadNotifications(user.id)])
+  const [roles, unread, notifications, facts] = await Promise.all([
+    loadViewerRoles(user.id), unreadMessages(user.id), unreadNotifications(user.id),
+    getRequestUserFacts(user.id).catch(() => null),
+  ])
+  const honorCompany = process.env.MYHONOR_ANALYTICS_USER_ID?.trim().toLowerCase() === user.id.toLowerCase()
+    ? process.env.MYHONOR_ANALYTICS_COMPANY_ID?.trim()
+    : null
+  const storeLink = roles?.status === 'approved' && (honorCompany || facts?.vertical === 'ecommerce')
+    ? storeHref('/store', honorCompany)
+    : null
   return {
     // Unknown roles (a database hiccup) fail open for the menu only: every
     // route still checks access on its own (middleware + page).
     approved: roles ? roles.status === 'approved' : true,
     profileRole: roles?.profileRole ?? null,
+    storeHref: storeLink,
     unreadMessages: unread,
     unreadNotifications: notifications,
     panel: roles ? staffPanelLink(roles) : null,
@@ -129,7 +141,7 @@ export function clientShellData(account: ClientShellAccount, hiddenPaths: readon
     panel: account.panel,
     email: account.email,
     notifications: clientNotificationsLink({ profileRole: account.profileRole, hiddenPaths, unread: account.unreadNotifications }),
-    more: buildClientMoreNav({ approved: account.approved, hiddenPaths, profileRole: account.profileRole }),
+    more: buildClientMoreNav({ approved: account.approved, hiddenPaths, profileRole: account.profileRole, storeHref: account.storeHref }),
   }
 }
 

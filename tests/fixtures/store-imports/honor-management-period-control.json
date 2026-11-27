@@ -1,0 +1,68 @@
+{
+  "fixtureVersion": 2,
+  "source": {
+    "logicalName": "Synthetic management example — not business records",
+    "sha256": "03a6c97ced58609822823381c57354ad25f4898e698a6b5edce8c3e204d30b0a",
+    "rawWorkbookCommitted": false,
+    "baseSheet": "Динамика по месяцам",
+    "baseDataRange": "A5:H23",
+    "pnlSheet": "P&L 2026 (май–июль)",
+    "pnlDataRange": "A4:F6",
+    "synthetic": true
+  },
+  "coverage": {
+    "uniqueMonths": 19,
+    "firstMonth": "2025-01-01",
+    "lastMonth": "2026-07-01",
+    "partialMonths": [
+      "2025-09-01",
+      "2025-10-01"
+    ],
+    "pnlMonths": [
+      "2026-05-01",
+      "2026-06-01",
+      "2026-07-01"
+    ]
+  },
+  "baseControls": {
+    "2025": {
+      "revenue": 570000,
+      "costOfGoods": 294000,
+      "derivedGrossProfit": 276000
+    },
+    "2026-01..07": {
+      "revenue": 620000,
+      "costOfGoods": 324000,
+      "derivedGrossProfit": 296000
+    }
+  },
+  "pnlControls": {
+    "2026-05..07": {
+      "revenue": 360000,
+      "reportedGrossProfit": 139999.25,
+      "periodExpenses": 185000.65,
+      "bonuses": 6000,
+      "writeOffs": 3600,
+      "ebitda": -45001.4
+    }
+  },
+  "trustPolicy": {
+    "baseIndependentColumns": [
+      "C",
+      "D"
+    ],
+    "pnlIndependentColumns": [
+      "B",
+      "C",
+      "D",
+      "E",
+      "F"
+    ],
+    "ignoredFormulaColumns": [
+      "Динамика по месяцам!E:G",
+      "P&L 2026 (май–июль)!G:H",
+      "По годам!B:E"
+    ],
+    "grossProfitReconciliationToleranceKzt": 1
+  }
+}

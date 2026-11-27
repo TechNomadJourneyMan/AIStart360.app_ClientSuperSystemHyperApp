@@ -165,7 +165,7 @@ const ADMIN_PATHS = [
 // Paths inside the (dashboard) layout group that clients are allowed to access
 const CLIENT_DASHBOARD_PATHS = [
   '/dashboard', '/gri', '/pulse', '/point-a', '/point-b', '/simulator',
-  '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
+  '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity', '/store',
 ]
 const EXPERT_PATHS = ['/expert']
 /**
