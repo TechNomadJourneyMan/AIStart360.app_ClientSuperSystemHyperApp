@@ -322,21 +322,6 @@ export function StoreOverviewView({ data, companyId, honorLinked = false, integr
         </section>
       )}
 
-      {honorLinked && (
-        <section className="rounded-2xl border border-white/10 bg-surface-container-low p-4" aria-labelledby="honor-sources">
-          <h2 id="honor-sources" className="font-headline text-lg font-bold text-on-surface">Источники HONOR</h2>
-          <p className="mt-1 text-sm text-on-surface-variant">Товары, цены и остатки поступают из 1С на витрину HONOR. Время последнего обмена и результаты по файлам доступны в админке магазина.</p>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <a href="https://myhonor.shop/admin/integrations/1c" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-xl border border-white/10 px-3 text-sm text-primary hover:border-primary/40">
-              Состояние обмена с 1С
-            </a>
-            <a href="https://myhonor.shop/admin/1c" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-xl border border-white/10 px-3 text-sm text-primary hover:border-primary/40">
-              Журнал обмена
-            </a>
-          </div>
-        </section>
-      )}
-
       {integration}
 
       <section aria-labelledby="store-kpi-title">
