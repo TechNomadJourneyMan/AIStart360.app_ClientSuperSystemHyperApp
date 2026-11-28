@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isStoreJourneyWorkspace } from './workspace-scope'
 
 const shortText = z.string().trim().min(1).max(240)
 const bodyText = z.string().trim().min(1).max(4_000)
@@ -729,7 +730,8 @@ function isMeasurableConfirmedGoal(goal: z.infer<typeof journeyGoalSchema>): boo
 
 export const journeyIdentitySchema = z
   .object({
-    workspaceId: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9:_-]+$/),
+    workspaceId: z.string().trim().min(8).max(120).regex(/^[a-zA-Z0-9:_-]+$/)
+      .refine((value) => !isStoreJourneyWorkspace(value), 'Путь магазина требует входа через кабинет.'),
     // Cookie-first clients omit the secret from JSON. Persistence still
     // requires either this legacy token or a validated HttpOnly credential.
     accessToken: z.string().min(24).max(240).optional(),

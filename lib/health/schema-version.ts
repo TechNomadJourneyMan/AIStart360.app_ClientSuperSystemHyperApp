@@ -35,6 +35,15 @@ export const SHIPPED_MIGRATIONS = [
   '156_archive_legacy_crm_integrations.sql',
   '157_crm_sync_catchup_lease_provenance.sql',
   '158_server_owned_columns.sql',
+  '159_myhonor_ecommerce_analytics.sql',
+  '160_myhonor_catalog_snapshot.sql',
+  '161_myhonor_catalog_sweeps.sql',
+  '162_myhonor_canonical_product_ids.sql',
+  '163_myhonor_server_owned_catalog_sweeps.sql',
+  '164_store_control_center.sql',
+  '165_store_import_publication.sql',
+  '166_store_financial_analytics.sql',
+  '167_store_owner_read_guard.sql',
 ] as const
 
 /** The newest migration of the build (staff detail of /api/health). */

@@ -60,7 +60,7 @@ export const NOTIFICATIONS_HREF = '/notifications'
  */
 export const EXPERT_BLOCKED_HREFS: readonly string[] = ['/dashboard', '/gri', '/market', NOTIFICATIONS_HREF, '/simulator', '/metrics', '/profile']
 
-export type ClientMoreKey = 'pulse' | 'simulator' | 'metrics' | 'psych'
+export type ClientMoreKey = 'pulse' | 'simulator' | 'metrics' | 'psych' | 'store'
 
 /** An item of «Ещё» in the cabinet bar. */
 export interface ClientMoreItem {
@@ -92,11 +92,13 @@ export const CLIENT_MORE_DEFS: readonly ClientMoreItem[] = [
 ]
 
 /** WA-1: «Ещё» for the account — visible sections only, nothing middleware would bounce. */
-export function buildClientMoreNav(input: Pick<BuildClientNavInput, 'approved' | 'hiddenPaths' | 'profileRole'>): ClientMoreItem[] {
+export function buildClientMoreNav(input: Pick<BuildClientNavInput, 'approved' | 'hiddenPaths' | 'profileRole'> & { storeHref?: string | null }): ClientMoreItem[] {
   if (!input.approved) return []
   const expert = isExpertProfile(input.profileRole)
-  return CLIENT_MORE_DEFS
-    .filter((d) => !hiddenByPlatform(d.href, input.hiddenPaths))
+  const items = [...CLIENT_MORE_DEFS]
+  if (!expert && input.storeHref) items.push({ key: 'store', label: 'Магазин', href: input.storeHref, icon: 'storefront' })
+  return items
+    .filter((d) => !hiddenByPlatform(d.href.split('?', 1)[0], input.hiddenPaths))
     .filter((d) => !(expert && EXPERT_BLOCKED_HREFS.some((b) => under(d.href, b))))
     .map((d) => ({ ...d }))
 }
@@ -104,7 +106,7 @@ export function buildClientMoreNav(input: Pick<BuildClientNavInput, 'approved' |
 /** The «Ещё» item of `pathname`, or null. */
 export function activeClientMoreKey(pathname: string, items: readonly Pick<ClientMoreItem, 'key' | 'href'>[]): ClientMoreKey | null {
   const path = (pathname || '').split(/[?#]/, 1)[0]
-  return items.find((i) => under(path, i.href))?.key ?? null
+  return items.find((i) => under(path, i.href.split('?', 1)[0]))?.key ?? null
 }
 
 const isExpertProfile = (role: string | null | undefined) => role === 'expert' || role === 'manager' || role === 'analyst'
